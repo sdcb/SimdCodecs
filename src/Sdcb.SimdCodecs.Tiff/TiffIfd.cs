@@ -66,7 +66,11 @@ internal sealed record ParsedIfd(
     bool IsTiled, int TileWidth, int TileHeight,
     uint[] SegmentOffsets, uint[] SegmentByteCounts, TiffSegmentGeometry Geometry,
     float? SMin, float? SMax, byte[]? Icc, int? ExifIfdOffset, int? GpsInfoIfdOffset,
-    long NextIfdOffset);
+    long NextIfdOffset, bool LsbFirst = false, uint FaxOptions = 0)
+{
+    /// <summary>Bits per sample of <see cref="TiffPage.Pixels"/>: a 1/2/4-bit page is expanded to 8.</summary>
+    public int OutputBitsPerSample => BitsPerSample < 8 ? 8 : BitsPerSample;
+}
 
 internal static class TiffIfdParser
 {
@@ -134,6 +138,9 @@ internal static class TiffIfdParser
         byte[]? icc = null;
         int? exifIfdOffset = null;
         int? gpsIfdOffset = null;
+        var fillOrder = 1;
+        uint t4Options = 0;
+        uint t6Options = 0;
 
         for (var i = 0; i < entryCount; i++)
         {
@@ -174,6 +181,9 @@ internal static class TiffIfdParser
                     exifIfdOffset = (int)Scalar(type, valueSpan, fileIsLE);
                     break;
                 case TiffTag.GpsInfoIfd: gpsIfdOffset = (int)Scalar(type, valueSpan, fileIsLE); break;
+                case TiffTag.FillOrder: fillOrder = (int)Scalar(type, valueSpan, fileIsLE); break;
+                case TiffTag.T4Options: t4Options = Scalar(type, valueSpan, fileIsLE); break;
+                case TiffTag.T6Options: t6Options = Scalar(type, valueSpan, fileIsLE); break;
                 default:
                     // Unrecognised tag: TIFF spec says skip unknown tags.
                     break;
@@ -219,21 +229,44 @@ internal static class TiffIfdParser
             throw new InvalidDataException(isTiled
                 ? $"Tiled page lists {segmentOffsets.Length} tiles, but {geometry.SegmentsAcross}x{geometry.SegmentsDown}x{geometry.PlaneCount} plane(s) are needed to cover {width}x{height}"
                 : $"Planar page lists {segmentOffsets.Length} strips, but {geometry.SegmentsDown}x{geometry.PlaneCount} planes are needed");
-        if (bitsPerSample != 8 && bitsPerSample != 16 && bitsPerSample != 32)
-            throw new NotSupportedException($"BitsPerSample={bitsPerSample} not supported (expected 8/16/32)");
+        // 1/2/4-bit samples (bilevel and low-depth grey) are expanded to 8 bits on read; with more than
+        // one sample per pixel they are rare enough that the reader refuses them instead.
+        var subByte = bitsPerSample is 1 or 2 or 4;
+        if (bitsPerSample != 8 && bitsPerSample != 16 && bitsPerSample != 32 && !subByte)
+            throw new NotSupportedException($"BitsPerSample={bitsPerSample} not supported (expected 1/2/4/8/16/32)");
+        if (subByte && (samplesPerPixel != 1 || sampleFormat != TiffSampleFormat.Uint))
+            throw new NotSupportedException($"BitsPerSample={bitsPerSample} is supported for one unsigned sample per pixel only");
         if (sampleFormat is not (TiffSampleFormat.Uint or TiffSampleFormat.Int or TiffSampleFormat.IeeeFloat))
             throw new NotSupportedException($"SampleFormat={sampleFormat} not supported");
+        if (compression is TiffCompression.CcittRle or TiffCompression.CcittT4 or TiffCompression.CcittT6
+            && (bitsPerSample != 1 || samplesPerPixel != 1))
+            throw new InvalidDataException($"Compression {compression} codes bilevel pages, but this one has {samplesPerPixel}x{bitsPerSample}-bit samples");
+        if (fillOrder is not (1 or 2))
+            throw new InvalidDataException($"FillOrder={fillOrder} is not 1 or 2");
+
         // Refuse an unhandled predictor rather than decoding past it. An un-inverted predictor
         // yields a full-size, entirely plausible buffer of WRONG pixels -- no exception, no
         // short read, correct dimensions -- so staying quiet here is indistinguishable from
-        // success to every caller downstream.
-        if (predictor is not (TiffPredictor.None or TiffPredictor.HorizontalDifferencing))
-            throw new NotSupportedException($"Predictor={predictor} not supported in this reader");
+        // success to every caller downstream. The same goes for a predictor paired with samples it
+        // is not defined on.
+        switch (predictor)
+        {
+            case TiffPredictor.None:
+                break;
+            case TiffPredictor.HorizontalDifferencing when !subByte:
+                break;
+            case TiffPredictor.FloatingPoint when sampleFormat == TiffSampleFormat.IeeeFloat && bitsPerSample is 16 or 32:
+                break;
+            default:
+                throw new NotSupportedException(
+                    $"Predictor={predictor} not supported for {bitsPerSample}-bit {sampleFormat} samples");
+        }
 
         return new ParsedIfd(width, height, samplesPerPixel, bitsPerSample, compression, photometric,
             sampleFormat, planarConfig, predictor, rowsPerStrip, isTiled, tileWidth, tileHeight,
             segmentOffsets, segmentByteCounts, geometry, sMin, sMax, icc, exifIfdOffset, gpsIfdOffset,
-            nextIfdOffset);
+            nextIfdOffset, LsbFirst: fillOrder == 2,
+            FaxOptions: compression == TiffCompression.CcittT6 ? t6Options : t4Options);
     }
 
     public static ushort U16(ReadOnlySpan<byte> b, bool le) =>

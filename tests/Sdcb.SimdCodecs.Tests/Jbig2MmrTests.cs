@@ -1,4 +1,5 @@
-﻿using Sdcb.SimdCodecs.Jbig2;
+﻿using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Jbig2;
 using Shouldly;
 
 namespace Sdcb.SimdCodecs.Tests;

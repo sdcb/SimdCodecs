@@ -8,6 +8,7 @@ public static class TiffTag
     public const ushort BitsPerSample     = 258;
     public const ushort Compression       = 259;
     public const ushort PhotometricInterp = 262;
+    public const ushort FillOrder         = 266;
     public const ushort StripOffsets      = 273;
     public const ushort SamplesPerPixel   = 277;
     public const ushort RowsPerStrip      = 278;
@@ -15,6 +16,8 @@ public static class TiffTag
     public const ushort XResolution       = 282;
     public const ushort YResolution       = 283;
     public const ushort PlanarConfig      = 284;
+    public const ushort T4Options         = 292;
+    public const ushort T6Options         = 293;
     public const ushort ResolutionUnit    = 296;
     public const ushort Predictor         = 317;
     public const ushort PageNumber        = 297;

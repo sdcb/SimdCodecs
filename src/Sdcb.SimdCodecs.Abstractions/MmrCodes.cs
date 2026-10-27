@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace Sdcb.SimdCodecs.Jbig2;
+namespace Sdcb.SimdCodecs.Abstractions;
 
 /// <summary>
 /// The Modified Huffman run-length code tables of ITU-T T.4 §4.1.2 (Tables 2, 3

@@ -11,7 +11,7 @@
     <PackageId>Sdcb.SimdCodecs.Tiff</PackageId>
     <Product>Sdcb.SimdCodecs.Tiff</Product>
     <Authors>sdcb</Authors>
-    <Description>Pure-managed TIFF reader/writer for .NET. Supports multi-page, 8/16/32-bit uint and IEEE-Float samples, Uncompressed/Deflate/ZlibPkzip/LZW, Predictor 2 (horizontal differencing) on read, contig planar config, SampleFormat/SMin/SMax/ICC round-trip, both II and MM byte order. AOT-compatible.</Description>
+    <Description>Pure-managed TIFF reader/writer for .NET. Supports multi-page, 8/16/32-bit uint and IEEE-Float samples, Uncompressed/Deflate/ZlibPkzip/LZW; on read also PackBits, 1/2/4-bit pages (expanded to 8-bit), CCITT Group 3 (1D/2D), Group 4 and Modified Huffman fax compression, Predictor 2 (horizontal differencing) and Predictor 3 (floating point), contig planar config, SampleFormat/SMin/SMax/ICC round-trip, both II and MM byte order. AOT-compatible.</Description>
     <PackageTags>tiff image codec aot</PackageTags>
     <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>

@@ -3,6 +3,9 @@ namespace Sdcb.SimdCodecs.Tiff;
 public enum TiffCompression : ushort
 {
     Uncompressed = 1,
+    CcittRle     = 2,    // CCITT Modified Huffman, rows byte-aligned (TIFF 6.0 section 10); bilevel only
+    CcittT4      = 3,    // CCITT Group 3 / ITU-T T.4 (TIFF 6.0 section 11); bilevel only
+    CcittT6      = 4,    // CCITT Group 4 / ITU-T T.6 (TIFF 6.0 section 11); bilevel only
     Lzw          = 5,
     Jpeg         = 7,    // New-style JPEG (TIFF Technical Note #2)
     Deflate      = 8,    // Adobe Deflate
@@ -64,9 +67,10 @@ public enum TiffPredictor : ushort
     HorizontalDifferencing = 2,
 
     /// <summary>
-    /// Floating-point predictor (TIFF Technical Note #3): bytes are split into byte planes per
-    /// row and then differenced byte-wise. A different transform from
-    /// <see cref="HorizontalDifferencing"/>, and not interchangeable with it.
+    /// Floating-point predictor (Adobe Photoshop TIFF Technical Note 3): each row's samples are split
+    /// into byte planes, most significant byte first, and the planes are then differenced byte-wise.
+    /// A different transform from <see cref="HorizontalDifferencing"/>, and not interchangeable with
+    /// it. What libtiff-based writers (ImageMagick, GDAL) default to for compressed float data.
     /// </summary>
     FloatingPoint = 3,
 }

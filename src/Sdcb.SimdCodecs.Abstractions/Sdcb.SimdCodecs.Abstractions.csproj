@@ -40,6 +40,9 @@
          qualifying, only by extern alias. -->
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Jbig2" />
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Jpeg2000" />
+    <!-- MmrCodes, the T.4 Modified Huffman and mode-code tables, for the same reason: JBIG2's
+         MMR decoder and TIFF's CCITT fax decoder (Compression 2/3/4) read the same tables. -->
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tiff" />
   </ItemGroup>
 
 </Project>

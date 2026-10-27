@@ -96,8 +96,8 @@ internal static class Group4Tiff
     /// <summary>
     /// Minimal TIFF reader — just enough to find the coded strips and prove they
     /// really are Group 4. <c>Sdcb.SimdCodecs.Tiff</c>'s reader is not usable here: it
-    /// rejects compression 4 outright, and it hands back pixels when what this
-    /// harness wants is the untouched codestream.
+    /// hands back pixels when what this harness wants is the untouched codestream,
+    /// and it decodes Group 4 itself, so it would not be an independent party.
     /// </summary>
     private static Encoded Parse(byte[] tiff, int expectedWidth, int expectedHeight)
     {

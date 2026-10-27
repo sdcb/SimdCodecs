@@ -21,16 +21,21 @@ namespace Sdcb.SimdCodecs.Tiff;
 /// <item>Both layouts: strips, and tiles (<see cref="TiffPage.TileWidth"/> says which a
 ///       page used). A page carrying tags for both is refused -- TIFF 6.0 p.68 makes them
 ///       exclusive.</item>
-/// <item>Bit depths 8, 16, 32 — uniform across all samples (per TIFF norm).</item>
+/// <item>Bit depths 8, 16, 32 — uniform across all samples (per TIFF norm) — and 1, 2, 4 for a single
+///       unsigned sample per pixel (bilevel and low-depth grey). Sub-byte samples are expanded to 8 bits
+///       scaled to the full range (a 1-bit 1 becomes 255), so <see cref="TiffPage.BitsPerSample"/> reports
+///       8 for them and <see cref="TiffPage.Photometric"/> still says what 0 means.</item>
 /// <item>Compression: <see cref="TiffCompression.Uncompressed"/>, <see cref="TiffCompression.Lzw"/>,
 ///       <see cref="TiffCompression.Deflate"/>, <see cref="TiffCompression.ZlibPkzip"/>,
-///       <see cref="TiffCompression.PackBits"/>.</item>
+///       <see cref="TiffCompression.PackBits"/>, and for bilevel pages the CCITT fax codings
+///       <see cref="TiffCompression.CcittRle"/>, <see cref="TiffCompression.CcittT4"/> (1D and 2D) and
+///       <see cref="TiffCompression.CcittT6"/>. FillOrder 2 is honoured.</item>
 /// <item>Sample formats: <see cref="TiffSampleFormat.Uint"/>, <see cref="TiffSampleFormat.Int"/>,
 ///       <see cref="TiffSampleFormat.IeeeFloat"/>.</item>
-/// <item>Predictors: <see cref="TiffPredictor.None"/> and
+/// <item>Predictors: <see cref="TiffPredictor.None"/>,
 ///       <see cref="TiffPredictor.HorizontalDifferencing"/> -- the default for
-///       every writer that emits ZIP compression. <see cref="TiffPredictor.FloatingPoint"/>
-///       throws rather than decoding past it.</item>
+///       every writer that emits ZIP compression -- and <see cref="TiffPredictor.FloatingPoint"/> for
+///       16/32-bit IEEE float samples.</item>
 /// <item>Both planar configs, for strips and tiles: PlanarConfig=Separate planes are decoded one
 ///       sample per pixel and interleaved, so <see cref="TiffPage.Pixels"/> and the sink always see
 ///       chunky rows.</item>
@@ -159,6 +164,27 @@ public static partial class TiffReader
         }
     }
 
+    /// <summary>
+    /// Decode page <paramref name="pageIndex"/> alone. The pages before it are walked by their next-IFD
+    /// pointer and never interpreted, so a page this reader cannot decode does not stop it reaching the
+    /// others.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The file has fewer pages.</exception>
+    public static TiffPage ReadPage(ReadOnlySpan<byte> tiff, int pageIndex = 0)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(pageIndex);
+        var fileIsLE = ReadHeader(tiff);
+        var src = new SpanBytes(tiff);
+        long ifdOffset = ReadUInt32(tiff.Slice(4, 4), fileIsLE);
+        for (var i = 0; i < pageIndex && ifdOffset != 0; i++)
+            ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, fileIsLE);
+        if (ifdOffset == 0) throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
+
+        var sink = new BufferingSink();
+        var (page, _) = ReadPage(tiff, (int)ifdOffset, fileIsLE, pageIndex, ref sink);
+        return page with { Pixels = sink.TakePixels() };
+    }
+
     /// <summary>Decode every page from a TIFF stream (slurped to a byte array).</summary>
     public static TiffDocument Read(Stream stream)
     {
@@ -184,7 +210,7 @@ public static partial class TiffReader
         var width = ifd.Width;
         var height = ifd.Height;
         var samplesPerPixel = ifd.SamplesPerPixel;
-        var bitsPerSample = ifd.BitsPerSample;
+        var bitsPerSample = ifd.OutputBitsPerSample;
         var compression = ifd.Compression;
         var photometric = ifd.Photometric;
         var sampleFormat = ifd.SampleFormat;
@@ -248,8 +274,13 @@ public static partial class TiffReader
 
         // 8-bit samples have no byte order, and neither has a file that already matches the host --
         // which in practice is nearly every file, since writers emit II and hosts are little-endian.
-        var needsSwap = fileIsLE != BitConverter.IsLittleEndian && bitsPerSample > 8;
-        var needsPredictor = predictor == TiffPredictor.HorizontalDifferencing;
+        // The floating-point predictor reassembles samples from big-endian byte planes, straight into
+        // host order, so it replaces the swap rather than following it.
+        var needsSwap = fileIsLE != BitConverter.IsLittleEndian && bitsPerSample > 8
+            && predictor != TiffPredictor.FloatingPoint;
+        var needsPredictor = predictor != TiffPredictor.None;
+        var format = new SegmentFormat(compression, ifd.BitsPerSample, isTiled ? tileWidth : width, ifd.LsbFirst,
+            ifd.FaxOptions);
 
         // THE FAST CASE, and the reason ReadInto exists: nothing to decompress and nothing to rewrite,
         // so the sink gets a slice of the INPUT and no scratch is allocated at all. Reading a
@@ -257,7 +288,8 @@ public static partial class TiffReader
         // Both guards are about mutation -- normalising would have to write, and a mapped view is
         // read-only. It is a STRIP-only promise: see the band buffer below for why a tile cannot be
         // handed over in place.
-        var passFileBytesThrough = compression is TiffCompression.Uncompressed && !needsSwap && !needsPredictor;
+        var passFileBytesThrough = compression is TiffCompression.Uncompressed && !needsSwap && !needsPredictor
+            && !format.NeedsStaging;
 
         // One decoded segment: a strip's rows, or a tile's. A tile is always STORED full-size with
         // the overhang padded (TIFF 6.0 p.67), but the rows past the image's last are padding by
@@ -286,6 +318,7 @@ public static partial class TiffReader
 
         byte[]? inflateSource = null;
         MemoryStream? scratchStream = null;
+        var staging = format.NeedsStaging ? new SegmentStaging() : null;
         if (compression is TiffCompression.Deflate or TiffCompression.ZlibPkzip)
         {
             var maxSegment = 0;
@@ -318,7 +351,7 @@ public static partial class TiffReader
                         {
                             var index = geometry.SegmentIndex(plane, tileY, tileX);
                             var samples = DecodeSegment(tiff, segmentOffsets[index], segmentByteCounts[index],
-                                index, compression, passFileBytesThrough, scratch, inflateSource, scratchStream,
+                                index, format, staging, passFileBytesThrough, scratch, inflateSource, scratchStream,
                                 segmentCapacity);
 
                             // Normalise the TILE, at the TILE's width. Horizontal differencing restarts at
@@ -329,7 +362,7 @@ public static partial class TiffReader
                             if (needsSwap)
                                 SwapPixelsToHostOrder(scratch!.AsSpan(0, samples.Length), bitsPerSample);
                             if (needsPredictor)
-                                UndoHorizontalDifferencing(scratch!.AsSpan(0, samples.Length), tileWidth, segSamplesPerPixel, bitsPerSample);
+                                UndoPredictor(predictor, scratch!.AsSpan(0, samples.Length), tileWidth, segSamplesPerPixel, bitsPerSample);
 
                             PlaceRows(samples, band!, rowsInBand, tileRowBytes, bytesPerRow, firstCol, colPixels,
                                 segBytesPerPixel, bytesPerPixel, bytesPerSample, plane);
@@ -352,7 +385,7 @@ public static partial class TiffReader
                         // A chunky strip list may be short (truncated file): deliver the rows it covers.
                         if (index >= segmentOffsets.Length) break;
                         var samples = DecodeSegment(tiff, segmentOffsets[index], segmentByteCounts[index], index,
-                            compression, passFileBytesThrough, scratch, inflateSource, scratchStream,
+                            format, staging, passFileBytesThrough, scratch, inflateSource, scratchStream,
                             rowCount * bytesPerRow);
 
                         // Normalise this strip, not the assembled image. Both passes are row-local -- the
@@ -362,7 +395,7 @@ public static partial class TiffReader
                         if (needsSwap)
                             SwapPixelsToHostOrder(scratch!.AsSpan(0, samples.Length), bitsPerSample);
                         if (needsPredictor)
-                            UndoHorizontalDifferencing(scratch!.AsSpan(0, samples.Length), width, samplesPerPixel, bitsPerSample);
+                            UndoPredictor(predictor, scratch!.AsSpan(0, samples.Length), width, samplesPerPixel, bitsPerSample);
 
                         sink.Strip(pageIndex, rowCursor, rowCount, samples);
                         continue;
@@ -372,12 +405,12 @@ public static partial class TiffReader
                     {
                         var index = geometry.SegmentIndex(plane, strip);
                         var samples = DecodeSegment(tiff, segmentOffsets[index], segmentByteCounts[index], index,
-                            compression, passFileBytesThrough, scratch, inflateSource, scratchStream,
+                            format, staging, passFileBytesThrough, scratch, inflateSource, scratchStream,
                             rowCount * width * segBytesPerPixel);
                         if (needsSwap)
                             SwapPixelsToHostOrder(scratch!.AsSpan(0, samples.Length), bitsPerSample);
                         if (needsPredictor)
-                            UndoHorizontalDifferencing(scratch!.AsSpan(0, samples.Length), width, segSamplesPerPixel, bitsPerSample);
+                            UndoPredictor(predictor, scratch!.AsSpan(0, samples.Length), width, segSamplesPerPixel, bitsPerSample);
 
                         PlaceRows(samples, band!, rowCount, width * segBytesPerPixel, bytesPerRow, 0, width,
                             segBytesPerPixel, bytesPerPixel, bytesPerSample, plane);
@@ -396,6 +429,7 @@ public static partial class TiffReader
                 ArrayPool<byte>.Shared.Return(scratch);
             if (band is not null)
                 ArrayPool<byte>.Shared.Return(band);
+            staging?.Dispose();
         }
 
         return (page, nextIfdOffset);
@@ -407,8 +441,13 @@ public static partial class TiffReader
     /// the pass-through path, of the file itself. Shared by both layouts so that a tile can never
     /// come to decompress differently from a strip.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="capacity"/> is in OUTPUT bytes. A sub-byte page is decompressed into
+    /// <paramref name="staging"/> as packed rows first and then expanded into the scratch at one byte per
+    /// sample, so from the caller's side it is an 8-bit page like any other.
+    /// </remarks>
     private static ReadOnlySpan<byte> DecodeSegment(ReadOnlySpan<byte> tiff, uint offset, uint byteCount,
-        int index, TiffCompression compression, bool passFileBytesThrough, byte[]? scratch,
+        int index, SegmentFormat format, SegmentStaging? staging, bool passFileBytesThrough, byte[]? scratch,
         byte[]? inflateSource, MemoryStream? scratchStream, int capacity)
     {
         var start = (int)offset;
@@ -417,44 +456,143 @@ public static partial class TiffReader
             throw new InvalidDataException($"Segment {index} extents out of bounds");
         var segment = tiff.Slice(start, length);
 
-        switch (compression)
+        if (passFileBytesThrough)
+            return segment[..Math.Min(segment.Length, capacity)];
+
+        if (format.LsbFirst)
         {
-            case TiffCompression.Uncompressed when passFileBytesThrough:
-                return segment[..Math.Min(segment.Length, capacity)];
+            // FillOrder 2: every byte of the segment is stored bit-reversed (TIFF 6.0 p.32). Undone on the
+            // coded bytes, before any decompression, so each codec only ever sees MSB-first data.
+            var reversed = staging!.Reversed(length);
+            for (var i = 0; i < length; i++) reversed[i] = ReverseBits(segment[i]);
+            segment = reversed;
+        }
+
+        if (!format.IsPacked)
+            return scratch.AsSpan(0, Decompress(segment, format, scratch!.AsSpan(0, capacity), inflateSource, scratchStream));
+
+        var rows = capacity / format.StoredWidth;
+        var packed = staging!.Packed(rows * format.PackedRowBytes);
+        var decoded = Decompress(segment, format, packed, inflateSource, scratchStream);
+        return scratch.AsSpan(0, ExpandSubByteRows(packed[..decoded], scratch!, format.StoredWidth, format.StoredBits));
+    }
+
+    /// <summary>Decompresses one segment's coded bytes into <paramref name="target"/>, returning the bytes written.</summary>
+    private static int Decompress(ReadOnlySpan<byte> segment, SegmentFormat format, Span<byte> target,
+        byte[]? inflateSource, MemoryStream? scratchStream)
+    {
+        switch (format.Compression)
+        {
             case TiffCompression.Uncompressed:
             {
-                var decoded = Math.Min(segment.Length, capacity);
-                segment[..decoded].CopyTo(scratch!.AsSpan());
-                return scratch.AsSpan(0, decoded);
+                var decoded = Math.Min(segment.Length, target.Length);
+                segment[..decoded].CopyTo(target);
+                return decoded;
             }
             case TiffCompression.Lzw:
-            {
                 // Decoded straight from the file span -- LZW needs no zlib stream, so it needs
                 // neither the inflate source buffer nor the MemoryStream.
-                var decoded = TiffLzw.Decode(segment, scratch!.AsSpan(0, capacity));
-                return scratch.AsSpan(0, decoded);
-            }
+                return TiffLzw.Decode(segment, target);
             case TiffCompression.Deflate:
             case TiffCompression.ZlibPkzip:
-            {
                 // SetLength BEFORE the copy, never after: MemoryStream ZERO-FILLS when it grows, so
                 // setting the length second wipes the tail of any segment longer than the previous
                 // one. That is silent and data-dependent -- segments of a smooth image all deflate to
                 // near-identical sizes and never grow, so it only bites once the content compresses
                 // unevenly.
-                scratchStream!.SetLength(length);
+                scratchStream!.SetLength(segment.Length);
                 segment.CopyTo(inflateSource!.AsSpan());
                 scratchStream.Position = 0;
-                var decoded = InflateInto(scratchStream, scratch!.AsSpan(0, capacity));
-                return scratch.AsSpan(0, decoded);
-            }
+                return InflateInto(scratchStream, target);
             case TiffCompression.PackBits:
-            {
-                var decoded = TiffPackBits.Decode(segment, scratch!.AsSpan(0, capacity));
-                return scratch.AsSpan(0, decoded);
-            }
+                return TiffPackBits.Decode(segment, target);
+            case TiffCompression.CcittRle:
+            case TiffCompression.CcittT4:
+            case TiffCompression.CcittT6:
+                return TiffFax.Decode(segment, target, format.StoredWidth, target.Length / format.PackedRowBytes,
+                    format.Compression, format.FaxOptions);
             default:
-                throw new NotSupportedException($"Compression {compression} not supported in this reader");
+                throw new NotSupportedException($"Compression {format.Compression} not supported in this reader");
+        }
+    }
+
+    /// <summary>
+    /// Expands packed 1/2/4-bit rows (MSB first, each row padded to a byte -- TIFF 6.0 p.15) to one byte
+    /// per sample, scaled to the full 8-bit range so that the maximum code becomes 255. Whole rows only;
+    /// returns the bytes written.
+    /// </summary>
+    private static int ExpandSubByteRows(ReadOnlySpan<byte> packed, Span<byte> destination, int width, int bits)
+    {
+        var rowBytes = ((width * bits) + 7) / 8;
+        var rows = packed.Length / rowBytes;
+        var scale = 255 / ((1 << bits) - 1);
+        var mask = (1 << bits) - 1;
+        for (var y = 0; y < rows; y++)
+        {
+            var src = packed.Slice(y * rowBytes, rowBytes);
+            var dst = destination.Slice(y * width, width);
+            if (bits == 1)
+            {
+                for (var x = 0; x < width; x++)
+                    dst[x] = (byte)(0 - ((src[x >> 3] >> (7 - (x & 7))) & 1));
+                continue;
+            }
+
+            for (var x = 0; x < width; x++)
+            {
+                var bit = x * bits;
+                dst[x] = (byte)(((src[bit >> 3] >> (8 - bits - (bit & 7))) & mask) * scale);
+            }
+        }
+        return rows * width;
+    }
+
+    private static byte ReverseBits(byte b)
+    {
+        b = (byte)((b >> 4) | (b << 4));
+        b = (byte)(((b & 0xCC) >> 2) | ((b & 0x33) << 2));
+        return (byte)(((b & 0xAA) >> 1) | ((b & 0x55) << 1));
+    }
+
+    /// <summary>What turning a page's segment bytes into samples needs to know beyond the compression.</summary>
+    /// <param name="StoredBits">Bits per sample in the file: 1/2/4 are packed and expanded on read.</param>
+    /// <param name="StoredWidth">Pixels per stored row: the tile width for a tiled page, else the image width.</param>
+    private readonly record struct SegmentFormat(TiffCompression Compression, int StoredBits, int StoredWidth,
+        bool LsbFirst, uint FaxOptions)
+    {
+        public bool IsPacked => StoredBits < 8;
+
+        /// <summary>The coded bytes or the decoded rows have to go through a buffer of their own first.</summary>
+        public bool NeedsStaging => IsPacked || LsbFirst;
+
+        public int PackedRowBytes => ((StoredWidth * StoredBits) + 7) / 8;
+    }
+
+    /// <summary>The pooled buffers <see cref="SegmentFormat.NeedsStaging"/> asks for, grown on demand and reused across segments.</summary>
+    private sealed class SegmentStaging : IDisposable
+    {
+        private byte[]? _reversed;
+        private byte[]? _packed;
+
+        public Span<byte> Reversed(int length) => Ensure(ref _reversed, length).AsSpan(0, length);
+
+        public Span<byte> Packed(int length) => Ensure(ref _packed, length).AsSpan(0, length);
+
+        private static byte[] Ensure(ref byte[]? buffer, int length)
+        {
+            if (buffer is null || buffer.Length < length)
+            {
+                if (buffer is not null) ArrayPool<byte>.Shared.Return(buffer);
+                buffer = ArrayPool<byte>.Shared.Rent(length);
+            }
+            return buffer;
+        }
+
+        public void Dispose()
+        {
+            if (_reversed is not null) ArrayPool<byte>.Shared.Return(_reversed);
+            if (_packed is not null) ArrayPool<byte>.Shared.Return(_packed);
+            _reversed = _packed = null;
         }
     }
 
@@ -499,6 +637,61 @@ public static partial class TiffReader
                 else
                     target.Clear();
             }
+        }
+    }
+
+    /// <summary>Inverts whichever predictor the page uses, over whole rows of <paramref name="width"/> pixels.</summary>
+    private static void UndoPredictor(TiffPredictor predictor, Span<byte> pixels, int width, int samplesPerPixel,
+        int bitsPerSample)
+    {
+        if (predictor == TiffPredictor.FloatingPoint)
+            UndoFloatingPointPredictor(pixels, width, samplesPerPixel, bitsPerSample);
+        else
+            UndoHorizontalDifferencing(pixels, width, samplesPerPixel, bitsPerSample);
+    }
+
+    /// <summary>
+    /// Invert the floating-point predictor (Predictor 3, Adobe Photoshop TIFF Technical Note 3). The
+    /// encoder took each row's samples apart into byte planes -- every sample's most significant byte,
+    /// then every sample's next byte, and so on, whatever the file's byte order -- and then differenced
+    /// that row of bytes horizontally, one pixel (<paramref name="samplesPerPixel"/> bytes) apart. So
+    /// decoding is a byte-wise running sum, then gathering the planes back into samples, written here in
+    /// HOST order. That is why the caller skips the byte-order swap for these pages.
+    /// A trailing partial row (truncated file) is left alone.
+    /// </summary>
+    private static void UndoFloatingPointPredictor(Span<byte> pixels, int width, int samplesPerPixel, int bitsPerSample)
+    {
+        var bytesPerSample = bitsPerSample / 8;
+        var samplesPerRow = width * samplesPerPixel;
+        var rowBytes = samplesPerRow * bytesPerSample;
+        if (rowBytes <= 0) return;
+
+        var planes = ArrayPool<byte>.Shared.Rent(rowBytes);
+        try
+        {
+            var rows = pixels.Length / rowBytes;
+            for (var y = 0; y < rows; y++)
+            {
+                var row = pixels.Slice(y * rowBytes, rowBytes);
+                for (var i = samplesPerPixel; i < row.Length; i++)
+                    row[i] = (byte)(row[i] + row[i - samplesPerPixel]);
+
+                row.CopyTo(planes);
+                for (var sample = 0; sample < samplesPerRow; sample++)
+                {
+                    var dst = row.Slice(sample * bytesPerSample, bytesPerSample);
+                    for (var b = 0; b < bytesPerSample; b++)
+                    {
+                        // Plane b holds byte b counting from the most significant one.
+                        var significance = bytesPerSample - 1 - b;
+                        dst[BitConverter.IsLittleEndian ? significance : b] = planes[(b * samplesPerRow) + sample];
+                    }
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(planes);
         }
     }
 

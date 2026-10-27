@@ -16,7 +16,7 @@ All packages version in lockstep; release versions come from the Git tag.
 | `Sdcb.SimdCodecs.Jpeg.GainMap` | Ultra HDR / Adobe gain-map JPEG read, assemble and reconstruct. |
 | `Sdcb.SimdCodecs.Jpeg.IccInjector` | Splice an ICC profile (APP2) into an existing JPEG. |
 | `Sdcb.SimdCodecs.Png` | PNG encoder + decoder: every standard bit depth (incl. 1/2/4-bit grey and indexed), tEXt / zTXt / iTXt text chunks, PNG-3 cICP / mDCV / cLLI HDR signalling. |
-| `Sdcb.SimdCodecs.Tiff` | TIFF reader/writer: multi-page, 8/16/32-bit int and float, Deflate/LZW (+ PackBits read), strips or tiles, chunky or planar, on-demand single strip/tile reads. |
+| `Sdcb.SimdCodecs.Tiff` | TIFF reader/writer: multi-page, 8/16/32-bit int and float, Deflate/LZW (+ PackBits read), strips or tiles, chunky or planar, on-demand single strip/tile reads. Reads 1/2/4-bit pages (expanded to 8-bit), CCITT fax (Group 3 1D/2D, Group 4, Modified Huffman) and the floating-point predictor. |
 | `Sdcb.SimdCodecs.Exif` | EXIF reader for JPEG / TIFF / PNG; `ExifWriter` builds a blob for `JpegEncodeOptions.Exif`. |
 | `Sdcb.SimdCodecs.Color.Icc` | Bundled sRGB v4 ICC profile and an ICC `cicp` tag injector. |
 | `Sdcb.SimdCodecs.Jbig2` | JBIG2 (T.88) decoder aimed at PDF `/JBIG2Decode`. |

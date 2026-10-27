@@ -32,7 +32,10 @@ public sealed class TiffPageLayout
         Width = ifd.Width;
         Height = ifd.Height;
         SamplesPerPixel = ifd.SamplesPerPixel;
-        BitsPerSample = ifd.BitsPerSample;
+        BitsPerSample = ifd.OutputBitsPerSample;
+        StoredBitsPerSample = ifd.BitsPerSample;
+        LsbFirst = ifd.LsbFirst;
+        FaxOptions = ifd.FaxOptions;
         SampleFormat = ifd.SampleFormat;
         Compression = ifd.Compression;
         Predictor = ifd.Predictor;
@@ -46,7 +49,15 @@ public sealed class TiffPageLayout
     public int Width { get; }
     public int Height { get; }
     public int SamplesPerPixel { get; }
+
+    /// <summary>Bits per sample of what <c>ReadSegment</c> writes: 8 for a 1/2/4-bit page, which is expanded.</summary>
     public int BitsPerSample { get; }
+
+    /// <summary>Bits per sample as stored in the file.</summary>
+    public int StoredBitsPerSample { get; }
+
+    internal bool LsbFirst { get; }
+    internal uint FaxOptions { get; }
     public TiffSampleFormat SampleFormat { get; }
     public TiffCompression Compression { get; }
     public TiffPredictor Predictor { get; }
@@ -240,8 +251,13 @@ public static partial class TiffReader
         var capacity = (int)capacityLong;
 
         var compression = layout.Compression;
-        var needsSwap = layout.FileIsLittleEndian != BitConverter.IsLittleEndian && bitsPerSample > 8;
-        var needsPredictor = layout.Predictor == TiffPredictor.HorizontalDifferencing;
+        var predictor = layout.Predictor;
+        var needsSwap = layout.FileIsLittleEndian != BitConverter.IsLittleEndian && bitsPerSample > 8
+            && predictor != TiffPredictor.FloatingPoint;
+        var needsPredictor = predictor != TiffPredictor.None;
+        var format = new SegmentFormat(compression, layout.StoredBitsPerSample, storedWidth, layout.LsbFirst,
+            layout.FaxOptions);
+        var staging = format.NeedsStaging ? new SegmentStaging() : null;
 
         var scratch = ArrayPool<byte>.Shared.Rent(capacity);
         byte[]? raw = null;
@@ -282,14 +298,14 @@ public static partial class TiffReader
                         publiclyVisible: true);
                 }
 
-                var samples = DecodeSegment(raw, 0, count, index, compression, false, scratch, inflateSource,
+                var samples = DecodeSegment(raw, 0, count, index, format, staging, false, scratch, inflateSource,
                     scratchStream, capacity);
 
                 // The same normalisation ReadInto applies, at the same widths.
                 if (needsSwap)
                     SwapPixelsToHostOrder(scratch.AsSpan(0, samples.Length), bitsPerSample);
                 if (needsPredictor)
-                    UndoHorizontalDifferencing(scratch.AsSpan(0, samples.Length), storedWidth, segSamplesPerPixel, bitsPerSample);
+                    UndoPredictor(predictor, scratch.AsSpan(0, samples.Length), storedWidth, segSamplesPerPixel, bitsPerSample);
 
                 PlaceRows(samples, destination, rect.Height, (int)storedRowBytes, rect.Width * bytesPerPixel, 0,
                     rect.Width, segBytesPerPixel, bytesPerPixel, bytesPerSample, plane);
@@ -301,6 +317,7 @@ public static partial class TiffReader
             if (inflateSource is not null) ArrayPool<byte>.Shared.Return(inflateSource);
             if (raw is not null) ArrayPool<byte>.Shared.Return(raw);
             ArrayPool<byte>.Shared.Return(scratch);
+            staging?.Dispose();
         }
 
         return rect;

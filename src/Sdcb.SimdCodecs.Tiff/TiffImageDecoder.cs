@@ -10,13 +10,15 @@ namespace Sdcb.SimdCodecs.Tiff;
 /// <see cref="IImageDecoder"/> adapter for TIFF, bridging <see cref="TiffReader"/>
 /// into the <c>Sdcb.SimdCodecs</c> facade.
 /// <para>
-/// Fidelity mapping (<see cref="TryDecode"/>, first page of multi-page files):
+/// Fidelity mapping (<see cref="TryDecode"/>, first page of multi-page files -- only that page is
+/// decoded, so a later page this reader cannot handle does not fail the file):
 /// 8/16-bit unsigned-integer and 32-bit IEEE-float samples map directly —
 /// <see cref="TiffPage.Pixels"/> is already interleaved, row-major, host byte
-/// order — and 16-bit IEEE-float (half) widens losslessly to
-/// <see cref="SampleFormat.Float32"/>. Layouts <see cref="IDecodedImage"/> cannot
-/// represent (palette / CMYK / YCbCr / MinIsWhite photometrics, signed or
-/// 32-bit-uint samples, sub-byte depths) return false rather than decode wrongly.
+/// order — 1/2/4-bit grey arrives from the reader expanded to 8 bits, and 16-bit IEEE-float
+/// (half) widens losslessly to <see cref="SampleFormat.Float32"/>. MinIsWhite grey (what fax and
+/// most bilevel scans use) is inverted to MinIsBlack. Layouts <see cref="IDecodedImage"/> cannot
+/// represent (palette / CMYK / YCbCr photometrics, signed or 32-bit-uint samples) return false
+/// rather than decode wrongly.
 /// </para>
 /// <para>
 /// Colour meaning: float pages surface <see cref="TransferFunction.Linear"/> +
@@ -72,26 +74,38 @@ public sealed class TiffImageDecoder : IImageDecoder
     private static bool TryDecodeCore(ReadOnlySpan<byte> data, [NotNullWhen(true)] out RasterImage? image)
     {
         image = null;
-        TiffDocument doc;
+        TiffPage page;
         try
         {
-            doc = TiffReader.Read(data);
+            page = TiffReader.ReadPage(data, 0);
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
         {
             return false;
         }
 
-        if (doc.Pages.Count == 0) return false;
-        var page = doc.Pages[0];
-
         // Only photometrics whose samples IDecodedImage represents directly: gray
-        // (MinIsBlack) and RGB. MinIsWhite would need inversion, palette an
-        // expansion, CMYK/YCbCr/CieLab a colour transform - all meaning changes
-        // this adapter refuses to make silently.
-        if (page.Photometric is not (TiffPhotometric.MinIsBlack or TiffPhotometric.Rgb)) return false;
+        // (MinIsBlack, or MinIsWhite once inverted) and RGB. Palette would need an
+        // expansion, CMYK/YCbCr/CieLab a colour transform - meaning changes this
+        // adapter refuses to make silently.
+        if (page.Photometric is not (TiffPhotometric.MinIsBlack or TiffPhotometric.MinIsWhite or TiffPhotometric.Rgb))
+            return false;
         var channels = page.SamplesPerPixel;
         if (channels is < 1 or > 4) return false;
+
+        if (page.Photometric == TiffPhotometric.MinIsWhite)
+        {
+            // Inversion is only defined here for unsigned grey; anything else under MinIsWhite is refused.
+            if (channels != 1 || page.SampleFormat != TiffSampleFormat.Uint) return false;
+            if (page.BitsPerSample == 8)
+            {
+                foreach (ref var b in page.Pixels.AsSpan()) b = (byte)~b;
+            }
+            else if (page.BitsPerSample == 16)
+            {
+                foreach (ref var v in MemoryMarshal.Cast<byte, ushort>(page.Pixels.AsSpan())) v = (ushort)~v;
+            }
+        }
 
         var color = page.SampleFormat == TiffSampleFormat.IeeeFloat
             ? new ColorEncoding { Transfer = TransferFunction.Linear, Float = FloatSemantics.SceneReferred }

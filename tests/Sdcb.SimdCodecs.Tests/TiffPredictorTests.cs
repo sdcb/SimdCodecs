@@ -48,10 +48,11 @@ public sealed class TiffPredictorTests
     public void APredictorTheReaderCannotInvert_Throws_RatherThanDecodingPastIt()
     {
         // Predictor 3 is a genuinely different transform (byte-plane split, then byte-wise
-        // differencing), so treating it as predictor 2 -- or ignoring it -- would produce wrong
-        // pixels with no signal to the caller. Refusing is the only honest option until it is
-        // implemented, and this test exists so that "not implemented" cannot silently become
-        // "silently wrong" again.
+        // differencing) and is defined for floating-point samples only; it is decoded for those
+        // (TiffFloatPredictorOracleTests). On 32-bit UNSIGNED samples, as here, treating it as
+        // predictor 2 -- or ignoring it -- would produce wrong pixels with no signal to the caller,
+        // so it is refused, and this test exists so that "not supported" cannot silently become
+        // "silently wrong".
         var original = BuildRamp(4, 3, 1, 32);
         var tiff = BuildDeflateTiff(original, 4, 3, 1, 32, TiffPredictor.FloatingPoint);
 
