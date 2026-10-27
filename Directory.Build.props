@@ -30,4 +30,10 @@
     <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/linqpad-samples')">
+    <!-- LINQPad shows a package's linqpad-samples folder in its NuGet browser. Each package carries
+         the samples about itself; the images they use are downloaded at run time (tools/sample-assets). -->
+    <None Include="linqpad-samples/*.linq" Pack="true" PackagePath="linqpad-samples" />
+  </ItemGroup>
+
 </Project>

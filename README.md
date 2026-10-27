@@ -31,16 +31,34 @@ Sdcb.SimdCodecs (facade)
  ├─ Png ──────────┬─ Color.Icc ─ Abstractions
  │                └─ Abstractions
  ├─ Tiff ─────────┬─ Png
- │                └─ Abstractions
+ │                └─ Abstractions (shares the internal T.4 fax code tables)
  ├─ Jpeg ─────────── Abstractions
  ├─ Jpeg.GainMap ─┬─ Jpeg
  │                └─ Abstractions
- ├─ Jbig2 ────────── Abstractions (shares the internal MQ decoder)
+ ├─ Jbig2 ────────── Abstractions (shares the internal MQ decoder and T.4 code tables)
  ├─ Jpeg2000 ─────── Abstractions (shares the internal MQ decoder)
  └─ Webp ─────────── Abstractions
 
 Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
 ```
+
+## LINQPad samples
+
+Each package ships the samples about itself in `linqpad-samples/`, which LINQPad lists in its NuGet
+browser (they also live in the repository under `src/<package>/linqpad-samples/`):
+
+| Package | Samples |
+|---|---|
+| `Sdcb.SimdCodecs` | `quick-start`, `all-formats`, `skiasharp`, `opencvsharp` |
+| `Sdcb.SimdCodecs.Jpeg` | `encode` (quality, subsampling, progressive, EXIF/XMP), `scaled-decode` |
+| `Sdcb.SimdCodecs.Jpeg.GainMap` | `ultrahdr` (write and read an Ultra HDR JPEG) |
+| `Sdcb.SimdCodecs.Png` | `read-write` |
+| `Sdcb.SimdCodecs.Tiff` | `multi-page` (incl. CCITT Group 4), `float-and-tiles`, `write` |
+| `Sdcb.SimdCodecs.Exif` | `read-exif` |
+| `Sdcb.SimdCodecs.Webp` | `decode`, `animation` |
+
+They download their images from `https://cv-public.sdcb.ai/simdcodecs/samples/v1/`; how those were
+made and where they come from is in [tools/sample-assets](tools/sample-assets/README.md).
 
 ## Build and test
 

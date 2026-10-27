@@ -265,3 +265,7 @@ BenchmarkDotNet.Artifacts/
 # Benchmark caches: corpus originals/masters/matrix and libjpeg-turbo binaries (never committed).
 benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/.cache/
 benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/.cache/
+
+# Sample asset generation: inputs and outputs are downloaded / generated, never committed (tools/sample-assets/README.md).
+tools/sample-assets/in/
+tools/sample-assets/out/
