@@ -64,6 +64,25 @@ See [`benchmarks/README.md`](benchmarks/README.md) for the overview, the
 [JPEG](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/README.md) benchmark (corpus, libjpeg-turbo /
 ImageSharp comparison, accuracy tables, [recorded baselines](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/))
 and the [WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/README.md) benchmark (libwebp comparison).
+
+## Publishing
+
+Pushing a `v*` tag runs the build and publishes its packages to NuGet.org. The tag
+triggers publication; it does not determine the package version.
+
+Publishing uses [NuGet Trusted Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing):
+
+1. In NuGet.org, create a trusted publishing policy for the appropriate package owner
+   and scopes, with repository owner `sdcb`, repository `SimdCodecs`, and workflow
+   file `dotnet.yml`. Leave the environment empty.
+2. Set the GitHub Actions repository variable `NUGET_USER` to the NuGet.org username
+   used to publish the packages (not an email address).
+3. After a successful tag publication, revoke the old long-lived NuGet API key and
+   remove the `NUGET_API_KEY` GitHub secret if no other workflows need it.
+
+The workflow exchanges a GitHub OIDC token for a short-lived NuGet API key; no
+long-lived API key needs to be stored in GitHub.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).

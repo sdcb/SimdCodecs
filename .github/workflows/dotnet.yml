@@ -114,10 +114,19 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    permissions:
+      id-token: write
     steps:
     - name: Download NuGet packages
       uses: actions/download-artifact@v8
       with:
         name: nuget-packages
+    - name: NuGet login
+      id: login
+      uses: NuGet/login@v1
+      with:
+        user: ${{ vars.NUGET_USER }}
     - name: Push NuGet package
-      run: dotnet nuget push **/*.nupkg -s nuget.org -k ${{ secrets.NUGET_API_KEY }}
+      env:
+        NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+      run: dotnet nuget push **/*.nupkg -s https://api.nuget.org/v3/index.json -k "$NUGET_API_KEY"
