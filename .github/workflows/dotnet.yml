@@ -1,0 +1,131 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  # The family Major.Minor lives in Directory.Build.props (VersionMajorMinor) and the
+  # build job reads it back; the patch number is the CI run number.
+  VERSION_REV: ${{ github.run_attempt }}
+  VERSION_HASH: +${{ github.sha }}
+  BUILD_CONF: Release
+  # The build job CAPTURES a dotnet invocation's stdout to resolve the version, so
+  # the SDK's first-run banner must not be able to land in it.
+  DOTNET_NOLOGO: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - name: Resolve version prefix
+      # Read the family Major.Minor back from the one place it is written
+      # (Directory.Build.props) instead of restating it here. -getProperty only EVALUATES
+      # the file: nothing is built and no restore is needed, so this can run before either.
+      # The value is CAPTURED, so nothing else may print to stdout: DOTNET_NOLOGO (workflow
+      # env) keeps the SDK first-run banner out, and the shape check makes anything
+      # unexpected, or a renamed property, fail the run rather than quietly publishing the
+      # whole family as ".<run>".
+      run: |
+        MM="$(dotnet msbuild Directory.Build.props -getProperty:VersionMajorMinor -nologo)"
+        case "$MM" in
+          [0-9]*.[0-9]*) ;;
+          *) echo "::error::VersionMajorMinor did not resolve from Directory.Build.props (got '$MM')"; exit 1 ;;
+        esac
+        echo "VERSION_PREFIX=${MM}.${{ github.run_number }}" >> "$GITHUB_ENV"
+    # Oracles are fetched/built BEFORE dotnet build: the test csproj copies
+    # Oracle/bin/jpegenc.exe to the output with a glob evaluated during the build.
+    #
+    # jbig2dec is the reference JBIG2 decoder that Jbig2OracleTests checks our
+    # codestreams against. Used strictly as a BINARY -- it is AGPL and can never
+    # be a port source for this repo (see AGENTS.md and
+    # tests/Sdcb.SimdCodecs.Tests/Oracle/jbig2/README.md).
+    #
+    # webp brings dwebp and anim_dump, the libwebp reference tools that the live
+    # WebP comparisons (WebpOracleTests / WebpAnimationOracleTests) run against.
+    # Binary only, like the rest: Sdcb.SimdCodecs.Webp is spec-derived from RFC 6386 /
+    # RFC 9649. Ubuntu's build is older than the libwebp 1.6.0 the committed digests
+    # were made with; the two agree on every fixture, and a disagreement between
+    # them would be worth knowing about rather than pinning away.
+    - name: Install codec oracles
+      run: sudo apt-get update && sudo apt-get install -y jbig2dec webp
+    # jpegenc wraps the pinned stb_image_write.h that JpegEncoder was ported
+    # against, verified by SHA-256 on download. The committed golden digests
+    # already guard the encoder without it; what this adds is the check that the
+    # golden still matches the *live* reference rather than drifting into a
+    # self-consistent fiction.
+    - name: Build JPEG encoder oracle (stb_image_write)
+      run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/jpegenc/build.sh
+    # OpenJPEG's opj_compress / opj_decompress, the JPEG 2000 reference tools.
+    # Downloaded rather than built: OpenJPEG wants CMake, and upstream publishes
+    # official builds for both platforms that matter, so this runner and the dev
+    # box execute the SAME BYTES rather than merely the same source. Pinned by
+    # version and SHA-256 in the script. Deliberately NOT `apt-get install
+    # libopenjp2-tools`, which is 2.4.0 on jammy and 2.5.x on noble -- CI and the
+    # dev box would then quietly disagree about what the reference is.
+    - name: Fetch JPEG 2000 oracle (OpenJPEG)
+      run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/jpeg2000/fetch.sh
+    - name: Restore dependencies
+      run: dotnet restore SimdCodecs.slnx
+    - name: Build
+      run: dotnet build SimdCodecs.slnx -c $BUILD_CONF --no-restore -p:Version=${VERSION_PREFIX}${VERSION_REV}${VERSION_HASH} -p:FileVersion=${VERSION_PREFIX}.${VERSION_REV} -p:ContinuousIntegrationBuild=true
+    - name: Test
+      # REQUIRE_ORACLES turns "oracle missing" from a skip into a failure. Every
+      # oracle harness degrades to a skip so a clean clone stays green, which is
+      # right locally and misleading here -- without this, a CI job that stopped
+      # installing jbig2dec or building an oracle would look exactly like one
+      # that did. All four external oracles (jbig2dec, jpegenc, OpenJPEG
+      # and libwebp's dwebp / anim_dump) are gated and fetched or built above,
+      # so this run has no silently-absent oracle left.
+      env:
+        REQUIRE_ORACLES: 1
+      run: dotnet test SimdCodecs.slnx -c $BUILD_CONF --no-build
+    - name: Test JPEG on forced ISA fallbacks
+      # The JPEG kernels dispatch Vector256 (AVX2) -> Vector128 -> scalar and must be
+      # bit-identical on every tier; the golden digests only see the tier this runner
+      # dispatches to. DOTNET_EnableAVX2=0 forces the Vector128 kernels,
+      # DOTNET_EnableHWIntrinsic=0 the scalar ones.
+      run: |
+        DOTNET_EnableAVX2=0 dotnet test tests/Sdcb.SimdCodecs.Tests -c $BUILD_CONF --no-build --filter "FullyQualifiedName~Jpeg"
+        DOTNET_EnableHWIntrinsic=0 dotnet test tests/Sdcb.SimdCodecs.Tests -c $BUILD_CONF --no-build --filter "FullyQualifiedName~Jpeg"
+    - name: Upload NuGet package
+      uses: actions/upload-artifact@v7
+      with:
+        name: nuget-packages
+        path: '**/*.nupkg'
+        retention-days: 5
+
+  jpeg-arm64:
+    # Vector128 maps to AdvSimd here: the same bit-exact contract on another ISA.
+    # No external oracles on this runner, so oracle tests skip (no REQUIRE_ORACLES).
+    runs-on: ubuntu-24.04-arm
+    steps:
+    - uses: actions/checkout@v7
+    - name: Test JPEG (arm64)
+      run: dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg"
+
+  jpeg-aot:
+    # NativeAOT picks the vector tier at compile time: its decodes must equal the JIT's.
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - name: NativeAOT prerequisites
+      run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+    - name: NativeAOT smoke test
+      run: bash tests/Sdcb.SimdCodecs.AotSmoke/run.sh
+
+  publish-nuget:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+    - name: Download NuGet packages
+      uses: actions/download-artifact@v8
+      with:
+        name: nuget-packages
+    - name: Push NuGet package
+      run: dotnet nuget push **/*.nupkg -s nuget.org -k ${{ secrets.NUGET_API_KEY }}

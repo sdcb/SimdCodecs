@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <PackageId>Sdcb.SimdCodecs.Jpeg.GainMap</PackageId>
+    <Product>Sdcb.SimdCodecs.Jpeg.GainMap</Product>
+    <Authors>sdcb</Authors>
+    <Description>Gain-map ("Ultra HDR") JPEG support: read, assemble, and generate Adobe hdrgm 1.0 / Android Ultra HDR v1 gain-map JPEGs (GContainer XMP + MPF, the form Chromium renders as HDR). Splices metadata around baseline JPEGs from any encoder (the IccInjector pattern), decodes both renditions via Sdcb.SimdCodecs.Jpeg, and reconstructs display-adaptive HDR linear floats. Pure-managed, AOT-compatible.</Description>
+    <PackageTags>jpeg ultrahdr gain-map gainmap hdr hdrgm mpf xmp aot</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Sdcb.SimdCodecs.Abstractions/Sdcb.SimdCodecs.Abstractions.csproj" />
+    <ProjectReference Include="../Sdcb.SimdCodecs.Jpeg/Sdcb.SimdCodecs.Jpeg.csproj" />
+  </ItemGroup>
+
+</Project>

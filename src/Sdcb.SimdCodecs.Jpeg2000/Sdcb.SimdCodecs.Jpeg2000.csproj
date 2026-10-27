@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <!-- On the name. PDF calls the filter /JPXDecode and the rest of this family
+         uses format short names (Jpeg, Png, Jbig2), so Sdcb.SimdCodecs.Jpx was the
+         obvious fit. It is not the one shipped, because "JPX" is also the name
+         of JPEG 2000 Part 2 (ISO/IEC 15444-2) — the extended format with
+         arbitrary colour spaces, opacity channels and multiple codestreams —
+         and Part 2 is precisely what this package refuses to implement. A
+         package id that names the thing it does not do is a trap for whoever
+         reads the NuGet listing rather than this file. Sdcb.SimdCodecs.Jpeg2000
+         names the standard instead: uglier, unambiguous, and it stays honest
+         when Part 2 keeps not arriving. PDF's filter name is in the
+         description and the tags, where a search will find it. -->
+
+    <PackageId>Sdcb.SimdCodecs.Jpeg2000</PackageId>
+    <Product>Sdcb.SimdCodecs.Jpeg2000</Product>
+    <Authors>sdcb</Authors>
+    <Description>Pure-managed JPEG 2000 (ITU-T T.800 / ISO-IEC 15444-1, Part 1) image decoder for .NET, written clean-room from the specification and aimed at PDF's /JPXDecode filter. Decodes the raw J2K codestream and the JP2 container, registering with the Sdcb.SimdCodecs facade by magic bytes. AOT-compatible. Decode only, Part 1 only.</Description>
+    <PackageTags>jpeg2000 jp2 j2k jpx jpxdecode t800 15444 ebcot dwt pdf image codec decoder aot</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- IImageDecoder / IDecodedImage contract for the Sdcb.SimdCodecs facade,
+         and MqDecoder: T.800 Annex C's arithmetic coder is T.88 Annex E's, so
+         the two codecs share one internal copy from here. -->
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+  </ItemGroup>
+
+</Project>

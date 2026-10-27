@@ -1,0 +1,28 @@
+# webp-animation-oracle-golden.tsv - per-frame anim_dump 1.6.0 RGBA baselines.
+# fixture<TAB>frame<TAB>canvas-width<TAB>canvas-height<TAB>timestamp-ms<TAB>duration-ms<TAB>sha256(RGBA).
+# Regenerate with REGEN_ANIMATION_WEBP_ORACLE=1 and anim_dump on PATH or ANIM_DUMP.
+anim-gif-transparent.webp	0	16	12	0	200	99b199a6e9483685ea2b8941fa8f0802d4582d8205cc1e33a27f1cbed6a0f4d7
+anim-gif-transparent.webp	1	16	12	200	200	22865cebc3049d53bd5fe9dbb7f94f0395971f2d688cdc535abe6e1d8fcd423e
+anim-gif-transparent.webp	2	16	12	400	200	557d37a28ec78322461ac8447c4bfc42092cf88a4059ef4c77131cc6f15cb054
+anim-gif-transparent.webp	3	16	12	600	200	503537d394ddc2ad0542d399405626a0f9fce8dfcdc2a8656912f0ed4a7139a0
+anim-img2webp-lossless.webp	0	12	10	0	100	016ac5ef1cfd15b102d530a48e9e0c19ceb2e84d5ed980ae32e9ddfda5dde5f4
+anim-img2webp-lossless.webp	1	12	10	100	80	153f186447034b916f30ab2e8d413422786473588857ebaf5a66e8a72fc0f171
+anim-img2webp-lossless.webp	2	12	10	180	120	bae63e8461c1af1a278d11911d7bd053676175ed23f172aadab374823cfef5b1
+anim-img2webp-lossy.webp	0	12	10	0	100	8f2c798cee5a3d9061c57afc8122c3a17520f2ca65b91b0c6996302a8421cb19
+anim-img2webp-lossy.webp	1	12	10	100	75	692ab84f2efe84111cedbfbf45de3b517225a457a3809bb0db58b7db1e08690f
+anim-img2webp-lossy.webp	2	12	10	175	125	34c5fbb88f34f8dd720be51b189f38c35d85e615fdfd39f2e47cb52f4c0e982a
+anim-img2webp-mixed.webp	0	12	10	0	100	8f2c798cee5a3d9061c57afc8122c3a17520f2ca65b91b0c6996302a8421cb19
+anim-img2webp-mixed.webp	1	12	10	100	60	36fe82d5036e1ec440315087e6adbadfc9e0da4826e592e34ce5fcc18b8ebc30
+anim-img2webp-mixed.webp	2	12	10	160	140	1b308f0ba687d13a10624fb9a668f0e54b29cf8358eb8a7f58de80d938f88118
+anim-webpmux-combinations.webp	0	12	9	0	80	f095c1de1150512a4c8d601469a65489dbd50f4e818be5b6e221c857911de6b5
+anim-webpmux-combinations.webp	1	12	9	80	90	32450429d0b4328073f290e5d05c6a7de0c85e251242b70f7caabf63c842ed7e
+anim-webpmux-combinations.webp	2	12	9	170	100	b8c4d6ad00abb088a653d3a4305901b7b4f159b45ffda647a3702f9d7ade2c22
+anim-webpmux-combinations.webp	3	12	9	270	110	615fdf028e562aa8ebe3ba678d179146d427d61585686cc68f959032afae2b08
+anim-webpmux-combinations.webp	4	12	9	380	120	aa2961c664de9ac71593737642d910ac96ed1417dcdb8949b683238231eef3b3
+anim-webpmux-metadata.webp	0	12	9	0	80	f095c1de1150512a4c8d601469a65489dbd50f4e818be5b6e221c857911de6b5
+anim-webpmux-metadata.webp	1	12	9	80	90	32450429d0b4328073f290e5d05c6a7de0c85e251242b70f7caabf63c842ed7e
+anim-webpmux-metadata.webp	2	12	9	170	100	b8c4d6ad00abb088a653d3a4305901b7b4f159b45ffda647a3702f9d7ade2c22
+anim-webpmux-metadata.webp	3	12	9	270	110	615fdf028e562aa8ebe3ba678d179146d427d61585686cc68f959032afae2b08
+anim-webpmux-metadata.webp	4	12	9	380	120	aa2961c664de9ac71593737642d910ac96ed1417dcdb8949b683238231eef3b3
+anim-webpmux-mixed-format.webp	0	12	10	0	80	f31a1c574cd9a65800e6aab807a8b93eff6e6b67f5b0cc97c6d4dc4371c15041
+anim-webpmux-mixed-format.webp	1	12	10	80	120	016ac5ef1cfd15b102d530a48e9e0c19ceb2e84d5ed980ae32e9ddfda5dde5f4

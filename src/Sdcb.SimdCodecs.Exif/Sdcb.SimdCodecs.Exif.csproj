@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <PackageId>Sdcb.SimdCodecs.Exif</PackageId>
+    <Product>Sdcb.SimdCodecs.Exif</Product>
+    <Authors>sdcb</Authors>
+    <Description>Pure-managed EXIF metadata reader for .NET. Parses EXIF blobs from JPEG (APP1), TIFF (sub-IFD), and PNG (eXIf chunk) — all of which share the same TIFF-IFD structure. Strongly-typed projection of well-known tags + raw tag map for the long tail / vendor MakerNote.</Description>
+    <PackageTags>exif metadata jpeg tiff png aot</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Uses TiffFieldType enum and ExifTagValue carries it forward to callers. -->
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Tiff\Sdcb.SimdCodecs.Tiff.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+  </ItemGroup>
+
+</Project>

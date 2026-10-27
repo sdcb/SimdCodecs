@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <PackageId>Sdcb.SimdCodecs.Abstractions</PackageId>
+    <Product>Sdcb.SimdCodecs.Abstractions</Product>
+    <Authors>sdcb</Authors>
+    <Description>Shared abstractions for the Sdcb.SimdCodecs image codec family: IImageDecoder (magic-byte sniff + fidelity/zero-copy decode) and IDecodedImage / RasterImage (a codec-neutral decoded raster). Ships the ITU-T H.273 colour vocabulary (ColorPrimaries / TransferFunction / MatrixCoefficients) and a ColorEncoding record surfacing what decoded samples mean (sRGB, PQ/HLG HDR, linear light). AOT-compatible, zero runtime dependencies.</Description>
+    <PackageTags>image codec decoder raster aot abstractions</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+    <!-- MqDecoder is shared internal source, not API. ITU-T T.88 Annex E and
+         T.800 Annex C specify the same MQ arithmetic coder with the same Qe
+         table, so Sdcb.SimdCodecs.Jbig2 and Sdcb.SimdCodecs.Jpeg2000 want one copy rather
+         than two that can drift. InternalsVisibleTo cannot cross two separately
+         shipped packages, and this package is already a hard dependency of
+         every codec in the family, so parking the coder here adds no dependency
+         edge that was not there - it costs exactly these two lines. The
+         alternative considered was a linked <Compile Include> into both
+         csprojs; rejected because two assemblies would then export the same
+         type name to the test assembly, and CS0433 is not fixable by
+         qualifying, only by extern alias. -->
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Jbig2" />
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Jpeg2000" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Sdcb.SimdCodecs.Abstractions/Sdcb.SimdCodecs.Abstractions.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Color.Icc/Sdcb.SimdCodecs.Color.Icc.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs/Sdcb.SimdCodecs.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Exif/Sdcb.SimdCodecs.Exif.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Jbig2/Sdcb.SimdCodecs.Jbig2.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Jpeg/Sdcb.SimdCodecs.Jpeg.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Jpeg.GainMap/Sdcb.SimdCodecs.Jpeg.GainMap.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Jpeg.IccInjector/Sdcb.SimdCodecs.Jpeg.IccInjector.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Jpeg2000/Sdcb.SimdCodecs.Jpeg2000.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Png/Sdcb.SimdCodecs.Png.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Tiff/Sdcb.SimdCodecs.Tiff.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Webp/Sdcb.SimdCodecs.Webp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Sdcb.SimdCodecs.Tests/Sdcb.SimdCodecs.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- NativeAOT smoke test for the JPEG decoder; not part of SimdCodecs.slnx. run.sh
+       decodes the same inputs under the JIT and as a NativeAOT binary and diffs the
+       pixel digests: the AOT compiler fixes the ISA tier at build time, so this is the
+       check that its dispatch lands on a bit-identical kernel. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Jpeg\Sdcb.SimdCodecs.Jpeg.csproj" />
+  </ItemGroup>
+
+</Project>

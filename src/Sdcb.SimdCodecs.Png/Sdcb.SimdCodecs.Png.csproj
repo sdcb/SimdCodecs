@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <PackageId>Sdcb.SimdCodecs.Png</PackageId>
+    <Product>Sdcb.SimdCodecs.Png</Product>
+    <Authors>sdcb</Authors>
+    <Description>Pure-managed PNG encoder + decoder for .NET. Writer: adaptive per-row filter selection (libpng "minimum sum of absolute values" heuristic), 8/16-bit RGBA/Gray. Reader: chunk parsing with CRC validation, color types 0/2/4/6 at 8/16-bit. Both sides handle iCCP / sRGB / gAMA / cHRM / eXIf metadata plus PNG-3 HDR signaling chunks cICP (Coding-Independent Code Points), mDCv (Mastering Display Color Volume), cLLI (Content Light Level Info) — full HDR10 / HLG round-trip. Also exports PngPredictor as a reusable row-unfilter building block (TIFF Predictor=2 / PDF FlateDecode). AOT-compatible.</Description>
+    <PackageTags>png image codec encoder decoder hdr hdr10 png3 aot</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- IccProfiles.SRgbV4 is the documented source of profile bytes for the
+         iCCP-writing overloads (doc crefs in PngWriter / PngWriteOptions). The
+         H.273 enum codepoint definitions CicpChunk uses live in
+         Sdcb.SimdCodecs.Abstractions. -->
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Color.Icc\Sdcb.SimdCodecs.Color.Icc.csproj" />
+    <!-- IImageDecoder / IDecodedImage contract for the Sdcb.SimdCodecs facade,
+         plus the H.273 enums (ColorPrimaries / TransferFunction /
+         MatrixCoefficients) and ColorEncoding shared by CicpChunk and
+         IccProfiles.WithCicp - one vocabulary for PNG cICP signalling, ICC cicp
+         signalling, and the codec-neutral decode contract. -->
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <PackageId>Sdcb.SimdCodecs.Jpeg.IccInjector</PackageId>
+    <Product>Sdcb.SimdCodecs.Jpeg.IccInjector</Product>
+    <Authors>sdcb</Authors>
+    <Description>Splice an ICC profile (APP2 segment) into an existing JPEG byte stream produced by any encoder. Pure-managed, AOT-compatible, single-segment ICC only (up to 65519-byte profiles). Note: this is NOT a JPEG codec — the JPEG decoder and encoder both live in the Sdcb.SimdCodecs.Jpeg package; this stays a focused metadata-splicing helper.</Description>
+    <PackageTags>jpeg icc color profile aot</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+</Project>

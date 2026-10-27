@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <PackageId>Sdcb.SimdCodecs.Jpeg</PackageId>
+    <Product>Sdcb.SimdCodecs.Jpeg</Product>
+    <Authors>sdcb</Authors>
+    <Description>Pure-managed JPEG (ITU-T T.81 / ISO 10918) codec for .NET. Decoder: baseline sequential + progressive DCT, restart intervals, 4:4:4 / 4:2:2 / 4:2:0 / arbitrary chroma subsampling, grayscale, YCbCr, RGB-marked, and Adobe CMYK / YCCK (APP14) streams, plus scaled decode at 1/2, 1/4, 1/8 resolution via reduced inverse DCT — a 33-megapixel source can decode straight to a thumbnail-sized raster without the full-resolution intermediate ever existing. Encoder: baseline sequential DCT, 4:4:4 / 4:2:0, quality 1..100 — a faithful port of the stb_image_write JPEG writer, byte-for-byte identical to that reference. Decodes MCU row by MCU row straight into the caller's buffer (RGBA / BGRA / RGB at any stride) with no managed allocation and a working set of a few MCU rows, with Vector256 / Vector128 (SSE, AdvSimd) / scalar kernels that are bit-identical across ISAs; JpegSegmentScanner surfaces APPn metadata segments. Entropy decoding is coefficient-exact against libjpeg-turbo; sample reconstruction (single-precision IDCT, unrounded chroma interpolation, T.871 colour conversion) is at least as close to a double-precision reference as libjpeg-turbo's accurate mode. AOT-compatible.</Description>
+    <PackageTags>jpeg jpg image codec decoder encoder scaled idct thumbnail aot</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- IImageDecoder / IDecodedImage contract for the Sdcb.SimdCodecs facade. -->
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- JpegIdctEquivalenceTests drives Idct8x8Scalar / Idct8x8Simd against each other
+         directly; the golden digests only cover whichever path this machine dispatches to. -->
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+    <!-- JpegDiagnostics (coefficients + pre-upsampling planes) for the accuracy tooling. -->
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Jpeg.Benchmarks" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <PackageId>Sdcb.SimdCodecs.Jbig2</PackageId>
+    <Product>Sdcb.SimdCodecs.Jbig2</Product>
+    <Authors>sdcb</Authors>
+    <Description>Pure-managed JBIG2 (ITU-T T.88) bilevel image decoder for .NET, written clean-room from the specification and aimed at PDF's /JBIG2Decode filter. A PDF-embedded JBIG2 stream is not a file — it has no file header, its segment dictionaries live out of band in /DecodeParms /JBIG2Globals, and its dimensions come from the image dictionary — so the primary entry point takes exactly those pieces: Jbig2Decoder.Decode(embedded, globals, width, height). Standalone .jb2 files (sequential and random-access organisation) also decode, and register with the Sdcb.SimdCodecs facade by magic bytes. Scope: the complete arithmetic decoding path — MQ arithmetic decoder (Annex E), generic regions both ways (templates 0-3 with TPGDON and arbitrary AT pixels, and MMR / ITU-T T.6, the CCITT Group 4 coding), generic refinement regions, symbol dictionaries and text regions (every reference corner, transposed strips, per-instance refinement, refine/aggregate symbols, and cross-stream dictionaries via /JBIG2Globals), pattern dictionaries and halftone regions, page information, and region composition (OR/AND/XOR/XNOR/REPLACE). Validated against jbig2enc output, libtiff Group 4 output, and the jbig2dec reference decoder. Not implemented: the Huffman-coded variants (SDHUFF/SBHUFF and custom table segments), MMR inside pattern dictionaries and halftone regions, HENABLESKIP, and TPGRON in a refinement region — each throws NotSupportedException naming the feature rather than returning a wrong raster. Output is one byte per pixel (1 = black, T.88's own polarity) plus an 8-bit grey projection; /Decode inversion and ImageMask semantics stay in the caller's PDF layer. Hardened against hostile streams — since a PDF-supplied codestream chooses its own region dimensions and T.88's arithmetic decoder keeps producing decisions past the end of its data, decoding is bounded by a 2^28-pixel ceiling per bitmap plus a total budget scaled to the caller's page size, and every decoding loop is guaranteed to make progress; malformed input raises InvalidDataException rather than exhausting memory or spinning. AOT-compatible.</Description>
+    <PackageTags>jbig2 t88 bilevel pdf jbig2decode mmr group4 image codec decoder aot</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- IImageDecoder / IDecodedImage contract for the Sdcb.SimdCodecs facade. -->
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+  </ItemGroup>
+
+</Project>

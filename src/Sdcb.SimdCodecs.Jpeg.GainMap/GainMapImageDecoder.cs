@@ -1,0 +1,98 @@
+using System.Diagnostics.CodeAnalysis;
+using Sdcb.SimdCodecs.Abstractions;
+
+namespace Sdcb.SimdCodecs.Jpeg;
+
+/// <summary>
+/// <see cref="IImageDecoder"/> adapter for gain-map ("Ultra HDR") JPEGs, so the
+/// <c>Sdcb.SimdCodecs</c> facade decodes them transparently. Register it
+/// <em>ahead of</em> the plain <c>JpegImageDecoder</c>: its <see cref="CanDecode"/>
+/// matches only a JPEG that actually carries a locatable, hdrgm-tagged gain map,
+/// so ordinary JPEGs fall through to the base decoder unchanged.
+/// <para>
+/// The decode is split by tier, mirroring how the format is meant to be consumed
+/// (see <see cref="GainMapDecodedImage"/>): the fidelity/float tier
+/// (<see cref="TryDecode"/>) reconstructs the full authored HDR, while the 8-bit
+/// display tier (<see cref="TryDecodeIntoRgba8"/>) returns the SDR base rendition.
+/// HDR-base files and any gain map that fails to reconstruct degrade gracefully to
+/// the plain SDR primary rather than failing the facade.
+/// </para>
+/// </summary>
+public sealed class GainMapImageDecoder : IImageDecoder
+{
+    /// <inheritdoc />
+    public static int SignatureLength => 3;
+
+    /// <inheritdoc />
+    /// <remarks>Beyond the JPEG magic this walks the APP segments to confirm a
+    /// locatable gain map (<see cref="JpegGainMap.TrySplit"/>), so it needs the whole
+    /// file — the facade passes it. Given only a short header prefix it returns false
+    /// and the stream is handled as a plain JPEG.</remarks>
+    public static bool CanDecode(ReadOnlySpan<byte> header) =>
+        header.Length >= 3 && header[0] == 0xFF && header[1] == 0xD8 && header[2] == 0xFF
+        && JpegGainMap.TrySplit(header, out _, out _, out _);
+
+    /// <inheritdoc />
+    public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
+    {
+        info = default;
+        try
+        {
+            var ji = JpegDecoder.ReadInfo(data);
+            // A reconstructable gain map presents as the HDR float fidelity tier;
+            // the HDR-base form (unsupported reconstruction) reports its SDR primary.
+            info = JpegGainMap.TrySplit(data, out _, out _, out var metadata) && !metadata.BaseRenditionIsHdr
+                ? new ImageInfo(ji.Width, ji.Height, 3, SampleFormat.Float32)
+                : new ImageInfo(ji.Width, ji.Height, 4, SampleFormat.UInt8);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image)
+    {
+        image = null;
+
+        // Full HDR when the gain map is present and reconstructable; the HDR-base
+        // form is not (ReconstructHdr rejects it), so fall through to the SDR base.
+        if (JpegGainMap.TryRead(data, out var gainMap) && !gainMap.Metadata.BaseRenditionIsHdr)
+        {
+            image = new GainMapDecodedImage(gainMap, gainMap.Metadata.HdrCapacityMax);
+            return true;
+        }
+
+        // Graceful degradation: decode the SDR primary as a plain JPEG. This is the
+        // same image a gain-map-unaware viewer sees, so nothing is lost visually.
+        try
+        {
+            var jpeg = JpegDecoder.Decode(data);
+            image = new RasterImage(jpeg.Width, jpeg.Height, 4, SampleFormat.UInt8, jpeg.Pixels);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination)
+    {
+        // The int/display path is the SDR base. A gain-map JPEG's primary image IS
+        // the standalone SDR rendition, so the plain decoder yields it directly — no
+        // gain-map parsing or HDR reconstruction needed.
+        try
+        {
+            _ = JpegDecoder.DecodeTo(data, rgbaDestination);
+            return true;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException)
+        {
+            return false;
+        }
+    }
+}

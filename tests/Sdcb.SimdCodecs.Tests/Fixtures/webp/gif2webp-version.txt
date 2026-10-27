@@ -1,0 +1,3 @@
+WebP Encoder version: 1.6.0
+WebP Mux version: 1.6.0
+libsharpyuv: 0.4.2

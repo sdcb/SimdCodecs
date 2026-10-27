@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <PackageId>Sdcb.SimdCodecs.Color.Icc</PackageId>
+    <Product>Sdcb.SimdCodecs.Color.Icc</Product>
+    <Authors>sdcb</Authors>
+    <Description>ICC v4 colour-management primitives for .NET image-codec consumers. Bundled sRGB v4 profile (588-byte LittleCMS-generated, ReadOnlyMemory&lt;byte&gt; for embedding in TIFF/PNG/JPEG) plus a WithCicp(...) helper that injects an ICC v4.4 cicp tag carrying H.273 colour-primaries / transfer-function codepoints, so HDR10, HLG, wide-gamut, and linear-scene-light signalling can be added on top of any base profile. The H.273 ColorPrimaries / TransferFunction / MatrixCoefficients enums (shared with Sdcb.SimdCodecs.Png's PNG-3 cICP chunk) live in Sdcb.SimdCodecs.Abstractions. AOT-compatible.</Description>
+    <PackageTags>icc color profile srgb aot</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="sRGB-v4.icc" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The H.273 vocabulary (ColorPrimaries / TransferFunction / MatrixCoefficients)
+         that WithCicp consumes lives in Abstractions, alongside the
+         codec-neutral ColorEncoding that shares it. -->
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

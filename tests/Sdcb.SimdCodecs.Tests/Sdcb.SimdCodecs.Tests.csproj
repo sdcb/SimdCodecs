@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Magick.NET bundles ImageMagick, whose CVEs (NU190x) live in decoders for exotic
+         formats the tests never invoke — it only encodes/decodes rasters we generate
+         ourselves. Test-only dependency, never shipped; silence the audit noise here. -->
+    <NoWarn>$(NoWarn);NU1901;NU1902;NU1903;NU1904</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Magick.NET-Q16-HDRI-AnyCPU" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs\Sdcb.SimdCodecs.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Tiff\Sdcb.SimdCodecs.Tiff.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Exif\Sdcb.SimdCodecs.Exif.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Png\Sdcb.SimdCodecs.Png.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Color.Icc\Sdcb.SimdCodecs.Color.Icc.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Jpeg.IccInjector\Sdcb.SimdCodecs.Jpeg.IccInjector.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Jpeg.GainMap\Sdcb.SimdCodecs.Jpeg.GainMap.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Jpeg\Sdcb.SimdCodecs.Jpeg.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Jbig2\Sdcb.SimdCodecs.Jbig2.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Jpeg2000\Sdcb.SimdCodecs.Jpeg2000.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Webp\Sdcb.SimdCodecs.Webp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- jpegenc oracle (built via Oracle\jpegenc\build.sh); skipped if absent. -->
+    <None Include="Oracle\bin\jpegenc.exe" CopyToOutputDirectory="PreserveNewest" Link="Oracle\jpegenc.exe" Condition="Exists('Oracle\bin\jpegenc.exe')" />
+  </ItemGroup>
+
+</Project>
