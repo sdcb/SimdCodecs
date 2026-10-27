@@ -1,8 +1,8 @@
 <Project>
 
   <PropertyGroup>
-    <!-- Every package ships in lockstep: CI sets the patch number from the run number
-         (see .github/workflows/dotnet.yml), so only Major.Minor lives here. -->
+    <!-- Non-release builds use this version family; release packages use the Git tag
+         (see .github/workflows/dotnet.yml). -->
     <VersionMajorMinor>0.1</VersionMajorMinor>
     <VersionPrefix Condition="'$(VersionPrefix)' == ''">$(VersionMajorMinor).0</VersionPrefix>
     <AssemblyVersion>$(VersionMajorMinor).0.0</AssemblyVersion>

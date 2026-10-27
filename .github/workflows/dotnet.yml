@@ -3,17 +3,13 @@ name: CI/CD
 on:
   push:
     branches: [ main ]
-    # Pushing a tag (e.g. v1.2) is what publishes to NuGet; branch pushes only build and test.
+    # Pushing a version tag (e.g. v1.2.3) publishes to NuGet; branch pushes only build and test.
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
 
 env:
-  # The family Major.Minor lives in Directory.Build.props (VersionMajorMinor) and the
-  # build job reads it back; the patch number is the CI run number.
-  VERSION_REV: ${{ github.run_attempt }}
-  VERSION_HASH: +${{ github.sha }}
   BUILD_CONF: Release
   # The build job CAPTURES a dotnet invocation's stdout to resolve the version, so
   # the SDK's first-run banner must not be able to land in it.
@@ -24,21 +20,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
-    - name: Resolve version prefix
-      # Read the family Major.Minor back from the one place it is written
-      # (Directory.Build.props) instead of restating it here. -getProperty only EVALUATES
-      # the file: nothing is built and no restore is needed, so this can run before either.
-      # The value is CAPTURED, so nothing else may print to stdout: DOTNET_NOLOGO (workflow
-      # env) keeps the SDK first-run banner out, and the shape check makes anything
-      # unexpected, or a renamed property, fail the run rather than quietly publishing the
-      # whole family as ".<run>".
+    - name: Resolve version
       run: |
-        MM="$(dotnet msbuild Directory.Build.props -getProperty:VersionMajorMinor -nologo)"
-        case "$MM" in
-          [0-9]*.[0-9]*) ;;
-          *) echo "::error::VersionMajorMinor did not resolve from Directory.Build.props (got '$MM')"; exit 1 ;;
-        esac
-        echo "VERSION_PREFIX=${MM}.${{ github.run_number }}" >> "$GITHUB_ENV"
+        if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF_TYPE" == tag ]]; then
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$ ]]; then
+            echo "::error::Tag must be a version such as v1.2.3 or v1.2.3-rc.1"
+            exit 1
+          fi
+          VERSION="${GITHUB_REF_NAME#v}"
+          CORE_VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+          PRERELEASE="${BASH_REMATCH[5]}"
+          IFS='.' read -r -a identifiers <<< "$PRERELEASE"
+          for identifier in "${identifiers[@]}"; do
+            if [[ "$identifier" =~ ^0[0-9]+$ ]]; then
+              echo "::error::Numeric prerelease identifiers must not have leading zeroes"
+              exit 1
+            fi
+          done
+          echo "BUILD_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "FILE_VERSION=${CORE_VERSION}.0" >> "$GITHUB_ENV"
+        else
+          MM="$(dotnet msbuild Directory.Build.props -getProperty:VersionMajorMinor -nologo)"
+          case "$MM" in
+            [0-9]*.[0-9]*) ;;
+            *) echo "::error::VersionMajorMinor did not resolve from Directory.Build.props (got '$MM')"; exit 1 ;;
+          esac
+          echo "BUILD_VERSION=${MM}.${GITHUB_RUN_NUMBER}${GITHUB_RUN_ATTEMPT}+${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "FILE_VERSION=${MM}.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+        fi
     # jbig2dec is the reference JBIG2 decoder that Jbig2OracleTests checks our
     # codestreams against. Used strictly as a BINARY -- it is AGPL and can never
     # be a port source for this repo (see AGENTS.md and
@@ -64,7 +73,7 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore SimdCodecs.slnx
     - name: Build
-      run: dotnet build SimdCodecs.slnx -c $BUILD_CONF --no-restore -p:Version=${VERSION_PREFIX}${VERSION_REV}${VERSION_HASH} -p:FileVersion=${VERSION_PREFIX}.${VERSION_REV} -p:ContinuousIntegrationBuild=true
+      run: dotnet build SimdCodecs.slnx -c "$BUILD_CONF" --no-restore -p:Version="$BUILD_VERSION" -p:FileVersion="$FILE_VERSION" -p:ContinuousIntegrationBuild=true
     - name: Test
       # REQUIRE_ORACLES turns "oracle missing" from a skip into a failure. Every
       # oracle harness degrades to a skip so a clean clone stays green, which is

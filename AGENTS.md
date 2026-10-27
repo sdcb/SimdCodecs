@@ -46,8 +46,9 @@ at or beyond libjpeg-turbo and ImageSharp. **Measure first** — see `benchmarks
 - `benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks` — **not** in `SimdCodecs.slnx`; built by path so CI
   never restores ImageSharp/BenchmarkDotNet.
 - `net10.0`, `Nullable` + `ImplicitUsings`, `IsAotCompatible=true`, embedded debug symbols.
-- Package versions live in `Directory.Packages.props` (central management). All packages
-  ship in lockstep: `VersionMajorMinor` in `Directory.Build.props`, patch = CI run number.
+- Package dependency versions live in `Directory.Packages.props` (central management).
+  Packages ship in lockstep: release versions come from the Git tag; non-release
+  builds use `VersionMajorMinor` in `Directory.Build.props` and CI run information.
 - Names that the compiler cannot check: `InternalsVisibleTo` (Abstractions exposes the
   internal `MqDecoder` to Jbig2 and Jpeg2000), embedded resource manifest names
   (`Sdcb.SimdCodecs.Color.Icc.sRGB-v4.icc`), and paths in tests/scripts.

@@ -6,7 +6,7 @@ Derived from SharpAstro/Codecs (released under the Unlicense); this repository i
 
 ## Packages
 
-All packages version in lockstep (`0.1.<CI run number>`).
+All packages version in lockstep; release versions come from the Git tag.
 
 | Package | What it is |
 |---|---|
@@ -67,8 +67,11 @@ and the [WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/README.md) benchmark (
 
 ## Publishing
 
-Pushing a `v*` tag runs the build and publishes its packages to NuGet.org. The tag
-triggers publication; it does not determine the package version.
+Pushing a version tag runs the build and publishes its packages to NuGet.org. For
+example, `v1.0.0` publishes version `1.0.0` for every package; `v1.0.0-rc.1`
+publishes a prerelease. Tags must use `vMAJOR.MINOR.PATCH`, optionally followed by
+a SemVer prerelease suffix. Build metadata is not accepted because NuGet does not
+include it in the package version identity.
 
 Publishing uses [NuGet Trusted Publishing](https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing):
 
