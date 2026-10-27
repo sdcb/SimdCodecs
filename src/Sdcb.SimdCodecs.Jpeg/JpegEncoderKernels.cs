@@ -39,7 +39,9 @@ internal static class JpegEncoderKernels
         ConvertRowScalar(src, channels, x, width, y, cb, cr);
     }
 
-    internal static void ConvertRowScalar(ReadOnlySpan<byte> src, int channels, int from, int width, Span<float> y, Span<float> cb, Span<float> cr)
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    internal static void ConvertRowScalar(ReadOnlySpan<byte> src, int channels, int from, int width, Span<float> y, Span<float> cb, Span<float> cr,
+        bool lumaOnly = false)
     {
         if (channels <= 2)
         {
@@ -52,6 +54,7 @@ internal static class JpegEncoderKernels
             var p = x * channels;
             float r = src[p], g = src[p + 1], b = src[p + 2];
             y[x] = YR * r + YG * g + YB * b - 128f;
+            if (lumaOnly) continue;
             cb[x] = CbR * r + CbG * g + CbB * b;
             cr[x] = CrR * r + CrG * g + CrB * b;
         }
@@ -100,6 +103,7 @@ internal static class JpegEncoderKernels
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     internal static int ConvertRowV256(ReadOnlySpan<byte> src, int channels, int width, Span<float> y, Span<float> cb, Span<float> cr)
     {
         ref var s = ref MemoryMarshal.GetReference(src);
@@ -138,6 +142,7 @@ internal static class JpegEncoderKernels
         hi = Vector128.ConvertToSingle(Vector128.WidenUpper(w).AsInt32());
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     internal static int ConvertRowV128(ReadOnlySpan<byte> src, int channels, int width, Span<float> y, Span<float> cb, Span<float> cr)
     {
         ref var s = ref MemoryMarshal.GetReference(src);
@@ -171,60 +176,138 @@ internal static class JpegEncoderKernels
         return x;
     }
 
-    // ------------------------------------------------------------------ 2×2 chroma averaging
+    // ------------------------------------------------------------------ 4:2:0 conversion
 
-    /// <summary><c>dst[x] = ((r0[2x] + r1[2x]) + (r0[2x+1] + r1[2x+1])) * 0.25</c> for x &lt; <paramref name="count"/>.</summary>
+    // Chroma from the 2×2 sums of R, G and B: the sums of four 8-bit samples are exact in float,
+    // and the 0.25 folded into the constants is a power of two, so this is the average's chroma.
+    private const float CbR4 = CbR * 0.25f, CbG4 = CbG * 0.25f, CbB4 = CbB * 0.25f;
+    private const float CrR4 = CrR * 0.25f, CrG4 = CrG * 0.25f, CrB4 = CrB * 0.25f;
+
+    /// <summary>
+    /// Converts two interleaved RGB(A) rows of <paramref name="width"/> pixels for 4:2:0: both
+    /// rows' level-shifted Y, and one row of (width + 1) / 2 Cb / Cr samples, each the chroma of
+    /// the 2×2 average (an odd last column pairs the last pixel with itself).
+    /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
-    internal static void Downsample2x2(ReadOnlySpan<float> r0, ReadOnlySpan<float> r1, Span<float> dst, int count)
+    internal static void ConvertRowPair420(ReadOnlySpan<byte> src0, ReadOnlySpan<byte> src1, int channels, int width,
+        Span<float> y0, Span<float> y1, Span<float> cb, Span<float> cr)
     {
         var x = 0;
-        if (UseV256) x = Downsample2x2V256(r0, r1, dst, count);
-        else if (Sse3.IsSupported || AdvSimd.Arm64.IsSupported) x = Downsample2x2V128(r0, r1, dst, count);
-        Downsample2x2Scalar(r0, r1, dst, x, count);
+        if (UseV256) x = ConvertRowPair420V256(src0, src1, channels, width, y0, y1, cb, cr);
+        else if (Sse3.IsSupported || AdvSimd.Arm64.IsSupported) x = ConvertRowPair420V128(src0, src1, channels, width, y0, y1, cb, cr);
+        ConvertRowPair420Scalar(src0, src1, channels, x, width, y0, y1, cb, cr);
     }
 
-    internal static void Downsample2x2Scalar(ReadOnlySpan<float> r0, ReadOnlySpan<float> r1, Span<float> dst, int from, int count)
+    /// <summary>Scalar <see cref="ConvertRowPair420"/> from pixel <paramref name="from"/> (even) on.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    internal static void ConvertRowPair420Scalar(ReadOnlySpan<byte> src0, ReadOnlySpan<byte> src1, int channels, int from, int width,
+        Span<float> y0, Span<float> y1, Span<float> cb, Span<float> cr)
     {
-        for (var x = from; x < count; x++)
-            dst[x] = ((r0[2 * x] + r1[2 * x]) + (r0[2 * x + 1] + r1[2 * x + 1])) * 0.25f;
-    }
-
-    internal static int Downsample2x2V256(ReadOnlySpan<float> r0, ReadOnlySpan<float> r1, Span<float> dst, int count)
-    {
-        // Bounds: r0 / r1 hold 2 * count floats and dst count; x + 8 <= count keeps every access in range.
-        ref var a = ref MemoryMarshal.GetReference(r0);
-        ref var b = ref MemoryMarshal.GetReference(r1);
-        ref var d = ref MemoryMarshal.GetReference(dst);
-        var quarter = Vector256.Create(0.25f);
-        var x = 0;
-        for (; x + 8 <= count; x += 8)
+        ConvertRowScalar(src0, channels, from, width, y0, default, default, lumaOnly: true);
+        ConvertRowScalar(src1, channels, from, width, y1, default, default, lumaOnly: true);
+        for (var x = from; x < width; x += 2)
         {
-            var s0 = Vector256.LoadUnsafe(ref a, (nuint)(2 * x)) + Vector256.LoadUnsafe(ref b, (nuint)(2 * x));
-            var s1 = Vector256.LoadUnsafe(ref a, (nuint)(2 * x + 8)) + Vector256.LoadUnsafe(ref b, (nuint)(2 * x + 8));
-            var h = Avx2.Permute4x64(Avx.HorizontalAdd(s0, s1).AsDouble(), 0b11_01_10_00).AsSingle();
-            (h * quarter).StoreUnsafe(ref d, (nuint)x);
+            var p = x * channels;
+            var q = Math.Min(x + 1, width - 1) * channels;
+            float r = (src0[p] + src1[p]) + (src0[q] + src1[q]);
+            float g = (src0[p + 1] + src1[p + 1]) + (src0[q + 1] + src1[q + 1]);
+            float b = (src0[p + 2] + src1[p + 2]) + (src0[q + 2] + src1[q + 2]);
+            cb[x >> 1] = CbR4 * r + CbG4 * g + CbB4 * b;
+            cr[x >> 1] = CrR4 * r + CrG4 * g + CrB4 * b;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    internal static int ConvertRowPair420V256(ReadOnlySpan<byte> src0, ReadOnlySpan<byte> src1, int channels, int width,
+        Span<float> y0, Span<float> y1, Span<float> cb, Span<float> cr)
+    {
+        ref var s0 = ref MemoryMarshal.GetReference(src0);
+        ref var s1 = ref MemoryMarshal.GetReference(src1);
+        ref var y0o = ref MemoryMarshal.GetReference(y0);
+        ref var y1o = ref MemoryMarshal.GetReference(y1);
+        ref var cbo = ref MemoryMarshal.GetReference(cb);
+        ref var cro = ref MemoryMarshal.GetReference(cr);
+        var x = 0;
+        // Both rows hold width * channels bytes, y0 / y1 width floats and cb / cr (width + 1) / 2;
+        // x + 16 <= width keeps every gather (inside its 8 pixels) and store in range.
+        for (; x + 16 <= width; x += 16)
+        {
+            Load8(ref Unsafe.Add(ref s0, x * channels), channels, out var r0a, out var g0a, out var b0a);
+            Load8(ref Unsafe.Add(ref s0, (x + 8) * channels), channels, out var r0b, out var g0b, out var b0b);
+            Load8(ref Unsafe.Add(ref s1, x * channels), channels, out var r1a, out var g1a, out var b1a);
+            Load8(ref Unsafe.Add(ref s1, (x + 8) * channels), channels, out var r1b, out var g1b, out var b1b);
+            Luma(r0a, g0a, b0a).StoreUnsafe(ref y0o, (nuint)x);
+            Luma(r0b, g0b, b0b).StoreUnsafe(ref y0o, (nuint)x + 8);
+            Luma(r1a, g1a, b1a).StoreUnsafe(ref y1o, (nuint)x);
+            Luma(r1b, g1b, b1b).StoreUnsafe(ref y1o, (nuint)x + 8);
+            var r = PairSum(r0a + r1a, r0b + r1b);
+            var g = PairSum(g0a + g1a, g0b + g1b);
+            var b = PairSum(b0a + b1a, b0b + b1b);
+            (Vector256.Create(CbR4) * r + Vector256.Create(CbG4) * g + Vector256.Create(CbB4) * b).StoreUnsafe(ref cbo, (nuint)(x >> 1));
+            (Vector256.Create(CrR4) * r + Vector256.Create(CrG4) * g + Vector256.Create(CrB4) * b).StoreUnsafe(ref cro, (nuint)(x >> 1));
         }
 
         return x;
     }
 
-    internal static int Downsample2x2V128(ReadOnlySpan<float> r0, ReadOnlySpan<float> r1, Span<float> dst, int count)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void Load8(ref byte p, int channels, out Vector256<float> r, out Vector256<float> g, out Vector256<float> b)
     {
-        ref var a = ref MemoryMarshal.GetReference(r0);
-        ref var b = ref MemoryMarshal.GetReference(r1);
-        ref var d = ref MemoryMarshal.GetReference(dst);
-        var quarter = Vector128.Create(0.25f);
+        Gather8(ref p, channels, out var rb, out var gb, out var bb);
+        r = Avx.ConvertToVector256Single(Avx2.ConvertToVector256Int32(rb));
+        g = Avx.ConvertToVector256Single(Avx2.ConvertToVector256Int32(gb));
+        b = Avx.ConvertToVector256Single(Avx2.ConvertToVector256Int32(bb));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector256<float> Luma(Vector256<float> r, Vector256<float> g, Vector256<float> b) =>
+        Vector256.Create(YR) * r + Vector256.Create(YG) * g + Vector256.Create(YB) * b - Vector256.Create(128f);
+
+    /// <summary>Adjacent-pair sums of the 16 lanes of (a, b), in order.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector256<float> PairSum(Vector256<float> a, Vector256<float> b) =>
+        Avx2.Permute4x64(Avx.HorizontalAdd(a, b).AsDouble(), 0b11_01_10_00).AsSingle();
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    internal static int ConvertRowPair420V128(ReadOnlySpan<byte> src0, ReadOnlySpan<byte> src1, int channels, int width,
+        Span<float> y0, Span<float> y1, Span<float> cb, Span<float> cr)
+    {
+        ref var s0 = ref MemoryMarshal.GetReference(src0);
+        ref var s1 = ref MemoryMarshal.GetReference(src1);
+        ref var y0o = ref MemoryMarshal.GetReference(y0);
+        ref var y1o = ref MemoryMarshal.GetReference(y1);
+        ref var cbo = ref MemoryMarshal.GetReference(cb);
+        ref var cro = ref MemoryMarshal.GetReference(cr);
+        var shift = Vector128.Create(128f);
         var x = 0;
-        for (; x + 4 <= count; x += 4)
+        // Same bounds as the Vector256 form, 8 pixels at a time.
+        for (; x + 8 <= width; x += 8)
         {
-            var s0 = Vector128.LoadUnsafe(ref a, (nuint)(2 * x)) + Vector128.LoadUnsafe(ref b, (nuint)(2 * x));
-            var s1 = Vector128.LoadUnsafe(ref a, (nuint)(2 * x + 4)) + Vector128.LoadUnsafe(ref b, (nuint)(2 * x + 4));
-            var h = Sse3.IsSupported ? Sse3.HorizontalAdd(s0, s1) : AdvSimd.Arm64.AddPairwise(s0, s1);
-            (h * quarter).StoreUnsafe(ref d, (nuint)x);
+            Gather8(ref Unsafe.Add(ref s0, x * channels), channels, out var rb0, out var gb0, out var bb0);
+            Gather8(ref Unsafe.Add(ref s1, x * channels), channels, out var rb1, out var gb1, out var bb1);
+            Widen8(rb0, out var r0a, out var r0b);
+            Widen8(gb0, out var g0a, out var g0b);
+            Widen8(bb0, out var b0a, out var b0b);
+            Widen8(rb1, out var r1a, out var r1b);
+            Widen8(gb1, out var g1a, out var g1b);
+            Widen8(bb1, out var b1a, out var b1b);
+            (Vector128.Create(YR) * r0a + Vector128.Create(YG) * g0a + Vector128.Create(YB) * b0a - shift).StoreUnsafe(ref y0o, (nuint)x);
+            (Vector128.Create(YR) * r0b + Vector128.Create(YG) * g0b + Vector128.Create(YB) * b0b - shift).StoreUnsafe(ref y0o, (nuint)x + 4);
+            (Vector128.Create(YR) * r1a + Vector128.Create(YG) * g1a + Vector128.Create(YB) * b1a - shift).StoreUnsafe(ref y1o, (nuint)x);
+            (Vector128.Create(YR) * r1b + Vector128.Create(YG) * g1b + Vector128.Create(YB) * b1b - shift).StoreUnsafe(ref y1o, (nuint)x + 4);
+            var r = PairSum(r0a + r1a, r0b + r1b);
+            var g = PairSum(g0a + g1a, g0b + g1b);
+            var b = PairSum(b0a + b1a, b0b + b1b);
+            (Vector128.Create(CbR4) * r + Vector128.Create(CbG4) * g + Vector128.Create(CbB4) * b).StoreUnsafe(ref cbo, (nuint)(x >> 1));
+            (Vector128.Create(CrR4) * r + Vector128.Create(CrG4) * g + Vector128.Create(CrB4) * b).StoreUnsafe(ref cro, (nuint)(x >> 1));
         }
 
         return x;
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector128<float> PairSum(Vector128<float> a, Vector128<float> b) =>
+        Sse3.IsSupported ? Sse3.HorizontalAdd(a, b) : AdvSimd.Arm64.AddPairwise(a, b);
 
     // ------------------------------------------------------------------ forward DCT + quantisation
 
@@ -245,7 +328,12 @@ internal static class JpegEncoderKernels
     /// in zig-zag order.
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
-    internal static void ForwardDct(ReadOnlySpan<float> src, int stride, ReadOnlySpan<float> recip, Span<short> zz)
+    internal static void ForwardDct(ReadOnlySpan<float> src, int stride, ReadOnlySpan<float> recip, Span<short> zz) =>
+        ForwardDctInline(src, stride, recip, zz);
+
+    /// <summary><see cref="ForwardDct"/> for callers that fuse it with entropy coding in one method.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void ForwardDctInline(ReadOnlySpan<float> src, int stride, ReadOnlySpan<float> recip, Span<short> zz)
     {
         if (UseV256) ForwardDctV256(src, stride, recip, zz);
         else if (UseV128) ForwardDctV128(src, stride, recip, zz);
@@ -264,6 +352,7 @@ internal static class JpegEncoderKernels
             Unsafe.Add(ref zr, i) = (short)Unsafe.Add(ref tr, Unsafe.Add(ref tz, i));
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     internal static void ForwardDctScalar(ReadOnlySpan<float> src, int stride, ReadOnlySpan<float> recip, Span<short> zz)
     {
         Span<float> c = stackalloc float[64];
@@ -403,6 +492,7 @@ internal static class JpegEncoderKernels
         d7 = z11 - z4;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void ForwardDctV256(ReadOnlySpan<float> src, int stride, ReadOnlySpan<float> recip, Span<short> zz)
     {
         // src must hold 7 * stride + 8 floats and recip 64: the slices below are bounds-checked.
@@ -514,6 +604,7 @@ internal static class JpegEncoderKernels
         r7 = Avx.Permute2x128(u3, u7, 0x31);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     internal static void ForwardDctV128(ReadOnlySpan<float> src, int stride, ReadOnlySpan<float> recip, Span<short> zz)
     {
         // Each pass runs on the left and right four lanes; the transpose goes through scratch memory.
@@ -581,6 +672,7 @@ internal static class JpegEncoderKernels
     // ------------------------------------------------------------------ non-zero mask
 
     /// <summary>Bit i set when <c>|zz[i]| &gt;&gt; shift</c> is non-zero (the progressive point transform of T.81 G.1.2).</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     internal static ulong SignificantMask(ReadOnlySpan<short> zz, int shift)
     {
         // zz holds at least 64 coefficients (the callers slice whole blocks).

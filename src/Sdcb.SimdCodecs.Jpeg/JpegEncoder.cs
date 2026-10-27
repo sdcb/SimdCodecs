@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -78,10 +79,7 @@ public static class JpegEncoder
             if (!stored)
             {
                 WriteFrame(ref w, frame, progressive: false);
-                var dcL = JpegHuffmanEncodeTable.FromSpec(DcLumaBits, DcLumaValues);
-                var acL = JpegHuffmanEncodeTable.FromSpec(AcLumaBits, AcLumaValues);
-                var dcC = JpegHuffmanEncodeTable.FromSpec(DcChromaBits, DcChromaValues);
-                var acC = JpegHuffmanEncodeTable.FromSpec(AcChromaBits, AcChromaValues);
+                var (dcL, acL, dcC, acC) = (StdDcLuma, StdAcLuma, StdDcChroma, StdAcChroma);
                 WriteHuffmanTables(ref w, gray ? [(0, 0, dcL), (1, 0, acL)] : [(0, 0, dcL), (1, 0, acL), (0, 1, dcC), (1, 1, acC)]);
                 WriteBaselineScanHeader(ref w, frame);
                 Transform(pixels, channels, frame, ref w, [dcL, dcC], [acL, acC]);
@@ -168,6 +166,12 @@ public static class JpegEncoder
 
     // -------------------------------------------------------------- tables
 
+    // The Annex K example Huffman tables, built once (their AcCombined tables are 128 KiB each).
+    private static readonly JpegHuffmanEncodeTable StdDcLuma = JpegHuffmanEncodeTable.FromSpec(DcLumaBits, DcLumaValues);
+    private static readonly JpegHuffmanEncodeTable StdAcLuma = JpegHuffmanEncodeTable.FromSpec(AcLumaBits, AcLumaValues);
+    private static readonly JpegHuffmanEncodeTable StdDcChroma = JpegHuffmanEncodeTable.FromSpec(DcChromaBits, DcChromaValues);
+    private static readonly JpegHuffmanEncodeTable StdAcChroma = JpegHuffmanEncodeTable.FromSpec(AcChromaBits, AcChromaValues);
+
     private static byte[] ScaleQuant(ReadOnlySpan<byte> basis, int scale)
     {
         var t = new byte[64];
@@ -221,8 +225,9 @@ public static class JpegEncoder
 
         var planeLength = rows * stride;
         var y = ArrayPool<float>.Shared.Rent(planeLength);
-        float[] cb = gray ? [] : ArrayPool<float>.Shared.Rent(planeLength);
-        float[] cr = gray ? [] : ArrayPool<float>.Shared.Rent(planeLength);
+        var fullChroma = !gray && !subsample;
+        float[] cb = fullChroma ? ArrayPool<float>.Shared.Rent(planeLength) : [];
+        float[] cr = fullChroma ? ArrayPool<float>.Shared.Rent(planeLength) : [];
         float[] cb2 = subsample ? ArrayPool<float>.Shared.Rent(8 * halfStride) : [];
         float[] cr2 = subsample ? ArrayPool<float>.Shared.Rent(8 * halfStride) : [];
         Span<short> scratch = stackalloc short[64];
@@ -236,7 +241,7 @@ public static class JpegEncoder
             for (var c = 0; c < comps.Length; c++)
             {
                 dcCodes[c] = dcTables![comps[c].TableId].Packed;
-                acCodes[c] = acTables![comps[c].TableId].Packed;
+                acCodes[c] = acTables![comps[c].TableId].AcCombined;
             }
         }
 
@@ -252,9 +257,35 @@ public static class JpegEncoder
                     var valid = Math.Min(width, f.Width - x0); // ≥ 1: McusX = ceil(Width / mcuWidth)
 
                     // Level-shifted planes for this chunk, rows past the bottom replicating the last
-                    // image row and columns past the right edge the last column.
+                    // image row and columns past the right edge the last column (the last chroma
+                    // column for 4:2:0).
+                    if (subsample)
+                    {
+                        var cValid = (valid + 1) / 2;
+                        for (var r = 0; r < 8; r++)
+                        {
+                            var row0 = Math.Min(my * 16 + 2 * r, f.Height - 1);
+                            var row1 = Math.Min(my * 16 + 2 * r + 1, f.Height - 1);
+                            var ys0 = y.AsSpan(2 * r * stride, width);
+                            var ys1 = y.AsSpan((2 * r + 1) * stride, width);
+                            var cbs = cb2.AsSpan(r * halfStride, width / 2);
+                            var crs = cr2.AsSpan(r * halfStride, width / 2);
+                            JpegEncoderKernels.ConvertRowPair420(
+                                pixels.Slice(row0 * rowBytes + x0 * channels, valid * channels),
+                                pixels.Slice(row1 * rowBytes + x0 * channels, valid * channels),
+                                channels, valid, ys0, ys1, cbs, crs);
+                            if (valid < width)
+                            {
+                                ys0[valid..].Fill(ys0[valid - 1]);
+                                ys1[valid..].Fill(ys1[valid - 1]);
+                                cbs[cValid..].Fill(cbs[cValid - 1]);
+                                crs[cValid..].Fill(crs[cValid - 1]);
+                            }
+                        }
+                    }
+
                     var prevSrc = -1;
-                    for (var r = 0; r < rows; r++)
+                    for (var r = 0; !subsample && r < rows; r++)
                     {
                         var srcRow = Math.Min(my * rows + r, f.Height - 1);
                         var o = r * stride;
@@ -287,13 +318,12 @@ public static class JpegEncoder
                         }
                     }
 
-                    if (subsample)
+
+                    if (!store)
                     {
-                        for (var r = 0; r < 8; r++)
-                        {
-                            JpegEncoderKernels.Downsample2x2(cb.AsSpan(2 * r * stride, width), cb.AsSpan((2 * r + 1) * stride, width), cb2.AsSpan(r * halfStride, width / 2), width / 2);
-                            JpegEncoderKernels.Downsample2x2(cr.AsSpan(2 * r * stride, width), cr.AsSpan((2 * r + 1) * stride, width), cr2.AsSpan(r * halfStride, width / 2), width / 2);
-                        }
+                        EncodeChunk(ref w, comps, mcus, y, subsample ? cb2 : cb, subsample ? cr2 : cr, stride, subsample ? halfStride : stride,
+                            pred, dcCodes, acCodes, scratch);
+                        continue;
                     }
 
                     for (var mx = 0; mx < mcus; mx++)
@@ -312,14 +342,8 @@ public static class JpegEncoder
                                 for (var h = 0; h < comp.H; h++)
                                 {
                                     var local = mx * comp.H + h;
-                                    var block = plane.AsSpan(v * 8 * planeStride + local * 8);
-                                    var zz = store ? comp.Block(my * comp.V + v, cx * comp.H + local) : scratch;
-                                    JpegEncoderKernels.ForwardDct(block, planeStride, comp.Recip, zz);
-                                    if (!store)
-                                    {
-                                        w.Ensure(JpegBitWriter.BlockReserve);
-                                        pred[c] = EncodeBlock(ref w, zz, pred[c], dcCodes[c], acCodes[c]);
-                                    }
+                                    JpegEncoderKernels.ForwardDct(plane.AsSpan(v * 8 * planeStride + local * 8), planeStride, comp.Recip,
+                                        comp.Block(my * comp.V + v, cx * comp.H + local));
                                 }
                             }
                         }
@@ -330,7 +354,7 @@ public static class JpegEncoder
         finally
         {
             ArrayPool<float>.Shared.Return(y);
-            if (!gray)
+            if (fullChroma)
             {
                 ArrayPool<float>.Shared.Return(cb);
                 ArrayPool<float>.Shared.Return(cr);
@@ -351,46 +375,86 @@ public static class JpegEncoder
     /// </summary>
     /// <remarks>
     /// Unchecked accesses: <paramref name="zz"/> has 64 entries and k is a bit index of a 64-bit
-    /// mask. Coefficients of 8-bit samples are under 1024 in magnitude (the DCT of a ±128 block,
-    /// quantisers ≥ 1) and DC differences under 2048, so both index <see cref="ValueBits"/> in
-    /// range. The code tables have 256 entries and every index is a byte: a DC size category, or
-    /// <c>(run &lt;&lt; 4) | size</c> with run ≤ 15 and size ≤ 15. The caller reserved
-    /// <see cref="JpegBitWriter.BlockReserve"/> output bytes.
+    /// mask. DC values of 8-bit samples lie in -1024..1016, so a DC difference indexes
+    /// <see cref="ValueBits"/> (±2048) in range and its size category (≤ 11) the 256-entry DC
+    /// table. The AC index is <c>(run &lt;&lt; 11) | (v &amp; 2047)</c> with run ≤ 15, inside
+    /// the 16 × 2048 <see cref="JpegHuffmanEncodeTable.AcCombined"/>; it names the right entry
+    /// because |v| &lt; 1024 (the largest AC basis sum of a ±128 block is about 928, and
+    /// quantisers are ≥ 1). The caller reserved <see cref="JpegBitWriter.BlockReserve"/> output
+    /// bytes.
     /// </remarks>
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
-    internal static int EncodeBlock(ref JpegBitWriter writer, ReadOnlySpan<short> zz, int pred, uint[] dcPacked, uint[] acPacked)
+    internal static int EncodeBlock(ref JpegBitWriter writer, ReadOnlySpan<short> zz, int pred, uint[] dcPacked, uint[] acCombined)
     {
-        var w = writer;
+        var dc = EncodeBlockInline(ref writer, zz, pred, dcPacked, acCombined);
+        writer.Stuff();
+        return dc;
+    }
+
+    /// <summary>
+    /// Transforms and Huffman codes the MCUs of one chunk: each block's forward DCT and its entropy
+    /// coding run back to back in this one method, so there is no call per block and the
+    /// out-of-order core can overlap one block's serial entropy coding with the next transform.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    private static void EncodeChunk(ref JpegBitWriter writer, Component[] comps, int mcus, float[] y, float[] c1, float[] c2,
+        int yStride, int cStride, Span<int> pred, uint[][] dcCodes, uint[][] acCodes, Span<short> scratch)
+    {
+        for (var mx = 0; mx < mcus; mx++)
+        {
+            writer.Ensure(JpegBitWriter.McuReserve);
+            for (var c = 0; c < comps.Length; c++)
+            {
+                var comp = comps[c];
+                var plane = c == 0 ? y : c == 1 ? c1 : c2;
+                var stride = c == 0 ? yStride : cStride;
+                for (var v = 0; v < comp.V; v++)
+                {
+                    for (var h = 0; h < comp.H; h++)
+                    {
+                        JpegEncoderKernels.ForwardDctInline(plane.AsSpan(v * 8 * stride + (mx * comp.H + h) * 8), stride, comp.Recip, scratch);
+                        pred[c] = EncodeBlockInline(ref writer, scratch, pred[c], dcCodes[c], acCodes[c]);
+                    }
+                }
+            }
+
+            writer.Stuff();
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int EncodeBlockInline(ref JpegBitWriter writer, ReadOnlySpan<short> zz, int pred, uint[] dcPacked, uint[] acCombined)
+    {
         _ = zz[63];
         _ = dcPacked[255];
-        _ = acPacked[255];
+        _ = acCombined[(16 << 11) - 1];
         ref var z = ref MemoryMarshal.GetReference(zz);
         ref var dc = ref MemoryMarshal.GetArrayDataReference(dcPacked);
-        ref var ac = ref MemoryMarshal.GetArrayDataReference(acPacked);
+        ref var ac = ref MemoryMarshal.GetArrayDataReference(acCombined);
         ref var vb = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(ValueBits), 2048);
+        var s = new Emitter(ref MemoryMarshal.GetArrayDataReference(writer.Buffer), writer.Position, writer.Acc, (uint)writer.Bits);
 
         // Each symbol and its extra bits go out in one Put (see JpegHuffmanEncodeTable.Packed).
         int dcValue = z;
         var bits = Unsafe.Add(ref vb, dcValue - pred);
-        var e = Unsafe.Add(ref dc, (int)(bits >> 16));
-        w.Put((e >> 5) | (bits & 0xFFFF), (int)(e & 31));
+        var e = Unsafe.Add(ref dc, (nint)(bits >> 16));
+        s.Put((e >> 5) | (bits & 0xFFFF), e & 31);
 
         var mask = JpegEncoderKernels.NonZeroMask(zz) & ~1ul;
         var last = 0;
         while (mask != 0)
         {
             var k = BitOperations.TrailingZeroCount(mask);
-            var run = k - last - 1;
+            var run = (uint)(k - last - 1);
             while (run >= 16)
             {
-                var zrl = Unsafe.Add(ref ac, 0xF0);
-                w.Put(zrl >> 5, (int)(zrl & 31));
+                var zrl = Unsafe.Add(ref ac, 15 << 11);
+                s.Put(zrl >> 5, zrl & 31);
                 run -= 16;
             }
 
-            bits = Unsafe.Add(ref vb, Unsafe.Add(ref z, k));
-            e = Unsafe.Add(ref ac, (run << 4) | (int)(bits >> 16));
-            w.Put((e >> 5) | (bits & 0xFFFF), (int)(e & 31));
+            e = Unsafe.Add(ref ac, (nint)((run << 11) | ((uint)Unsafe.Add(ref z, (nint)(uint)k) & 2047)));
+            s.Put(e >> 5, e & 31);
             last = k;
             mask &= mask - 1;
         }
@@ -398,17 +462,39 @@ public static class JpegEncoder
         if (last != 63)
         {
             var eob = ac;
-            w.Put(eob >> 5, (int)(eob & 31));
+            s.Put(eob >> 5, eob & 31);
         }
 
-        w.Stuff();
-
-        // The buffer itself never changes here; writing back only the scalars skips a GC write barrier.
-        writer.Position = w.Position;
-        writer.Acc = w.Acc;
-        writer.Bits = w.Bits;
-        writer.Mark = w.Mark;
+        writer.Position = (int)s.Position;
+        writer.Acc = s.Acc;
+        writer.Bits = (int)s.Bits;
         return dcValue;
+    }
+
+    /// <summary>
+    /// <see cref="JpegBitWriter.Put"/> on locals: the output base is fetched once per block (no
+    /// null check per symbol) and the position is a native integer (no sign extension per store).
+    /// </summary>
+    private ref struct Emitter(ref byte output, nint position, ulong acc, uint bits)
+    {
+        private readonly ref byte _output = ref output;
+        public nint Position = position;
+        public ulong Acc = acc;
+        public uint Bits = bits;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Put(uint value, uint n)
+        {
+            // As JpegBitWriter.Put; Bits is at least 1 after adding n ≥ 1, so the shift by -Bits
+            // (count taken mod 64) is 64 - Bits.
+            Acc = (Acc << (int)n) | value;
+            Bits += n;
+            var aligned = Acc << -(int)Bits;
+            Unsafe.WriteUnaligned(ref Unsafe.Add(ref _output, Position),
+                BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(aligned) : aligned);
+            Position += (nint)(Bits >> 3);
+            Bits &= 7;
+        }
     }
     /// <summary>
     /// For a coefficient v in -2048..2047 at index v + 2048: its size category in the high 16 bits
@@ -490,7 +576,7 @@ public static class JpegEncoder
                         for (var h = 0; h < comp.H; h++)
                         {
                             w.Ensure(JpegBitWriter.BlockReserve);
-                            pred[c] = EncodeBlock(ref w, comp.Block(my * comp.V + v, mx * comp.H + h), pred[c], dc[comp.TableId].Packed, ac[comp.TableId].Packed);
+                            pred[c] = EncodeBlock(ref w, comp.Block(my * comp.V + v, mx * comp.H + h), pred[c], dc[comp.TableId].Packed, ac[comp.TableId].AcCombined);
                         }
                     }
                 }

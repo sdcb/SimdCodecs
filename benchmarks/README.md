@@ -6,7 +6,7 @@ or the corpora.
 
 | Project | Measures | Compared against | Docs |
 |---|---|---|---|
-| [`Sdcb.SimdCodecs.Jpeg.Benchmarks`](Sdcb.SimdCodecs.Jpeg.Benchmarks/) | JPEG decode speed, memory and accuracy, plus a same-process A/B against the previous commit | libjpeg-turbo, ImageSharp | [README](Sdcb.SimdCodecs.Jpeg.Benchmarks/README.md), [recorded results](Sdcb.SimdCodecs.Jpeg.Benchmarks/results/) |
+| [`Sdcb.SimdCodecs.Jpeg.Benchmarks`](Sdcb.SimdCodecs.Jpeg.Benchmarks/) | JPEG decode speed, memory and accuracy, a same-process A/B against the previous commit, and encode speed / size / quality | libjpeg-turbo, ImageSharp | [README](Sdcb.SimdCodecs.Jpeg.Benchmarks/README.md), [recorded results](Sdcb.SimdCodecs.Jpeg.Benchmarks/results/) |
 | [`Sdcb.SimdCodecs.Webp.Benchmarks`](Sdcb.SimdCodecs.Webp.Benchmarks/) | WebP decode speed and allocations | libwebp | [README](Sdcb.SimdCodecs.Webp.Benchmarks/README.md) |
 
 ## Rules that apply to every benchmark

@@ -90,34 +90,61 @@ public sealed class JpegEncoderEquivalenceTests
         return channels <= 2 ? y : [.. y, .. cb, .. cr];
     }
 
-    [Fact]
-    public void ChromaDownsamplingTiersAreIdentical()
+    [Theory]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void RowPair420TiersAreIdentical(int channels)
     {
-        foreach (var count in new[] { 1, 3, 4, 8, 13, 40 })
+        var r = new Random(channels);
+        foreach (var width in new[] { 1, 2, 7, 8, 15, 16, 17, 33, 67 })
         {
-            var r0 = RandomFloats(2 * count, count, -128f, 128f);
-            var r1 = RandomFloats(2 * count, count + 100, -128f, 128f);
-            var expected = new float[count];
-            JpegEncoderKernels.Downsample2x2Scalar(r0, r1, expected, 0, count);
-
-            if (Sse3.IsSupported || AdvSimd.Arm64.IsSupported)
-            {
-                var v128 = new float[count];
-                var x = JpegEncoderKernels.Downsample2x2V128(r0, r1, v128, count);
-                JpegEncoderKernels.Downsample2x2Scalar(r0, r1, v128, x, count);
-                v128.ShouldBe(expected, $"count {count}: Vector128");
-            }
-
-            if (Avx2.IsSupported)
-            {
-                var v256 = new float[count];
-                var x = JpegEncoderKernels.Downsample2x2V256(r0, r1, v256, count);
-                JpegEncoderKernels.Downsample2x2Scalar(r0, r1, v256, x, count);
-                v256.ShouldBe(expected, $"count {count}: Vector256");
-            }
+            var src0 = new byte[width * channels];
+            var src1 = new byte[width * channels];
+            r.NextBytes(src0);
+            r.NextBytes(src1);
+            var expected = Pair(src0, src1, channels, width, 0);
+            if (Sse3.IsSupported || AdvSimd.Arm64.IsSupported) Pair(src0, src1, channels, width, 1).ShouldBe(expected, $"width {width}: Vector128");
+            if (Avx2.IsSupported) Pair(src0, src1, channels, width, 2).ShouldBe(expected, $"width {width}: Vector256");
         }
     }
 
+    private static float[] Pair(byte[] src0, byte[] src1, int channels, int width, int tier)
+    {
+        var y0 = new float[width];
+        var y1 = new float[width];
+        var cb = new float[(width + 1) / 2];
+        var cr = new float[(width + 1) / 2];
+        var x = tier switch
+        {
+            2 => JpegEncoderKernels.ConvertRowPair420V256(src0, src1, channels, width, y0, y1, cb, cr),
+            1 => JpegEncoderKernels.ConvertRowPair420V128(src0, src1, channels, width, y0, y1, cb, cr),
+            _ => 0,
+        };
+        JpegEncoderKernels.ConvertRowPair420Scalar(src0, src1, channels, x, width, y0, y1, cb, cr);
+        return [.. y0, .. y1, .. cb, .. cr];
+    }
+
+    [Fact]
+    public void RowPair420ChromaIsTheChromaOfThe2x2Average()
+    {
+        // Independent of the kernels' arithmetic: average R, G, B in double, then T.871.
+        var r = new Random(5);
+        const int width = 37;
+        var src0 = new byte[width * 3];
+        var src1 = new byte[width * 3];
+        r.NextBytes(src0);
+        r.NextBytes(src1);
+        var all = Pair(src0, src1, 3, width, Avx2.IsSupported ? 2 : 0);
+        for (var j = 0; j < (width + 1) / 2; j++)
+        {
+            int a = 2 * j * 3, b = Math.Min(2 * j + 1, width - 1) * 3;
+            double R = (src0[a] + src0[b] + src1[a] + src1[b]) / 4.0;
+            double G = (src0[a + 1] + src0[b + 1] + src1[a + 1] + src1[b + 1]) / 4.0;
+            double B = (src0[a + 2] + src0[b + 2] + src1[a + 2] + src1[b + 2]) / 4.0;
+            all[2 * width + j].ShouldBe((float)(-0.168736 * R - 0.331264 * G + 0.5 * B), 1e-3);
+            all[2 * width + (width + 1) / 2 + j].ShouldBe((float)(0.5 * R - 0.418688 * G - 0.081312 * B), 1e-3);
+        }
+    }
     [Fact]
     public void NonZeroMaskMatchesTheCoefficients()
     {

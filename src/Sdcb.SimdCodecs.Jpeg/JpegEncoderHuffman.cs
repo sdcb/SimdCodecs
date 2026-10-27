@@ -47,6 +47,37 @@ internal sealed class JpegHuffmanEncodeTable
         }
     }
 
+    private uint[]? _acCombined;
+
+    /// <summary>
+    /// For an AC table: every (run, coefficient) pair resolved to one emission,
+    /// <c>((code &lt;&lt; size | extra bits) &lt;&lt; 5) | (length + size)</c>, at index
+    /// <c>(run &lt;&lt; 11) | (v &amp; 2047)</c> for |v| &lt; 1024 (every AC coefficient of 8-bit
+    /// samples; T.81 F.1.2.2). The slots v = 0 hold EOB (run 0) and ZRL (run 15). 128 KiB, built
+    /// on first use; per symbol it replaces a size lookup, a code lookup and the bit assembly.
+    /// </summary>
+    public uint[] AcCombined => _acCombined ??= BuildAcCombined();
+
+    private uint[] BuildAcCombined()
+    {
+        var t = new uint[16 << 11];
+        for (var run = 0; run < 16; run++)
+        {
+            for (var v = -1023; v <= 1023; v++)
+            {
+                if (v == 0) continue;
+                var nb = JpegBitWriter.Category((uint)Math.Abs(v));
+                var e = Packed[(run << 4) | nb];
+                var extra = (uint)(v < 0 ? v - 1 : v) & ((1u << nb) - 1);
+                t[(run << 11) | (v & 2047)] = (((e >> 5) | extra) << 5) | (e & 31);
+            }
+        }
+
+        t[0] = Packed[0x00];
+        t[15 << 11] = Packed[0xF0];
+        return t;
+    }
+
     public static JpegHuffmanEncodeTable FromSpec(ReadOnlySpan<byte> bits, ReadOnlySpan<byte> values) => new(bits, values);
 
     /// <summary>
@@ -156,6 +187,9 @@ internal struct JpegBitWriter
     /// after stuffing: under 470 bytes.
     /// </summary>
     public const int BlockReserve = 1024;
+
+    /// <summary>Room guaranteed before one MCU (at most 6 blocks, stuffed once at its end): 6 × 470 bytes.</summary>
+    public const int McuReserve = 4096;
 
     public byte[] Buffer;
     public int Position;

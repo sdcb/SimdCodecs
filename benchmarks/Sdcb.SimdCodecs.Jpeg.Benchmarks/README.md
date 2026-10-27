@@ -1,6 +1,6 @@
-# JPEG decode benchmark (`Sdcb.SimdCodecs.Jpeg.Benchmarks`)
+# JPEG benchmark (`Sdcb.SimdCodecs.Jpeg.Benchmarks`)
 
-Single-threaded, whole-image JPEG decode to RGBA, measured against black-box competitors.
+Single-threaded, whole-image JPEG decode to RGBA (and, with `encode`, encode — see [Encoder](#encoder-encode)), measured against black-box competitors.
 Baselines live in [`results/`](results/) — one file per recording, named `<date>-<cpu>.md`.
 
 | Contestant | How it is called |
@@ -94,3 +94,32 @@ disappears. Results go to `.cache/work/ab.md`. `--groups` / `--images` replace t
 - **RGB output:** every contestant vs reference IDCT + bilinear chroma interpolation at T.871's
   centred sample positions + double-precision JFIF (T.871) conversion, for 4:4:4, 4:2:2, 4:2:0
   and the camera originals; the A/B baseline build is included as an extra row when present.
+
+## Encoder (`encode`)
+
+```bash
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks -- encode --mode all --gate
+```
+
+Encodes the ten masters (box-downscaled to 2048 px on the long side, 25.8 MP in all) with
+`JpegEncoder.Encode`, libjpeg-turbo (`tj3Compress8`, default islow DCT) and, in baseline mode,
+ImageSharp; `--baseline` adds the `baseline` build's encoder. Every output is decoded by
+libjpeg-turbo and scored against the source (size, PSNR on luma and RGB, SSIM on luma); the
+timing is the median of `--reps` single-threaded encodes after a 2 s warm-up, contestants
+interleaved per image. Modes: `baseline` (Annex K tables), `optimize` (optimised Huffman tables on
+both sides) and `progressive`. `--gate` exits 1 unless, per configuration, our mean PSNR-Y is at
+least libjpeg-turbo's and our total size at most 1% larger — the encoder's quality contract.
+
+Recorded on a Ryzen 7 5800X, Windows 11, .NET 10.0.11, AVX2 (no AVX-512), MP/s:
+
+| config | ours | libjpeg-turbo | ImageSharp | optimize ours / turbo | progressive ours / turbo |
+|---|---:|---:|---:|---:|---:|
+| q50 4:2:0 | 642 | 630 | 340 | 413 / 265 | 169 / 121 |
+| q75 4:2:0 | 585 | 561 | 289 | 340 / 230 | 131 / 99 |
+| q90 4:2:0 | 507 | 479 | 224 | 268 / 182 | 90 / 75 |
+| q95 4:2:0 | 438 | 412 | 181 | 221 / 148 | 69 / 60 |
+| q90 4:4:4 | 300 | 296 | 177 | 174 / 116 | 65 / 52 |
+| q95 4:4:4 | 266 | 262 | 139 | 144 / 96 | 51 / 42 |
+
+At the same quality our files are 0.2–2.3% smaller than libjpeg-turbo's in every mode and
+PSNR-Y is 0.004–0.09 dB higher (float AAN DCT, unrounded colour conversion).
