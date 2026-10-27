@@ -419,21 +419,69 @@ internal static class JpegEncoderKernels
         Transpose(ref r0, ref r1, ref r2, ref r3, ref r4, ref r5, ref r6, ref r7);
         Aan(ref r0, ref r1, ref r2, ref r3, ref r4, ref r5, ref r6, ref r7);
 
-        Span<int> t = stackalloc int[64];
-        Quantize(r0, recip, t, 0);
-        Quantize(r1, recip, t, 8);
-        Quantize(r2, recip, t, 16);
-        Quantize(r3, recip, t, 24);
-        Quantize(r4, recip, t, 32);
-        Quantize(r5, recip, t, 40);
-        Quantize(r6, recip, t, 48);
-        Quantize(r7, recip, t, 56);
-        Gather(t, zz);
+        // Quantise, pack to int16 rows (packs interleaves 128-bit lanes; vpermq restores row order),
+        // then permute into zig-zag order with byte shuffles.
+        var p01 = Pack(Quantize(r0, recip, 0), Quantize(r1, recip, 8)).AsByte();
+        var p23 = Pack(Quantize(r2, recip, 16), Quantize(r3, recip, 24)).AsByte();
+        var p45 = Pack(Quantize(r4, recip, 32), Quantize(r5, recip, 40)).AsByte();
+        var p67 = Pack(Quantize(r6, recip, 48), Quantize(r7, recip, 56)).AsByte();
+        ZigZagShuffle(p01.GetLower(), p01.GetUpper(), p23.GetLower(), p23.GetUpper(),
+            p45.GetLower(), p45.GetUpper(), p67.GetLower(), p67.GetUpper(), zz);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void Quantize(Vector256<float> v, ReadOnlySpan<float> recip, Span<int> t, int o) =>
-        Vector256.ConvertToInt32Native(Vector256.Round(v * Vector256.Create(recip.Slice(o, 8)))).CopyTo(t.Slice(o, 8));
+    private static Vector256<int> Quantize(Vector256<float> v, ReadOnlySpan<float> recip, int o) =>
+        Vector256.ConvertToInt32Native(Vector256.Round(v * Vector256.Create(recip.Slice(o, 8))));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector256<short> Pack(Vector256<int> a, Vector256<int> b) =>
+        Avx2.Permute4x64(Avx2.PackSignedSaturate(a, b).AsInt64(), 0b11_01_10_00).AsInt16();
+
+    // Byte-shuffle masks for the zig-zag permutation of a kernel-layout int16 block: output group j
+    // (zig-zag 8j..8j+7) is the OR over source rows r of shuffle(row r, mask[j * 8 + r]). A row
+    // that feeds no lane of a group has an all-0x80 (zeroing) mask and is left out of ZigZagShuffle.
+    private static readonly byte[] ZigZagMasks = BuildZigZagMasks();
+
+    private static byte[] BuildZigZagMasks()
+    {
+        var masks = new byte[8 * 8 * 16];
+        masks.AsSpan().Fill(0x80);
+        for (var j = 0; j < 8; j++)
+        {
+            for (var l = 0; l < 8; l++)
+            {
+                var k = ZigZagToKernel[j * 8 + l];
+                int row = k >> 3, col = k & 7;
+                masks[(j * 8 + row) * 16 + 2 * l] = (byte)(2 * col);
+                masks[(j * 8 + row) * 16 + 2 * l + 1] = (byte)(2 * col + 1);
+            }
+        }
+
+        return masks;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector128<byte> S(Vector128<byte> row, ref byte masks, int j, int r) =>
+        Ssse3.Shuffle(row, Vector128.LoadUnsafe(ref masks, (nuint)((j * 8 + r) * 16)));
+
+    /// <summary>Zig-zag permutation of eight kernel-layout int16 rows (each group ORs exactly the rows its lanes come from).</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ZigZagShuffle(Vector128<byte> a0, Vector128<byte> a1, Vector128<byte> a2, Vector128<byte> a3,
+        Vector128<byte> a4, Vector128<byte> a5, Vector128<byte> a6, Vector128<byte> a7, Span<short> zz)
+    {
+        // zz holds 64 int16 (checked); mask offsets stay inside the 1024-byte table.
+        _ = zz[63];
+        ref var d = ref Unsafe.As<short, byte>(ref MemoryMarshal.GetReference(zz));
+        ref var m = ref MemoryMarshal.GetArrayDataReference(ZigZagMasks);
+        (S(a0, ref m, 0, 0) | S(a1, ref m, 0, 1) | S(a2, ref m, 0, 2) | S(a3, ref m, 0, 3)).StoreUnsafe(ref d, 0);
+        (S(a0, ref m, 1, 0) | S(a1, ref m, 1, 1) | S(a2, ref m, 1, 2) | S(a3, ref m, 1, 3) | S(a4, ref m, 1, 4) | S(a5, ref m, 1, 5)).StoreUnsafe(ref d, 16);
+        (S(a0, ref m, 2, 0) | S(a1, ref m, 2, 1) | S(a2, ref m, 2, 2) | S(a3, ref m, 2, 3) | S(a4, ref m, 2, 4)).StoreUnsafe(ref d, 32);
+        (S(a3, ref m, 3, 3) | S(a4, ref m, 3, 4) | S(a5, ref m, 3, 5) | S(a6, ref m, 3, 6) | S(a7, ref m, 3, 7)).StoreUnsafe(ref d, 48);
+        (S(a0, ref m, 4, 0) | S(a1, ref m, 4, 1) | S(a2, ref m, 4, 2) | S(a3, ref m, 4, 3) | S(a4, ref m, 4, 4)).StoreUnsafe(ref d, 64);
+        (S(a3, ref m, 5, 3) | S(a4, ref m, 5, 4) | S(a5, ref m, 5, 5) | S(a6, ref m, 5, 6) | S(a7, ref m, 5, 7)).StoreUnsafe(ref d, 80);
+        (S(a2, ref m, 6, 2) | S(a3, ref m, 6, 3) | S(a4, ref m, 6, 4) | S(a5, ref m, 6, 5) | S(a6, ref m, 6, 6) | S(a7, ref m, 6, 7)).StoreUnsafe(ref d, 96);
+        (S(a4, ref m, 7, 4) | S(a5, ref m, 7, 5) | S(a6, ref m, 7, 6) | S(a7, ref m, 7, 7)).StoreUnsafe(ref d, 112);
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void Transpose(
@@ -531,6 +579,29 @@ internal static class JpegEncoderKernels
         Vector128.ConvertToInt32Native(Vector128.Round(v * Vector128.Create(recip.Slice(o, 4)))).CopyTo(t.Slice(o, 4));
 
     // ------------------------------------------------------------------ non-zero mask
+
+    /// <summary>Bit i set when <c>|zz[i]| &gt;&gt; shift</c> is non-zero (the progressive point transform of T.81 G.1.2).</summary>
+    internal static ulong SignificantMask(ReadOnlySpan<short> zz, int shift)
+    {
+        // zz holds at least 64 coefficients (the callers slice whole blocks).
+        _ = zz[63];
+        ref var z = ref MemoryMarshal.GetReference(zz);
+        if (UseV256)
+        {
+            var e0 = Vector256.Equals(Vector256.ShiftRightLogical(Vector256.Abs(Vector256.LoadUnsafe(ref z)).AsUInt16(), shift), Vector256<ushort>.Zero).AsInt16();
+            var e1 = Vector256.Equals(Vector256.ShiftRightLogical(Vector256.Abs(Vector256.LoadUnsafe(ref z, 16)).AsUInt16(), shift), Vector256<ushort>.Zero).AsInt16();
+            var e2 = Vector256.Equals(Vector256.ShiftRightLogical(Vector256.Abs(Vector256.LoadUnsafe(ref z, 32)).AsUInt16(), shift), Vector256<ushort>.Zero).AsInt16();
+            var e3 = Vector256.Equals(Vector256.ShiftRightLogical(Vector256.Abs(Vector256.LoadUnsafe(ref z, 48)).AsUInt16(), shift), Vector256<ushort>.Zero).AsInt16();
+            var lo = Avx2.Permute4x64(Avx2.PackSignedSaturate(e0, e1).AsInt64(), 0b11_01_10_00).AsByte();
+            var hi = Avx2.Permute4x64(Avx2.PackSignedSaturate(e2, e3).AsInt64(), 0b11_01_10_00).AsByte();
+            return ~((ulong)(uint)Avx2.MoveMask(lo) | ((ulong)(uint)Avx2.MoveMask(hi) << 32));
+        }
+
+        ulong mask = 0;
+        for (var i = 0; i < 64; i++)
+            mask |= (ulong)((Math.Abs((int)zz[i]) >> shift) != 0 ? 1 : 0) << i;
+        return mask;
+    }
 
     /// <summary>Bit i set when zig-zag coefficient i is non-zero.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

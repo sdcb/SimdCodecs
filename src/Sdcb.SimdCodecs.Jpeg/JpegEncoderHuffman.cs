@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 
 namespace Sdcb.SimdCodecs.Jpeg;
 
@@ -17,6 +18,14 @@ internal sealed class JpegHuffmanEncodeTable
     public readonly byte[] Values;
     public readonly uint[] Codes = new uint[256];
 
+    /// <summary>
+    /// Per symbol s, with e = s &amp; 15 its count of extra bits (the size category for DC, the
+    /// low nibble for AC): <c>((code &lt;&lt; e) &lt;&lt; 5) | (length + e)</c>, so a symbol and its
+    /// extra bits go out as one <c>Put((entry &gt;&gt; 5) | extra, entry &amp; 31)</c>. At most
+    /// 16 + 11 bits, so the shifted code fits the 27 high bits.
+    /// </summary>
+    public readonly uint[] Packed = new uint[256];
+
     private JpegHuffmanEncodeTable(ReadOnlySpan<byte> bits, ReadOnlySpan<byte> values)
     {
         bits.CopyTo(Bits);
@@ -27,7 +36,13 @@ internal sealed class JpegHuffmanEncodeTable
         for (var len = 1; len <= 16; len++)
         {
             for (var i = 0; i < Bits[len - 1]; i++, k++, code++)
-                Codes[Values[k]] = ((uint)code << 8) | (uint)len;
+            {
+                var s = Values[k];
+                Codes[s] = ((uint)code << 8) | (uint)len;
+                var e = s & 15;
+                Packed[s] = (((uint)code << e) << 5) | (uint)(len + e);
+            }
+
             code <<= 1;
         }
     }
@@ -127,16 +142,18 @@ internal sealed class JpegHuffmanEncodeTable
 
 /// <summary>
 /// The entropy-coded output: a pooled byte buffer and a 64-bit MSB-first bit accumulator.
-/// Whole 32-bit words are flushed at once; the 0xFF → 0xFF 0x00 stuffing of T.81 F.1.2.3 is
-/// a slow path taken only when a word actually contains 0xFF.
+/// Whole 32-bit words are flushed without branching on the data. The 0xFF → 0xFF 0x00 stuffing
+/// of T.81 F.1.2.3 is deferred: <see cref="Stuff"/> (after every block, and before any marker)
+/// scans the bytes written since the last call and expands them in place when one is 0xFF,
+/// which keeps all stuffing work out of the per-symbol path.
 /// </summary>
 internal struct JpegBitWriter
 {
     /// <summary>
     /// Room guaranteed before one block is entropy coded. A block emits at most 1 DC symbol
     /// (≤ 16 + 11 bits), 63 AC symbols (≤ 16 + 10 bits each), 3 ZRL and one EOB (≤ 16 bits each):
-    /// under 1800 bits, plus up to 31 bits already pending — at most 57 words of 4 bytes, each at
-    /// most 8 bytes after stuffing, i.e. 456 bytes.
+    /// under 1800 bits (225 bytes), plus the 8-byte speculative store, and at most twice that
+    /// after stuffing: under 470 bytes.
     /// </summary>
     public const int BlockReserve = 1024;
 
@@ -145,12 +162,16 @@ internal struct JpegBitWriter
     public ulong Acc;
     public int Bits;
 
+    /// <summary>Start of the bytes not yet checked for stuffing.</summary>
+    public int Mark;
+
     public JpegBitWriter(int capacity)
     {
         Buffer = ArrayPool<byte>.Shared.Rent(Math.Max(4096, capacity));
         Position = 0;
         Acc = 0;
         Bits = 0;
+        Mark = 0;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -169,53 +190,93 @@ internal struct JpegBitWriter
     }
 
     /// <summary>Appends the low <paramref name="n"/> (≤ 32) bits of <paramref name="value"/>, which must have no higher bits set.</summary>
-    /// <remarks>Unchecked: the caller has reserved room (<see cref="BlockReserve"/> per block, or <see cref="PutChecked"/>).</remarks>
+    /// <remarks>
+    /// Unchecked: the caller has reserved room (<see cref="BlockReserve"/> per block, or
+    /// <see cref="PutChecked"/>) and calls <see cref="Stuff"/> before the bytes are final.
+    /// </remarks>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Put(uint value, int n)
     {
-        Acc = (Acc << n) | value;
-        Bits += n;
-        if (Bits >= 32)
-        {
-            Bits -= 32;
-            var word = (uint)(Acc >> Bits);
-            // No byte of word is 0xFF exactly when no byte of ~word is zero.
-            if (((~word - 0x01010101u) & word & 0x80808080u) == 0)
-            {
-                Unsafe.WriteUnaligned(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Buffer), Position),
-                    BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(word) : word);
-                Position += 4;
-            }
-            else
-            {
-                Position = PutStuffed(Buffer, Position, word);
-            }
-        }
+        // Branch-free, byte-granular flush: the pending bits (under 8 before, at most 8 + 32 - 1
+        // after) are stored left-aligned as 8 big-endian bytes at Position on every call, and
+        // Position advances by the whole bytes among them. No branch depends on the data, and
+        // the loop-carried state is a 2-instruction chain.
+        var acc = (Acc << n) | value;
+        var bits = Bits + n;
+        var aligned = acc << (64 - bits);
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Buffer), Position),
+            BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(aligned) : aligned);
+        Position += bits >> 3;
+        Bits = bits & 7;
+        Acc = acc;
     }
 
     public void PutChecked(uint value, int n)
     {
-        Ensure(16);
+        Ensure(32);
         Put(value, n);
+        Stuff();
+    }
+
+    /// <summary>Inserts the stuffing zero after every 0xFF written since the last call.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Stuff()
+    {
+        if (HasMarkerByte(Buffer, Mark, Position - Mark))
+            Position = StuffRange(Buffer, Mark, Position);
+        Mark = Position;
+    }
+
+    /// <summary>
+    /// Whether <c>buffer[start .. start + length)</c> holds a 0xFF. Reads whole 16-byte vectors,
+    /// up to 15 bytes past the range, which every caller has reserved (a block's
+    /// <see cref="BlockReserve"/>, or <see cref="PutChecked"/>'s 32 bytes).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool HasMarkerByte(byte[] buffer, int start, int length)
+    {
+        if (!Vector128.IsHardwareAccelerated) return buffer.AsSpan(start, length).Contains((byte)0xFF);
+        if (length <= 0) return false;
+        _ = buffer[start + length + 15];
+        ref var p = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(buffer), start);
+        var ff = Vector128.Create((byte)0xFF);
+        uint found = 0;
+        var i = 0;
+        for (; i + 16 <= length; i += 16)
+            found |= Vector128.Equals(Vector128.LoadUnsafe(ref p, (nuint)i), ff).ExtractMostSignificantBits();
+        if (i < length)
+            found |= Vector128.Equals(Vector128.LoadUnsafe(ref p, (nuint)i), ff).ExtractMostSignificantBits() & ((1u << (length - i)) - 1);
+        return found != 0;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static int PutStuffed(byte[] buffer, int position, uint word)
+    private static int StuffRange(byte[] buffer, int start, int end)
     {
-        for (var s = 24; s >= 0; s -= 8)
+        var span = buffer.AsSpan(start, end - start);
+        var count = span.Count((byte)0xFF);
+        var total = count;
+        // Expand from the back so every byte moves at most once (the reserve leaves room for it).
+        var dst = end + count;
+        for (var i = end - 1; i >= start && count > 0; i--)
         {
-            var b = (byte)(word >> s);
-            buffer[position++] = b;
-            if (b == 0xFF) buffer[position++] = 0;
+            var b = buffer[i];
+            if (b == 0xFF)
+            {
+                buffer[--dst] = 0;
+                count--;
+            }
+
+            buffer[--dst] = b;
         }
 
-        return position;
+        return end + total;
     }
 
     /// <summary>Pads the entropy-coded segment to a byte boundary with 1-bits (T.81 F.1.2.3) and flushes it.</summary>
     public void FlushBits()
     {
-        Ensure(16);
+        Ensure(32);
+        Stuff();
         while (Bits >= 8)
         {
             Bits -= 8;
@@ -230,6 +291,7 @@ internal struct JpegBitWriter
         }
 
         Acc = 0;
+        Mark = Position;
     }
 
     private void PutByteStuffed(byte b)
@@ -238,11 +300,12 @@ internal struct JpegBitWriter
         if (b == 0xFF) Buffer[Position++] = 0;
     }
 
-    /// <summary>Raw (marker-segment) bytes; only valid on a byte boundary.</summary>
+    /// <summary>Raw (marker-segment) bytes; only valid on a byte boundary, after <see cref="FlushBits"/>.</summary>
     public void WriteByte(byte b)
     {
         Ensure(1);
         Buffer[Position++] = b;
+        Mark = Position;
     }
 
     public void WriteBytes(ReadOnlySpan<byte> bytes)
@@ -250,6 +313,7 @@ internal struct JpegBitWriter
         Ensure(bytes.Length);
         bytes.CopyTo(Buffer.AsSpan(Position));
         Position += bytes.Length;
+        Mark = Position;
     }
 
     public void WriteUInt16(int v)
@@ -257,6 +321,7 @@ internal struct JpegBitWriter
         Ensure(2);
         Buffer[Position++] = (byte)(v >> 8);
         Buffer[Position++] = (byte)v;
+        Mark = Position;
     }
 
     public byte[] ToArrayAndReturn()

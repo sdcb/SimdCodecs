@@ -102,6 +102,17 @@ internal static class EncodeBenchmark
         Console.WriteLine("| config | encoder | MB | bpp | PSNR-Y | PSNR-RGB | SSIM-Y | MP/s | time vs turbo |");
         Console.WriteLine("|---|---|---:|---:|---:|---:|---:|---:|---:|");
 
+        // Warm up every contestant on every image until the JIT has tiered up, so the first
+        // configuration is not timed against tier-0 code.
+        var warm = Stopwatch.StartNew();
+        do
+        {
+            foreach (var image in images)
+                foreach (var c in contestants)
+                    c.Encode(image, Configs[0]);
+        }
+        while (warm.Elapsed.TotalSeconds < 2);
+
         using var decoder = new TurboDecoder(fast: false);
         var ok = true;
         foreach (var config in Configs)

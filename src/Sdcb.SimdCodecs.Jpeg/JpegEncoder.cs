@@ -196,11 +196,16 @@ public static class JpegEncoder
 
     // -------------------------------------------------------------- transform pipeline
 
+    /// <summary>MCU-row strips are processed in column chunks of this many pixels, so the float planes stay cache-resident.</summary>
+    private const int ChunkWidth = 2048;
+
     /// <summary>
-    /// Runs colour conversion and the forward DCT over the whole image, one MCU row at a time.
-    /// With Huffman tables given, every block is entropy coded straight after its transform;
-    /// otherwise the quantised coefficients are stored in each component's grid.
+    /// Runs colour conversion and the forward DCT over the whole image, one MCU row at a time
+    /// in chunks of <see cref="ChunkWidth"/> columns. With Huffman tables given, every block is
+    /// entropy coded straight after its transform; otherwise the quantised coefficients are
+    /// stored in each component's grid.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Transform(ReadOnlySpan<byte> pixels, int channels, Frame f, ref JpegBitWriter w,
         JpegHuffmanEncodeTable[]? dcTables, JpegHuffmanEncodeTable[]? acTables)
     {
@@ -208,8 +213,10 @@ public static class JpegEncoder
         var gray = comps.Length == 1;
         var subsample = f.HMax == 2;
         var rows = 8 * f.VMax;
-        var stride = f.McusX * 8 * f.HMax;
-        var halfStride = stride / 2;
+        var mcuWidth = 8 * f.HMax;
+        var chunkMcus = ChunkWidth / mcuWidth;
+        const int stride = ChunkWidth;
+        const int halfStride = ChunkWidth / 2;
         var rowBytes = f.Width * channels;
 
         var planeLength = rows * stride;
@@ -228,8 +235,8 @@ public static class JpegEncoder
         {
             for (var c = 0; c < comps.Length; c++)
             {
-                dcCodes[c] = dcTables![comps[c].TableId].Codes;
-                acCodes[c] = acTables![comps[c].TableId].Codes;
+                dcCodes[c] = dcTables![comps[c].TableId].Packed;
+                acCodes[c] = acTables![comps[c].TableId].Packed;
             }
         }
 
@@ -237,74 +244,82 @@ public static class JpegEncoder
         {
             for (var my = 0; my < f.McusY; my++)
             {
-                // Level-shifted planes for this MCU row, rows past the bottom replicating the last
-                // image row and columns past the right edge the last column.
-                var prevSrc = -1;
-                for (var r = 0; r < rows; r++)
+                for (var cx = 0; cx < f.McusX; cx += chunkMcus)
                 {
-                    var srcRow = Math.Min(my * rows + r, f.Height - 1);
-                    var o = r * stride;
-                    if (srcRow == prevSrc)
+                    var mcus = Math.Min(chunkMcus, f.McusX - cx);
+                    var x0 = cx * mcuWidth;
+                    var width = mcus * mcuWidth;
+                    var valid = Math.Min(width, f.Width - x0); // ≥ 1: McusX = ceil(Width / mcuWidth)
+
+                    // Level-shifted planes for this chunk, rows past the bottom replicating the last
+                    // image row and columns past the right edge the last column.
+                    var prevSrc = -1;
+                    for (var r = 0; r < rows; r++)
                     {
-                        y.AsSpan(o - stride, stride).CopyTo(y.AsSpan(o, stride));
-                        if (!gray)
+                        var srcRow = Math.Min(my * rows + r, f.Height - 1);
+                        var o = r * stride;
+                        if (srcRow == prevSrc)
                         {
-                            cb.AsSpan(o - stride, stride).CopyTo(cb.AsSpan(o, stride));
-                            cr.AsSpan(o - stride, stride).CopyTo(cr.AsSpan(o, stride));
-                        }
-
-                        continue;
-                    }
-
-                    prevSrc = srcRow;
-                    var src = pixels.Slice(srcRow * rowBytes, rowBytes);
-                    var ys = y.AsSpan(o, stride);
-                    Span<float> cbs = gray ? [] : cb.AsSpan(o, stride);
-                    Span<float> crs = gray ? [] : cr.AsSpan(o, stride);
-                    JpegEncoderKernels.ConvertRow(src, channels, f.Width, ys, cbs, crs);
-                    if (f.Width < stride)
-                    {
-                        ys[f.Width..].Fill(ys[f.Width - 1]);
-                        if (!gray)
-                        {
-                            cbs[f.Width..].Fill(cbs[f.Width - 1]);
-                            crs[f.Width..].Fill(crs[f.Width - 1]);
-                        }
-                    }
-                }
-
-                if (subsample)
-                {
-                    for (var r = 0; r < 8; r++)
-                    {
-                        JpegEncoderKernels.Downsample2x2(cb.AsSpan(2 * r * stride, stride), cb.AsSpan((2 * r + 1) * stride, stride), cb2.AsSpan(r * halfStride, halfStride), halfStride);
-                        JpegEncoderKernels.Downsample2x2(cr.AsSpan(2 * r * stride, stride), cr.AsSpan((2 * r + 1) * stride, stride), cr2.AsSpan(r * halfStride, halfStride), halfStride);
-                    }
-                }
-
-                for (var mx = 0; mx < f.McusX; mx++)
-                {
-                    for (var c = 0; c < comps.Length; c++)
-                    {
-                        var comp = comps[c];
-                        float[] plane;
-                        int planeStride;
-                        if (c == 0) { plane = y; planeStride = stride; }
-                        else if (subsample) { plane = c == 1 ? cb2 : cr2; planeStride = halfStride; }
-                        else { plane = c == 1 ? cb : cr; planeStride = stride; }
-
-                        for (var v = 0; v < comp.V; v++)
-                        {
-                            for (var h = 0; h < comp.H; h++)
+                            y.AsSpan(o - stride, width).CopyTo(y.AsSpan(o, width));
+                            if (!gray)
                             {
-                                var col = mx * comp.H + h;
-                                var block = plane.AsSpan(v * 8 * planeStride + col * 8);
-                                var zz = store ? comp.Block(my * comp.V + v, col) : scratch;
-                                JpegEncoderKernels.ForwardDct(block, planeStride, comp.Recip, zz);
-                                if (!store)
+                                cb.AsSpan(o - stride, width).CopyTo(cb.AsSpan(o, width));
+                                cr.AsSpan(o - stride, width).CopyTo(cr.AsSpan(o, width));
+                            }
+
+                            continue;
+                        }
+
+                        prevSrc = srcRow;
+                        var src = pixels.Slice(srcRow * rowBytes + x0 * channels, valid * channels);
+                        var ys = y.AsSpan(o, width);
+                        Span<float> cbs = gray ? [] : cb.AsSpan(o, width);
+                        Span<float> crs = gray ? [] : cr.AsSpan(o, width);
+                        JpegEncoderKernels.ConvertRow(src, channels, valid, ys, cbs, crs);
+                        if (valid < width)
+                        {
+                            ys[valid..].Fill(ys[valid - 1]);
+                            if (!gray)
+                            {
+                                cbs[valid..].Fill(cbs[valid - 1]);
+                                crs[valid..].Fill(crs[valid - 1]);
+                            }
+                        }
+                    }
+
+                    if (subsample)
+                    {
+                        for (var r = 0; r < 8; r++)
+                        {
+                            JpegEncoderKernels.Downsample2x2(cb.AsSpan(2 * r * stride, width), cb.AsSpan((2 * r + 1) * stride, width), cb2.AsSpan(r * halfStride, width / 2), width / 2);
+                            JpegEncoderKernels.Downsample2x2(cr.AsSpan(2 * r * stride, width), cr.AsSpan((2 * r + 1) * stride, width), cr2.AsSpan(r * halfStride, width / 2), width / 2);
+                        }
+                    }
+
+                    for (var mx = 0; mx < mcus; mx++)
+                    {
+                        for (var c = 0; c < comps.Length; c++)
+                        {
+                            var comp = comps[c];
+                            float[] plane;
+                            int planeStride;
+                            if (c == 0) { plane = y; planeStride = stride; }
+                            else if (subsample) { plane = c == 1 ? cb2 : cr2; planeStride = halfStride; }
+                            else { plane = c == 1 ? cb : cr; planeStride = stride; }
+
+                            for (var v = 0; v < comp.V; v++)
+                            {
+                                for (var h = 0; h < comp.H; h++)
                                 {
-                                    w.Ensure(JpegBitWriter.BlockReserve);
-                                    pred[c] = EncodeBlock(ref w, zz, pred[c], dcCodes[c], acCodes[c]);
+                                    var local = mx * comp.H + h;
+                                    var block = plane.AsSpan(v * 8 * planeStride + local * 8);
+                                    var zz = store ? comp.Block(my * comp.V + v, cx * comp.H + local) : scratch;
+                                    JpegEncoderKernels.ForwardDct(block, planeStride, comp.Recip, zz);
+                                    if (!store)
+                                    {
+                                        w.Ensure(JpegBitWriter.BlockReserve);
+                                        pred[c] = EncodeBlock(ref w, zz, pred[c], dcCodes[c], acCodes[c]);
+                                    }
                                 }
                             }
                         }
@@ -328,7 +343,6 @@ public static class JpegEncoder
             }
         }
     }
-
     // -------------------------------------------------------------- sequential entropy coding
 
     /// <summary>
@@ -337,27 +351,29 @@ public static class JpegEncoder
     /// </summary>
     /// <remarks>
     /// Unchecked accesses: <paramref name="zz"/> has 64 entries and k is a bit index of a 64-bit
-    /// mask; the code tables have 256 entries and every index is a byte — a DC size category
-    /// (≤ 16) or <c>(run &lt;&lt; 4) | size</c> with run ≤ 15 and size ≤ 15. The caller reserved
+    /// mask. Coefficients of 8-bit samples are under 1024 in magnitude (the DCT of a ±128 block,
+    /// quantisers ≥ 1) and DC differences under 2048, so both index <see cref="ValueBits"/> in
+    /// range. The code tables have 256 entries and every index is a byte: a DC size category, or
+    /// <c>(run &lt;&lt; 4) | size</c> with run ≤ 15 and size ≤ 15. The caller reserved
     /// <see cref="JpegBitWriter.BlockReserve"/> output bytes.
     /// </remarks>
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
-    internal static int EncodeBlock(ref JpegBitWriter writer, ReadOnlySpan<short> zz, int pred, uint[] dcCodes, uint[] acCodes)
+    internal static int EncodeBlock(ref JpegBitWriter writer, ReadOnlySpan<short> zz, int pred, uint[] dcPacked, uint[] acPacked)
     {
         var w = writer;
         _ = zz[63];
-        _ = dcCodes[255];
-        _ = acCodes[255];
+        _ = dcPacked[255];
+        _ = acPacked[255];
         ref var z = ref MemoryMarshal.GetReference(zz);
-        ref var dc = ref MemoryMarshal.GetArrayDataReference(dcCodes);
-        ref var ac = ref MemoryMarshal.GetArrayDataReference(acCodes);
+        ref var dc = ref MemoryMarshal.GetArrayDataReference(dcPacked);
+        ref var ac = ref MemoryMarshal.GetArrayDataReference(acPacked);
+        ref var vb = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(ValueBits), 2048);
 
+        // Each symbol and its extra bits go out in one Put (see JpegHuffmanEncodeTable.Packed).
         int dcValue = z;
-        var diff = dcValue - pred;
-        var s = diff >> 31;
-        var nb = JpegBitWriter.Category((uint)((diff ^ s) - s));
-        var code = Unsafe.Add(ref dc, nb);
-        w.Put(((code >> 8) << nb) | ((uint)(diff + s) & ((1u << nb) - 1)), (int)(code & 0xFF) + nb);
+        var bits = Unsafe.Add(ref vb, dcValue - pred);
+        var e = Unsafe.Add(ref dc, (int)(bits >> 16));
+        w.Put((e >> 5) | (bits & 0xFFFF), (int)(e & 31));
 
         var mask = JpegEncoderKernels.NonZeroMask(zz) & ~1ul;
         var last = 0;
@@ -368,15 +384,13 @@ public static class JpegEncoder
             while (run >= 16)
             {
                 var zrl = Unsafe.Add(ref ac, 0xF0);
-                w.Put(zrl >> 8, (int)(zrl & 0xFF));
+                w.Put(zrl >> 5, (int)(zrl & 31));
                 run -= 16;
             }
 
-            int v = Unsafe.Add(ref z, k);
-            s = v >> 31;
-            nb = JpegBitWriter.Category((uint)((v ^ s) - s));
-            code = Unsafe.Add(ref ac, (run << 4) | nb);
-            w.Put(((code >> 8) << nb) | ((uint)(v + s) & ((1u << nb) - 1)), (int)(code & 0xFF) + nb);
+            bits = Unsafe.Add(ref vb, Unsafe.Add(ref z, k));
+            e = Unsafe.Add(ref ac, (run << 4) | (int)(bits >> 16));
+            w.Put((e >> 5) | (bits & 0xFFFF), (int)(e & 31));
             last = k;
             mask &= mask - 1;
         }
@@ -384,13 +398,35 @@ public static class JpegEncoder
         if (last != 63)
         {
             var eob = ac;
-            w.Put(eob >> 8, (int)(eob & 0xFF));
+            w.Put(eob >> 5, (int)(eob & 31));
         }
 
-        writer = w;
+        w.Stuff();
+
+        // The buffer itself never changes here; writing back only the scalars skips a GC write barrier.
+        writer.Position = w.Position;
+        writer.Acc = w.Acc;
+        writer.Bits = w.Bits;
+        writer.Mark = w.Mark;
         return dcValue;
     }
+    /// <summary>
+    /// For a coefficient v in -2048..2047 at index v + 2048: its size category in the high 16 bits
+    /// and its extra bits (v, or v - 1 for negative v, masked to the category) in the low 16.
+    /// </summary>
+    private static readonly uint[] ValueBits = BuildValueBits();
 
+    private static uint[] BuildValueBits()
+    {
+        var t = new uint[4096];
+        for (var v = -2048; v < 2048; v++)
+        {
+            var nb = JpegBitWriter.Category((uint)Math.Abs(v));
+            t[v + 2048] = ((uint)nb << 16) | ((uint)(v < 0 ? v - 1 : v) & ((1u << nb) - 1));
+        }
+
+        return t;
+    }
     /// <summary>Counts the symbols <see cref="EncodeBlock"/> would emit, for Annex K.2 table optimisation.</summary>
     private static int CountBlock(ReadOnlySpan<short> zz, int pred, long[] dcFreq, long[] acFreq)
     {
@@ -414,6 +450,7 @@ public static class JpegEncoder
         return dcValue;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void EncodeOptimizedBaseline(ref JpegBitWriter w, Frame f)
     {
         var comps = f.Components;
@@ -453,7 +490,7 @@ public static class JpegEncoder
                         for (var h = 0; h < comp.H; h++)
                         {
                             w.Ensure(JpegBitWriter.BlockReserve);
-                            pred[c] = EncodeBlock(ref w, comp.Block(my * comp.V + v, mx * comp.H + h), pred[c], dc[comp.TableId].Codes, ac[comp.TableId].Codes);
+                            pred[c] = EncodeBlock(ref w, comp.Block(my * comp.V + v, mx * comp.H + h), pred[c], dc[comp.TableId].Packed, ac[comp.TableId].Packed);
                         }
                     }
                 }
