@@ -3,6 +3,8 @@ name: CI/CD
 on:
   push:
     branches: [ main ]
+    # Pushing a tag (e.g. v1.2) is what publishes to NuGet; branch pushes only build and test.
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -111,7 +113,7 @@ jobs:
   publish-nuget:
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     steps:
     - name: Download NuGet packages
       uses: actions/download-artifact@v8
