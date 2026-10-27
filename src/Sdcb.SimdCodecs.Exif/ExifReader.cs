@@ -136,16 +136,17 @@ public static class ExifReader
         var pos = 8;
         while (pos + 12 <= png.Length)
         {
-            var length = (int)BinaryPrimitives.ReadUInt32BigEndian(png.Slice(pos, 4));
+            var length = BinaryPrimitives.ReadUInt32BigEndian(png.Slice(pos, 4));
+            if (pos + 12L + length > png.Length) return null;
             var type = png.Slice(pos + 4, 4);
             if (type[0] == (byte)'e' && type[1] == (byte)'X' && type[2] == (byte)'I' && type[3] == (byte)'f')
             {
                 // The chunk payload is the raw TIFF (including the II/MM header).
-                return FromTiff(png.Slice(pos + 8, length));
+                return FromTiff(png.Slice(pos + 8, (int)length));
             }
             if (type[0] == (byte)'I' && type[1] == (byte)'E' && type[2] == (byte)'N' && type[3] == (byte)'D')
                 return null;
-            pos += 12 + length; // length(4) + type(4) + data + crc(4)
+            pos += 12 + (int)length; // length(4) + type(4) + data + crc(4)
         }
         return null;
     }
@@ -192,34 +193,35 @@ public static class ExifReader
         ReadOnlySpan<byte> tiff, int ifdOffset, bool fileIsLE, out int nextIfdOffset)
     {
         var result = new Dictionary<ushort, RawEntry>();
-        if (ifdOffset + 2 > tiff.Length) { nextIfdOffset = 0; return result; }
+        // Offsets come from untrusted uint fields cast to int, so they may be negative.
+        if (ifdOffset < 0 || ifdOffset + 2L > tiff.Length) { nextIfdOffset = 0; return result; }
         var entryCount = ReadUInt16(tiff.Slice(ifdOffset, 2), fileIsLE);
         const int entrySize = 12;
         var directoryEnd = ifdOffset + 2 + entryCount * entrySize;
-        if (directoryEnd + 4 > tiff.Length) { nextIfdOffset = 0; return result; }
+        if (directoryEnd + 4L > tiff.Length) { nextIfdOffset = 0; return result; }
 
         for (var i = 0; i < entryCount; i++)
         {
             var entryStart = ifdOffset + 2 + i * entrySize;
             var tag = ReadUInt16(tiff.Slice(entryStart, 2), fileIsLE);
             var type = (TiffFieldType)ReadUInt16(tiff.Slice(entryStart + 2, 2), fileIsLE);
-            var count = (int)ReadUInt32(tiff.Slice(entryStart + 4, 4), fileIsLE);
+            var count = ReadUInt32(tiff.Slice(entryStart + 4, 4), fileIsLE);
             var valueSpan = tiff.Slice(entryStart + 8, 4);
             var typeSize = FieldTypeSize(type);
             if (typeSize == 0) continue; // unsupported field type — skip gracefully
-            var totalBytes = typeSize * count;
+            var totalBytes = (long)typeSize * count;
             ReadOnlySpan<byte> data;
             if (totalBytes <= 4)
             {
-                data = valueSpan[..totalBytes];
+                data = valueSpan[..(int)totalBytes];
             }
             else
             {
-                var off = (int)ReadUInt32(valueSpan, fileIsLE);
-                if (off < 0 || off + totalBytes > tiff.Length) continue; // out of bounds — skip
-                data = tiff.Slice(off, totalBytes);
+                var off = ReadUInt32(valueSpan, fileIsLE);
+                if (off + totalBytes > tiff.Length) continue; // out of bounds — skip
+                data = tiff.Slice((int)off, (int)totalBytes);
             }
-            result[tag] = new RawEntry(type, count, data.ToArray());
+            result[tag] = new RawEntry(type, (int)count, data.ToArray());
         }
         nextIfdOffset = (int)ReadUInt32(tiff.Slice(directoryEnd, 4), fileIsLE);
         return result;
@@ -246,11 +248,12 @@ public static class ExifReader
         ? BinaryPrimitives.ReadInt32LittleEndian(bytes)
         : BinaryPrimitives.ReadInt32BigEndian(bytes);
 
+    // A zero-count pointer entry has no data; 0 is never a valid IFD offset (it is the header).
     private static uint ScalarFromRaw(RawEntry entry, bool fileIsLE) => entry.Type switch
     {
-        TiffFieldType.Byte  => entry.Data[0],
-        TiffFieldType.Short => ReadUInt16(entry.Data, fileIsLE),
-        TiffFieldType.Long  => ReadUInt32(entry.Data, fileIsLE),
+        TiffFieldType.Byte when entry.Data.Length >= 1  => entry.Data[0],
+        TiffFieldType.Short when entry.Data.Length >= 2 => ReadUInt16(entry.Data, fileIsLE),
+        TiffFieldType.Long when entry.Data.Length >= 4  => ReadUInt32(entry.Data, fileIsLE),
         _ => 0u,
     };
 

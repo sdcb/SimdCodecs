@@ -95,6 +95,10 @@ internal static class Jbig2Segment
         // §7.2.5: referred-to numbers are sized by this segment's own number,
         // since a segment can only refer to lower-numbered ones.
         var referredSize = number <= 256 ? 1 : number <= 65536 ? 2 : 4;
+        // Bound the count by the bytes actually present before allocating for it.
+        if (position + (long)referredCount * referredSize > data.Length)
+            throw new InvalidDataException(
+                $"JBIG2: segment {number} claims {referredCount} referred-to segments, past the end of the stream.");
         var referredTo = referredCount == 0 ? [] : new uint[referredCount];
         for (var i = 0; i < referredCount; i++)
         {

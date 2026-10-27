@@ -276,6 +276,77 @@ public sealed class ExifReaderTests
         page.Pixels.ShouldBe(new byte[] { 0xAB });
     }
 
+    // Malformed-entry shapes found by mutation fuzzing; each once escaped as
+    // ArgumentOutOfRangeException. A bad entry is skipped, the rest still parse.
+    [Theory]
+    [InlineData((ushort)2, 0xFFFFFFFFu, 0u)]          // count cast to int went negative
+    [InlineData((ushort)5, 0x30000000u, 16u)]         // typeSize * count overflowed int
+    [InlineData((ushort)2, 8u, 0x7FFFFFFCu)]          // offset + length overflowed int
+    [InlineData((ushort)2, 8u, 0xFFFFFFF0u)]          // offset cast to int went negative
+    public void FromTiff_MalformedEntry_IsSkipped(ushort type, uint count, uint value)
+    {
+        var tiff = SingleEntryTiff(ExifTag.Make, type, count, value, AsciiTag(ExifTag.Model, "M"));
+
+        var md = ExifReader.FromTiff(tiff).ShouldNotBeNull();
+        md.Make.ShouldBeNull();
+        md.Model.ShouldBe("M");
+    }
+
+    [Theory]
+    [InlineData(0x80000000u)]
+    [InlineData(0xFFFFFFF0u)]
+    public void FromTiff_Ifd0OffsetOutOfRange_ReturnsEmptyMetadata(uint ifd0Offset)
+    {
+        var tiff = new byte[16];
+        "II*\0"u8.CopyTo(tiff);
+        BinaryPrimitives.WriteUInt32LittleEndian(tiff.AsSpan(4), ifd0Offset);
+
+        ExifReader.FromTiff(tiff).ShouldNotBeNull().RawTags.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(TiffTag.ExifIfd)]
+    [InlineData(TiffTag.GpsInfoIfd)]
+    public void FromTiff_SubIfdPointerWithNoValue_IsIgnored(ushort pointerTag)
+    {
+        var tiff = SingleEntryTiff(pointerTag, (ushort)TiffFieldType.Long, 0, 0, AsciiTag(ExifTag.Model, "M"));
+
+        Should.NotThrow(() => ExifReader.FromTiff(tiff));
+    }
+
+    [Fact]
+    public void FromPng_ChunkLengthPastTheEnd_ReturnsNull()
+    {
+        var png = WrapInPngWithExifChunk(BuildTiff(fileIsLE: true, ifd0Entries: [AsciiTag(ExifTag.Make, "Canon")]));
+        // Overwrite the eXIf chunk length (after the 8-byte signature and the 25-byte IHDR chunk).
+        BinaryPrimitives.WriteUInt32BigEndian(png.AsSpan(33), 0xFFFFFFF0u);
+
+        ExifReader.FromPng(png).ShouldBeNull();
+    }
+
+    // Little-endian TIFF whose IFD0 holds one raw entry followed by one well-formed ASCII entry.
+    private static byte[] SingleEntryTiff(ushort tag, ushort type, uint count, uint value, EntryDraft good)
+    {
+        var tiff = new byte[8 + 2 + 2 * 12 + 4 + good.Bytes.Length];
+        "II*\0"u8.CopyTo(tiff);
+        BinaryPrimitives.WriteUInt32LittleEndian(tiff.AsSpan(4), 8);
+        BinaryPrimitives.WriteUInt16LittleEndian(tiff.AsSpan(8), 2);
+        var e = tiff.AsSpan(10);
+        BinaryPrimitives.WriteUInt16LittleEndian(e, tag);
+        BinaryPrimitives.WriteUInt16LittleEndian(e[2..], type);
+        BinaryPrimitives.WriteUInt32LittleEndian(e[4..], count);
+        BinaryPrimitives.WriteUInt32LittleEndian(e[8..], value);
+        e = tiff.AsSpan(22);
+        var dataOffset = 8 + 2 + 2 * 12 + 4;
+        BinaryPrimitives.WriteUInt16LittleEndian(e, good.Tag);
+        BinaryPrimitives.WriteUInt16LittleEndian(e[2..], (ushort)good.Type);
+        BinaryPrimitives.WriteUInt32LittleEndian(e[4..], (uint)good.Bytes.Length);
+        if (good.Bytes.Length <= 4) good.Bytes.CopyTo(e[8..]);
+        else BinaryPrimitives.WriteUInt32LittleEndian(e[8..], (uint)dataOffset);
+        good.Bytes.CopyTo(tiff.AsSpan(dataOffset));
+        return tiff;
+    }
+
     private static void PatchStripOffsetTag(byte[] tiff, uint stripOffset)
     {
         // Walk IFD0 (starts at offset 8) and patch tag 0x0111's value field.

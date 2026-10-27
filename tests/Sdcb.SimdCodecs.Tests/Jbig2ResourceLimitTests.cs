@@ -363,6 +363,27 @@ public sealed class Jbig2ResourceLimitTests
         return [.. body];
     }
 
+    [Fact]
+    public void ReferredToCountPastTheEndOfTheStream_IsRejectedBeforeAllocating()
+    {
+        // Found by mutation fuzzing: the escape form of the referred-to count
+        // (T.88 §7.2.4) declares 0x1FFFFFFF references in a 22-byte file, and the
+        // header reader allocated a 2 GiB array for them before reading any.
+        byte[] file =
+        [
+            0x97, 0x4A, 0x42, 0x32, 0x0D, 0x0A, 0x1A, 0x0A, // file signature
+            0x01, 0x00, 0x00, 0x00, 0x01,                   // sequential, 1 page
+            0x00, 0x00, 0x00, 0x00,                         // segment number 0
+            0x30,                                           // page information
+            0xFF, 0xFF, 0xFF, 0xFF,                         // long-form count 0x1FFFFFFF
+        ];
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        Jbig2Decoder.TryReadFileInfo(file, out _, out _).ShouldBeFalse();
+        Should.Throw<InvalidDataException>(() => Jbig2Decoder.DecodeFile(file));
+        (GC.GetAllocatedBytesForCurrentThread() - before).ShouldBeLessThan(1 << 20);
+    }
+
     private static void WriteUInt32(List<byte> target, uint value)
     {
         Span<byte> buffer = stackalloc byte[4];
