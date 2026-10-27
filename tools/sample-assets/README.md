@@ -26,3 +26,17 @@ working, then update the URLs in the samples and the table in `assets.tsv`:
 ```bash
 for f in out/*; do npx wrangler r2 object put "cv-public/simdcodecs/samples/v2/$(basename "$f")" --file "$f" --remote; done
 ```
+
+## README showcase
+
+The image at the top of the repository README is built from these files after decoding them with this
+library, so every pixel in it went through Sdcb.SimdCodecs:
+
+```bash
+dotnet run decode-all.cs -- out decoded        # RGBA dumps, one per file
+python make-showcase.py decoded showcase.jpg   # needs Pillow
+npx wrangler r2 object put cv-public/simdcodecs/readme/showcase-v2.jpg --file showcase.jpg --content-type image/jpeg --remote
+```
+
+Upload a new name (`showcase-v2.jpg`, …) rather than overwriting, so caches and older READMEs keep the
+image they pointed at, then update the URL in `README.md` and `README.zh-CN.md`.
