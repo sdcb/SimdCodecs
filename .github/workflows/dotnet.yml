@@ -4,10 +4,21 @@ on:
   push:
     branches: [ main ]
     # Pushing a version tag (e.g. v1.2.3) publishes to NuGet; branch pushes only build and test.
+    # GitHub does not apply paths-ignore to tag pushes, so a release always runs.
     tags: [ 'v*' ]
+    paths-ignore: &docs-only
+    - '**/*.md'
+    - '**/linqpad-samples/**'
+    - 'tools/sample-assets/**'
   pull_request:
     branches: [ main ]
+    paths-ignore: *docs-only
   workflow_dispatch:
+
+# A newer push to the same branch or PR supersedes the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   BUILD_CONF: Release
@@ -70,6 +81,12 @@ jobs:
     # dev box would then quietly disagree about what the reference is.
     - name: Fetch JPEG 2000 oracle (OpenJPEG)
       run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/jpeg2000/fetch.sh
+    - name: Cache NuGet packages
+      uses: actions/cache@v6
+      with:
+        path: ~/.nuget/packages
+        key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+        restore-keys: nuget-${{ runner.os }}-${{ runner.arch }}-
     - name: Restore dependencies
       run: dotnet restore SimdCodecs.slnx
     - name: Build
@@ -85,14 +102,6 @@ jobs:
       env:
         REQUIRE_ORACLES: 1
       run: dotnet test SimdCodecs.slnx -c $BUILD_CONF --no-build
-    - name: Test JPEG on forced ISA fallbacks
-      # The JPEG kernels dispatch Vector256 (AVX2) -> Vector128 -> scalar and must be
-      # bit-identical on every tier; the golden digests only see the tier this runner
-      # dispatches to. DOTNET_EnableAVX2=0 forces the Vector128 kernels,
-      # DOTNET_EnableHWIntrinsic=0 the scalar ones.
-      run: |
-        DOTNET_EnableAVX2=0 dotnet test tests/Sdcb.SimdCodecs.Tests -c $BUILD_CONF --no-build --filter "FullyQualifiedName~Jpeg"
-        DOTNET_EnableHWIntrinsic=0 dotnet test tests/Sdcb.SimdCodecs.Tests -c $BUILD_CONF --no-build --filter "FullyQualifiedName~Jpeg"
     - name: Upload NuGet package
       uses: actions/upload-artifact@v7
       with:
@@ -100,14 +109,33 @@ jobs:
         path: '**/*.nupkg'
         retention-days: 5
 
-  jpeg-arm64:
-    # Vector128 maps to AdvSimd here: the same bit-exact contract on another ISA.
-    # No external oracles on this runner, so oracle tests skip (no REQUIRE_ORACLES).
-    runs-on: ubuntu-24.04-arm
+  jpeg-isa:
+    # The JPEG kernels dispatch Vector256 (AVX2) -> Vector128 -> scalar and must be bit-identical
+    # on every tier; the golden digests in the build job only see the tier its runner dispatches to.
+    # DOTNET_EnableAVX2=0 forces the Vector128 kernels, DOTNET_EnableHWIntrinsic=0 the scalar ones,
+    # and on arm64 Vector128 maps to AdvSimd. The variable is set for the test run only, so the
+    # compiler itself runs at full speed. No external oracles here, so oracle tests skip.
+    name: jpeg-isa (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - { name: x64 Vector128, os: ubuntu-latest, isa: DOTNET_EnableAVX2=0 }
+        - { name: x64 scalar, os: ubuntu-latest, isa: DOTNET_EnableHWIntrinsic=0 }
+        - { name: arm64 AdvSimd, os: ubuntu-24.04-arm, isa: '' }
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v7
-    - name: Test JPEG (arm64)
-      run: dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg"
+    - name: Cache NuGet packages
+      uses: actions/cache@v6
+      with:
+        path: ~/.nuget/packages
+        key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+        restore-keys: nuget-${{ runner.os }}-${{ runner.arch }}-
+    - name: Build tests
+      run: dotnet build tests/Sdcb.SimdCodecs.Tests -c Release
+    - name: Test JPEG
+      run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Jpeg"
 
   jpeg-aot:
     # NativeAOT picks the vector tier at compile time: its decodes must equal the JIT's.
@@ -115,12 +143,17 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: NativeAOT prerequisites
-      run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      # The runner image normally has both; apt only runs when one is missing.
+      run: |
+        if ! command -v clang > /dev/null || ! dpkg -s zlib1g-dev > /dev/null 2>&1; then
+          sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+        fi
     - name: NativeAOT smoke test
       run: bash tests/Sdcb.SimdCodecs.AotSmoke/run.sh
 
   publish-nuget:
-    needs: build
+    # Every check must pass before a release goes out, not just the build job.
+    needs: [ build, jpeg-isa, jpeg-aot ]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     permissions:
