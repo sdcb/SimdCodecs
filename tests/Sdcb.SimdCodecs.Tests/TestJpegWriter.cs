@@ -79,8 +79,16 @@ internal static class TestJpegWriter
         }
 
         var quant = new[] { QuantTable(o.Quality, 1.0), QuantTable(o.Quality, 1.6) };
-        var dcTables = new[] { HuffTable(JpegEncoderTables.YdcHt, 12), HuffTable(JpegEncoderTables.UvdcHt, 12) };
-        var acTables = new[] { HuffTable(JpegEncoderTables.YacHt, 256), HuffTable(JpegEncoderTables.UvacHt, 256) };
+        var dcTables = new[]
+        {
+            HuffTable(JpegEncoderTables.DcLumaBits, JpegEncoderTables.DcLumaValues),
+            HuffTable(JpegEncoderTables.DcChromaBits, JpegEncoderTables.DcChromaValues),
+        };
+        var acTables = new[]
+        {
+            HuffTable(JpegEncoderTables.AcLumaBits, JpegEncoderTables.AcLumaValues),
+            HuffTable(JpegEncoderTables.AcChromaBits, JpegEncoderTables.AcChromaValues),
+        };
         int TableOf(int k) => k == 0 ? 0 : 1;
 
         var outp = new List<byte>();
@@ -326,25 +334,22 @@ internal static class TestJpegWriter
 
     private sealed record Huff(int[] Code, int[] Size, byte[] Bits, byte[] Values);
 
-    /// <summary>Rebuilds DHT BITS/HUFFVAL from a flattened (code, size) table.</summary>
-    private static Huff HuffTable(ReadOnlySpan<ushort> flat, int symbols)
+    /// <summary>Derives every symbol's code from a T.81 Annex K BITS / HUFFVAL pair (Annex C).</summary>
+    private static Huff HuffTable(ReadOnlySpan<byte> bits, ReadOnlySpan<byte> values)
     {
         var code = new int[256];
         var size = new int[256];
-        var used = new List<(int Size, int Code, int Symbol)>();
-        for (var s = 0; s < symbols && 2 * s + 1 < flat.Length; ++s)
+        int next = 0, k = 0;
+        for (var len = 1; len <= 16; ++len, next <<= 1)
         {
-            code[s] = flat[2 * s];
-            size[s] = flat[2 * s + 1];
-            if (size[s] > 0)
-                used.Add((size[s], code[s], s));
+            for (var i = 0; i < bits[len - 1]; ++i, ++k, ++next)
+            {
+                code[values[k]] = next;
+                size[values[k]] = len;
+            }
         }
 
-        used.Sort();
-        var bits = new byte[16];
-        foreach (var u in used)
-            ++bits[u.Size - 1];
-        return new Huff(code, size, bits, used.Select(u => (byte)u.Symbol).ToArray());
+        return new Huff(code, size, bits.ToArray(), values.ToArray());
     }
 
     private sealed class BitWriter(List<byte> output)

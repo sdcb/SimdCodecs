@@ -32,12 +32,20 @@ internal static unsafe class BaselineDecoder
         return fn(jpeg, rgba, 1);
     }
 
-    private static (IntPtr, string) Load()
+    /// <summary>The baseline build's <c>Sdcb.SimdCodecs.Jpeg</c> assembly, in its own load context.</summary>
+    public static Assembly Assembly => LoadedAssembly.Value;
+
+    private static readonly Lazy<Assembly> LoadedAssembly = new(() =>
     {
         var description = Description ?? throw new InvalidOperationException("No baseline built. Run the 'baseline [git-ref]' command first.");
         var dir = Path.Combine(Dir, description.Split(' ')[0]);
-        var alc = new DirectoryLoadContext(dir);
-        var asm = alc.LoadFromAssemblyName(new AssemblyName("Sdcb.SimdCodecs.Jpeg"));
+        return new DirectoryLoadContext(dir).LoadFromAssemblyName(new AssemblyName("Sdcb.SimdCodecs.Jpeg"));
+    });
+
+    private static (IntPtr, string) Load()
+    {
+        var asm = Assembly;
+        var description = Description!;
         var type = asm.GetType("Sdcb.SimdCodecs.Jpeg.JpegDecoder", throwOnError: true)!;
         var method = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Single(m => m.Name == "DecodeTo" && m.GetParameters().Length == 3);

@@ -24,9 +24,10 @@ at or beyond libjpeg-turbo and ImageSharp. **Measure first** — see `benchmarks
 - Algorithms may only come from: ITU-T specs (T.81, T.83, T.88, T.800, …) and their ISO twins,
   the prose and tables of RFC 6386 (VP8) and RFC 9649 (WebP) -- not the source code in RFC 6386 §20,
   academic papers (AAN, Loeffler–Ligtenberg–Moschytz, …), CPU vendor optimisation manuals and
-  instruction tables, and public-domain code (stb_image / stb_image_write — the JPEG decoder's
-  marker/entropy layer and the encoder are ports of these; the decoder's sample arithmetic is
-  defined in-repo from T.81/T.871, see `JpegIdct`, `JpegResample`, `JpegColor`).
+  instruction tables, and public-domain code (stb_image — the JPEG decoder's marker/entropy
+  layer is a port of it; the decoder's sample arithmetic is defined in-repo from T.81/T.871, see
+  `JpegIdct`, `JpegResample`, `JpegColor`; the encoder is written from T.81 (Annexes A, F, G, K),
+  T.871 and the AAN paper, see `JpegEncoderKernels`, `JpegProgressiveEncoder`).
 - Anything of uncertain provenance does not go into the repo — code, comments, test fixtures
   or images. Third-party test images are fetched by URL + SHA-256 into git-ignored caches,
   never committed, and must be Public Domain or CC0.
@@ -103,13 +104,17 @@ Golden digests are part of the contract:
   the parent commit: per group RGB PSNR within 0.2 dB of the baseline, ≥ 0.5 dB above
   libjpeg-turbo where chroma is interpolated (4:4:4: not below it), peak error ≤ 2, IEEE 1180
   limits met — and land as its own commit with the gate table in the message.
-  `Fixtures/jpeg-encoder-golden.tsv` pins encoder bytes.
+- The JPEG encoder has no byte golden: its contract is quality. `encode --gate` in the benchmark
+  project must pass (per configuration on the corpus: PSNR-Y ≥ libjpeg-turbo, size ≤ +1%, in
+  baseline, optimised-Huffman and progressive mode), optimised / progressive streams must decode
+  to exactly the baseline's pixels, and the kernels stay identical across ISA tiers
+  (`JpegEncoderEquivalenceTests`) so output does not depend on the machine.
 - `Fixtures/webp/webp-oracle-golden.tsv` and `webp-animation-oracle-golden.tsv` pin the WebP
   decoder's RGBA output byte for byte against libwebp 1.6.0; the vector paths (VP8L predictors,
   fancy upsampling) are asserted equal to their scalar twins by the `*EquivalenceTests`.
-- Never regenerate a golden (`REGEN_JPEG_ORACLE=1` / `REGEN_JPEG_ENCODER_GOLDEN=1`) to make a
+- Never regenerate a golden (e.g. `REGEN_JPEG_ORACLE=1`) to make a
   test pass. A golden only moves for an intentional, reviewed output change, and the diff is
-  part of that review. Pins (stb SHA, OpenJPEG version, libjpeg-turbo version) are contract
+  part of that review. Pins (OpenJPEG version, libjpeg-turbo version) are contract
   too: bumping one can change expected bytes.
 
 ## Validation discipline

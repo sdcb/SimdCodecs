@@ -12,7 +12,7 @@ All packages version in lockstep (`0.1.<CI run number>`).
 |---|---|
 | `Sdcb.SimdCodecs` | Facade: sniffs magic bytes and dispatches to the codecs below (`SimdCodecs.TryDecode`, `TryDecodeIntoRgba8`, …). |
 | `Sdcb.SimdCodecs.Abstractions` | `IImageDecoder`, `IDecodedImage`, `RasterImage`, ITU-T H.273 colour vocabulary, `ColorEncoding`. |
-| `Sdcb.SimdCodecs.Jpeg` | JPEG (T.81) decoder — baseline, progressive, restart intervals, any subsampling, grey/YCbCr/RGB/CMYK/YCCK, scaled 1/2–1/8 decode, lossless SOF3 — and a baseline encoder that can embed EXIF (APP1) and XMP packets. |
+| `Sdcb.SimdCodecs.Jpeg` | JPEG (T.81) decoder — baseline, progressive, restart intervals, any subsampling, grey/YCbCr/RGB/CMYK/YCCK, scaled 1/2–1/8 decode, lossless SOF3 — and a SIMD encoder (baseline, optimised Huffman, or progressive; 4:4:4 / 4:2:0 / grey) that can embed EXIF (APP1) and XMP packets. |
 | `Sdcb.SimdCodecs.Jpeg.GainMap` | Ultra HDR / Adobe gain-map JPEG read, assemble and reconstruct. |
 | `Sdcb.SimdCodecs.Jpeg.IccInjector` | Splice an ICC profile (APP2) into an existing JPEG. |
 | `Sdcb.SimdCodecs.Png` | PNG encoder + decoder: every standard bit depth (incl. 1/2/4-bit grey and indexed), tEXt / zTXt / iTXt text chunks, PNG-3 cICP / mDCV / cLLI HDR signalling. |

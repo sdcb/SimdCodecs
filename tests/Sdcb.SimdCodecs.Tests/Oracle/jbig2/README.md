@@ -64,8 +64,8 @@ that stops installing its oracle looks exactly like one that runs it. CI's test
 step sets `REQUIRE_ORACLES=1` so that silence becomes a red build. The shared
 entry point is `OracleGate.RequireOrSkip`; JBIG2 was the first harness on it.
 
-All three external oracles (jbig2dec, jpegenc, OpenJPEG) are gated and built,
-fetched or installed in CI. An oracle guard that `return`s early counts as a
+All the external oracles (jbig2dec, OpenJPEG, libwebp) are gated and fetched or
+installed in CI. An oracle guard that `return`s early counts as a
 **pass**, which is exactly the silence `REQUIRE_ORACLES=1` exists to break.
 
 ### A note on the symbol-mode fixtures

@@ -37,8 +37,6 @@
 
   <ItemGroup>
     <Content Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
-    <!-- jpegenc oracle (built via Oracle\jpegenc\build.sh); skipped if absent. -->
-    <None Include="Oracle\bin\jpegenc.exe" CopyToOutputDirectory="PreserveNewest" Link="Oracle\jpegenc.exe" Condition="Exists('Oracle\bin\jpegenc.exe')" />
   </ItemGroup>
 
 </Project>

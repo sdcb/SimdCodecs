@@ -14,9 +14,8 @@ namespace Sdcb.SimdCodecs.Tests;
 /// into a red build.
 /// </para>
 /// <para>
-/// All three external oracles are wired up this way — <see cref="Jbig2Oracle"/>,
-/// <see cref="OpenJpegOracle"/>, and jpegenc (via
-/// <c>JpegEncoderOracleTests.RequireOracle</c>) — and CI installs or builds each
+/// The external oracles are wired up this way — <see cref="Jbig2Oracle"/>,
+/// <see cref="OpenJpegOracle"/> and the WebP tools — and CI installs or builds each
 /// one, so none can go quietly missing.
 /// </para>
 /// <para>

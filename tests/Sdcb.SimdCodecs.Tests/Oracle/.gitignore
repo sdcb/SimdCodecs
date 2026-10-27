@@ -1,5 +1,4 @@
 bin/
-jpegenc/stb_image_write.h
 jbig2/dist/
 jbig2/.pkg/
 jpeg2000/dist/

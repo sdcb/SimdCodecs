@@ -20,8 +20,7 @@ around jbig2dec (AGPL), jbig2enc (Apache-2.0) and libjpeg / libjpeg-turbo (see
 
 ## Why this one downloads instead of building
 
-`Oracle/jpegenc/build.sh` (stb) compiles from source with clang. This one does
-not, and the reason is not laziness: OpenJPEG
+This oracle is not compiled from source, and the reason is not laziness: OpenJPEG
 wants CMake, and upstream publishes official per-platform builds covering both
 platforms that matter here (Windows x64 dev box, `ubuntu-latest` CI). A verified
 download is less machinery *and* a stronger guarantee — dev box and CI run the

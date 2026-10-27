@@ -37,9 +37,6 @@ jobs:
           *) echo "::error::VersionMajorMinor did not resolve from Directory.Build.props (got '$MM')"; exit 1 ;;
         esac
         echo "VERSION_PREFIX=${MM}.${{ github.run_number }}" >> "$GITHUB_ENV"
-    # Oracles are fetched/built BEFORE dotnet build: the test csproj copies
-    # Oracle/bin/jpegenc.exe to the output with a glob evaluated during the build.
-    #
     # jbig2dec is the reference JBIG2 decoder that Jbig2OracleTests checks our
     # codestreams against. Used strictly as a BINARY -- it is AGPL and can never
     # be a port source for this repo (see AGENTS.md and
@@ -53,13 +50,6 @@ jobs:
     # them would be worth knowing about rather than pinning away.
     - name: Install codec oracles
       run: sudo apt-get update && sudo apt-get install -y jbig2dec webp
-    # jpegenc wraps the pinned stb_image_write.h that JpegEncoder was ported
-    # against, verified by SHA-256 on download. The committed golden digests
-    # already guard the encoder without it; what this adds is the check that the
-    # golden still matches the *live* reference rather than drifting into a
-    # self-consistent fiction.
-    - name: Build JPEG encoder oracle (stb_image_write)
-      run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/jpegenc/build.sh
     # OpenJPEG's opj_compress / opj_decompress, the JPEG 2000 reference tools.
     # Downloaded rather than built: OpenJPEG wants CMake, and upstream publishes
     # official builds for both platforms that matter, so this runner and the dev
@@ -78,7 +68,7 @@ jobs:
       # oracle harness degrades to a skip so a clean clone stays green, which is
       # right locally and misleading here -- without this, a CI job that stopped
       # installing jbig2dec or building an oracle would look exactly like one
-      # that did. All four external oracles (jbig2dec, jpegenc, OpenJPEG
+      # that did. All three external oracles (jbig2dec, OpenJPEG
       # and libwebp's dwebp / anim_dump) are gated and fetched or built above,
       # so this run has no silently-absent oracle left.
       env:

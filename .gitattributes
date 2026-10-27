@@ -12,7 +12,7 @@
 # Shell scripts must be LF in the WORKING TREE too, not just the index. With
 # core.autocrlf=true (the default on Windows) they otherwise check out as CRLF,
 # and bash chokes on the trailing \r: `set -euo pipefail` becomes `pipefail\r`
-# and the script dies on line 6. That is not hypothetical — Oracle/jpegenc/
+# and the script dies on line 6. That is not hypothetical — an oracle
 # build.sh was checked out CRLF and unrunnable from Git Bash. These scripts now
 # build oracles in CI as well, so they have to work on both platforms.
 *.sh              text eol=lf
@@ -37,8 +37,7 @@
 *.ppm binary
 *.raw binary
 
-# Vendored C headers (the stb_image_write.h the jpegenc oracle downloads at build
-# time) — mark them so GitHub language stats don't attribute them to this repo.
+# Vendored C headers (anything an oracle build downloads) — mark them so GitHub language stats don't attribute them to this repo.
 *.h linguist-vendored
 
 # WebP fixtures and benchmark inputs: RIFF binaries, never to be text-normalized.

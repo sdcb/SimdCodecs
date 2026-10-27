@@ -3,9 +3,8 @@ namespace Sdcb.SimdCodecs.Jpeg;
 /// <summary>Chroma subsampling for the encoder.</summary>
 public enum JpegSubsampling : byte
 {
-    /// <summary>Pick from quality the way stb_image_write does: 4:2:0 when
-    /// <see cref="JpegEncodeOptions.Quality"/> ≤ 90, else 4:4:4. This is the only
-    /// mode whose bytes are validated against the reference encoder.</summary>
+    /// <summary>Pick from quality: 4:2:0 when <see cref="JpegEncodeOptions.Quality"/> ≤ 90,
+    /// else 4:4:4.</summary>
     Auto = 0,
 
     /// <summary>Full chroma resolution (no subsampling), one 8×8 block per component per MCU.</summary>
@@ -16,21 +15,36 @@ public enum JpegSubsampling : byte
 }
 
 /// <summary>
-/// Options for <see cref="JpegEncoder.Encode"/>. Baseline sequential JPEG with
-/// fixed Annex K Huffman tables (matching the stb_image_write reference the
-/// encoder is ported from); progressive, restart intervals, and optimized
-/// Huffman tables are deliberately out of scope for this baseline.
+/// Options for <see cref="JpegEncoder.Encode"/>. The default is baseline sequential JPEG with
+/// the Annex K Huffman tables, the fastest mode; <see cref="OptimizeHuffman"/> and
+/// <see cref="Progressive"/> trade encode time for smaller files with identical pixels.
+/// Restart intervals are not written.
 /// </summary>
 public sealed record JpegEncodeOptions
 {
-    /// <summary>Quality 1..100 (libjpeg-style). Higher is larger and closer to the
-    /// source. The default, 90, is the reference encoder's default and the highest
-    /// quality that still uses 4:2:0 under <see cref="JpegSubsampling.Auto"/>.</summary>
+    /// <summary>Quality 1..100 (libjpeg-style scaling of the Annex K quantisation tables).
+    /// Higher is larger and closer to the source. The default, 90, is the highest quality
+    /// that still uses 4:2:0 under <see cref="JpegSubsampling.Auto"/>.</summary>
     public int Quality { get; init; } = 90;
 
-    /// <summary>Chroma subsampling. <see cref="JpegSubsampling.Auto"/> derives it
-    /// from <see cref="Quality"/> exactly as the reference encoder does.</summary>
+    /// <summary>Chroma subsampling. <see cref="JpegSubsampling.Auto"/> derives it from
+    /// <see cref="Quality"/>. Ignored for grey input, which is written as one component.</summary>
     public JpegSubsampling Subsampling { get; init; } = JpegSubsampling.Auto;
+
+    /// <summary>
+    /// Builds Huffman tables optimised for this image (T.81 Annex K.2) instead of the Annex K
+    /// example tables: typically 2–8% smaller at the same quality, the decoded pixels are
+    /// unchanged, and encoding takes a second entropy pass over stored coefficients.
+    /// </summary>
+    public bool OptimizeHuffman { get; init; }
+
+    /// <summary>
+    /// Writes a progressive JPEG (T.81 Annex G: spectral selection and successive
+    /// approximation), which renders coarse-to-fine while loading and is typically 5–10% smaller
+    /// than baseline. Its tables are always optimised (this implies <see cref="OptimizeHuffman"/>);
+    /// the decoded pixels are identical to a baseline encode with the same settings.
+    /// </summary>
+    public bool Progressive { get; init; }
 
     /// <summary>
     /// When set, written as an APP1 <c>Exif\0\0</c> segment right after the APP0 JFIF header. The bytes are the

@@ -35,6 +35,11 @@ internal static class Program
           dotnet run -c Release -- ab [--ablate] [--groups RE] [--images RE]
                                                            same-process A/B: current vs baseline vs libjpeg-turbo on the quick
                                                            subset (or the selected files); --ablate adds per-stage costs
+          dotnet run -c Release -- encode [--mode baseline|optimize|progressive|all] [--reps N] [--max-dim N]
+                                          [--baseline] [--only NAME] [--gate]
+                                                           encoder comparison on the masters (downscaled to --max-dim, default
+                                                           2048): ours [+ baseline build] vs libjpeg-turbo vs ImageSharp; size,
+                                                           PSNR-Y/RGB, SSIM-Y, MP/s; --gate: PSNR-Y >= turbo, size <= turbo +1%
         """;
 
     private static int Main(string[] args)
@@ -79,6 +84,14 @@ internal static class Program
                     : Select(Opt("--groups"), Opt("--images")).Select(c => c.Id).ToList();
                 return Ab(selected, args.Contains("--ablate"));
             }
+            case "encode":
+                return EncodeBenchmark.Run(
+                    Opt("--mode") ?? "baseline",
+                    int.Parse(Opt("--reps") ?? "5", CultureInfo.InvariantCulture),
+                    int.Parse(Opt("--max-dim") ?? "2048", CultureInfo.InvariantCulture),
+                    args.Contains("--gate"),
+                    args.Contains("--baseline"),
+                    Opt("--only"));
             default:
                 Console.WriteLine(Usage);
                 return command == "help" ? 0 : 1;
