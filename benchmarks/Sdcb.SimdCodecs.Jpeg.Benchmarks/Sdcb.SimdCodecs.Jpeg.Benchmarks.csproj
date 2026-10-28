@@ -7,8 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>x64</PlatformTarget>
-    <!-- Not a shipped package: this project exists to measure the ones that are. It is not in
-         SimdCodecs.slnx, so CI never restores ImageSharp or BenchmarkDotNet. -->
+    <!-- Not a shipped package: this project exists to measure the ones that are. -->
     <IsPackable>false</IsPackable>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <ServerGarbageCollection>false</ServerGarbageCollection>

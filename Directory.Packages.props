@@ -13,7 +13,7 @@
     <!-- Test-only black-box encoder/decoder (ImageMagick: libjpeg, libtiff, PNG) used to build
          inputs and as an independent oracle. Q16-HDRI so 16-bit and float rasters stay exact. -->
     <PackageVersion Include="Magick.NET-Q16-HDRI-AnyCPU" Version="14.13.1" />
-    <!-- Sdcb.SimdCodecs.Jpeg.Benchmarks and Sdcb.SimdCodecs.Webp.Benchmarks only (not part of SimdCodecs.slnx). -->
+    <!-- benchmarks/* only; never a dependency of a shipped package. -->
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <!-- Benchmark competitor (black box only — never read its source). 3.1.12 is the newest release that
          builds without a Six Labors license key (3.2.0 and 4.x enforce one at build time). Bumping it means re-recording

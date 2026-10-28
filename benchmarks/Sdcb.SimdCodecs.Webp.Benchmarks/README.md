@@ -1,8 +1,7 @@
 # WebP decode benchmark (`Sdcb.SimdCodecs.Webp.Benchmarks`)
 
 Whole-image WebP decode to RGBA with BenchmarkDotNet (`[MemoryDiagnoser]`), against libwebp as a
-black box. This project is not in `SimdCodecs.slnx`; build and run it by path from the repository
-root. Recorded results are in [`optimization/`](optimization/).
+black box. Run it by path from the repository root. Recorded results are in [`optimization/`](optimization/).
 
 | Benchmark | Inputs | How it is called |
 |---|---|---|

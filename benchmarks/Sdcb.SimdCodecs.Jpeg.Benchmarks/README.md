@@ -11,7 +11,7 @@ Baselines live in [`results/`](results/) — one file per recording, named `<dat
 | ImageSharp 3.1.12 | `Image.Load<Rgba32>` with `MaxDegreeOfParallelism = 1`; no decode-into-buffer API exists, so it allocates per call |
 
 ImageSharp is pinned to 3.1.12 because 3.2.0 and 4.x refuse to build without a Six Labors
-license key. It is referenced **only** by this project, which is not in `SimdCodecs.slnx`.
+license key. Only the benchmark projects reference it; no shipped package does.
 
 **Clean-room:** libjpeg-turbo and ImageSharp are black boxes. Only their binaries and documented
 APIs are used; their sources are never read (see [`AGENTS.md`](../../AGENTS.md)). The TurboJPEG P/Invoke surface in

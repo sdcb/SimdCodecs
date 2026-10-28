@@ -13,6 +13,11 @@
     <Project Path="src/Sdcb.SimdCodecs.Tiff/Sdcb.SimdCodecs.Tiff.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Webp/Sdcb.SimdCodecs.Webp.csproj" />
   </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks.csproj" />
+    <Project Path="benchmarks/Sdcb.SimdCodecs.Png.Benchmarks/Sdcb.SimdCodecs.Png.Benchmarks.csproj" />
+    <Project Path="benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Sdcb.SimdCodecs.Tests/Sdcb.SimdCodecs.Tests.csproj" />
   </Folder>
