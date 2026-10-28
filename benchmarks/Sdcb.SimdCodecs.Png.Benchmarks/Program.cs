@@ -21,6 +21,7 @@ const string Usage = """
                                    writes .cache/work/matrix.md
       bdn decode|encode            BenchmarkDotNet run (MemoryDiagnoser) of the selected cases; for commit numbers
       verify                       correctness of every contestant on every selected case, no timing
+      peakmem decode|encode        peak working set per operation, one fresh process per run (native memory included)
       inputs [--force]             (re)generate the decode inputs into .cache/inputs (done on demand otherwise)
       baseline [git-ref]           build git-ref's (default HEAD) Sdcb.SimdCodecs.Png as the A/B baseline
 
@@ -28,6 +29,7 @@ const string Usage = """
       --cases RE     only cases whose name matches RE (e.g. 'photo-rgba8', '^screen-.*-optimal$', 'adam7')
       --size WxH     image size of every case (default 1920x1080)
       --rounds N     matrix rounds per contestant (default 7)
+      --ablate       matrix / bdn decode: also time Current with the CRC, unfilter or expansion stage skipped
     Environment: LIBPNG_PATH (libpng shared library), PNG_BENCH_PHOTO (photo source image).
     """;
 
@@ -42,6 +44,11 @@ if (Opt("--size") is { } sizeOption)
 if (Opt("--cases") is { } casesOption)
 {
     Environment.SetEnvironmentVariable(Settings.CasesVariable, casesOption);
+}
+
+if (args.Contains("--ablate"))
+{
+    Environment.SetEnvironmentVariable(Settings.AblateVariable, "1");
 }
 
 if (LibPng.IsAvailable)
@@ -91,6 +98,13 @@ switch (command)
 
         return Write("matrix.md", sb.ToString());
     }
+    case "peakmem" when args.Length > 1 && args[1] is "decode" or "encode":
+    {
+        string report = MachineInfo.Describe() + Environment.NewLine + PeakMemory.Run(args[1] == "decode");
+        return Write($"peakmem-{args[1]}.md", report);
+    }
+    case "peakmem-child":
+        return PeakMemory.Child(args[1] == "decode", args[2], args[3]);
     case "bdn" when args.Length > 1 && args[1] is "decode" or "encode":
         return Bdn(args[1] == "decode");
     case "help":
@@ -139,8 +153,8 @@ static int Bdn(bool decode)
     Console.Write(MachineInfo.Describe());
     // Set up every case once in the driver: that is the correctness check, and it tells the filter
     // which contestant can run which case.
-    var decodeSetups = decode ? DecodeCase.Selected.ToDictionary(c => c.Name, DecodeSetup.Create) : [];
-    var encodeSetups = decode ? [] : EncodeCase.Selected.ToDictionary(c => c.Name, EncodeSetup.Create);
+    var decodeSetups = decode ? DecodeCase.Selected.ToDictionary(c => c.Name, c => DecodeSetup.Create(c)) : [];
+    var encodeSetups = decode ? [] : EncodeCase.Selected.ToDictionary(c => c.Name, c => EncodeSetup.Create(c));
     Dictionary<string, HashSet<string>> runnable = decode
         ? decodeSetups.ToDictionary(kv => kv.Key, kv => kv.Value.Contestants.Select(c => c.Name).ToHashSet())
         : encodeSetups.ToDictionary(kv => kv.Key, kv => kv.Value.Contestants.Select(c => c.Name).ToHashSet());
@@ -153,6 +167,7 @@ static int Bdn(bool decode)
         new(BenchPaths.RootVariable, BenchPaths.Root),
         new(Settings.CasesVariable, filter),
         new(Settings.SizeVariable, $"{Settings.Size.Width}x{Settings.Size.Height}"),
+        new(Settings.AblateVariable, Settings.Ablate ? "1" : "0"),
     };
     foreach (string variable in new[] { "LIBPNG_PATH", "PNG_BENCH_PHOTO" })
     {
@@ -171,7 +186,9 @@ static int Bdn(bool decode)
         .WithIterationTime(TimeInterval.FromMilliseconds(250))
         .WithEnvironmentVariables(environment.ToArray());
 
-    string[] methods = decode ? PngDecodeBenchmarks.Methods : PngEncodeBenchmarks.Methods;
+    string[] methods = decode
+        ? [.. PngDecodeBenchmarks.Methods, .. Settings.Ablate ? DecodeSetup.Ablations.Select(a => a.Name) : []]
+        : PngEncodeBenchmarks.Methods;
     ManualConfig config = ManualConfig.CreateEmpty()
         .AddJob(job)
         .AddDiagnoser(MemoryDiagnoser.Default)
@@ -187,12 +204,6 @@ static int Bdn(bool decode)
     Summary summary = BenchmarkRunner.Run(decode ? typeof(PngDecodeBenchmarks) : typeof(PngEncodeBenchmarks), config);
 
     var medians = new Dictionary<string, Dictionary<string, double>>();
-    var allocated = new StringBuilder();
-    allocated.AppendLine("Managed bytes allocated per operation (MemoryDiagnoser; libpng's native allocations are not visible):");
-    allocated.AppendLine();
-    allocated.AppendLine("| Case | " + string.Join(" | ", methods) + " |");
-    allocated.AppendLine("|---|" + string.Concat(methods.Select(_ => "---:|")));
-    var bytes = new Dictionary<(string, string), long>();
     foreach (BenchmarkReport report in summary.Reports.Where(r => r.Success && r.ResultStatistics is not null))
     {
         string name = report.BenchmarkCase.Parameters["Case"]?.ToString() ?? "";
@@ -200,14 +211,8 @@ static int Bdn(bool decode)
         (medians.TryGetValue(name, out var m) ? m : medians[name] = [])[method] = report.ResultStatistics!.Median / 1e6;
         if (report.GcStats.GetBytesAllocatedPerOperation(report.BenchmarkCase) is { } b)
         {
-            bytes[(name, method)] = b;
+            (decode ? decodeSetups[name].Allocated : encodeSetups[name].Allocated)[method] = b;
         }
-    }
-
-    foreach (string name in caseOrder)
-    {
-        allocated.AppendLine($"| `{name}` | " + string.Join(" | ", methods.Select(m =>
-            bytes.TryGetValue((name, m), out long b) ? b.ToString("N0", CultureInfo.InvariantCulture) : "—")) + " |");
     }
 
     string table = decode
@@ -215,6 +220,6 @@ static int Bdn(bool decode)
         : Matrix.RenderEncode([.. caseOrder.Where(medians.ContainsKey).Select(n => (encodeSetups[n], medians[n]))], "BenchmarkDotNet medians");
     string cpu = summary.HostEnvironmentInfo.Cpu.Value.ProcessorName ?? "unknown CPU";
     Write(decode ? "bdn-decode.md" : "bdn-encode.md",
-        $"- BenchmarkDotNet CPU: {cpu}{Environment.NewLine}" + MachineInfo.Describe() + Environment.NewLine + table + Environment.NewLine + allocated);
+        $"- BenchmarkDotNet CPU: {cpu}{Environment.NewLine}" + MachineInfo.Describe() + Environment.NewLine + table);
     return summary.HasCriticalValidationErrors || summary.Reports.Any(r => !r.Success) ? 1 : 0;
 }

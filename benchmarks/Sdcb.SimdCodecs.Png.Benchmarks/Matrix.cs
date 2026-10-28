@@ -16,7 +16,12 @@ namespace Sdcb.SimdCodecs.Png.Benchmarks;
 /// </summary>
 internal static class Matrix
 {
-    public static Dictionary<string, double> Time(IReadOnlyList<Contestant> contestants, int rounds, double sampleMs = 30)
+    /// <param name="contestants">What to time.</param>
+    /// <param name="rounds">Interleaved rounds; the median of them is reported.</param>
+    /// <param name="allocated">Receives the managed bytes one warm operation allocates, per contestant.</param>
+    /// <param name="sampleMs">Minimum length of one timed sample.</param>
+    public static Dictionary<string, double> Time(IReadOnlyList<Contestant> contestants, int rounds,
+        Dictionary<string, long>? allocated = null, double sampleMs = 30)
     {
         foreach (Contestant c in contestants)
         {
@@ -24,6 +29,16 @@ internal static class Matrix
             for (int i = 0; i < 3 || Stopwatch.GetElapsedTime(warmStart).TotalMilliseconds < 300; i++)
             {
                 c.Run();
+            }
+
+            // One warm operation on this thread: pooled buffers are already rented once, so this is
+            // what a steady caller pays. Native and pooled-unmanaged memory (libpng, ImageSharp's
+            // pixel buffers) is invisible here; `peakmem` measures the working set for that.
+            if (allocated is not null)
+            {
+                long before = GC.GetAllocatedBytesForCurrentThread();
+                c.Run();
+                allocated[c.Name] = GC.GetAllocatedBytesForCurrentThread() - before;
             }
         }
 
@@ -54,7 +69,7 @@ internal static class Matrix
         foreach (DecodeCase c in DecodeCase.Selected)
         {
             DecodeSetup setup = DecodeSetup.Create(c);
-            Dictionary<string, double> ms = Time(setup.Contestants, rounds);
+            Dictionary<string, double> ms = Time(setup.Contestants, rounds, setup.Allocated);
             rows.Add((setup, ms));
             Console.WriteLine($"[decode] {c.Name,-22} " + string.Join("  ", ms.Select(kv => $"{kv.Key} {kv.Value:F3}")) +
                               (setup.Notes.Count > 0 ? "  (" + string.Join("; ", setup.Notes) + ")" : ""));
@@ -69,7 +84,7 @@ internal static class Matrix
         foreach (EncodeCase c in EncodeCase.Selected)
         {
             EncodeSetup setup = EncodeSetup.Create(c);
-            Dictionary<string, double> ms = Time(setup.Contestants, rounds);
+            Dictionary<string, double> ms = Time(setup.Contestants, rounds, setup.Allocated);
             rows.Add((setup, ms));
             Console.WriteLine($"[encode] {c.Name,-26} " + string.Join("  ", ms.Select(kv => $"{kv.Key} {kv.Value:F3}")) +
                               (setup.Notes.Count > 0 ? "  (" + string.Join("; ", setup.Notes) + ")" : ""));
@@ -117,6 +132,29 @@ internal static class Matrix
             }
         }
 
+        if (rows.Any(r => r.Ms.ContainsKey(Names.InflateOnly)))
+        {
+            sb.AppendLine();
+            sb.AppendLine("Stage cost = current − (current with that stage skipped), ms; \"inflate only\" is what is left with CRC, " +
+                          "unfilter and expansion all skipped (chunk walk + zlib inflate). Attribution by ablation, not sampling.");
+            sb.AppendLine();
+            sb.AppendLine("| Case | current | CRC | unfilter | expand | inflate only | libpng |");
+            sb.AppendLine("|---|---:|---:|---:|---:|---:|---:|");
+            foreach ((DecodeSetup s, Dictionary<string, double> ms) in rows)
+            {
+                if (Get(ms, Names.Current) is not { } current || Get(ms, Names.InflateOnly) is not { } inflate)
+                {
+                    continue;
+                }
+
+                string Cost(string name) => Get(ms, name) is { } v ? F(current - v) : "—";
+                sb.AppendLine($"| `{s.Case.Name}` | {F(current)} | {Cost(Names.NoCrc)} | {Cost(Names.NoUnfilter)} | {Cost(Names.NoExpand)} | " +
+                              $"{F(inflate)} | {Ms(ms, Names.LibPng)} |");
+            }
+        }
+
+        AppendAllocations(sb, rows.Select(r => (r.Setup.Case.Name, r.Setup.Allocated)).ToList(),
+            [Names.Current, Names.CurrentNative, Names.Baseline, Names.ImageSharp, Names.LibPng]);
         AppendNotes(sb, notes);
         return sb.ToString();
     }
@@ -176,8 +214,31 @@ internal static class Matrix
             }
         }
 
+        AppendAllocations(sb, rows.Select(r => (r.Setup.Case.Name, r.Setup.Allocated)).ToList(),
+            [Names.Current, Names.CurrentParallel, Names.Baseline, Names.ImageSharp, Names.LibPng]);
         AppendNotes(sb, notes);
         return sb.ToString();
+    }
+
+    private static void AppendAllocations(StringBuilder sb, List<(string Case, Dictionary<string, long> Bytes)> rows, string[] names)
+    {
+        if (!rows.Any(r => r.Bytes.Count > 0))
+        {
+            return;
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Managed bytes allocated per operation, KB (one warm operation on the timing thread). ImageSharp keeps " +
+                      "pixel buffers in its own unmanaged pool and libpng allocates natively, so neither shows here: compare " +
+                      "working sets with `peakmem`.");
+        sb.AppendLine();
+        sb.AppendLine("| Case | " + string.Join(" | ", names.Select(Label)) + " |");
+        sb.AppendLine("|---|" + string.Concat(names.Select(_ => "---:|")));
+        foreach ((string name, Dictionary<string, long> bytes) in rows)
+        {
+            sb.AppendLine($"| `{name}` | " + string.Join(" | ", names.Select(n =>
+                bytes.TryGetValue(n, out long b) ? (b / 1024.0).ToString("F1", CultureInfo.InvariantCulture) : "—")) + " |");
+        }
     }
 
     private static void AppendNotes(StringBuilder sb, List<string> notes)
@@ -200,6 +261,9 @@ internal static class Matrix
     {
         Names.LibPng => "libpng",
         Names.Baseline => "baseline",
+        Names.Current => "current",
+        Names.CurrentNative => "native",
+        Names.CurrentParallel => "parallel",
         _ => name,
     };
 

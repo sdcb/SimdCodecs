@@ -28,6 +28,11 @@ internal static class Settings
         }
     }
 
+    public const string AblateVariable = "PNG_BENCH_ABLATE";
+
+    /// <summary>Time the decode stage ablations (<c>--ablate</c>) next to <c>Current</c>.</summary>
+    public static bool Ablate => Environment.GetEnvironmentVariable(AblateVariable) == "1";
+
     public static bool Selected(string caseName) =>
         Environment.GetEnvironmentVariable(CasesVariable) is not { Length: > 0 } filter || Regex.IsMatch(caseName, filter);
 }

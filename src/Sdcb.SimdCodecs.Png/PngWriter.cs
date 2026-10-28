@@ -903,26 +903,6 @@ public static class PngWriter
     /// the concatenation of <paramref name="a"/> and <paramref name="b"/>
     /// without materializing either span.
     /// </summary>
-    private static uint Crc32(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
-    {
-        uint c = 0xFFFFFFFFu;
-        foreach (var x in a) c = CrcTable[(c ^ x) & 0xFF] ^ (c >> 8);
-        foreach (var x in b) c = CrcTable[(c ^ x) & 0xFF] ^ (c >> 8);
-        return c ^ 0xFFFFFFFFu;
-    }
-
-    private static readonly uint[] CrcTable = BuildCrcTable();
-
-    private static uint[] BuildCrcTable()
-    {
-        var t = new uint[256];
-        for (uint n = 0; n < 256; n++)
-        {
-            var c = n;
-            for (int k = 0; k < 8; k++)
-                c = ((c & 1) != 0) ? 0xEDB88320u ^ (c >> 1) : (c >> 1);
-            t[n] = c;
-        }
-        return t;
-    }
+    private static uint Crc32(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b) =>
+        PngCrc32.Compute(a, b);
 }

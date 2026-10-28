@@ -19,6 +19,12 @@ internal static class Names
     public const string Baseline = "Baseline";
     public const string ImageSharp = "ImageSharp";
     public const string LibPng = "LibPng";
+
+    // Decode ablations of Current (PngDiagnostics): a stage's cost is what disappears without it.
+    public const string NoCrc = "NoCrc";
+    public const string NoUnfilter = "NoUnfilter";
+    public const string NoExpand = "NoExpand";
+    public const string InflateOnly = "InflateOnly";
 }
 
 internal static class ImageSharpSetup
@@ -51,41 +57,90 @@ internal sealed class DecodeSetup
     public List<Contestant> Contestants { get; } = [];
     public List<string> Notes { get; } = [];
 
+    /// <summary>Managed bytes one operation allocates, per contestant (filled by the timing run).</summary>
+    public Dictionary<string, long> Allocated { get; } = [];
+
     /// <summary>Keeps results observable so no decode is dead code.</summary>
     public static object? Sink;
 
-    public static DecodeSetup Create(DecodeCase c)
+    /// <summary>Stage ablations timed alongside <c>Current</c> when <see cref="Settings.Ablate"/> is on.</summary>
+    public static readonly (string Name, PngAblation Flags)[] Ablations =
+    [
+        (Names.NoCrc, PngAblation.SkipCrc),
+        (Names.NoUnfilter, PngAblation.SkipUnfilter),
+        (Names.NoExpand, PngAblation.SkipExpand),
+        (Names.InflateOnly, PngAblation.InflateOnly),
+    ];
+
+    /// <param name="c">The case.</param>
+    /// <param name="only">
+    /// Set up just this contestant, without the cross-checks (which would run every other one): what
+    /// <c>peakmem</c>'s child processes need. Null for the checked, complete setup.
+    /// </param>
+    public static DecodeSetup Create(DecodeCase c, string? only = null)
     {
         byte[] png = c.Read();
         int width = BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16)), height = BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20));
         var setup = new DecodeSetup { Case = c, Png = png, Width = width, Height = height };
         int tolerance = c.Wide ? 1 : 0;
+        bool verify = only is null;
+        bool Want(string name) => only is null || only == name;
+        int length = width * height * 4;
+        byte[] Destination()
+        {
+            var buffer = new byte[length];
+            if (only is not null)
+            {
+                buffer.AsSpan().Fill(0xFF); // commit the pages before peakmem measures
+            }
 
-        byte[] reference = new byte[width * height * 4];
-        DecodeImageSharp(png, reference);
+            return buffer;
+        }
 
-        byte[] current = new byte[reference.Length];
-        bool currentOk = PngImageDecoder.TryDecodeIntoRgba8(png, current);
+        byte[] reference = new byte[verify ? length : 0];
+        if (verify)
+        {
+            DecodeImageSharp(png, reference);
+        }
+
+        byte[] current = new byte[length];
+        bool tryCurrent = verify || Want(Names.Current) || Want(Names.CurrentNative);
+        bool currentOk = tryCurrent && PngImageDecoder.TryDecodeIntoRgba8(png, current);
         if (currentOk)
         {
-            int diff = MaxDifference(current, reference);
+            int diff = verify ? MaxDifference(current, reference) : 0;
             if (diff > tolerance)
             {
                 throw new InvalidOperationException($"{c.Name}: Sdcb.SimdCodecs.Png differs from ImageSharp by up to {diff}; refusing to benchmark.");
             }
 
-            byte[] buffer = new byte[reference.Length];
-            setup.Contestants.Add(new(Names.Current, () => PngImageDecoder.TryDecodeIntoRgba8(png, buffer)));
-            setup.Contestants.Add(new(Names.CurrentNative, () => Sink = PngReader.Decode(png)));
+            byte[] buffer = Destination();
+            if (Want(Names.Current))
+            {
+                setup.Contestants.Add(new(Names.Current, () => PngImageDecoder.TryDecodeIntoRgba8(png, buffer)));
+            }
+
+            if (Want(Names.CurrentNative))
+            {
+                setup.Contestants.Add(new(Names.CurrentNative, () => Sink = PngReader.Decode(png)));
+            }
+
+            if (Settings.Ablate && only is null)
+            {
+                foreach ((string name, PngAblation flags) in Ablations)
+                {
+                    setup.Contestants.Add(new(name, () => PngDiagnostics.DecodeRgba8(png, buffer, flags)));
+                }
+            }
         }
-        else
+        else if (tryCurrent)
         {
             setup.Notes.Add("Sdcb.SimdCodecs.Png: unsupported" + (c.Adam7 ? " (Adam7)" : ""));
         }
 
-        if (BaselinePng.IsBuilt)
+        if (BaselinePng.IsBuilt && Want(Names.Baseline))
         {
-            byte[] buffer = new byte[reference.Length];
+            byte[] buffer = Destination();
             if (!BaselinePng.TryDecodeIntoRgba8(png, buffer))
             {
                 setup.Notes.Add("baseline: unsupported");
@@ -101,18 +156,19 @@ internal sealed class DecodeSetup
             }
         }
 
+        if (Want(Names.ImageSharp))
         {
-            byte[] buffer = new byte[reference.Length];
+            byte[] buffer = Destination();
             setup.Contestants.Add(new(Names.ImageSharp, () => DecodeImageSharp(png, buffer)));
         }
 
-        if (LibPng.IsAvailable)
+        if (LibPng.IsAvailable && Want(Names.LibPng))
         {
-            byte[] buffer = new byte[reference.Length];
+            byte[] buffer = Destination();
             try
             {
                 LibPng.DecodeRgba(png, buffer);
-                int diff = MaxDifference(buffer, reference);
+                int diff = verify ? MaxDifference(buffer, reference) : 0;
                 if (diff > tolerance)
                 {
                     setup.Notes.Add($"libpng: output differs from ImageSharp by up to {diff}, not timed");
@@ -164,12 +220,17 @@ internal sealed class EncodeSetup
     public Dictionary<string, int> Sizes { get; } = [];
     public List<string> Notes { get; } = [];
 
+    /// <summary>Managed bytes one operation allocates, per contestant (filled by the timing run).</summary>
+    public Dictionary<string, long> Allocated { get; } = [];
+
     /// <summary>Fragments for the opt-in parallel deflate (<see cref="PngWriteOptions.ParallelFragments"/>).</summary>
     public static int ParallelFragments => Environment.ProcessorCount;
 
     public static object? Sink;
 
-    public static EncodeSetup Create(EncodeCase c)
+    /// <param name="c">The case.</param>
+    /// <param name="only">Set up just this contestant, unverified (see <see cref="DecodeSetup.Create"/>).</param>
+    public static EncodeSetup Create(EncodeCase c, string? only = null)
     {
         var (width, height) = Settings.Size;
         byte[] samples = c.Samples();
@@ -178,6 +239,16 @@ internal sealed class EncodeSetup
         // timed: what is measured, when it is not simply encode() (ImageSharp writes into a reused stream).
         void Add(string name, Func<byte[]> encode, Action? timed = null)
         {
+            if (only is not null)
+            {
+                if (name == only)
+                {
+                    setup.Contestants.Add(new(name, timed ?? (() => Sink = encode())));
+                }
+
+                return;
+            }
+
             byte[] output = encode();
             if (Verify(output, c, samples) is { } problem)
             {
@@ -228,6 +299,7 @@ internal sealed class EncodeSetup
                 _ => LibPng.FormatRgba | LibPng.FormatLinear,
             };
             byte[] scratch = new byte[samples.Length + samples.Length / 8 + 65536];
+            scratch.AsSpan().Fill(0); // libpng writes into it: committed up front, like a caller's buffer
             Add(Names.LibPng, () =>
             {
                 int length = LibPng.Encode(samples, width, height, format, ref scratch);

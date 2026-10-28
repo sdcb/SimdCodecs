@@ -26,6 +26,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+    <!-- PngDiagnostics: stage ablation for the benchmark (attribution by ablation, AGENTS.md). -->
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Png.Benchmarks" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- IccProfiles.SRgbV4 is the documented source of profile bytes for the
          iCCP-writing overloads (doc crefs in PngWriter / PngWriteOptions). The
          H.273 enum codepoint definitions CicpChunk uses live in

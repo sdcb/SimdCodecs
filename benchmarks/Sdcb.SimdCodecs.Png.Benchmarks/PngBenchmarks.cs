@@ -39,6 +39,18 @@ public class PngDecodeBenchmarks
     [Benchmark]
     public void LibPng() => _run[Names.LibPng]();
 
+    [Benchmark]
+    public void NoCrc() => _run[Names.NoCrc]();
+
+    [Benchmark]
+    public void NoUnfilter() => _run[Names.NoUnfilter]();
+
+    [Benchmark]
+    public void NoExpand() => _run[Names.NoExpand]();
+
+    [Benchmark]
+    public void InflateOnly() => _run[Names.InflateOnly]();
+
     public static readonly string[] Methods = [Names.Current, Names.CurrentNative, Names.Baseline, Names.ImageSharp, Names.LibPng];
 }
 

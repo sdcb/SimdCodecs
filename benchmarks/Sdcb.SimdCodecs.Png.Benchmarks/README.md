@@ -78,6 +78,37 @@ dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Png.Benchmarks -- bdn
   (`.cache/work/bdn-decode.md` / `bdn-encode.md`). Use it for the numbers that go into a commit, on
   the cases the change is about — the whole matrix under BenchmarkDotNet takes hours.
 
+### Stage costs
+
+```bash
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Png.Benchmarks -- matrix decode --ablate [--cases RE]
+```
+
+adds runs of `current` with one stage switched off (internal `PngAblation` flags through
+`PngDiagnostics`): chunk CRC, unfilter, RGBA expansion, and all three ("inflate only"). A stage's cost
+is the time that disappears without it — attribution by ablation, not sampling (see `AGENTS.md`). The
+report gains a stage-cost table next to libpng's total. `bdn decode --ablate` times the same variants.
+
+### Memory
+
+Two measures, because they see different things:
+
+- **Managed bytes per operation** — every `matrix` (and `bdn`) report has a table of the managed bytes
+  one warm operation allocates (`GC.GetAllocatedBytesForCurrentThread`; BenchmarkDotNet's
+  `MemoryDiagnoser` under `bdn`). ImageSharp keeps pixel buffers in its own unmanaged pool and libpng
+  allocates natively, so their columns here are near zero by construction.
+- **Peak working set** — everything, native included:
+
+  ```bash
+  dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Png.Benchmarks -- peakmem decode|encode [--cases RE]
+  ```
+
+  runs each case × contestant in a fresh process (median of three): a warm-up on a 16×16 image of the
+  same case (JIT and library loading excluded), the full-size inputs and outputs allocated and touched,
+  then the working-set rise during the first full-size operation ("first") and during a second one with
+  pooled buffers resident ("steady"). One process per measurement makes it slow: select cases.
+  Report: `.cache/work/peakmem-decode.md` / `peakmem-encode.md`.
+
 ### Same-process A/B
 
 ```bash

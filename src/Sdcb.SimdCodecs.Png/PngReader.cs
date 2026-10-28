@@ -85,7 +85,8 @@ public static class PngReader
     /// payloads lie in <paramref name="data"/>. Lets a caller look at the metadata (the cICP refusal of
     /// the RGBA8 projection) before deciding how, or whether, to decode the pixels.
     /// </summary>
-    internal static PngImage ReadHeader(ReadOnlySpan<byte> data, out List<(int Offset, int Length)> idat)
+    /// <param name="verifyCrc">False only for the benchmark's ablation (<see cref="PngAblation.SkipCrc"/>).</param>
+    internal static PngImage ReadHeader(ReadOnlySpan<byte> data, out List<(int Offset, int Length)> idat, bool verifyCrc = true)
     {
         if (data.Length < Signature.Length || !data[..Signature.Length].SequenceEqual(Signature))
             throw new InvalidDataException("PNG signature missing — not a PNG file");
@@ -127,7 +128,7 @@ public static class PngReader
             var typeBytes = data.Slice(pos + 4, 4);
             var chunkData = data.Slice(pos + 8, len);
             var declaredCrc = BinaryPrimitives.ReadUInt32BigEndian(data.Slice(pos + 8 + len, 4));
-            var computedCrc = Crc32(typeBytes, chunkData);
+            var computedCrc = verifyCrc ? Crc32(typeBytes, chunkData) : declaredCrc;
             if (declaredCrc != computedCrc)
                 throw new InvalidDataException(
                     $"CRC mismatch on chunk '{TypeAscii(typeBytes)}' at byte {pos}: " +
@@ -400,8 +401,10 @@ public static class PngReader
     /// is inflated and unfiltered in the destination itself.
     /// </summary>
     internal static unsafe void DecodeRgba8(ReadOnlySpan<byte> data, PngImage header, List<(int Offset, int Length)> idat,
-        Span<byte> destination)
+        Span<byte> destination, PngAblation ablation = PngAblation.None)
     {
+        var unfilter = (ablation & PngAblation.SkipUnfilter) == 0;
+        var expand = (ablation & PngAblation.SkipExpand) == 0;
         int width = header.Width, height = header.Height, bitDepth = header.SourceBitDepth;
         var dstStride = checked(width * 4);
         if (destination.Length < (long)dstStride * height)
@@ -421,7 +424,9 @@ public static class PngReader
                 {
                     var row = destination.Slice(y * dstStride, dstStride);
                     var above = y == 0 ? firstRowAbove : destination.Slice((y - 1) * dstStride, dstStride);
-                    PngPredictor.UnfilterRow(rows.Read(row), row, above, bytesPerPixel);
+                    var filterType = rows.Read(row);
+                    if (unfilter)
+                        PngPredictor.UnfilterRow(filterType, row, above, bytesPerPixel);
                 }
             }
             else
@@ -434,8 +439,11 @@ public static class PngReader
                     above.Clear();
                     for (var y = 0; y < height; y++)
                     {
-                        PngPredictor.UnfilterRow(rows.Read(current), current, above, bytesPerPixel);
-                        expander.Expand(current, destination.Slice(y * dstStride, dstStride), width);
+                        var filterType = rows.Read(current);
+                        if (unfilter)
+                            PngPredictor.UnfilterRow(filterType, current, above, bytesPerPixel);
+                        if (expand)
+                            expander.Expand(current, destination.Slice(y * dstStride, dstStride), width);
                         var swap = above;
                         above = current;
                         current = swap;
@@ -625,30 +633,10 @@ public static class PngReader
     private static string TypeAscii(ReadOnlySpan<byte> typeBytes) =>
         System.Text.Encoding.ASCII.GetString(typeBytes);
 
-    // ---------------- CRC32 (same polynomial as PngWriter.Crc32) -----------------
+    // ---------------- CRC32 (PngCrc32, shared with PngWriter) -----------------
 
-    private static uint Crc32(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
-    {
-        uint c = 0xFFFFFFFFu;
-        foreach (var x in a) c = CrcTable[(c ^ x) & 0xFF] ^ (c >> 8);
-        foreach (var x in b) c = CrcTable[(c ^ x) & 0xFF] ^ (c >> 8);
-        return c ^ 0xFFFFFFFFu;
-    }
-
-    private static readonly uint[] CrcTable = BuildCrcTable();
-
-    private static uint[] BuildCrcTable()
-    {
-        var t = new uint[256];
-        for (uint n = 0; n < 256; n++)
-        {
-            var c = n;
-            for (int k = 0; k < 8; k++)
-                c = ((c & 1) != 0) ? 0xEDB88320u ^ (c >> 1) : (c >> 1);
-            t[n] = c;
-        }
-        return t;
-    }
+    private static uint Crc32(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b) =>
+        PngCrc32.Compute(a, b);
 }
 
 /// <summary>
