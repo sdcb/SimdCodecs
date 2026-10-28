@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using Sdcb.SimdCodecs.Abstractions;
 
@@ -15,7 +16,9 @@ namespace Sdcb.SimdCodecs.Png;
 /// Fidelity mapping (<see cref="TryDecode"/>): greyscale / RGB / greyscale+alpha /
 /// RGBA preserve their native channel count and bit depth (16-bit is converted from
 /// PNG's big-endian to the host byte order required by <see cref="IDecodedImage"/>);
-/// indexed images are palette-expanded to 8-bit RGBA (with tRNS alpha when present).
+/// indexed images are palette-expanded to 8-bit RGBA (with tRNS alpha when present), and a
+/// greyscale or RGB image with a tRNS transparent colour gains an alpha channel (greyscale + alpha,
+/// RGBA) that is 0 on exactly the pixels of that colour.
 /// Colour signalling survives the adapter: cICP (and gAMA 1.0 → linear) maps onto
 /// <see cref="IDecodedImage.ColorEncoding"/>, so PNG-3 HDR tagging isn't dropped
 /// at the facade boundary.
@@ -45,7 +48,7 @@ public sealed class PngImageDecoder : IImageDecoder
         int bitDepth = data[24];
         int colorType = data[25];
         if (width <= 0 || height <= 0) return false;
-        if (!TryMapLayout(colorType, bitDepth, out var channels, out var format)) return false;
+        if (!TryMapLayout(colorType, bitDepth, HasTransparentColor(data, colorType), out var channels, out var format)) return false;
 
         info = new ImageInfo(width, height, channels, format);
         return true;
@@ -153,15 +156,34 @@ public sealed class PngImageDecoder : IImageDecoder
         }
     }
 
+    // Whether a greyscale or RGB file carries a tRNS transparent colour: the chunks before the first IDAT
+    // are walked (lengths only, no CRCs), with the length test PngReader.ReadHeader applies.
+    private static bool HasTransparentColor(ReadOnlySpan<byte> data, int colorType)
+    {
+        if (colorType is not (0 or 2)) return false;
+        var pos = 8;
+        while (pos + 8 <= data.Length)
+        {
+            var length = BinaryPrimitives.ReadUInt32BigEndian(data.Slice(pos, 4));
+            var type = data.Slice(pos + 4, 4);
+            if (type.SequenceEqual("IDAT"u8) || type.SequenceEqual("IEND"u8)) return false;
+            if (type.SequenceEqual("tRNS"u8)) return length == (colorType == 0 ? 2u : 6u);
+            if (length > int.MaxValue - 12) return false;
+            pos += 12 + (int)length;
+        }
+        return false;
+    }
+
     // The layout TryDecode produces. Indexed always expands to RGBA8; the rest keep
-    // their native channel count and bit depth. Mirrors the ToDecoded mapping below.
-    private static bool TryMapLayout(int colorType, int bitDepth, out int channels, out SampleFormat format)
+    // their native channel count and bit depth, plus alpha for a tRNS transparent colour.
+    // Mirrors the ToDecoded mapping below.
+    private static bool TryMapLayout(int colorType, int bitDepth, bool transparentColor, out int channels, out SampleFormat format)
     {
         format = bitDepth == 16 ? SampleFormat.UInt16 : SampleFormat.UInt8;
         switch (colorType)
         {
-            case 0: channels = 1; break;                                    // greyscale
-            case 2: channels = 3; break;                                    // RGB
+            case 0: channels = transparentColor ? 2 : 1; break;             // greyscale (+ tRNS alpha)
+            case 2: channels = transparentColor ? 4 : 3; break;             // RGB (+ tRNS alpha)
             case 3: channels = 4; format = SampleFormat.UInt8; break;       // indexed -> palette-expanded RGBA8
             case 4: channels = 2; break;                                    // greyscale + alpha
             case 6: channels = 4; break;                                    // RGBA
@@ -180,17 +202,46 @@ public sealed class PngImageDecoder : IImageDecoder
             return new RasterImage(png.Width, png.Height, 4, SampleFormat.UInt8, png.ToRgba8(), icc, color);
 
         var channels = PngReader.SamplesPerPixel(png.ColorType);
+        var key = png.UnpackedTransparentColor();
         if (png.BitDepth == 16)
         {
             // PngImage.Pixels holds 16-bit samples big-endian; IDecodedImage requires
             // host byte order. AsUInt16Samples returns host-native ushort[].
             var samples = png.AsUInt16Samples();
+            if (key is not null)
+                return new RasterImage(png.Width, png.Height, channels + 1, SampleFormat.UInt16,
+                    MemoryMarshal.AsBytes(WithKeyAlpha(samples, channels, key, ushort.MaxValue).AsSpan()).ToArray(), icc, color);
             var bytes = MemoryMarshal.AsBytes(samples.AsSpan()).ToArray();
             return new RasterImage(png.Width, png.Height, channels, SampleFormat.UInt16, bytes, icc, color);
         }
 
         // 8-bit: Pixels are already the interleaved host-order raster.
+        if (key is not null)
+        {
+            return new RasterImage(png.Width, png.Height, channels + 1, SampleFormat.UInt8,
+                WithKeyAlpha(png.Pixels, channels, key, byte.MaxValue), icc, color);
+        }
         return new RasterImage(png.Width, png.Height, channels, SampleFormat.UInt8, png.Pixels, icc, color);
+    }
+
+    // Samples of `channels` per pixel with an alpha sample appended to each pixel: 0 where the pixel is
+    // exactly the transparent colour, `opaque` elsewhere. Not a hot path (the fidelity tier copies anyway).
+    private static T[] WithKeyAlpha<T>(T[] samples, int channels, ushort[] key, T opaque) where T : unmanaged, IBinaryInteger<T>
+    {
+        var pixels = samples.Length / channels;
+        var result = new T[pixels * (channels + 1)];
+        for (var p = 0; p < pixels; p++)
+        {
+            var match = true;
+            for (var c = 0; c < channels; c++)
+            {
+                var v = samples[p * channels + c];
+                result[p * (channels + 1) + c] = v;
+                match &= ushort.CreateTruncating(v) == key[c];
+            }
+            result[p * (channels + 1) + channels] = match ? T.Zero : opaque;
+        }
+        return result;
     }
 
     // cICP is authoritative when present (PNG-3 gives it precedence over iCCP /

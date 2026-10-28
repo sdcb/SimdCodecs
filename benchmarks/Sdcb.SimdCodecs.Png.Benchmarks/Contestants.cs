@@ -16,6 +16,7 @@ internal static class Names
     public const string Current = "Current";
     public const string CurrentNative = "CurrentNative";
     public const string CurrentParallel = "CurrentParallel";
+    public const string CurrentReduced = "CurrentReduced";
     public const string Baseline = "Baseline";
     public const string ImageSharp = "ImageSharp";
     public const string LibPng = "LibPng";
@@ -220,6 +221,9 @@ internal sealed class EncodeSetup
     public Dictionary<string, int> Sizes { get; } = [];
     public List<string> Notes { get; } = [];
 
+    /// <summary>The layout <see cref="PngWriteOptions.LosslessReduction"/> chose, e.g. <c>indexed 4-bit</c>.</summary>
+    public string? ReducedLayout { get; set; }
+
     /// <summary>Managed bytes one operation allocates, per contestant (filled by the timing run).</summary>
     public Dictionary<string, long> Allocated { get; } = [];
 
@@ -237,8 +241,10 @@ internal sealed class EncodeSetup
         var setup = new EncodeSetup { Case = c, Width = width, Height = height };
 
         // timed: what is measured, when it is not simply encode() (ImageSharp writes into a reused stream).
+        // A reduced encode is checked for the same pixels in whatever layout it chose.
         void Add(string name, Func<byte[]> encode, Action? timed = null)
         {
+            var lossless = name == Names.CurrentReduced;
             if (only is not null)
             {
                 if (name == only)
@@ -250,9 +256,9 @@ internal sealed class EncodeSetup
             }
 
             byte[] output = encode();
-            if (Verify(output, c, samples) is { } problem)
+            if ((lossless ? VerifyLossless(output, c, samples) : Verify(output, c, samples)) is { } problem)
             {
-                if (name is Names.Current or Names.CurrentParallel)
+                if (name is Names.Current or Names.CurrentParallel or Names.CurrentReduced)
                 {
                     throw new InvalidOperationException($"{c.Name}: {name} output is wrong ({problem}); refusing to benchmark.");
                 }
@@ -269,6 +275,13 @@ internal sealed class EncodeSetup
         Add(Names.Current, () => EncodeCurrent(c.Format, samples, width, height, options));
         var parallel = options with { ParallelFragments = ParallelFragments };
         Add(Names.CurrentParallel, () => EncodeCurrent(c.Format, samples, width, height, parallel));
+        var reduced = options with { LosslessReduction = true };
+        Add(Names.CurrentReduced, () => EncodeCurrent(c.Format, samples, width, height, reduced));
+        if (only is null)
+        {
+            var header = PngReader.Decode(EncodeCurrent(c.Format, samples, width, height, reduced));
+            setup.ReducedLayout = LayoutName(header.ColorType, header.SourceBitDepth, header.PaletteAlpha is not null || header.TransparentColor is not null);
+        }
 
         if (BaselinePng.IsBuilt)
         {
@@ -359,6 +372,81 @@ internal sealed class EncodeSetup
             Encode();
             return stream.ToArray();
         }, Encode);
+    }
+
+    private static string LayoutName(int colorType, int depth, bool trns) =>
+        (colorType switch { 0 => "grey", 2 => "RGB", 3 => "indexed", 4 => "grey+alpha", _ => "RGBA" }) + $" {depth}-bit" + (trns ? " + tRNS" : "");
+
+    /// <summary>
+    /// Null when <paramref name="png"/>, in any layout, reads back as exactly the pixels of
+    /// <paramref name="samples"/>: both compared as 16-bit RGBA, widened the way PNG widens samples.
+    /// </summary>
+    private static string? VerifyLossless(byte[] png, EncodeCase c, byte[] samples)
+    {
+        PngImage image;
+        try
+        {
+            image = PngReader.Decode(png);
+        }
+        catch (Exception e) when (e is InvalidDataException or NotSupportedException)
+        {
+            return "unreadable: " + e.Message;
+        }
+
+        var source = new PngImage
+        {
+            Width = image.Width,
+            Height = image.Height,
+            BitDepth = c.BitDepth,
+            ColorType = c.ColorType,
+            Pixels = c.BitDepth == 16 ? BigEndian(samples) : samples,
+        };
+        return Rgba16(image).AsSpan().SequenceEqual(Rgba16(source)) ? null : "pixels differ";
+    }
+
+    private static byte[] BigEndian(byte[] hostOrder16)
+    {
+        var bytes = new byte[hostOrder16.Length];
+        for (var i = 0; i < bytes.Length; i += 2)
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(i), MemoryMarshal.Read<ushort>(hostOrder16.AsSpan(i)));
+        return bytes;
+    }
+
+    // Every pixel as 16-bit R, G, B, A: 8-bit samples (unpacked sub-byte grey included) as v·257, grey
+    // to all three, palette looked up, tRNS applied, no alpha as 65535.
+    private static ushort[] Rgba16(PngImage image)
+    {
+        var count = image.Width * image.Height;
+        var channels = image.SamplesPerPixel;
+        var wide = image.BitDepth == 16;
+        var key = image.UnpackedTransparentColor();
+        int Sample(int i) => wide
+            ? System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(image.Pixels.AsSpan(2 * i))
+            : image.Pixels[i] * 257;
+        var rgba = new ushort[4 * count];
+        for (var p = 0; p < count; p++)
+        {
+            int r, g, b, a = 65535;
+            if (image.ColorType == 3)
+            {
+                var index = image.Pixels[p];
+                (r, g, b) = (image.Palette![3 * index] * 257, image.Palette[3 * index + 1] * 257, image.Palette[3 * index + 2] * 257);
+                if (image.PaletteAlpha is { } alpha && index < alpha.Length)
+                    a = alpha[index] * 257;
+            }
+            else
+            {
+                r = Sample(p * channels);
+                (g, b) = channels >= 3 ? (Sample(p * channels + 1), Sample(p * channels + 2)) : (r, r);
+                if (channels is 2 or 4)
+                    a = Sample(p * channels + channels - 1);
+                var k = wide ? 1 : 257;
+                if (key is not null && r == key[0] * k && (channels == 1 || (g == key[1] * k && b == key[2] * k)))
+                    a = 0;
+            }
+            (rgba[4 * p], rgba[4 * p + 1], rgba[4 * p + 2], rgba[4 * p + 3]) = ((ushort)r, (ushort)g, (ushort)b, (ushort)a);
+        }
+        return rgba;
     }
 
     /// <summary>Null when <paramref name="png"/> holds exactly <paramref name="samples"/> as <paramref name="c"/> asks.</summary>

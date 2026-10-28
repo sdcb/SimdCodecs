@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -16,6 +17,11 @@ namespace Sdcb.SimdCodecs.Png;
 /// byte shuffle (SSSE3 / AdvSimd), scalar otherwise. Indexed and packed greyscale go through a
 /// 256-entry RGBA table — the palette with its tRNS alpha, or the grey levels scaled to 0-255 —
 /// one load and one 32-bit store per pixel.</para>
+/// <para>A tRNS transparent colour (greyscale or RGB) costs nothing for packed greyscale, whose table
+/// entry for the key level simply has alpha 0. Otherwise the expanded row is passed over once more while
+/// it is still in L1: for 8-bit samples every RGBA pixel equal to the key with opaque alpha gets alpha 0,
+/// four or eight pixels per compare; for 16-bit samples the key is compared at full precision against
+/// the source row, as the spec requires, since the expanded pixel only has the high bytes.</para>
 /// </summary>
 internal sealed class PngRgba8Expander
 {
@@ -29,6 +35,12 @@ internal sealed class PngRgba8Expander
     // Palette entries; an index at or past it is an error. 256 when every byte is a valid index.
     private readonly int _entries = 256;
 
+    // The tRNS transparent colour of 8- and 16-bit greyscale and RGB rows; packed greyscale has it in
+    // _table instead. _key8 is the expanded RGBA of the key with alpha 255, in memory order.
+    private readonly bool _hasKey;
+    private readonly uint _key8;
+    private readonly ushort _keyR, _keyG, _keyB;
+
     /// <param name="colorType">PNG colour type: 0, 2, 3, 4 or 6.</param>
     /// <param name="bitDepth">
     /// Depth of the rows this will be given: 1, 2 or 4 (packed, greyscale or indexed), 8 or 16. A
@@ -36,7 +48,10 @@ internal sealed class PngRgba8Expander
     /// </param>
     /// <param name="palette">PLTE, required for colour type 3.</param>
     /// <param name="paletteAlpha">tRNS for colour type 3; entries past its end are opaque.</param>
-    public PngRgba8Expander(int colorType, int bitDepth, byte[]? palette, byte[]? paletteAlpha)
+    /// <param name="transparentColor">
+    /// tRNS for colour types 0 (one sample) and 2 (three), in <paramref name="bitDepth"/>; ignored for the others.
+    /// </param>
+    public PngRgba8Expander(int colorType, int bitDepth, byte[]? palette, byte[]? paletteAlpha, ushort[]? transparentColor = null)
     {
         if (colorType is not (0 or 2 or 3 or 4 or 6))
             throw new InvalidDataException($"Cannot expand PNG color type {colorType} to RGBA8");
@@ -66,6 +81,19 @@ internal sealed class PngRgba8Expander
                 var v = (byte)(level * 255 / max);
                 _table[level] = Pack(v, v, v, 255);
             }
+            if (transparentColor is [var key] && key <= max)
+                _table[key] &= ~Pack(0, 0, 0, 255);
+        }
+        else if (colorType is 0 or 2 && transparentColor is { } key && key.Length == (colorType == 0 ? 1 : 3))
+        {
+            _hasKey = true;
+            _keyR = key[0];
+            _keyG = colorType == 0 ? key[0] : key[1];
+            _keyB = colorType == 0 ? key[0] : key[2];
+            // An 8-bit key past 255 matches no sample; the reader masks it, but a hand-made one may not be.
+            if (bitDepth == 8 && (_keyR | _keyG | _keyB) > 255)
+                _hasKey = false;
+            _key8 = Pack((byte)_keyR, (byte)_keyG, (byte)_keyB, 255);
         }
     }
 
@@ -108,6 +136,77 @@ internal sealed class PngRgba8Expander
             case (4, 16): GrayAlpha16(row, rgba, width); break;
             case (6, 8): row[..(4 * width)].CopyTo(rgba); break;
             default: Rgba16(row, rgba, width); break;
+        }
+
+        if (_hasKey)
+        {
+            if (_bitDepth == 8)
+                ClearKeyAlpha8(rgba, width, _key8);
+            else
+                ClearKeyAlpha16(row, rgba, width);
+        }
+    }
+
+    /// <summary>Alpha 0 for every pixel of <paramref name="rgba"/> that is exactly <paramref name="key"/> (alpha 255 included).</summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    private static void ClearKeyAlpha8(Span<byte> rgba, int width, uint key)
+    {
+        // rgba.Length >= 4 * width (checked in Expand): each loop's last load and store end at or before
+        // pixel width.
+        ref var d = ref Unsafe.As<byte, uint>(ref MemoryMarshal.GetReference(rgba));
+        var alpha = Pack(0, 0, 0, 255);
+        var x = 0;
+        if (Vector256.IsHardwareAccelerated)
+        {
+            var k = Vector256.Create(key);
+            var a = Vector256.Create(alpha);
+            for (; x + 8 <= width; x += 8)
+            {
+                var v = Vector256.LoadUnsafe(ref d, (nuint)x);
+                Vector256.AndNot(v, Vector256.Equals(v, k) & a).StoreUnsafe(ref d, (nuint)x);
+            }
+        }
+        if (Vector128.IsHardwareAccelerated)
+        {
+            var k = Vector128.Create(key);
+            var a = Vector128.Create(alpha);
+            for (; x + 4 <= width; x += 4)
+            {
+                var v = Vector128.LoadUnsafe(ref d, (nuint)x);
+                Vector128.AndNot(v, Vector128.Equals(v, k) & a).StoreUnsafe(ref d, (nuint)x);
+            }
+        }
+        for (; x < width; x++)
+        {
+            ref var p = ref Unsafe.Add(ref d, x);
+            if (p == key)
+                p &= ~alpha;
+        }
+    }
+
+    /// <summary>
+    /// Alpha 0 for every pixel whose 16-bit source samples (big-endian in <paramref name="row"/>) are
+    /// exactly the key. Scalar: a 16-bit colour key is rare enough that the plain loop is the right size.
+    /// </summary>
+    private void ClearKeyAlpha16(ReadOnlySpan<byte> row, Span<byte> rgba, int width)
+    {
+        if (_colorType == 0)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                if (BinaryPrimitives.ReadUInt16BigEndian(row.Slice(2 * x, 2)) == _keyR)
+                    rgba[4 * x + 3] = 0;
+            }
+            return;
+        }
+
+        for (var x = 0; x < width; x++)
+        {
+            var p = row.Slice(6 * x, 6);
+            if (BinaryPrimitives.ReadUInt16BigEndian(p) == _keyR &&
+                BinaryPrimitives.ReadUInt16BigEndian(p[2..]) == _keyG &&
+                BinaryPrimitives.ReadUInt16BigEndian(p[4..]) == _keyB)
+                rgba[4 * x + 3] = 0;
         }
     }
 

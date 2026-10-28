@@ -214,8 +214,27 @@ internal static class Matrix
             }
         }
 
+        if (rows.Any(r => r.Ms.ContainsKey(Names.CurrentReduced)))
+        {
+            sb.AppendLine();
+            sb.AppendLine("Opt-in lossless reduction (`LosslessReduction = true`: the smallest exact layout, found by one scan " +
+                          "of the image), not part of the comparison above:");
+            sb.AppendLine();
+            sb.AppendLine("| Case | current | reduced | time ÷ current | layout | KB | size ÷ current |");
+            sb.AppendLine("|---|---:|---:|---:|---|---:|---:|");
+            foreach ((EncodeSetup s, Dictionary<string, double> ms) in rows)
+            {
+                if (Get(ms, Names.Current) is { } one && Get(ms, Names.CurrentReduced) is { } red)
+                {
+                    sb.AppendLine($"| `{s.Case.Name}` | {F(one)} | {F(red)} | {(red / one).ToString("F2", CultureInfo.InvariantCulture)}× | " +
+                                  $"{s.ReducedLayout} | {Kb(s, Names.CurrentReduced)} | " +
+                                  $"{((double)s.Sizes[Names.CurrentReduced] / s.Sizes[Names.Current]).ToString("F3", CultureInfo.InvariantCulture)} |");
+                }
+            }
+        }
+
         AppendAllocations(sb, rows.Select(r => (r.Setup.Case.Name, r.Setup.Allocated)).ToList(),
-            [Names.Current, Names.CurrentParallel, Names.Baseline, Names.ImageSharp, Names.LibPng]);
+            [Names.Current, Names.CurrentParallel, Names.CurrentReduced, Names.Baseline, Names.ImageSharp, Names.LibPng]);
         AppendNotes(sb, notes);
         return sb.ToString();
     }
@@ -264,6 +283,7 @@ internal static class Matrix
         Names.Current => "current",
         Names.CurrentNative => "native",
         Names.CurrentParallel => "parallel",
+        Names.CurrentReduced => "reduced",
         _ => name,
     };
 

@@ -20,7 +20,9 @@ namespace Sdcb.SimdCodecs.Png;
 /// <list type="bullet">
 ///   <item>Every bit depth PNG allows: 8 and 16 per sample, and 1, 2 and 4 for greyscale and
 ///   indexed, whose samples are unpacked to one byte each (see <see cref="PngImage.BitDepth"/>).</item>
-///   <item>Color types 0 (Gray), 2 (RGB), 3 (Indexed, PLTE + tRNS), 4 (Gray + Alpha), 6 (RGBA).</item>
+///   <item>Color types 0 (Gray), 2 (RGB), 3 (Indexed, PLTE), 4 (Gray + Alpha), 6 (RGBA), and tRNS in both
+///   its meanings: palette alpha (<see cref="PngImage.PaletteAlpha"/>) and the transparent colour of a
+///   greyscale or RGB image (<see cref="PngImage.TransparentColor"/>), which every RGBA projection applies.</item>
 ///   <item>Both interlace methods: none, and Adam7, whose passes are put back into place as they are
 ///   decoded, so the result is the same as for a non-interlaced file of the same image.</item>
 /// </list>
@@ -100,7 +102,8 @@ public static class PngReader
         // Where each IDAT's payload lies in the input: read in place, never copied out.
         var idatChunks = new List<(int Offset, int Length)>();
         byte[]? palette = null;             // PLTE: 3 bytes (RGB) per entry
-        byte[]? paletteAlpha = null;        // tRNS (indexed meaning): 1 alpha byte per entry
+        byte[]? trns = null;                // tRNS as stored; read by colour type below
+        PngPhysicalDimensions? physical = null;
         byte[]? iccProfileRaw = null;       // zlib-deflated, as on disk
         string? iccProfileName = null;
         byte[]? rawExif = null;
@@ -183,11 +186,17 @@ public static class PngReader
             }
             else if (typeBytes.SequenceEqual("tRNS"u8))
             {
-                // For indexed color (the only case this reader expands), tRNS is one
-                // alpha byte per palette entry, in palette order; entries past its end
-                // are fully opaque. For truecolor/gray tRNS carries a single transparent
-                // sample — not handled here (only the indexed meaning is surfaced).
-                paletteAlpha = chunkData.ToArray();
+                // Its meaning depends on the colour type, so it is read once the loop is done.
+                trns = chunkData.ToArray();
+            }
+            else if (typeBytes.SequenceEqual("pHYs"u8))
+            {
+                // Ancillary and only advisory: a malformed one is left out, not a failed decode.
+                if (len == 9 && chunkData[8] <= 1)
+                    physical = new PngPhysicalDimensions(
+                        BinaryPrimitives.ReadUInt32BigEndian(chunkData),
+                        BinaryPrimitives.ReadUInt32BigEndian(chunkData.Slice(4, 4)),
+                        chunkData[8] == 1);
             }
             else if (typeBytes.SequenceEqual("iCCP"u8))
             {
@@ -275,6 +284,26 @@ public static class PngReader
             throw new InvalidDataException(
                 $"{compressed} bytes of image data cannot inflate to the {inflatedSize} a {width}×{height} image needs");
 
+        // tRNS (PNG §11.3.1.1): for indexed colour one alpha byte per palette entry, entries past its
+        // end opaque; for greyscale and truecolour one colour, every sample in two bytes of which only
+        // the low bit depth's worth count (decoders mask the rest), marking the pixels of exactly that
+        // colour fully transparent. Colour types 4 and 6 have alpha already and may not carry one; one
+        // there, or one of the wrong length, is ignored, as an ancillary chunk can be.
+        byte[]? paletteAlpha = null;
+        ushort[]? transparentColor = null;
+        if (trns is not null)
+        {
+            var sampleMask = (ushort)((1 << bitDepth!.Value) - 1);
+            if (colorType == 3)
+                paletteAlpha = trns;
+            else if ((colorType == 0 && trns.Length == 2) || (colorType == 2 && trns.Length == 6))
+            {
+                transparentColor = new ushort[trns.Length / 2];
+                for (var i = 0; i < transparentColor.Length; i++)
+                    transparentColor[i] = (ushort)(BinaryPrimitives.ReadUInt16BigEndian(trns.AsSpan(2 * i)) & sampleMask);
+            }
+        }
+
         // The IDAT chunks are one zlib stream — the spec lets a producer split IDATs anywhere, even
         // mid-deflate-token — inflated by the caller, a row at a time.
         idat = idatChunks;
@@ -290,6 +319,8 @@ public static class PngReader
             Pixels = [],
             Palette = palette,
             PaletteAlpha = paletteAlpha,
+            TransparentColor = transparentColor,
+            PhysicalDimensions = physical,
             IccProfile = iccProfileRaw,
             IccProfileName = iccProfileName,
             SrgbRenderingIntent = sawSrgb ? srgbRenderingIntent : null,
@@ -425,7 +456,7 @@ public static class PngReader
         if (destination.Length < (long)dstStride * height)
             throw new ArgumentException($"Destination too small: {destination.Length} < {(long)dstStride * height} (Width*Height*4).", nameof(destination));
 
-        var expander = new PngRgba8Expander(header.ColorType, bitDepth, header.Palette, header.PaletteAlpha);
+        var expander = new PngRgba8Expander(header.ColorType, bitDepth, header.Palette, header.PaletteAlpha, header.TransparentColor);
         if (header.Interlaced)
         {
             DecodeRgba8Adam7(data, header, idat, destination, expander, unfilter, expand);
@@ -913,6 +944,18 @@ public sealed record PngImage
     /// </summary>
     public byte[]? PaletteAlpha { get; init; }
 
+    /// <summary>
+    /// The transparent colour (<c>tRNS</c>) of a greyscale (<see cref="ColorType"/> 0: one sample) or RGB
+    /// (2: red, green, blue) image, in IHDR's bit depth (<see cref="SourceBitDepth"/>; a 4-bit grey key is
+    /// 0-15, compared before the levels are scaled to 0-255). Pixels of exactly this colour are fully
+    /// transparent, every other pixel opaque; the RGBA projections (<see cref="ToRgba8"/> and
+    /// <see cref="PngImageDecoder"/>'s) apply it. Null when there is none.
+    /// </summary>
+    public ushort[]? TransparentColor { get; init; }
+
+    /// <summary>Intended pixel size or aspect ratio from the <c>pHYs</c> chunk, or null if absent.</summary>
+    public PngPhysicalDimensions? PhysicalDimensions { get; init; }
+
     /// <summary>Decompressed ICC profile bytes from the <c>iCCP</c> chunk, or null if absent.</summary>
     public byte[]? IccProfile { get; init; }
 
@@ -975,7 +1018,7 @@ public sealed record PngImage
     /// (row-major, 4 bytes per pixel, top-down) — the layout most GPU / UI consumers
     /// want. Handles every color type the decoder produces: greyscale (0), RGB (2),
     /// indexed (3, via <see cref="Palette"/> + optional <see cref="PaletteAlpha"/>),
-    /// greyscale + alpha (4), and RGBA (6). 16-bit samples are truncated to their high
+    /// greyscale + alpha (4), and RGBA (6); a <see cref="TransparentColor"/> makes its pixels alpha 0. 16-bit samples are truncated to their high
     /// byte (<see cref="Pixels"/> holds 16-bit values big-endian, so the byte at the
     /// sample offset already IS the high byte).
     /// </summary>
@@ -998,6 +1041,18 @@ public sealed record PngImage
     }
 
     /// <summary>
+    /// <see cref="TransparentColor"/> in the depth of <see cref="Pixels"/>: a sub-byte grey key scaled to
+    /// 0-255 as the unpacked levels are (the scaling is one to one, so the comparison is unchanged).
+    /// </summary>
+    internal ushort[]? UnpackedTransparentColor()
+    {
+        if (TransparentColor is not { } key || SourceBitDepth >= 8)
+            return TransparentColor;
+        var max = (1 << SourceBitDepth) - 1;
+        return [(ushort)(key[0] * 255 / max)];
+    }
+
+    /// <summary>
     /// Expand the raw <see cref="Pixels"/> samples into a caller-provided 8-bit RGBA
     /// destination (row-major, 4 bytes per pixel, top-down) - identical mapping to
     /// <see cref="ToRgba8()"/> but writing into <paramref name="destination"/> instead
@@ -1013,7 +1068,7 @@ public sealed record PngImage
             throw new ArgumentException($"Destination too small: {destination.Length} < {(long)w * h * 4} (Width*Height*4).", nameof(destination));
 
         // Pixels holds unpacked samples: a sub-byte image's are 8-bit here (BitDepth), its grey already scaled.
-        var expander = new PngRgba8Expander(ColorType, BitDepth, Palette, PaletteAlpha);
+        var expander = new PngRgba8Expander(ColorType, BitDepth, Palette, PaletteAlpha, UnpackedTransparentColor());
         var rowBytes = expander.RowBytes(w);
         for (var y = 0; y < h; y++)
             expander.Expand(Pixels.AsSpan(y * rowBytes, rowBytes), destination.Slice(y * w * 4, w * 4), w);
@@ -1056,6 +1111,33 @@ public sealed record ChromaticityChunk(
         BinaryPrimitives.WriteUInt32BigEndian(dst.Slice(24, 4), (uint)Math.Round(BlueX  * 100_000.0));
         BinaryPrimitives.WriteUInt32BigEndian(dst.Slice(28, 4), (uint)Math.Round(BlueY  * 100_000.0));
     }
+}
+
+/// <summary>
+/// PNG <c>pHYs</c> chunk (PNG §11.3.4.2): the intended pixel size, or with an unknown unit only the pixel
+/// aspect ratio. A file without one has square pixels of unspecified size.
+/// </summary>
+/// <param name="PixelsPerUnitX">Pixels per unit along X.</param>
+/// <param name="PixelsPerUnitY">Pixels per unit along Y.</param>
+/// <param name="UnitIsMetre">True: the unit is the metre. False: unknown; the two values give the aspect ratio only.</param>
+public sealed record PngPhysicalDimensions(uint PixelsPerUnitX, uint PixelsPerUnitY, bool UnitIsMetre)
+{
+    private const double MetresPerInch = 0.0254;
+
+    /// <summary>Square pixels at <paramref name="dpi"/> dots per inch (stored, as PNG does, per metre, rounded).</summary>
+    public static PngPhysicalDimensions FromDpi(double dpi)
+    {
+        if (!(dpi > 0) || dpi / MetresPerInch > uint.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(dpi), dpi, "DPI must be positive and fit pHYs's 32-bit pixels per metre");
+        var perMetre = (uint)Math.Round(dpi / MetresPerInch);
+        return new PngPhysicalDimensions(perMetre, perMetre, true);
+    }
+
+    /// <summary>Horizontal dots per inch, or null when the unit is unknown.</summary>
+    public double? DpiX => UnitIsMetre ? PixelsPerUnitX * MetresPerInch : null;
+
+    /// <summary>Vertical dots per inch, or null when the unit is unknown.</summary>
+    public double? DpiY => UnitIsMetre ? PixelsPerUnitY * MetresPerInch : null;
 }
 
 /// <summary>

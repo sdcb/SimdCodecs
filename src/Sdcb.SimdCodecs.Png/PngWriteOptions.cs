@@ -40,6 +40,41 @@ public sealed record PngWriteOptions
     /// </summary>
     public double? Gamma { get; init; }
 
+    /// <summary>When set, emit a <c>pHYs</c> chunk: the intended pixel size (e.g. <see cref="PngPhysicalDimensions.FromDpi"/>) or aspect ratio.</summary>
+    public PngPhysicalDimensions? PhysicalDimensions { get; init; }
+
+    /// <summary>
+    /// When set, emit a <c>tRNS</c> chunk making the pixels of exactly this colour fully transparent: one
+    /// sample for a greyscale image, three (red, green, blue) for an RGB one, in the image's sample range
+    /// (0-255 for 8-bit, 0-65535 for 16-bit). Only for output without an alpha channel — the greyscale and
+    /// RGB entry points, or RGBA with <see cref="DiscardAlpha"/> — and not together with
+    /// <see cref="LosslessReduction"/>, which finds a transparent colour itself where one fits; either
+    /// misuse is an <see cref="System.ArgumentException"/>.
+    /// </summary>
+    public ushort[]? TransparentColor { get; init; }
+
+    /// <summary>
+    /// Write the smallest PNG layout that still holds every sample exactly, found by one scan of the image
+    /// before it is encoded: opaque alpha dropped, binary alpha turned into a tRNS transparent colour,
+    /// equal channels written as greyscale, 16-bit samples that are 8-bit values (v·257) written as 8-bit,
+    /// greyscale on a coarser scale written at 4, 2 or 1 bits, and at most 256 colours written as indexed
+    /// colour (PLTE, with tRNS alpha), at 1, 2, 4 or 8 bits per pixel.
+    /// </summary>
+    /// <remarks>
+    /// <para>Lossless in the PNG sense: every decoder that reads the file back to the caller's layout
+    /// (8-bit RGBA, 16-bit RGBA, ...) gets exactly the samples that were written, since PNG widens an 8-bit
+    /// value v to 16 bits as v·257 and a sub-byte grey level by the same bit replication. What changes is
+    /// the file's colour type and depth, so <see cref="PngReader.Decode"/> returns the reduced layout
+    /// (indexed, say, with <see cref="PngImage.Palette"/>) where it used to return the caller's; the RGBA
+    /// projections do not change. Off by default for that reason.</para>
+    /// <para>Screenshots, UI, charts, icons, line art and scanned text typically shrink severalfold; a
+    /// photograph keeps its layout and pays only the scan, which ends its palette search within a few
+    /// hundred pixels. Nothing is quantised: an image with more than 256 colours stays truecolour.</para>
+    /// <para>With an <see cref="IccProfile"/> the colour model is kept (greyscale stays greyscale, colour
+    /// stays colour), because a profile describes one or the other.</para>
+    /// </remarks>
+    public bool LosslessReduction { get; init; }
+
     /// <summary>When set, emit a <c>cHRM</c> chunk with the supplied primaries + white point.</summary>
     public ChromaticityChunk? Chromaticity { get; init; }
 
@@ -68,7 +103,8 @@ public sealed record PngWriteOptions
 
     /// <summary>
     /// Write RGB (PNG colour type 2) rather than RGBA, discarding the alpha channel of an RGBA
-    /// input. Ignored by the grayscale and packed-RGB entry points, which have no alpha to drop.
+    /// input (or greyscale rather than greyscale + alpha). Ignored by the grayscale and packed-RGB
+    /// entry points, which have no alpha to drop.
     /// </summary>
     /// <remarks>
     /// <para>A render with no transparency -- an astronomical frame, a chart, anything already
@@ -78,8 +114,8 @@ public sealed record PngWriteOptions
     /// so this is a speed option at least as much as a size one.</para>
     /// <para>The caller asserts the image is opaque: the alpha samples are not examined, because
     /// discovering a transparent pixel halfway through a multi-second encode is no more useful than
-    /// not having looked. When the source is already packed RGB, use
-    /// <see cref="PngWriter.EncodeRgb8"/> / <see cref="PngWriter.EncodeRgb16"/> instead.</para>
+    /// not having looked (<see cref="LosslessReduction"/> is the option that looks). When the source is
+    /// already packed RGB, use <c>PngWriter.EncodeRgb8</c> / <c>PngWriter.EncodeRgb16</c> instead.</para>
     /// </remarks>
     public bool DiscardAlpha { get; init; }
 

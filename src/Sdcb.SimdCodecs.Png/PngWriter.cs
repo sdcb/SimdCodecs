@@ -10,9 +10,11 @@ namespace Sdcb.SimdCodecs.Png;
 /// Pure-managed PNG writer. Emits a fully-conformant PNG with adaptive
 /// per-row filter selection (libpng's "minimum sum of absolute values"
 /// heuristic over filters 0/Sub/Up/Average/Paeth) and a caller-settable
-/// deflate level. Supports six pixel formats — 8- and 16-bit grayscale,
-/// RGB and RGBA — and optionally embeds an ICC profile via an <c>iCCP</c>
-/// chunk. No interlacing, no palette, no extra ancillary chunks.
+/// deflate level. Takes eight pixel layouts — 8- and 16-bit grayscale,
+/// grayscale + alpha, RGB and RGBA — and writes them as they are, or, with
+/// <see cref="PngWriteOptions.LosslessReduction"/>, in the smallest exact PNG
+/// layout (indexed colour, sub-byte greyscale, a tRNS transparent colour, ...).
+/// Metadata chunks come from <see cref="PngWriteOptions"/>. No interlacing.
 ///
 /// <para>An RGBA caller whose image is opaque should set
 /// <see cref="PngWriteOptions.DiscardAlpha"/> rather than repack first: the
@@ -51,7 +53,7 @@ public static class PngWriter
     public static byte[] Encode(ReadOnlySpan<byte> rgba, int width, int height, ReadOnlySpan<byte> iccProfile)
     {
         ValidateSize(rgba.Length, width, height, bytesPerPixel: 4);
-        return EncodeCore(rgba, width, height, bitDepth: 8, colorType: 6, srcChannels: 4, dstChannels: 4,
+        return EncodeCore(rgba, width, height, sampleBytes: 1, srcChannels: 4, dstChannels: 4,
             new PngWriteOptions { IccProfile = iccProfile.IsEmpty ? null : iccProfile.ToArray() });
     }
 
@@ -65,9 +67,8 @@ public static class PngWriter
     public static byte[] Encode(ReadOnlySpan<byte> rgba, int width, int height, PngWriteOptions options)
     {
         ValidateSize(rgba.Length, width, height, bytesPerPixel: 4);
-        var opaque = options.DiscardAlpha;
-        return EncodeCore(rgba, width, height, bitDepth: 8, colorType: opaque ? (byte)2 : (byte)6,
-            srcChannels: 4, dstChannels: opaque ? 3 : 4, options);
+        return EncodeCore(rgba, width, height, sampleBytes: 1, srcChannels: 4,
+            dstChannels: options.DiscardAlpha ? 3 : 4, options);
     }
 
     /// <summary>
@@ -80,7 +81,7 @@ public static class PngWriter
     public static byte[] EncodeRgb8(ReadOnlySpan<byte> rgb, int width, int height, ReadOnlySpan<byte> iccProfile = default)
     {
         ValidateSize(rgb.Length, width, height, bytesPerPixel: 3);
-        return EncodeCore(rgb, width, height, bitDepth: 8, colorType: 2, srcChannels: 3, dstChannels: 3,
+        return EncodeCore(rgb, width, height, sampleBytes: 1, srcChannels: 3, dstChannels: 3,
             new PngWriteOptions { IccProfile = iccProfile.IsEmpty ? null : iccProfile.ToArray() });
     }
 
@@ -88,7 +89,7 @@ public static class PngWriter
     public static byte[] EncodeRgb8(ReadOnlySpan<byte> rgb, int width, int height, PngWriteOptions options)
     {
         ValidateSize(rgb.Length, width, height, bytesPerPixel: 3);
-        return EncodeCore(rgb, width, height, bitDepth: 8, colorType: 2, srcChannels: 3, dstChannels: 3, options);
+        return EncodeCore(rgb, width, height, sampleBytes: 1, srcChannels: 3, dstChannels: 3, options);
     }
 
     /// <summary>
@@ -100,7 +101,7 @@ public static class PngWriter
     public static byte[] EncodeGray8(ReadOnlySpan<byte> gray, int width, int height, ReadOnlySpan<byte> iccProfile = default)
     {
         ValidateSize(gray.Length, width, height, bytesPerPixel: 1);
-        return EncodeCore(gray, width, height, bitDepth: 8, colorType: 0, srcChannels: 1, dstChannels: 1,
+        return EncodeCore(gray, width, height, sampleBytes: 1, srcChannels: 1, dstChannels: 1,
             new PngWriteOptions { IccProfile = iccProfile.IsEmpty ? null : iccProfile.ToArray() });
     }
 
@@ -108,7 +109,7 @@ public static class PngWriter
     public static byte[] EncodeGray8(ReadOnlySpan<byte> gray, int width, int height, PngWriteOptions options)
     {
         ValidateSize(gray.Length, width, height, bytesPerPixel: 1);
-        return EncodeCore(gray, width, height, bitDepth: 8, colorType: 0, srcChannels: 1, dstChannels: 1, options);
+        return EncodeCore(gray, width, height, sampleBytes: 1, srcChannels: 1, dstChannels: 1, options);
     }
 
     /// <summary>
@@ -123,7 +124,7 @@ public static class PngWriter
     {
         if (gray.Length != width * height)
             throw new ArgumentException("gray length must equal width*height");
-        return EncodeCore(MemoryMarshal.AsBytes(gray), width, height, bitDepth: 16, colorType: 0,
+        return EncodeCore(MemoryMarshal.AsBytes(gray), width, height, sampleBytes: 2,
             srcChannels: 1, dstChannels: 1,
             new PngWriteOptions { IccProfile = iccProfile.IsEmpty ? null : iccProfile.ToArray() });
     }
@@ -133,7 +134,7 @@ public static class PngWriter
     {
         if (gray.Length != width * height)
             throw new ArgumentException("gray length must equal width*height");
-        return EncodeCore(MemoryMarshal.AsBytes(gray), width, height, bitDepth: 16, colorType: 0,
+        return EncodeCore(MemoryMarshal.AsBytes(gray), width, height, sampleBytes: 2,
             srcChannels: 1, dstChannels: 1, options);
     }
 
@@ -148,7 +149,7 @@ public static class PngWriter
     {
         if (rgba.Length != width * height * 4)
             throw new ArgumentException("rgba length must equal width*height*4");
-        return EncodeCore(MemoryMarshal.AsBytes(rgba), width, height, bitDepth: 16, colorType: 6,
+        return EncodeCore(MemoryMarshal.AsBytes(rgba), width, height, sampleBytes: 2,
             srcChannels: 4, dstChannels: 4,
             new PngWriteOptions { IccProfile = iccProfile.IsEmpty ? null : iccProfile.ToArray() });
     }
@@ -158,9 +159,8 @@ public static class PngWriter
     {
         if (rgba.Length != width * height * 4)
             throw new ArgumentException("rgba length must equal width*height*4");
-        var opaque = options.DiscardAlpha;
-        return EncodeCore(MemoryMarshal.AsBytes(rgba), width, height, bitDepth: 16,
-            colorType: opaque ? (byte)2 : (byte)6, srcChannels: 4, dstChannels: opaque ? 3 : 4, options);
+        return EncodeCore(MemoryMarshal.AsBytes(rgba), width, height, sampleBytes: 2,
+            srcChannels: 4, dstChannels: options.DiscardAlpha ? 3 : 4, options);
     }
 
     /// <summary>
@@ -172,7 +172,7 @@ public static class PngWriter
     {
         if (rgb.Length != width * height * 3)
             throw new ArgumentException("rgb length must equal width*height*3");
-        return EncodeCore(MemoryMarshal.AsBytes(rgb), width, height, bitDepth: 16, colorType: 2,
+        return EncodeCore(MemoryMarshal.AsBytes(rgb), width, height, sampleBytes: 2,
             srcChannels: 3, dstChannels: 3,
             new PngWriteOptions { IccProfile = iccProfile.IsEmpty ? null : iccProfile.ToArray() });
     }
@@ -182,8 +182,41 @@ public static class PngWriter
     {
         if (rgb.Length != width * height * 3)
             throw new ArgumentException("rgb length must equal width*height*3");
-        return EncodeCore(MemoryMarshal.AsBytes(rgb), width, height, bitDepth: 16, colorType: 2,
+        return EncodeCore(MemoryMarshal.AsBytes(rgb), width, height, sampleBytes: 2,
             srcChannels: 3, dstChannels: 3, options);
+    }
+
+    /// <summary>
+    /// Encode an 8-bit greyscale + alpha buffer (row-major, two bytes per pixel: grey, alpha) as a
+    /// colour-type-4 PNG.
+    /// </summary>
+    public static byte[] EncodeGrayAlpha8(ReadOnlySpan<byte> grayAlpha, int width, int height, ReadOnlySpan<byte> iccProfile = default) =>
+        EncodeGrayAlpha8(grayAlpha, width, height, new PngWriteOptions { IccProfile = iccProfile.IsEmpty ? null : iccProfile.ToArray() });
+
+    /// <summary>EncodeGrayAlpha8 with full <see cref="PngWriteOptions"/>.</summary>
+    public static byte[] EncodeGrayAlpha8(ReadOnlySpan<byte> grayAlpha, int width, int height, PngWriteOptions options)
+    {
+        ValidateSize(grayAlpha.Length, width, height, bytesPerPixel: 2);
+        return EncodeCore(grayAlpha, width, height, sampleBytes: 1, srcChannels: 2,
+            dstChannels: options.DiscardAlpha ? 1 : 2, options);
+    }
+
+    /// <summary>
+    /// Encode a 16-bit greyscale + alpha buffer (row-major, two <see cref="ushort"/>s per pixel: grey,
+    /// alpha; system-endian on input) as a colour-type-4 PNG.
+    /// </summary>
+    public static byte[] EncodeGrayAlpha16(ReadOnlySpan<ushort> grayAlpha, int width, int height, ReadOnlySpan<byte> iccProfile = default) =>
+        EncodeGrayAlpha16(grayAlpha, width, height, new PngWriteOptions { IccProfile = iccProfile.IsEmpty ? null : iccProfile.ToArray() });
+
+    /// <summary>EncodeGrayAlpha16 with full <see cref="PngWriteOptions"/>.</summary>
+    public static byte[] EncodeGrayAlpha16(ReadOnlySpan<ushort> grayAlpha, int width, int height, PngWriteOptions options)
+    {
+        if (width <= 0 || height <= 0)
+            throw new ArgumentException("width and height must be positive");
+        if (grayAlpha.Length != (long)width * height * 2)
+            throw new ArgumentException("grayAlpha length must equal width*height*2");
+        return EncodeCore(MemoryMarshal.AsBytes(grayAlpha), width, height, sampleBytes: 2, srcChannels: 2,
+            dstChannels: options.DiscardAlpha ? 1 : 2, options);
     }
 
     /// <summary>
@@ -216,7 +249,9 @@ public static class PngWriter
     }
 
     /// <summary>
-    /// PNG bytes for arbitrary (bitDepth, colorType, channel count).
+    /// PNG bytes for a source of <paramref name="srcChannels"/> samples of <paramref name="sampleBytes"/>
+    /// each per pixel (1 grey, 2 grey + alpha, 3 RGB, 4 RGBA), written as its first
+    /// <paramref name="dstChannels"/> channels or in the layout <see cref="PngEncodePlan.Analyze"/> picks.
     /// </summary>
     /// <param name="samples">
     /// The pixels in HOST order and HOST layout, <paramref name="srcChannels"/> samples per pixel.
@@ -226,17 +261,32 @@ public static class PngWriter
     /// </param>
     /// <param name="srcChannels">Samples per pixel in <paramref name="samples"/>.</param>
     /// <param name="dstChannels">
-    /// Samples per pixel in the file, which <paramref name="colorType"/> must agree with. Equal to
-    /// <paramref name="srcChannels"/> except when dropping alpha (4 in, 3 out).
+    /// Channels of the source to write: equal to <paramref name="srcChannels"/> except when dropping
+    /// alpha (4 in, 3 out; 2 in, 1 out).
     /// </param>
     private static byte[] EncodeCore(ReadOnlySpan<byte> samples, int width, int height,
-        byte bitDepth, byte colorType, int srcChannels, int dstChannels, PngWriteOptions options)
+        int sampleBytes, int srcChannels, int dstChannels, PngWriteOptions options)
     {
         // Refuse a bad keyword before the pixels are deflated, not after: the text is written last.
         if (options.Text is { Count: > 0 } textToCheck)
         {
             foreach (var entry in textToCheck)
                 ValidateKeyword(entry.Keyword);
+        }
+
+        PngEncodePlan plan;
+        if (options.LosslessReduction)
+        {
+            if (options.TransparentColor is not null)
+                throw new ArgumentException(
+                    "TransparentColor and LosslessReduction do not combine: the reduction finds a transparent colour itself",
+                    nameof(PngWriteOptions.TransparentColor));
+            plan = PngEncodePlan.Analyze(samples, width, height, dstChannels, srcChannels, sampleBytes,
+                keepColourModel: options.IccProfile is { Length: > 0 });
+        }
+        else
+        {
+            plan = PngEncodePlan.Direct(dstChannels, srcChannels, sampleBytes, options.TransparentColor);
         }
 
         using var ms = new MemoryStream();
@@ -247,8 +297,8 @@ public static class PngWriter
         Span<byte> ihdr = stackalloc byte[13];
         WriteBE(ihdr.Slice(0, 4), (uint)width);
         WriteBE(ihdr.Slice(4, 4), (uint)height);
-        ihdr[8] = bitDepth;
-        ihdr[9] = colorType;
+        ihdr[8] = plan.BitDepth;
+        ihdr[9] = plan.ColorType;
         ihdr[10] = 0;
         ihdr[11] = 0;
         ihdr[12] = 0;
@@ -306,8 +356,22 @@ public static class PngWriter
             options.Chromaticity.Write(buf);
             WriteChunk(ms, "cHRM"u8, buf);
         }
+        if (options.PhysicalDimensions is { } phys)
+        {
+            Span<byte> buf = stackalloc byte[9];
+            WriteBE(buf, phys.PixelsPerUnitX);
+            WriteBE(buf[4..], phys.PixelsPerUnitY);
+            buf[8] = phys.UnitIsMetre ? (byte)1 : (byte)0;
+            WriteChunk(ms, "pHYs"u8, buf);
+        }
 
-        WriteIdatChunk(ms, samples, width, height, bitDepth / 8, srcChannels, dstChannels, options);
+        // PLTE after the colour-space chunks, then tRNS after PLTE, both before the image data (§5.6).
+        if (plan.Palette is { } palette)
+            WriteChunk(ms, "PLTE"u8, palette);
+        if (plan.Transparency is { } transparency)
+            WriteChunk(ms, "tRNS"u8, transparency);
+
+        WriteIdatChunk(ms, samples, width, height, plan, options);
 
         // eXIf is allowed before OR after IDAT per the PNG extensions; we put
         // it after so the pixel-critical chunks aren't pushed further from
@@ -344,11 +408,9 @@ public static class PngWriter
     /// the bytes while they are still in registers.</para>
     /// </remarks>
     private static void WriteIdatChunk(MemoryStream ms, ReadOnlySpan<byte> samples, int width, int height,
-        int sampleBytes, int srcChannels, int dstChannels, PngWriteOptions options)
+        PngEncodePlan plan, PngWriteOptions options)
     {
-        var bpp = dstChannels * sampleBytes;   // PNG's "bpp": the filter's left-neighbour offset
-        var stride = width * bpp;
-        var srcStride = width * srcChannels * sampleBytes;
+        var stride = plan.RowBytes(width);
 
         long lengthFieldPos = ms.Position;
         Span<byte> placeholder = stackalloc byte[4];
@@ -359,16 +421,14 @@ public static class PngWriter
         var fragments = EffectiveFragmentCount(options.ParallelFragments, height, stride);
         if (fragments > 1)
         {
-            WriteFragmentedZlibStream(ms, samples, height, stride, srcStride, bpp,
-                srcChannels, dstChannels, sampleBytes, options.CompressionLevel, fragments);
+            WriteFragmentedZlibStream(ms, samples, width, height, plan, options.CompressionLevel, fragments);
         }
         else
         {
             // Scope the ZLibStream so its trailing zlib bytes are flushed before we
             // measure ms.Position to compute the chunk length.
             using var z = new ZLibStream(ms, options.CompressionLevel, leaveOpen: true);
-            CompressRows(z, samples, 0, height, stride, srcStride, bpp,
-                srcChannels, dstChannels, sampleBytes, options.CompressionLevel, checksum: false);
+            CompressRows(z, samples, 0, height, width, plan, options.CompressionLevel, checksum: false);
         }
 
         long idatEnd = ms.Position;
@@ -429,10 +489,13 @@ public static class PngWriter
     /// possible at all, and it is a fact about the format rather than anything arranged here.
     /// </remarks>
     private static uint CompressRows(Stream destination, ReadOnlySpan<byte> samples,
-        int firstRow, int rowCount, int stride, int srcStride, int bpp,
-        int srcChannels, int dstChannels, int sampleBytes, CompressionLevel level, bool checksum)
+        int firstRow, int rowCount, int width, PngEncodePlan plan, CompressionLevel level, bool checksum)
     {
-        var store = level == CompressionLevel.NoCompression;
+        // Indexed and sub-byte rows are written unfiltered too (PngEncodePlan.Filtered).
+        var store = level == CompressionLevel.NoCompression || !plan.Filtered;
+        var stride = plan.RowBytes(width);
+        var srcStride = plan.SourceRowBytes(width);
+        var bpp = plan.FilterBpp;
 
         // current row + previous row + five filter candidates, in one rent.
         var scratch = ArrayPool<byte>.Shared.Rent(checked(stride * 7));
@@ -448,15 +511,14 @@ public static class PngWriter
             }
             else
             {
-                FillRow(samples.Slice((firstRow - 1) * srcStride, srcStride), prevRow,
-                    srcChannels, dstChannels, sampleBytes);
+                plan.Fill(samples.Slice((firstRow - 1) * srcStride, srcStride), prevRow, width);
             }
 
             uint a = 1, b = 0;
             Span<byte> filterByte = stackalloc byte[1];
             for (var y = firstRow; y < firstRow + rowCount; y++)
             {
-                FillRow(samples.Slice(y * srcStride, srcStride), current, srcChannels, dstChannels, sampleBytes);
+                plan.Fill(samples.Slice(y * srcStride, srcStride), current, width);
 
                 if (store)
                 {
@@ -530,9 +592,9 @@ public static class PngWriter
     /// <c>fixed</c> scope strictly encloses the parallel region, so nothing moves under a worker.</para>
     /// </remarks>
     private static unsafe void WriteFragmentedZlibStream(MemoryStream ms, ReadOnlySpan<byte> samples,
-        int height, int stride, int srcStride, int bpp, int srcChannels, int dstChannels,
-        int sampleBytes, CompressionLevel level, int fragments)
+        int width, int height, PngEncodePlan plan, CompressionLevel level, int fragments)
     {
+        var stride = plan.RowBytes(width);
         var rowsPerFragment = (height + fragments - 1) / fragments;
         var deflated = new byte[fragments][];
         var lengths = new int[fragments];
@@ -558,8 +620,7 @@ public static class PngWriter
                 var view = new ReadOnlySpan<byte>((byte*)origin, total);
                 using var buffer = new MemoryStream(rowCount * (stride + 1) / 2);
                 var d = new DeflateStream(buffer, level, leaveOpen: true);
-                checksums[index] = CompressRows(d, view, firstRow, rowCount, stride, srcStride, bpp,
-                    srcChannels, dstChannels, sampleBytes, level, checksum: true);
+                checksums[index] = CompressRows(d, view, firstRow, rowCount, width, plan, level, checksum: true);
 
                 d.Flush();
                 lengths[index] = (int)buffer.Length;   // BEFORE Dispose writes the final block
@@ -664,10 +725,10 @@ public static class PngWriter
 
     /// <summary>
     /// Copy one source scanline into PNG sample order: big-endian for 16-bit samples (the spec's
-    /// network order), dropping the fourth channel when <paramref name="dstChannels"/> is one fewer
-    /// than <paramref name="srcChannels"/>.
+    /// network order), dropping the last channel (alpha) when <paramref name="dstChannels"/> is one
+    /// fewer than <paramref name="srcChannels"/>.
     /// </summary>
-    private static void FillRow(ReadOnlySpan<byte> src, Span<byte> dst,
+    internal static void FillRow(ReadOnlySpan<byte> src, Span<byte> dst,
         int srcChannels, int dstChannels, int sampleBytes)
     {
         if (sampleBytes == 1)
@@ -675,6 +736,13 @@ public static class PngWriter
             if (srcChannels == dstChannels)
             {
                 src.CopyTo(dst);
+                return;
+            }
+
+            if (dstChannels == 1)
+            {
+                for (int s = 0, d = 0; d < dst.Length; s += srcChannels, d++)
+                    dst[d] = src[s];
                 return;
             }
 

@@ -38,6 +38,7 @@ checks IHDR, so a case is exactly the colour type, depth and interlace method it
 | `current` | `PngImageDecoder.TryDecodeIntoRgba8` into a reused buffer | `PngWriter.Encode*` with `PngWriteOptions.CompressionLevel` |
 | `native` (decode) | `PngReader.Decode`: samples as stored, no RGBA expansion | — |
 | `parallel` (encode) | — | the same with `ParallelFragments = Environment.ProcessorCount`; reported in its own table, never in the single-thread ratios |
+| `reduced` (encode) | — | the same with `LosslessReduction = true` (the smallest exact layout: indexed, sub-byte grey, tRNS, ...); its own table, with the layout chosen |
 | `baseline` | the previous commit's decoder, same process (see below) | the previous commit's encoder |
 | ImageSharp 3.1.12 | `Image.Load<Rgba32>` + `CopyPixelDataTo`, `MaxDegreeOfParallelism = 1` | `PngEncoder` with the same colour type, depth and zlib level (0 / 1 / 6 / 9), adaptive filters |
 | libpng | simplified API: `png_image_begin_read_from_memory` + `png_image_finish_read` to RGBA | `png_image_write_to_memory`; the simplified API has no level setting, so libpng appears on the `optimal` rows only (its default level) |
@@ -46,7 +47,7 @@ checks IHDR, so a case is exactly the colour type, depth and interlace method it
 within 1 for 16-bit sources (narrowing 16 → 8 bits by truncation or by rounding are both legitimate). If
 `current` disagrees the run stops; a disagreeing competitor is dropped from that case with a note. Encode:
 every output is decoded and must reproduce the source samples exactly, in the requested colour type and
-depth. Known notes: libpng's simplified API converts 16-bit sources differently when reading to 8-bit
+depth (`reduced`: in whatever layout it chose, compared as 16-bit RGBA widened the way PNG widens samples). Known notes: libpng's simplified API converts 16-bit sources differently when reading to 8-bit
 RGBA (it disagrees by far more than 1, so it is not timed there), and its RGBA16 write does not
 reproduce the samples.
 
