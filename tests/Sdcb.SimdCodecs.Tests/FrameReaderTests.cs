@@ -125,7 +125,7 @@ public sealed class FrameReaderTests
     private static byte[] ThreePageTiff(out (int Width, int Height, int Channels, byte[] Pixels)[] pages)
     {
         var random = new Random(3);
-        (int W, int H, string Map)[] shapes = [(9, 4, "R"), (5, 7, "RGB"), (11, 3, "RGBA")];
+        (int W, int H, string Map)[] shapes = [(9, 4, "R"), (5, 7, "RGB"), (11, 6, "RGBA")]; // the last is the largest
         using var collection = new MagickImageCollection();
         pages = new (int, int, int, byte[])[shapes.Length];
         for (var i = 0; i < shapes.Length; i++)
@@ -239,6 +239,106 @@ public sealed class FrameReaderTests
             reader.FrameCount.ShouldBe(1);
             reader.TryGetFrameInfo(0, out var frame).ShouldBeTrue();
             frame.Info.FrameCount.ShouldBe(1);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(GoldenAnimations))]
+    public void EnumeratingPlaysLibwebpsFramesThroughOneBuffer(string fixture)
+    {
+        var data = File.ReadAllBytes(WebpFixture(fixture));
+        SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
+        using (reader)
+        {
+            reader.TryGetFrameInfo(0, out var first).ShouldBeTrue();
+            var buffer = new byte[first.Info.Width * first.Info.Height * 4];
+            // Twice through: a second loop starts again at frame 0.
+            for (var pass = 0; pass < 2; pass++)
+            {
+                var expected = 0;
+                foreach (var step in reader.EnumerateFramesInto(buffer, 0, ImagePixelFormat.Rgba32))
+                {
+                    step.Index.ShouldBe(expected);
+                    var (durationMs, sha256) = WebpAnimationOracleTests.GoldenFrame(fixture, step.Index);
+                    step.Duration.ShouldBe(TimeSpan.FromMilliseconds(durationMs));
+                    WebpAnimationOracleTests.Sha256Hex(buffer).ShouldBe(sha256, $"pass {pass} frame {step.Index}");
+                    expected++;
+                }
+                expected.ShouldBe(reader.FrameCount);
+            }
+        }
+    }
+
+    [Fact]
+    public void EnumeratingPagesWritesEachPageAtItsOwnWidth()
+    {
+        var tiff = ThreePageTiff(out var pages);
+        SimdCodecs.TryOpenFrames(tiff, out var reader).ShouldBeTrue();
+        using (reader)
+        {
+            var largest = pages.Max(p => p.Width * p.Height * 3);
+            var buffer = new byte[largest];
+            var seen = 0;
+            foreach (var step in reader.EnumerateFramesInto(buffer, 0, ImagePixelFormat.Bgr24))
+            {
+                step.Duration.ShouldBeNull();
+                var (w, h, _, _) = pages[step.Index];
+                var alone = new byte[w * h * 3];
+                reader.TryDecodeFrameInto(step.Index, alone, 0, ImagePixelFormat.Bgr24).ShouldBeTrue();
+                buffer[..alone.Length].ShouldBe(alone, $"page {step.Index}");
+                seen++;
+            }
+            seen.ShouldBe(3);
+
+            // A buffer that fits the first two pages but not the third: two frames, then the misfit.
+            var small = new byte[pages.Take(2).Max(p => p.Width * p.Height * 3)];
+            small.Length.ShouldBeLessThan(pages[2].Width * pages[2].Height * 3);
+            var played = new List<int>();
+            Should.Throw<ArgumentException>(() =>
+            {
+                foreach (var step in reader.EnumerateFramesInto(small, 0, ImagePixelFormat.Bgr24))
+                    played.Add(step.Index);
+            });
+            played.ShouldBe([0, 1]);
+        }
+    }
+
+    [Fact]
+    public void EnumeratingStopsAtAnUndecodableFrame()
+    {
+        using var collection = new MagickImageCollection();
+        collection.Add(new MagickImage(MagickColors.Red, 4, 2));
+        var palette = new MagickImage(MagickColors.Blue, 3, 3);
+        palette.ColorType = ColorType.Palette;
+        collection.Add(palette);
+        SimdCodecs.TryOpenFrames(collection.ToByteArray(MagickFormat.Tiff), out var reader).ShouldBeTrue();
+        using (reader)
+        {
+            var played = new List<int>();
+            Should.Throw<InvalidDataException>(() =>
+            {
+                foreach (var step in reader.EnumerateFramesInto(new byte[1 << 10], 0, ImagePixelFormat.Rgba32))
+                    played.Add(step.Index);
+            }).Message.ShouldContain("Frame 1");
+            played.ShouldBe([0]);
+        }
+
+        // Float pages have no 8-bit projection.
+        SimdCodecs.TryOpenFrames(HdrTiff.Float32Gray(3, 2, new float[6]), out var floats).ShouldBeTrue();
+        using (floats)
+            Should.Throw<NotSupportedException>(() => floats.EnumerateFramesInto(new byte[64], 0, ImagePixelFormat.Gray8).ToList());
+    }
+
+    [Fact]
+    public void EnumerationArgumentsAreCheckedOnTheCall()
+    {
+        SimdCodecs.TryOpenFrames(ThreePageTiff(out _), out var reader).ShouldBeTrue();
+        using (reader)
+        {
+            // Thrown by the call itself, before anything is enumerated.
+            Should.Throw<ArgumentOutOfRangeException>(() => reader.EnumerateFramesInto(new byte[64], -1, ImagePixelFormat.Rgba32));
+            Should.Throw<ArgumentOutOfRangeException>(() => reader.EnumerateFramesInto(new byte[64], 0, (ImagePixelFormat)99));
+            Should.Throw<ArgumentNullException>(() => ((IImageFrameReader)null!).EnumerateFramesInto(new byte[64], 0, ImagePixelFormat.Rgba32));
         }
     }
 

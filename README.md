@@ -41,7 +41,8 @@ natively, without an RGBA frame in between (a colour JPEG's grey is its Y plane,
 `TryReadInfo` also reports the stored bit depth, the EXIF orientation (reported, never applied to the
 pixels) and the number of frames or pages, from the headers alone. `SimdCodecs.TryOpenFrames(file, out reader)`
 decodes them one at a time, by index and in any layout: an animated WebP's composited frames with their
-durations, a multi-page TIFF's pages (any other image is one frame). Each format is also its own package with a
+durations, a multi-page TIFF's pages (any other image is one frame). `reader.EnumerateFramesInto(buffer, stride, format)`
+plays them in order through one buffer. Each format is also its own package with a
 richer API: scaled JPEG decoding, TIFF segment reads, WebP animation seeking by timestamp, Ultra HDR, and more.
 
 ## Formats
