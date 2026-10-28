@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <DefineConstants>$(DefineConstants);SIMDCODECS_JBIG2</DefineConstants>
 
     <PackageId>Sdcb.SimdCodecs.Jbig2</PackageId>
     <Product>Sdcb.SimdCodecs.Jbig2</Product>
@@ -27,6 +28,12 @@
   <ItemGroup>
     <!-- IImageDecoder / IDecodedImage contract for the Sdcb.SimdCodecs facade. -->
     <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
+    <Compile Include="..\Shared\MqDecoder.cs" Link="Shared\MqDecoder.cs" />
+    <Compile Include="..\Shared\MmrCodes.cs" Link="Shared\MmrCodes.cs" />
   </ItemGroup>
 
   <ItemGroup>

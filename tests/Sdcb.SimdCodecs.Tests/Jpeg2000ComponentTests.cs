@@ -1,4 +1,3 @@
-using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Jpeg2000;
 using Shouldly;
 

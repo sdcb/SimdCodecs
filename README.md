@@ -121,16 +121,19 @@ Sdcb.SimdCodecs (facade)
  ├─ Png ──────────┬─ Color.Icc ─ Abstractions
  │                └─ Abstractions
  ├─ Tiff ─────────┬─ Png
- │                └─ Abstractions (shares the internal T.4 fax code tables)
+ │                └─ Abstractions
  ├─ Jpeg ─────────── Abstractions
  ├─ Jpeg.GainMap ─┬─ Jpeg
  │                └─ Abstractions
- ├─ Jbig2 ────────── Abstractions (shares the internal MQ decoder and T.4 code tables)
- ├─ Jpeg2000 ─────── Abstractions (shares the internal MQ decoder)
+ ├─ Jbig2 ────────── Abstractions
+ ├─ Jpeg2000 ─────── Abstractions
  └─ Webp ─────────── Abstractions
 
 Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
 ```
+
+The MQ arithmetic decoder (JBIG2, JPEG 2000) and the T.4 fax code tables (JBIG2, TIFF) are shared as
+source (`src/Shared`), compiled into each package that uses them: no package uses another's internals.
 
 </details>
 

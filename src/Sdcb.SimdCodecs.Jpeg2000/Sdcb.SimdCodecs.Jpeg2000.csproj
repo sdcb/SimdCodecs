@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <DefineConstants>$(DefineConstants);SIMDCODECS_JPEG2000</DefineConstants>
 
     <!-- On the name. PDF calls the filter /JPXDecode and the rest of this family
          uses format short names (Jpeg, Png, Jbig2), so Sdcb.SimdCodecs.Jpx was the
@@ -37,10 +38,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- IImageDecoder / IDecodedImage contract for the Sdcb.SimdCodecs facade,
-         and MqDecoder: T.800 Annex C's arithmetic coder is T.88 Annex E's, so
-         the two codecs share one internal copy from here. -->
+    <!-- IImageDecoder / IDecodedImage contract for the Sdcb.SimdCodecs facade. -->
     <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
+    <Compile Include="..\Shared\MqDecoder.cs" Link="Shared\MqDecoder.cs" />
   </ItemGroup>
 
   <ItemGroup>

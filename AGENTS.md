@@ -42,6 +42,10 @@ changes that it proves.
 - One package per codec (`src/Sdcb.SimdCodecs.*`, PackageId = assembly = root namespace); packages
   ship in lockstep, versioned from the Git tag. Package versions are central
   (`Directory.Packages.props`).
+- No shipped package uses another's internals: `InternalsVisibleTo` names only the test and benchmark
+  projects. An internal API has no version contract, so two packages upgraded separately fail at run
+  time. Code two packages need is shared as source (`src/Shared`, compiled under each package's
+  namespace); code a consumer needs is public in `Abstractions`.
 - One test project for everything (xunit v3 + Shouldly); Magick.NET is the test-only black box.
 - Benchmarks are in `SimdCodecs.slnx` (compiled by CI, never run by it). The NativeAOT smoke test
   (`tests/Sdcb.SimdCodecs.AotSmoke`) is not.

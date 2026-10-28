@@ -1,7 +1,15 @@
 using System;
 using System.IO;
 
-namespace Sdcb.SimdCodecs.Abstractions;
+// Compiled into each package that uses it (see MqDecoder.cs for why it is shared as source), under
+// that package's namespace so the copies are distinct types.
+#if SIMDCODECS_JBIG2
+namespace Sdcb.SimdCodecs.Jbig2;
+#elif SIMDCODECS_TIFF
+namespace Sdcb.SimdCodecs.Tiff;
+#else
+#error MmrCodes.cs is shared source for Sdcb.SimdCodecs.Jbig2 and Sdcb.SimdCodecs.Tiff only.
+#endif
 
 /// <summary>
 /// The Modified Huffman run-length code tables of ITU-T T.4 §4.1.2 (Tables 2, 3
@@ -14,6 +22,10 @@ namespace Sdcb.SimdCodecs.Abstractions;
 /// a silent transcription error, and the one place where a typo produces
 /// plausible-looking output rather than a crash. They are expanded once, on
 /// first use, into flat peek-indexed lookup tables.
+/// </para>
+/// <para>
+/// JBIG2's MMR decoder and TIFF's CCITT fax decoder (Compression 2/3/4) read the
+/// same tables, so this one source file is compiled into both packages.
 /// </para>
 /// </summary>
 internal static class MmrCodes

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Sdcb.SimdCodecs.Abstractions;
 
 namespace Sdcb.SimdCodecs.Jbig2;
 

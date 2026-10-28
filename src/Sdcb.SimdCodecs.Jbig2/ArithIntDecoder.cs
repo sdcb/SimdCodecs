@@ -1,5 +1,4 @@
 using System;
-using Sdcb.SimdCodecs.Abstractions;
 
 namespace Sdcb.SimdCodecs.Jbig2;
 

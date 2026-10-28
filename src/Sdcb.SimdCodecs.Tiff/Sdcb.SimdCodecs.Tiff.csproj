@@ -7,6 +7,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsAotCompatible>true</IsAotCompatible>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <DefineConstants>$(DefineConstants);SIMDCODECS_TIFF</DefineConstants>
 
     <PackageId>Sdcb.SimdCodecs.Tiff</PackageId>
     <Product>Sdcb.SimdCodecs.Tiff</Product>
@@ -36,8 +37,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
+    <Compile Include="..\Shared\MmrCodes.cs" Link="Shared\MmrCodes.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
-    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Exif" />
   </ItemGroup>
 
 </Project>

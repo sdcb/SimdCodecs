@@ -27,22 +27,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
-    <!-- MqDecoder is shared internal source, not API. ITU-T T.88 Annex E and
-         T.800 Annex C specify the same MQ arithmetic coder with the same Qe
-         table, so Sdcb.SimdCodecs.Jbig2 and Sdcb.SimdCodecs.Jpeg2000 want one copy rather
-         than two that can drift. InternalsVisibleTo cannot cross two separately
-         shipped packages, and this package is already a hard dependency of
-         every codec in the family, so parking the coder here adds no dependency
-         edge that was not there - it costs exactly these two lines. The
-         alternative considered was a linked <Compile Include> into both
-         csprojs; rejected because two assemblies would then export the same
-         type name to the test assembly, and CS0433 is not fixable by
-         qualifying, only by extern alias. -->
-    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Jbig2" />
-    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Jpeg2000" />
-    <!-- MmrCodes, the T.4 Modified Huffman and mode-code tables, for the same reason: JBIG2's
-         MMR decoder and TIFF's CCITT fax decoder (Compression 2/3/4) read the same tables. -->
-    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tiff" />
   </ItemGroup>
 
 </Project>

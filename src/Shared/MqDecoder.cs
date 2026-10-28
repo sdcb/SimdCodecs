@@ -1,6 +1,14 @@
 using System;
 
-namespace Sdcb.SimdCodecs.Abstractions;
+// Compiled into each package that uses it (see the remarks below), under that package's namespace so
+// the copies are distinct types.
+#if SIMDCODECS_JBIG2
+namespace Sdcb.SimdCodecs.Jbig2;
+#elif SIMDCODECS_JPEG2000
+namespace Sdcb.SimdCodecs.Jpeg2000;
+#else
+#error MqDecoder.cs is shared source for Sdcb.SimdCodecs.Jbig2 and Sdcb.SimdCodecs.Jpeg2000 only.
+#endif
 
 /// <summary>
 /// One row of the MQ-coder probability estimation table (ITU-T T.88 Table E.1):
@@ -17,15 +25,15 @@ internal readonly record struct MqState(ushort Qe, byte Nmps, byte Nlps, byte Sw
 /// (T.88 Table E.1 = T.800 Table C.2). It is the entropy back-end under every
 /// arithmetically-coded JBIG2 region and every JPEG 2000 code-block.
 /// <para>
-/// It lives in the abstractions package because it has two consumers in two
-/// separately shipped packages, and <c>InternalsVisibleTo</c> does not reach
-/// across those. Every codec here already references this package, so nothing
-/// gains a dependency it did not have; what this placement costs is the two
-/// <c>InternalsVisibleTo</c> lines in the csproj naming those consumers, and it
-/// buys a single copy that cannot drift. Deliberately still <c>internal</c>
-/// rather than public API: JPEG 2000's arithmetic-bypass, RESTART and
-/// predictable-termination modes may yet want to reshape the surface, and that
-/// freedom is worth more than exporting a spec primitive.
+/// One source file (<c>src/Shared</c>) is compiled into both packages, so there is
+/// a single copy to review and it cannot drift. It is not shared as a compiled
+/// type: an <c>internal</c> type one package lends another through
+/// <c>InternalsVisibleTo</c> is an API without a version contract, which breaks
+/// at run time (<c>MissingMethodException</c>) when the two packages are
+/// upgraded separately. Deliberately <c>internal</c> rather than public API:
+/// JPEG 2000's arithmetic-bypass, RESTART and predictable-termination modes may
+/// yet want to reshape the surface, and that freedom is worth more than
+/// exporting a spec primitive.
 /// </para>
 /// <para>
 /// <b>The coder is shared; its initialisation is not.</b> T.88 and T.800 seed

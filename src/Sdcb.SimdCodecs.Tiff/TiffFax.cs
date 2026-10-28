@@ -1,5 +1,4 @@
 using System.Buffers;
-using Sdcb.SimdCodecs.Abstractions;
 
 namespace Sdcb.SimdCodecs.Tiff;
 
