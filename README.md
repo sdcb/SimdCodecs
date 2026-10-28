@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, JPEG 2000 and JBIG2, plus EXIF and ICC.
+Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, GIF, JPEG 2000 and JBIG2, plus EXIF and ICC.
 No native dependencies, NativeAOT-compatible, and SIMD-accelerated (AVX2, SSE, AdvSimd) with a scalar
 fallback. The JPEG decoder is faster than libjpeg-turbo on the benchmark corpus.
 
@@ -22,7 +22,7 @@ using Sdcb.SimdCodecs;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Jpeg;
 
-byte[] file = File.ReadAllBytes("photo.webp");   // JPEG, PNG, TIFF, WebP, JPEG 2000 or JBIG2
+byte[] file = File.ReadAllBytes("photo.webp");   // JPEG, PNG, TIFF, WebP, GIF, JPEG 2000 or JBIG2
 
 // The facade sniffs the format from the magic bytes and decodes into a buffer you own (R G B A).
 if (!SimdCodecs.TryReadInfo(file, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
@@ -40,7 +40,7 @@ natively, without an RGBA frame in between (a colour JPEG's grey is its Y plane,
 (channel count — a greyscale JPEG is one channel — 8/16-bit or float samples, ICC profile).
 `TryReadInfo` also reports the stored bit depth, the EXIF orientation (reported, never applied to the
 pixels) and the number of frames or pages, from the headers alone. `SimdCodecs.TryOpenFrames(file, out reader)`
-decodes them one at a time, by index and in any layout: an animated WebP's composited frames with their
+decodes them one at a time, by index and in any layout: an animated WebP's or GIF's composited frames with their
 durations, a multi-page TIFF's pages (any other image is one frame). `reader.EnumerateFramesInto(buffer, stride, format)`
 plays them in order through one buffer. Each format is also its own package with a
 richer API: scaled JPEG decoding, TIFF segment reads, WebP animation seeking by timestamp, Ultra HDR, and more.
@@ -54,6 +54,7 @@ richer API: scaled JPEG decoding, TIFF segment reads, WebP animation seeking by 
 | PNG | ✅ | ✅ | All bit depths (1–16, indexed); text chunks; HDR signalling (cICP, mDCV, cLLI) |
 | TIFF | ✅ | ✅ | Multi-page; 8/16/32-bit integer and float; strips or tiles; reads Deflate, LZW, PackBits, CCITT G3/G4 and single tiles; writes Deflate |
 | WebP | ✅ | — | Lossy, lossless, alpha; animation with seeking; byte-exact with libwebp |
+| GIF | ✅ | — | 87a / 89a: interlacing, transparency, every disposal method; animation with seeking |
 | JPEG 2000 | ✅ | — | Part 1 (T.800), for PDF `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88, for PDF `/JBIG2Decode` |
 | EXIF | ✅ | ✅ | From JPEG, TIFF and PNG; `ExifWriter` builds a block for the JPEG encoder |
@@ -95,6 +96,7 @@ All packages ship in lockstep under one version.
 | `Sdcb.SimdCodecs.Png` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Png.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Png) | PNG decoder and encoder |
 | `Sdcb.SimdCodecs.Tiff` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Tiff.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Tiff) | TIFF reader and writer |
 | `Sdcb.SimdCodecs.Webp` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Webp.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Webp) | WebP decoder, including animation |
+| `Sdcb.SimdCodecs.Gif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Gif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Gif) | GIF decoder, including animation |
 | `Sdcb.SimdCodecs.Jpeg2000` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jpeg2000.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jpeg2000) | JPEG 2000 decoder |
 | `Sdcb.SimdCodecs.Jbig2` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jbig2.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jbig2) | JBIG2 decoder |
 | `Sdcb.SimdCodecs.Exif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Exif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Exif) | EXIF reader and writer |
@@ -113,6 +115,8 @@ All packages ship in lockstep under one version.
   tiles; chunky or planar; on-demand single strip or tile reads; reads 1/2/4-bit pages (expanded to
   8-bit), CCITT fax (Group 3 1D/2D, Group 4, Modified Huffman) and the floating-point predictor.
 - **Webp** — RFC 6386 / RFC 9649: VP8 lossy, VP8L lossless, ALPH, animation with seek, ICC / EXIF / XMP.
+- **Gif** — GIF89a: global / local colour tables, interlacing, transparency, all disposal methods, NETSCAPE2.0 loop
+  count; composited frames with seek. The decisions the spec leaves open are listed in the package README.
   The facade returns stills and frame 0 of an animation; `WebpDecoder.DecodeAnimation` and
   `WebpAnimationDecoder` give the timeline.
 - **Exif** — reads JPEG, TIFF and PNG; `ExifWriter` builds a blob for `JpegEncodeOptions.Exif`.
@@ -134,7 +138,8 @@ Sdcb.SimdCodecs (facade)
  │                └─ Abstractions
  ├─ Jbig2 ────────── Abstractions
  ├─ Jpeg2000 ─────── Abstractions
- └─ Webp ─────────── Abstractions
+ ├─ Webp ─────────── Abstractions
+ └─ Gif ──────────── Abstractions
 
 Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
 ```

@@ -83,6 +83,21 @@ public sealed class FrameReaderTests
         }
     }
 
+    public static TheoryData<string> GifAnimations() => [.. GifDecoderTests.AnimationKinds];
+
+    [Theory]
+    [MemberData(nameof(GifAnimations))]
+    public void AnimatedGifFramesKeepTheStillContract(string kind)
+    {
+        var data = GifDecoderTests.Animation(kind);
+        SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
+        using (reader)
+        {
+            for (var index = reader.FrameCount - 1; index >= 0; index--)
+                CheckFrame(reader, index);
+        }
+    }
+
     // One frame against the still-image contract, in every layout, tightly packed and at a padded stride.
     // storedLuma: a YCbCr JPEG, whose Gray8 is its Y plane by contract (checked in DecodeIntoTests), not
     // the luma of its RGB.
@@ -189,7 +204,7 @@ public sealed class FrameReaderTests
         }
     }
 
-    public static TheoryData<string> Stills() => ["png", "jpeg", "webp", "jbig2", "j2k", "tiff"];
+    public static TheoryData<string> Stills() => ["png", "jpeg", "webp", "jbig2", "j2k", "tiff", "gif"];
 
     [Theory]
     [MemberData(nameof(Stills))]
@@ -202,6 +217,7 @@ public sealed class FrameReaderTests
             "webp" => File.ReadAllBytes(WebpFixture("lossless-3x7.webp")),
             "jbig2" => Jbig2FacadeTests.BuildFile(),
             "j2k" => File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "jpeg2000", "flat64.j2k")),
+            "gif" => new MagickImage(MagickColors.Orange, 5, 3).ToByteArray(MagickFormat.Gif),
             _ => new MagickImage(MagickColors.Teal, 6, 2).ToByteArray(MagickFormat.Tiff),
         };
         SimdCodecs.TryDecode(data, out var still).ShouldBeTrue();

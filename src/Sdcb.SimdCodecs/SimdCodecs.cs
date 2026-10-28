@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Gif;
 using Sdcb.SimdCodecs.Jbig2;
 using Sdcb.SimdCodecs.Jpeg;
 using Sdcb.SimdCodecs.Jpeg2000;
@@ -16,7 +17,7 @@ namespace Sdcb.SimdCodecs;
 /// package pulls the whole codec family in lockstep; consumers call these entry
 /// points instead of hard-wiring per-format decoders.
 /// <para>
-/// Registers PNG, JPEG, TIFF, JBIG2, JPEG 2000 and WebP. To add a
+/// Registers PNG, JPEG, TIFF, JBIG2, JPEG 2000, WebP and GIF. To add a
 /// format, implement <see cref="IImageDecoder"/> in its codec package and add a
 /// <c>Register&lt;T&gt;()</c> line to <see cref="_registry"/> - the order is the
 /// sniff order.
@@ -94,6 +95,7 @@ public static class SimdCodecs
         Register<Jbig2ImageDecoder>(),
         Register<Jpeg2000ImageDecoder>(),
         RegisterMultiFrame<WebpImageDecoder>(),
+        RegisterMultiFrame<GifImageDecoder>(),
     ];
 
     private static Entry Register<T>() where T : IImageDecoder =>

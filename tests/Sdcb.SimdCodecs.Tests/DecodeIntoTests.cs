@@ -100,6 +100,19 @@ public sealed class DecodeIntoTests
 
         corpus["jbig2"] = Jbig2FacadeTests.BuildFile();
 
+        // GIF: opaque (RGB) and transparent (RGBA) stills, interlaced, and animations whose frame 0 is the still.
+        using (var opaque = GifDecoderTests.PaletteImage(37, 19, 40, seed: 1))
+            corpus["gif still 37x19"] = opaque.ToByteArray(MagickFormat.Gif);
+        using (var transparent = GifDecoderTests.PaletteImage(23, 11, 9, seed: 2, transparent: true))
+            corpus["gif still transparent 23x11"] = transparent.ToByteArray(MagickFormat.Gif);
+        using (var interlaced = GifDecoderTests.PaletteImage(31, 17, 200, seed: 3))
+        {
+            interlaced.Settings.Interlace = Interlace.Gif;
+            corpus["gif still interlaced 31x17"] = interlaced.ToByteArray(MagickFormat.Gif);
+        }
+        foreach (var kind in new[] { "mixed", "offsets", "full-frames" })
+            corpus[$"gif anim {kind}"] = GifDecoderTests.Animation(kind);
+
         var fixtures = Path.Combine(AppContext.BaseDirectory, "Fixtures");
         foreach (var file in Directory.GetFiles(Path.Combine(fixtures, "webp"), "*.webp").Order())
             corpus[$"webp {Path.GetFileName(file)}"] = File.ReadAllBytes(file);
@@ -234,8 +247,8 @@ public sealed class DecodeIntoTests
             .ShouldBe((image.Width, image.Height, image.Channels, image.SampleFormat));
         info.BitDepth.ShouldBe(ExpectedBitDepth(name));
         info.Orientation.ShouldBe(ImageOrientation.Normal);
-        // Animated WebP fixtures: the frames ImageMagick (libwebp's demuxer) reads; every other entry is a still.
-        info.FrameCount.ShouldBe(name.StartsWith("webp anim", StringComparison.Ordinal)
+        // Animated WebP and GIF: the frames ImageMagick reads; every other entry is a still.
+        info.FrameCount.ShouldBe(name.StartsWith("webp anim", StringComparison.Ordinal) || name.StartsWith("gif anim", StringComparison.Ordinal)
             ? new MagickImageCollection(data).Count
             : 1);
     }
