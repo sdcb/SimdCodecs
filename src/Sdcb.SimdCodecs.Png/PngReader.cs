@@ -4,6 +4,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
+using Sdcb.SimdCodecs.Abstractions;
 
 namespace Sdcb.SimdCodecs.Png;
 
@@ -441,41 +442,82 @@ public static class PngReader
     /// <summary>
     /// Decodes the image data of a stream <see cref="ReadHeader"/> has read straight to 8-bit RGBA in
     /// <paramref name="destination"/> (<c>Width * Height * 4</c> bytes, tightly packed), with the mapping
-    /// of <see cref="PngImage.ExpandToRgba8"/>. No buffer the size of the image is allocated: each row is
-    /// inflated and unfiltered in a pooled row buffer and expanded into its place in the destination at
-    /// once, while it is still in cache. 8-bit RGBA, whose samples already are the destination's layout,
-    /// is inflated and unfiltered in the destination itself.
+    /// of <see cref="PngImage.ExpandToRgba8"/>.
     /// </summary>
-    internal static unsafe void DecodeRgba8(ReadOnlySpan<byte> data, PngImage header, List<(int Offset, int Length)> idat,
+    internal static void DecodeRgba8(ReadOnlySpan<byte> data, PngImage header, List<(int Offset, int Length)> idat,
         Span<byte> destination, PngAblation ablation = PngAblation.None)
+    {
+        if (destination.Length < (long)header.Width * header.Height * 4)
+            throw new ArgumentException($"Destination too small: {destination.Length} < {(long)header.Width * header.Height * 4} (Width*Height*4).", nameof(destination));
+        DecodeInto(data, header, idat, destination, 0, ImagePixelFormat.Rgba32, ablation);
+    }
+
+    /// <summary>
+    /// Decodes the image data of a stream <see cref="ReadHeader"/> has read straight into
+    /// <paramref name="destination"/> in <paramref name="format"/>, rows <paramref name="stride"/> bytes
+    /// apart (0: tightly packed): the RGBA8 mapping of <see cref="PngImage.ExpandToRgba8"/>, then
+    /// <see cref="PixelConverter"/>. No buffer the size of the image is allocated for a non-interlaced
+    /// image: each row is inflated and unfiltered in a pooled row buffer and written to its place in the
+    /// destination at once, while it is still in cache. 8-bit RGBA to RGBA is inflated and unfiltered in
+    /// the destination itself; 8-bit samples without a transparent colour convert straight from the
+    /// row, every other row through an RGBA row.
+    /// </summary>
+    /// <exception cref="ArgumentException">The destination does not fit (see <see cref="PixelConverter.TryGetLayout"/>).</exception>
+    internal static unsafe void DecodeInto(ReadOnlySpan<byte> data, PngImage header, List<(int Offset, int Length)> idat,
+        Span<byte> destination, int stride, ImagePixelFormat format, PngAblation ablation = PngAblation.None)
     {
         var unfilter = (ablation & PngAblation.SkipUnfilter) == 0;
         var expand = (ablation & PngAblation.SkipExpand) == 0;
-        int width = header.Width, height = header.Height, bitDepth = header.SourceBitDepth;
-        var dstStride = checked(width * 4);
-        if (destination.Length < (long)dstStride * height)
-            throw new ArgumentException($"Destination too small: {destination.Length} < {(long)dstStride * height} (Width*Height*4).", nameof(destination));
+        int width = header.Width, height = header.Height, bitDepth = header.SourceBitDepth, colorType = header.ColorType;
+        if (!PixelConverter.TryGetLayout(width, height, format, stride, destination.Length, out var dstStride))
+            throw new ArgumentException($"The destination does not fit a {width}x{height} {format} image at stride {stride}.", nameof(destination));
+        var dstRowBytes = width * PixelConverter.BytesPerPixel(format);
 
-        var expander = new PngRgba8Expander(header.ColorType, bitDepth, header.Palette, header.PaletteAlpha, header.TransparentColor);
+        var expander = new PngRgba8Expander(colorType, bitDepth, header.Palette, header.PaletteAlpha, header.TransparentColor);
         if (header.Interlaced)
         {
-            DecodeRgba8Adam7(data, header, idat, destination, expander, unfilter, expand);
+            if (format == ImagePixelFormat.Rgba32)
+            {
+                DecodeRgba8Adam7(data, header, idat, destination, dstStride, expander, unfilter, expand);
+                return;
+            }
+
+            // Adam7 scatters each pass across the whole image, so it is assembled in RGBA first.
+            var rgba = ArrayPool<byte>.Shared.Rent(checked(width * height * 4));
+            try
+            {
+                DecodeRgba8Adam7(data, header, idat, rgba, width * 4, expander, unfilter, expand);
+                for (var y = 0; y < height; y++)
+                {
+                    PixelConverter.ConvertRow(rgba.AsSpan(y * width * 4, width * 4), 4, SampleFormat.UInt8,
+                        destination.Slice(y * dstStride, dstRowBytes), format, width);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rgba);
+            }
             return;
         }
 
         var rowBytes = expander.RowBytes(width);
-        var bytesPerPixel = bitDepth < 8 ? 1 : SamplesPerPixel(header.ColorType) * (bitDepth / 8);
+        var bytesPerPixel = bitDepth < 8 ? 1 : SamplesPerPixel(colorType) * (bitDepth / 8);
+        // Rows whose samples PixelConverter reads as they are: 8-bit grey, RGB, grey+alpha and RGBA with no
+        // transparent colour. The RGBA expansion of those is the samples themselves (plus alpha 255), so
+        // converting from the row gives the same bytes as converting the expansion. RGBA itself keeps the
+        // expander, whose kernels are the tuned RGBA path.
+        var direct = format != ImagePixelFormat.Rgba32 && bitDepth == 8 && colorType != 3 && header.TransparentColor is null;
 
         fixed (byte* pinned = data)
         {
             using var rows = new RowInflater(pinned, idat, ((long)rowBytes + 1) * height, width, height, bytesPerPixel);
-            if (header.ColorType == 6 && bitDepth == 8)
+            if (colorType == 6 && bitDepth == 8 && format == ImagePixelFormat.Rgba32)
             {
                 var firstRowAbove = new byte[rowBytes];
                 for (var y = 0; y < height; y++)
                 {
-                    var row = destination.Slice(y * dstStride, dstStride);
-                    var above = y == 0 ? firstRowAbove : destination.Slice((y - 1) * dstStride, dstStride);
+                    var row = destination.Slice(y * dstStride, rowBytes);
+                    var above = y == 0 ? firstRowAbove : destination.Slice((y - 1) * dstStride, rowBytes);
                     var filterType = rows.Read(row);
                     if (unfilter)
                         PngPredictor.UnfilterRow(filterType, row, above, bytesPerPixel);
@@ -483,11 +525,13 @@ public static class PngReader
             }
             else
             {
-                var scratch = ArrayPool<byte>.Shared.Rent(checked(2 * rowBytes));
+                var rgbaBytes = direct || format == ImagePixelFormat.Rgba32 ? 0 : checked(width * 4);
+                var scratch = ArrayPool<byte>.Shared.Rent(checked(2 * rowBytes + rgbaBytes));
                 try
                 {
                     var current = scratch.AsSpan(0, rowBytes);
                     var above = scratch.AsSpan(rowBytes, rowBytes);
+                    var rgbaRow = scratch.AsSpan(2 * rowBytes, rgbaBytes);
                     above.Clear();
                     for (var y = 0; y < height; y++)
                     {
@@ -495,7 +539,22 @@ public static class PngReader
                         if (unfilter)
                             PngPredictor.UnfilterRow(filterType, current, above, bytesPerPixel);
                         if (expand)
-                            expander.Expand(current, destination.Slice(y * dstStride, dstStride), width);
+                        {
+                            var target = destination.Slice(y * dstStride, dstRowBytes);
+                            if (direct)
+                            {
+                                PixelConverter.ConvertRow(current, SamplesPerPixel(colorType), SampleFormat.UInt8, target, format, width);
+                            }
+                            else if (format == ImagePixelFormat.Rgba32)
+                            {
+                                expander.Expand(current, target, width);
+                            }
+                            else
+                            {
+                                expander.Expand(current, rgbaRow, width);
+                                PixelConverter.ConvertRow(rgbaRow, 4, SampleFormat.UInt8, target, format, width);
+                            }
+                        }
                         var swap = above;
                         above = current;
                         current = swap;
@@ -608,12 +667,13 @@ public static class PngReader
     }
 
     /// <summary>
-    /// <see cref="DecodeRgba8"/> for an Adam7 image: each pass row is unfiltered and expanded to RGBA
-    /// in a pooled row, then its pixels are written to their places in the destination. The last pass
-    /// (every pixel of the odd rows) is expanded straight into the destination rows.
+    /// <see cref="DecodeInto"/> for an Adam7 image, to RGBA with rows <paramref name="dstStride"/> bytes
+    /// apart: each pass row is unfiltered and expanded to RGBA in a pooled row, then its pixels are
+    /// written to their places in the destination. The last pass (every pixel of the odd rows) is
+    /// expanded straight into the destination rows.
     /// </summary>
     private static unsafe void DecodeRgba8Adam7(ReadOnlySpan<byte> data, PngImage header, List<(int Offset, int Length)> idat,
-        Span<byte> destination, PngRgba8Expander expander, bool unfilter, bool expand)
+        Span<byte> destination, int dstStride, PngRgba8Expander expander, bool unfilter, bool expand)
     {
         int width = header.Width, height = header.Height, bitDepth = header.SourceBitDepth, colorType = header.ColorType;
         var filterBpp = bitDepth < 8 ? 1 : SamplesPerPixel(colorType) * (bitDepth / 8);
@@ -643,7 +703,7 @@ public static class PngReader
                             PngPredictor.UnfilterRow(filterType, current, above, filterBpp);
                         if (expand)
                         {
-                            var target = destination.Slice(((y0 + r * dy) * width + x0) * 4);
+                            var target = destination.Slice((y0 + r * dy) * dstStride + x0 * 4);
                             if (dx == 1)
                             {
                                 expander.Expand(current, target, passWidth);

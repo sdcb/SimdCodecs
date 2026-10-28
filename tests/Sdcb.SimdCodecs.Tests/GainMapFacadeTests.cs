@@ -46,7 +46,7 @@ public sealed class GainMapFacadeTests
 
     /// <summary>An Ultra HDR file whose right half is boosted +2 stops over the SDR
     /// base — enough that the reconstructed HDR clearly exceeds SDR white (1.0).</summary>
-    private static byte[] BuildUltraHdr(out byte[] sdrRgb)
+    internal static byte[] BuildUltraHdr(out byte[] sdrRgb)
     {
         sdrRgb = GrayRampRgb(W, H);
         var hdr = new float[W * H * 3];

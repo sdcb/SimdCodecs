@@ -34,9 +34,11 @@ byte[] jpeg = JpegEncoder.Encode(rgba, info.Width, info.Height, channels: 4, new
 File.WriteAllBytes("photo.jpg", jpeg);
 ```
 
-`SimdCodecs.TryDecode` keeps the native layout instead (channel count, 8/16-bit or float samples, ICC
-profile). Each format is also its own package with a richer API: scaled JPEG decoding, multi-page TIFF,
-animated WebP, Ultra HDR, and more.
+`SimdCodecs.TryDecodeInto(file, buffer, stride, format)` writes BGRA (Windows / WPF / Skia surfaces), RGB,
+BGR (OpenCV) or grey (OCR) straight into a buffer, at any row stride; JPEG and PNG produce those layouts
+natively, without an RGBA frame in between (a colour JPEG's grey is its Y plane, chroma skipped). `SimdCodecs.TryDecode` keeps the native layout instead
+(channel count, 8/16-bit or float samples, ICC profile). Each format is also its own package with a
+richer API: scaled JPEG decoding, multi-page TIFF, animated WebP, Ultra HDR, and more.
 
 ## Formats
 
@@ -92,7 +94,7 @@ All packages ship in lockstep under one version.
 | `Sdcb.SimdCodecs.Jbig2` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jbig2.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jbig2) | JBIG2 decoder |
 | `Sdcb.SimdCodecs.Exif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Exif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Exif) | EXIF reader and writer |
 | `Sdcb.SimdCodecs.Color.Icc` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Color.Icc.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Color.Icc) | sRGB v4 ICC profile, `cicp` tag injector |
-| `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | Shared types: `IImageDecoder`, `RasterImage`, H.273 colour vocabulary |
+| `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | Shared types: `IImageDecoder`, `RasterImage`, `ImagePixelFormat` / `PixelConverter`, H.273 colour vocabulary |
 
 <details>
 <summary>Feature details per package</summary>

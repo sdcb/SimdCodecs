@@ -100,13 +100,18 @@ public static class JpegDecoder
     /// <exception cref="ArgumentException">The destination is too small.</exception>
     public static (int Width, int Height) DecodeTo(ReadOnlySpan<byte> data, Span<byte> destination, int stride, JpegPixelFormat format, JpegScale scale = JpegScale.Full)
     {
-        if (format is not (JpegPixelFormat.Rgba32 or JpegPixelFormat.Bgra32 or JpegPixelFormat.Rgb24))
-            throw new ArgumentOutOfRangeException(nameof(format), format, "Unknown pixel format.");
+        var bytesPerPixel = format switch
+        {
+            JpegPixelFormat.Rgba32 or JpegPixelFormat.Bgra32 => 4,
+            JpegPixelFormat.Rgb24 or JpegPixelFormat.Bgr24 => 3,
+            JpegPixelFormat.Gray8 => 1,
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unknown pixel format."),
+        };
         var core = new JpegCore(data, ValidateScale(scale));
         try
         {
             core.Begin();
-            var rowBytes = (long)core.OutX * (format == JpegPixelFormat.Rgb24 ? 3 : 4);
+            var rowBytes = (long)core.OutX * bytesPerPixel;
             if (stride < rowBytes)
                 throw new ArgumentOutOfRangeException(nameof(stride), stride, $"Stride must be at least {rowBytes} bytes for a {core.OutX}-pixel {format} row.");
             var required = (long)stride * (core.OutY - 1) + rowBytes;

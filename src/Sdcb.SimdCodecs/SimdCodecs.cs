@@ -45,14 +45,14 @@ namespace Sdcb.SimdCodecs;
 /// <para>
 /// Float-sample content (e.g. float TIFF) decodes through
 /// <see cref="TryDecode"/> with <see cref="IDecodedImage.ColorEncoding"/>
-/// declaring its meaning; <see cref="TryDecodeIntoRgba8"/> serves the
+/// declaring its meaning; <see cref="TryDecodeInto"/> serves the
 /// integer-sample display path only - projecting HDR float to 8 bits is a
 /// consumer tone/stretch decision, not a codec one.
 /// </para>
 /// <para>
 /// A gain-map ("Ultra HDR") JPEG is recognised too: <see cref="TryDecode"/> +
 /// <see cref="IDecodedImage.ToFloats"/> reconstruct the authored HDR (linear,
-/// display-referred), while <see cref="TryDecodeIntoRgba8"/> and
+/// display-referred), while <see cref="TryDecodeInto"/> and
 /// <see cref="IDecodedImage.ToRgba8"/> return the SDR base rendition - so the
 /// float path is HDR and the 8-bit path is the graceful SDR fallback. Plain JPEGs
 /// are unaffected.
@@ -65,13 +65,13 @@ public static class SimdCodecs
     private delegate bool CanDecodeFn(ReadOnlySpan<byte> header);
     private delegate bool TryReadInfoFn(ReadOnlySpan<byte> data, out ImageInfo info);
     private delegate bool TryDecodeFn(ReadOnlySpan<byte> data, out IDecodedImage? image);
-    private delegate bool TryDecodeIntoRgba8Fn(ReadOnlySpan<byte> data, Span<byte> rgbaDestination);
+    private delegate bool TryDecodeIntoFn(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format);
 
     private readonly record struct Entry(
         CanDecodeFn CanDecode,
         TryReadInfoFn TryReadInfo,
         TryDecodeFn TryDecode,
-        TryDecodeIntoRgba8Fn TryDecodeIntoRgba8);
+        TryDecodeIntoFn TryDecodeInto);
 
     // Explicit registry: IImageDecoder's static-abstract members are not enumerable
     // and reflection-scanning for implementors is not AOT-safe, so each codec is
@@ -94,7 +94,7 @@ public static class SimdCodecs
     ];
 
     private static Entry Register<T>() where T : IImageDecoder =>
-        new(T.CanDecode, T.TryReadInfo, T.TryDecode, T.TryDecodeIntoRgba8);
+        new(T.CanDecode, T.TryReadInfo, T.TryDecode, T.TryDecodeInto);
 
     /// <summary>
     /// Decodes <paramref name="data"/> into a codec-neutral <see cref="IDecodedImage"/>
@@ -115,7 +115,7 @@ public static class SimdCodecs
 
     /// <summary>
     /// Reads dimensions + layout from the header without a full decode, so a caller
-    /// can size a destination for <see cref="TryDecodeIntoRgba8"/>. Returns false when
+    /// can size a destination for <see cref="TryDecodeInto"/>. Returns false when
     /// no registered codec recognises the stream or the header is malformed.
     /// </summary>
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
@@ -131,23 +131,32 @@ public static class SimdCodecs
     }
 
     /// <summary>
-    /// Decodes directly into a caller-provided 8-bit RGBA destination (row-major,
-    /// 4 bytes/pixel, R,G,B,A byte order) - the zero-copy display hot path.
-    /// <paramref name="rgbaDestination"/> must be at least <c>Width * Height * 4</c>
-    /// bytes (size it via <see cref="TryReadInfo"/>). Returns false when no codec
-    /// recognises the stream, the destination is too small, or the payload is
-    /// undecodable.
+    /// Decodes directly into a caller-provided 8-bit destination in <paramref name="format"/>, rows
+    /// <paramref name="stride"/> bytes apart (0: tightly packed) — the display hot path, straight into a
+    /// UI surface (<see cref="ImagePixelFormat.Bgra32"/>), an OpenCV <c>Mat</c>
+    /// (<see cref="ImagePixelFormat.Bgr24"/>) or an OCR input (<see cref="ImagePixelFormat.Gray8"/>).
+    /// Size the destination via <see cref="TryReadInfo"/> and <see cref="PixelConverter.TryGetLayout"/>.
+    /// See <see cref="IImageDecoder.TryDecodeInto"/> for what the pixels are. Returns false when no codec
+    /// recognises the stream, the destination does not fit, or the payload is undecodable.
     /// </summary>
-    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination)
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format)
     {
         foreach (var entry in _registry)
         {
             if (entry.CanDecode(data))
-                return entry.TryDecodeIntoRgba8(data, rgbaDestination);
+                return entry.TryDecodeInto(data, destination, stride, format);
         }
 
         return false;
     }
+
+    /// <summary>
+    /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA (row-major, 4 bytes/pixel, R,G,B,A byte
+    /// order). <paramref name="rgbaDestination"/> must be at least <c>Width * Height * 4</c> bytes (size it
+    /// via <see cref="TryReadInfo"/>).
+    /// </summary>
+    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
+        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
 
     /// <summary>
     /// True if any registered codec recognises the stream's leading bytes. Does not

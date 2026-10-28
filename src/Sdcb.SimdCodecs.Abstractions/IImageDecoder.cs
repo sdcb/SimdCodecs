@@ -31,7 +31,7 @@ public interface IImageDecoder
 
     /// <summary>
     /// Reads dimensions + layout from the header without decoding pixels, so a
-    /// caller can size a destination for <see cref="TryDecodeIntoRgba8"/>. Returns
+    /// caller can size a destination for <see cref="TryDecodeInto"/>. Returns
     /// false when the header is truncated or malformed.
     /// </summary>
     static abstract bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info);
@@ -44,12 +44,29 @@ public interface IImageDecoder
     static abstract bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image);
 
     /// <summary>
-    /// Decodes directly into a caller-provided 8-bit RGBA destination (row-major,
-    /// 4 bytes/pixel, R,G,B,A byte order) with no intermediate full-frame buffer -
-    /// the zero-copy display hot path. <paramref name="rgbaDestination"/> must be
-    /// at least <c>Width * Height * 4</c> bytes (size it from
-    /// <see cref="TryReadInfo"/>). Returns false when the destination is too small
-    /// or the payload is undecodable.
+    /// Decodes into a caller-provided 8-bit destination in <paramref name="format"/>
+    /// — the display hot path, straight into a UI surface, an OpenCV <c>Mat</c> or
+    /// an OCR input. Row <c>y</c> starts at byte <c>y × stride</c>; bytes between
+    /// rows are left untouched. Size the destination from <see cref="TryReadInfo"/>
+    /// (<see cref="PixelConverter.TryGetLayout"/> states the requirement).
+    /// <para>
+    /// The pixels are exactly <see cref="IDecodedImage.ToRgba8"/> of the image
+    /// <see cref="TryDecode"/> returns, converted to <paramref name="format"/> by
+    /// <see cref="PixelConverter.ConvertRow"/> (which, for every source, is the same
+    /// as converting <see cref="IDecodedImage.Pixels"/> directly). A codec with a
+    /// native path for a layout (JPEG writing BGR from its colour conversion, PNG
+    /// expanding a row at a time) produces those bytes without the intermediate
+    /// full-frame image. The one exception is <see cref="ImagePixelFormat.Gray8"/>
+    /// from a codec that stores luma: it returns the stored luma (a YCbCr JPEG's Y
+    /// plane), which may differ by a code value or two from the luma of the RGB.
+    /// </para>
     /// </summary>
-    static abstract bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination);
+    /// <param name="data">The complete encoded image.</param>
+    /// <param name="destination">The pixels, <c>stride × (height − 1) + width × bytesPerPixel</c> bytes at least.</param>
+    /// <param name="stride">Bytes from one row to the next; 0 means tightly packed.</param>
+    /// <param name="format">The pixel layout to write.</param>
+    /// <returns>False when the destination does not fit, the payload is undecodable,
+    /// or the image has no 8-bit projection (float samples; a codec may also refuse
+    /// HDR-encoded integer samples, as PNG does for cICP PQ/HLG).</returns>
+    static abstract bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format);
 }

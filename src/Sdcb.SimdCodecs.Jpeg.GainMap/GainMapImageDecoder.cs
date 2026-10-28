@@ -13,7 +13,7 @@ namespace Sdcb.SimdCodecs.Jpeg;
 /// The decode is split by tier, mirroring how the format is meant to be consumed
 /// (see <see cref="GainMapDecodedImage"/>): the fidelity/float tier
 /// (<see cref="TryDecode"/>) reconstructs the full authored HDR, while the 8-bit
-/// display tier (<see cref="TryDecodeIntoRgba8"/>) returns the SDR base rendition.
+/// display tier (<see cref="TryDecodeInto"/>) returns the SDR base rendition.
 /// HDR-base files and any gain map that fails to reconstruct degrade gracefully to
 /// the plain SDR primary rather than failing the facade.
 /// </para>
@@ -80,19 +80,17 @@ public sealed class GainMapImageDecoder : IImageDecoder
     }
 
     /// <inheritdoc />
-    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination)
-    {
-        // The int/display path is the SDR base. A gain-map JPEG's primary image IS
-        // the standalone SDR rendition, so the plain decoder yields it directly — no
-        // gain-map parsing or HDR reconstruction needed.
-        try
-        {
-            _ = JpegDecoder.DecodeTo(data, rgbaDestination);
-            return true;
-        }
-        catch (Exception e) when (e is InvalidDataException or ArgumentException)
-        {
-            return false;
-        }
-    }
+    /// <remarks>The SDR base rendition: a gain-map JPEG's primary image is the standalone SDR
+    /// rendition, so the plain decoder writes it directly — no gain-map parsing or HDR
+    /// reconstruction. These are the pixels of <see cref="IDecodedImage.ToRgba8"/> on the image
+    /// <see cref="TryDecode"/> returns.</remarks>
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format) =>
+        JpegImageDecoder.TryDecodeInto(data, destination, stride, format);
+
+    /// <summary>
+    /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA: <paramref name="rgbaDestination"/> must be
+    /// at least <c>Width * Height * 4</c> bytes.
+    /// </summary>
+    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
+        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
 }

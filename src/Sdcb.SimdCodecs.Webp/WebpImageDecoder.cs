@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
 
@@ -65,35 +66,80 @@ public sealed class WebpImageDecoder : IImageDecoder
     }
 
     /// <summary>
-    /// Decodes into a caller-owned, tightly packed RGBA8 buffer (an animation's first frame for
-    /// animated input). Returns false, without throwing, for malformed or unsupported data or a
-    /// destination shorter than width × height × 4 bytes.
+    /// Decodes into a caller-owned buffer in <paramref name="format"/> (an animation's first frame for
+    /// animated input), rows <paramref name="stride"/> bytes apart (0: tightly packed). RGBA is the
+    /// decoder's own output and BGRA is swapped in place; the 3- and 1-byte layouts convert from a pooled
+    /// RGBA frame. Returns false, without throwing, for malformed or unsupported data or a destination
+    /// that does not fit (see <see cref="PixelConverter.TryGetLayout"/>).
     /// </summary>
     /// <param name="data">The complete WebP file.</param>
-    /// <param name="destination">At least width × height × 4 bytes.</param>
-    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> destination)
+    /// <param name="destination">The pixels.</param>
+    /// <param name="stride">Bytes from one row to the next; 0 means tightly packed.</param>
+    /// <param name="format">The pixel layout to write.</param>
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format)
     {
         if (!WebpDecoder.TryReadInfo(data, out WebpInfo info))
         {
             return false;
         }
 
-        try
-        {
-            int requiredLength = checked(info.Width * info.Height * 4);
-            if (destination.Length < requiredLength)
-            {
-                return false;
-            }
-
-            WebpDecoder.DecodeTo(data, destination[..requiredLength]);
-            return true;
-        }
-        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        if (!PixelConverter.TryGetLayout(info.Width, info.Height, format, stride, destination.Length, out int rowStride))
         {
             return false;
         }
+
+        byte[]? rented = null;
+        try
+        {
+            int rgbaRow = info.Width * 4;
+            if (format is ImagePixelFormat.Rgba32 or ImagePixelFormat.Bgra32)
+            {
+                WebpDecoder.DecodeTo(data, destination, rowStride);
+                if (format == ImagePixelFormat.Bgra32)
+                {
+                    for (int y = 0; y < info.Height; y++)
+                    {
+                        Span<byte> row = destination.Slice(y * rowStride, rgbaRow);
+                        PixelConverter.ConvertRow(row, 4, SampleFormat.UInt8, row, format, info.Width);
+                    }
+                }
+
+                return true;
+            }
+
+            rented = ArrayPool<byte>.Shared.Rent(checked(rgbaRow * info.Height));
+            WebpDecoder.DecodeTo(data, rented, rgbaRow);
+            int rowBytes = info.Width * PixelConverter.BytesPerPixel(format);
+            for (int y = 0; y < info.Height; y++)
+            {
+                PixelConverter.ConvertRow(rented.AsSpan(y * rgbaRow, rgbaRow), 4, SampleFormat.UInt8,
+                    destination.Slice(y * rowStride, rowBytes), format, info.Width);
+            }
+
+            return true;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException or OverflowException)
+        {
+            return false;
+        }
+        finally
+        {
+            if (rented is not null)
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
+        }
     }
+
+    /// <summary>
+    /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA (an animation's first frame for animated
+    /// input). Returns false, without throwing, for malformed or unsupported data or a destination
+    /// shorter than width × height × 4 bytes.
+    /// </summary>
+    /// <param name="data">The complete WebP file.</param>
+    /// <param name="destination">At least width × height × 4 bytes.</param>
+    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> destination) =>
+        TryDecodeInto(data, destination, 0, ImagePixelFormat.Rgba32);
 
     private static byte[] ToRgb24(byte[] rgba, int width, int height)
     {

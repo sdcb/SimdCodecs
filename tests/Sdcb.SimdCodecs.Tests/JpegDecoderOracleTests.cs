@@ -43,7 +43,7 @@ public sealed class JpegDecoderOracleTests
 {
     // ------------------------------------------------------------ helpers
 
-    private static byte[] MakeRgbPattern(int w, int h)
+    internal static byte[] MakeRgbPattern(int w, int h)
     {
         // Gradients + checker + sine + LCG noise: exercises DC ramps, sharp
         // edges (long AC runs), and dense AC coefficients deterministically.

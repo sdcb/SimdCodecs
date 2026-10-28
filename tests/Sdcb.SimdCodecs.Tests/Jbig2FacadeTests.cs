@@ -22,7 +22,7 @@ public sealed class Jbig2FacadeTests
         "..######..",
     ];
 
-    private static byte[] BuildFile()
+    internal static byte[] BuildFile()
     {
         var source = Jbig2StreamBuilder.FromRows(Glyph);
         return Jbig2StreamBuilder.SequentialFile(

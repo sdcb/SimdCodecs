@@ -3,7 +3,7 @@ namespace Sdcb.SimdCodecs.Abstractions;
 /// <summary>
 /// Dimensions + layout read from an image's header alone, without decoding
 /// pixels. Lets a caller size a destination buffer before calling
-/// <see cref="IImageDecoder.TryDecodeIntoRgba8"/> - the info-then-decode split
+/// <see cref="IImageDecoder.TryDecodeInto"/> - the info-then-decode split
 /// every real decoder already supports (PNG's IHDR / JPEG's SOF precede the
 /// pixel data).
 /// </summary>

@@ -79,12 +79,29 @@ public sealed class PngImageDecoder : IImageDecoder
     /// display path (linear is monotone and the astro-master quick-look case;
     /// HLG's nominal SDR fallback was considered, but the facade can't know the
     /// display context, so HLG refuses alongside PQ).</remarks>
-    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination)
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format)
     {
         if (!TryReadDisplayReferred(data, out var header, out var idat)) return false;
-        if (rgbaDestination.Length < (long)header.Width * header.Height * 4) return false;
-        return TryDecodeRgba8Into(data, header, idat, rgbaDestination);
+        if (!PixelConverter.TryGetLayout(header.Width, header.Height, format, stride, destination.Length, out var rowStride)) return false;
+        try
+        {
+            PngReader.DecodeInto(data, header, idat, destination, rowStride, format);
+            return true;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
     }
+
+    /// <summary>
+    /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA: <paramref name="rgbaDestination"/> must be
+    /// at least <c>Width * Height * 4</c> bytes.
+    /// </summary>
+    /// <remarks>False for a corrupt stream, a destination that is too small, and cICP PQ/HLG-tagged
+    /// files (see <see cref="TryDecodeInto"/>).</remarks>
+    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
+        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
 
     /// <summary>
     /// Decode a PNG to tightly-packed 8-bit RGBA in an array the caller owns, without knowing its
@@ -113,7 +130,7 @@ public sealed class PngImageDecoder : IImageDecoder
     }
 
     // The shared first step of the RGBA8 projections: every chunk but the image data, then the refusal
-    // of cICP PQ/HLG, whose code values are encoded for an HDR EOTF (see TryDecodeIntoRgba8) - before a
+    // of cICP PQ/HLG, whose code values are encoded for an HDR EOTF (see TryDecodeInto) - before a
     // pixel is inflated. A float projection that decodes those starts from PngReader.TryDecode instead
     // and skips the refusal.
     private static bool TryReadDisplayReferred(ReadOnlySpan<byte> data, [NotNullWhen(true)] out PngImage? header,

@@ -63,21 +63,26 @@ public sealed class Jbig2ImageDecoder : IImageDecoder
     }
 
     /// <inheritdoc />
-    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination)
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format)
     {
         if (!CanDecode(data)) return false;
 
         try
         {
             var page = Jbig2Decoder.DecodeFile(data);
-            if (rgbaDestination.Length < (long)page.Width * page.Height * 4) return false;
+            int width = page.Width, height = page.Height;
+            if (!PixelConverter.TryGetLayout(width, height, format, stride, destination.Length, out var rowStride)) return false;
 
+            // Each row becomes the grey of ToRaster (black 0, white 255), then the requested layout.
             var bits = page.Bits;
-            for (int i = 0, d = 0; i < bits.Length; i++, d += 4)
+            var rowBytes = width * PixelConverter.BytesPerPixel(format);
+            var grey = new byte[width];
+            for (var y = 0; y < height; y++)
             {
-                var v = bits[i] != 0 ? (byte)0 : (byte)255;
-                rgbaDestination[d] = rgbaDestination[d + 1] = rgbaDestination[d + 2] = v;
-                rgbaDestination[d + 3] = 255;
+                var row = bits.Slice(y * width, width);
+                for (var x = 0; x < width; x++)
+                    grey[x] = row[x] != 0 ? (byte)0 : (byte)255;
+                PixelConverter.ConvertRow(grey, 1, SampleFormat.UInt8, destination.Slice(y * rowStride, rowBytes), format, width);
             }
 
             return true;
@@ -87,6 +92,13 @@ public sealed class Jbig2ImageDecoder : IImageDecoder
             return false;
         }
     }
+
+    /// <summary>
+    /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA: <paramref name="rgbaDestination"/> must be
+    /// at least <c>Width * Height * 4</c> bytes.
+    /// </summary>
+    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
+        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
 
     /// <summary>
     /// What "undecodable" means for a <c>bool</c>-returning <c>Try</c> method: the

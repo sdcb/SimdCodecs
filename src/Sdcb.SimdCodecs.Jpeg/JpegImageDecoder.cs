@@ -10,8 +10,9 @@ namespace Sdcb.SimdCodecs.Jpeg;
 /// into the <c>Sdcb.SimdCodecs</c> facade. JPEG always decodes to 8-bit RGBA
 /// regardless of the SOF component count, so both the fidelity and display tiers
 /// yield the same 4-channel <see cref="SampleFormat.UInt8"/> raster;
-/// <see cref="TryDecodeIntoRgba8"/> is a genuine zero-copy decode via
-/// <see cref="JpegDecoder.DecodeTo(ReadOnlySpan{byte}, Span{byte}, JpegScale)"/>.
+/// <see cref="TryDecodeInto"/> is a genuine zero-copy decode in every
+/// <see cref="ImagePixelFormat"/> via
+/// <see cref="JpegDecoder.DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, JpegPixelFormat, JpegScale)"/>.
 /// </summary>
 public sealed class JpegImageDecoder : IImageDecoder
 {
@@ -57,11 +58,14 @@ public sealed class JpegImageDecoder : IImageDecoder
     }
 
     /// <inheritdoc />
-    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination)
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format)
     {
         try
         {
-            _ = JpegDecoder.DecodeTo(data, rgbaDestination);
+            var info = JpegDecoder.ReadInfo(data);
+            if (!PixelConverter.TryGetLayout(info.Width, info.Height, format, stride, destination.Length, out var rowStride))
+                return false;
+            _ = JpegDecoder.DecodeTo(data, destination, rowStride, ToJpegFormat(format));
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException)
@@ -69,4 +73,22 @@ public sealed class JpegImageDecoder : IImageDecoder
             return false;
         }
     }
+
+    /// <summary>
+    /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA: <paramref name="rgbaDestination"/> must be
+    /// at least <c>Width * Height * 4</c> bytes.
+    /// </summary>
+    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
+        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
+
+    /// <summary>The <see cref="JpegPixelFormat"/> writing the same bytes as <paramref name="format"/>.</summary>
+    internal static JpegPixelFormat ToJpegFormat(ImagePixelFormat format) => format switch
+    {
+        ImagePixelFormat.Rgba32 => JpegPixelFormat.Rgba32,
+        ImagePixelFormat.Bgra32 => JpegPixelFormat.Bgra32,
+        ImagePixelFormat.Rgb24 => JpegPixelFormat.Rgb24,
+        ImagePixelFormat.Bgr24 => JpegPixelFormat.Bgr24,
+        ImagePixelFormat.Gray8 => JpegPixelFormat.Gray8,
+        _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unknown pixel format."),
+    };
 }

@@ -25,7 +25,7 @@ internal static unsafe partial class TurboJpeg
     public const int Samp444 = 0, Samp422 = 1, Samp420 = 2, SampGray = 3;
 
     // TJPF
-    public const int PfRgb = 0, PfGray = 6, PfRgba = 7;
+    public const int PfRgb = 0, PfBgr = 1, PfGray = 6, PfRgba = 7, PfBgra = 8;
 
     // TJPARAM
     public const int ParamQuality = 3, ParamSubsamp = 4, ParamJpegWidth = 5, ParamJpegHeight = 6,
@@ -149,6 +149,25 @@ internal static unsafe partial class TurboJpeg
         var info = Jpeg.JpegDecoder.ReadInfo(jpeg);
         if (info.Width != w || info.Height != h || !info.ChromaSubsampled)
             throw new InvalidOperationException("TurboJPEG self-check: our decoder disagrees about the test image.");
+
+        // The pixel-format enumerators: BGR and BGRA are RGB and RGBA with R and B exchanged, RGBA's
+        // alpha is 255, and GRAY is one byte a pixel.
+        using var decoder = new TurboDecoder(fast: false);
+        byte[] Decode(int pf, int bpp)
+        {
+            var pixels = new byte[w * h * bpp];
+            decoder.Decode(jpeg, pixels, pf, bpp);
+            return pixels;
+        }
+        byte[] rgb3 = Decode(PfRgb, 3), bgr3 = Decode(PfBgr, 3), rgba = Decode(PfRgba, 4), bgra = Decode(PfBgra, 4);
+        _ = Decode(PfGray, 1);
+        for (var i = 0; i < w * h; i++)
+        {
+            if (bgr3[3 * i] != rgb3[3 * i + 2] || bgr3[3 * i + 2] != rgb3[3 * i] || bgr3[3 * i + 1] != rgb3[3 * i + 1]
+                || rgba[4 * i] != rgb3[3 * i] || rgba[4 * i + 3] != 255
+                || bgra[4 * i] != rgb3[3 * i + 2] || bgra[4 * i + 2] != rgb3[3 * i] || bgra[4 * i + 3] != 255)
+                throw new InvalidOperationException("TurboJPEG pixel-format enumerator self-check failed.");
+        }
     }
 }
 
@@ -231,6 +250,20 @@ internal sealed unsafe class TurboDecoder : IDisposable
             if ((long)w * h * 4 > rgba.Length) throw new ArgumentException("destination too small");
             TurboJpeg.Check(_handle, TurboJpeg.tj3Decompress8(_handle, p, (nuint)jpeg.Length, d, w * 4, TurboJpeg.PfRgba), "tj3Decompress8");
             return (w, h);
+        }
+    }
+
+    /// <summary>Header + decode into <paramref name="pixels"/> in TJPF <paramref name="pixelFormat"/>, tightly packed.</summary>
+    public void Decode(ReadOnlySpan<byte> jpeg, Span<byte> pixels, int pixelFormat, int bytesPerPixel)
+    {
+        fixed (byte* p = jpeg)
+        fixed (byte* d = pixels)
+        {
+            TurboJpeg.Check(_handle, TurboJpeg.tj3DecompressHeader(_handle, p, (nuint)jpeg.Length), "tj3DecompressHeader");
+            var w = TurboJpeg.tj3Get(_handle, TurboJpeg.ParamJpegWidth);
+            var h = TurboJpeg.tj3Get(_handle, TurboJpeg.ParamJpegHeight);
+            if ((long)w * h * bytesPerPixel > pixels.Length) throw new ArgumentException("destination too small");
+            TurboJpeg.Check(_handle, TurboJpeg.tj3Decompress8(_handle, p, (nuint)jpeg.Length, d, w * bytesPerPixel, pixelFormat), "tj3Decompress8");
         }
     }
 

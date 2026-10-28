@@ -15,9 +15,10 @@ internal static unsafe class LibPng
     private const string ImportName = "sdcb-png-benchmark-libpng";
     private const uint ImageVersion = 1;            // PNG_IMAGE_VERSION
 
-    // PNG_FORMAT_FLAG_*: ALPHA 1, COLOR 2, LINEAR (16-bit linear samples) 4.
+    // PNG_FORMAT_FLAG_*: ALPHA 1, COLOR 2, LINEAR (16-bit linear samples) 4, BGR 0x10.
     public const uint FormatGray = 0, FormatRgb = 2, FormatRgba = 3;
     public const uint FormatLinear = 4;
+    public const uint FlagBgr = 0x10;
 
     private static readonly Lazy<IntPtr> Handle = new(Load);
     private static string? _loadError;
@@ -57,11 +58,16 @@ internal static unsafe class LibPng
     }
 
     /// <summary>Decode any PNG to 8-bit RGBA (sRGB) into <paramref name="rgba"/>.</summary>
-    public static void DecodeRgba(ReadOnlySpan<byte> png, Span<byte> rgba)
+    public static void DecodeRgba(ReadOnlySpan<byte> png, Span<byte> rgba) => Decode(png, rgba, FormatRgba);
+
+    /// <summary>Decode any PNG to 8-bit sRGB samples in the simplified-API <paramref name="format"/>, tightly packed.</summary>
+    public static void Decode(ReadOnlySpan<byte> png, Span<byte> pixels, uint format)
     {
         var image = new NativeImage { Version = ImageVersion };
+        int channels = (format & FormatRgb) != 0 ? 3 : 1;
+        channels += (int)(format & 1);
         fixed (byte* source = png)
-        fixed (byte* destination = rgba)
+        fixed (byte* destination = pixels)
         {
             try
             {
@@ -70,12 +76,12 @@ internal static unsafe class LibPng
                     throw Error(ref image, "begin_read");
                 }
 
-                if ((long)image.Width * image.Height * 4 > rgba.Length)
+                if ((long)image.Width * image.Height * channels > pixels.Length)
                 {
                     throw new InvalidOperationException("libpng: destination too small");
                 }
 
-                image.Format = FormatRgba;
+                image.Format = format;
                 if (png_image_finish_read(&image, null, destination, 0, null) == 0)
                 {
                     throw Error(ref image, "finish_read");
@@ -179,6 +185,17 @@ internal static unsafe class LibPng
         if (!back.AsSpan().SequenceEqual(rgba))
         {
             throw new InvalidOperationException("libpng self-check: decoded pixels differ");
+        }
+
+        // The BGR flag: the same pixels with R and B exchanged.
+        byte[] bgr = new byte[3 * 2 * 3];
+        Decode(png, bgr, FormatRgb | FlagBgr);
+        for (int p = 0; p < 6; p++)
+        {
+            if (bgr[3 * p] != rgba[4 * p + 2] || bgr[3 * p + 1] != rgba[4 * p + 1] || bgr[3 * p + 2] != rgba[4 * p])
+            {
+                throw new InvalidOperationException("libpng self-check: the BGR format flag is not what the manual says");
+            }
         }
     }
 

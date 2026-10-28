@@ -35,6 +35,9 @@ internal static class Program
           dotnet run -c Release -- ab [--ablate] [--groups RE] [--images RE]
                                                            same-process A/B: current vs baseline vs libjpeg-turbo on the quick
                                                            subset (or the selected files); --ablate adds per-stage costs
+          dotnet run -c Release -- formats [--groups RE] [--images RE] [--rounds N]
+                                                           decode into BGRA / RGB / BGR / grey: the native path vs decode-to-RGBA +
+                                                           convert, and libjpeg-turbo in the same layout (quick subset by default)
           dotnet run -c Release -- encode [--mode baseline|optimize|progressive|all] [--reps N] [--max-dim N]
                                           [--baseline] [--only NAME] [--gate]
                                                            encoder comparison on the masters (downscaled to --max-dim, default
@@ -83,6 +86,13 @@ internal static class Program
                     ? AbBenchmarks.QuickCases.ToList()
                     : Select(Opt("--groups"), Opt("--images")).Select(c => c.Id).ToList();
                 return Ab(selected, args.Contains("--ablate"));
+            }
+            case "formats":
+            {
+                var selected = Opt("--groups") is null && Opt("--images") is null
+                    ? AbBenchmarks.QuickCases.ToList()
+                    : Select(Opt("--groups"), Opt("--images")).Select(c => c.Id).ToList();
+                return Formats.Run(selected, int.Parse(Opt("--rounds") ?? "7", CultureInfo.InvariantCulture));
             }
             case "encode":
                 return EncodeBenchmark.Run(

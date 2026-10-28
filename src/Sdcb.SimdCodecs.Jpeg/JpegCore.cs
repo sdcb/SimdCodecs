@@ -6,6 +6,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
+using Sdcb.SimdCodecs.Abstractions;
 
 namespace Sdcb.SimdCodecs.Jpeg;
 
@@ -228,7 +229,8 @@ internal ref struct JpegCore
     private Span<byte> _dest;
     private int _stride;
     private JpegPixelFormat _format;
-    private byte[]? _packScratch;     // one RGBA row, for Rgb24 output
+    private byte[]? _packScratch;     // one RGBA row, for the 3- and 1-byte formats
+    private bool _lumaOnly;           // Gray8 from a YCbCr frame: Y is the output, chroma is skipped
     private int _outRow;
     private bool _isRgb;
     private bool _chroma16;
@@ -287,12 +289,17 @@ internal ref struct JpegCore
         _dest = dest;
         _stride = stride;
         _format = format;
-        if (format == JpegPixelFormat.Rgb24)
-            _packScratch = ArrayPool<byte>.Shared.Rent(OutX * 4);
         _outRow = 0;
         _mode = _progressive ? DecodeMode.Coefficients : DecodeMode.Undecided;
         _streamDone = false;
         PrepareOutput();
+        // Grey from a YCbCr frame is its Y plane (see JpegPixelFormat.Gray8): the chroma blocks are still
+        // entropy-decoded, as the scans interleave them, but never inverse-transformed, upsampled or
+        // colour-converted. RGB-coded, CMYK and YCCK frames have no luma plane; their grey is the luma
+        // of the RGB row.
+        _lumaOnly = format == JpegPixelFormat.Gray8 && ImgN == 3 && !_isRgb;
+        if (format is JpegPixelFormat.Rgb24 or JpegPixelFormat.Bgr24 || (format == JpegPixelFormat.Gray8 && ImgN != 1 && !_lumaOnly))
+            _packScratch = ArrayPool<byte>.Shared.Rent(OutX * 4);
 
         var reachedEoi = DecodeScans();
 
@@ -440,6 +447,12 @@ internal ref struct JpegCore
         for (var k = 0; k < ImgN; ++k)
         {
             var c = _comp[k];
+            if (_lumaOnly && k > 0)
+            {
+                AdvanceLine(c);
+                continue;
+            }
+
             var yBot = c.YStep >= (c.Vs >> 1);
             var inNear = RingOffset(c, yBot ? c.Line1 : c.Line0);
             var inFar = RingOffset(c, yBot ? c.Line0 : c.Line1);
@@ -461,21 +474,22 @@ internal ref struct JpegCore
                 c.RowOff = 0;
             }
 
-            if (++c.YStep >= c.Vs)
-            {
-                c.YStep = 0;
-                c.Line0 = c.Line1;
-                if (++c.YPos < c.YsScaled)
-                    ++c.Line1;
-            }
+            AdvanceLine(c);
         }
 
         if (skipColor)
             return;
 
-        var bgr = _format == JpegPixelFormat.Bgra32;
-        var outRow = _format == JpegPixelFormat.Rgb24 ? _packScratch.AsSpan(0, OutX * 4) : _dest.Slice(j * _stride, OutX * 4);
         var y = Row(0);
+        if (_format == JpegPixelFormat.Gray8 && (ImgN == 1 || _lumaOnly))
+        {
+            // A greyscale frame's samples, or a YCbCr frame's Y: the grey output as it is.
+            y[..OutX].CopyTo(_dest.Slice(j * _stride, OutX));
+            return;
+        }
+
+        var bgr = _format is JpegPixelFormat.Bgra32 or JpegPixelFormat.Bgr24;
+        var outRow = _packScratch != null ? _packScratch.AsSpan(0, OutX * 4) : _dest.Slice(j * _stride, OutX * 4);
 
         if (ImgN == 3)
         {
@@ -510,11 +524,33 @@ internal ref struct JpegCore
             JpegColor.GrayRow(outRow, y, OutX);
         }
 
-        if (_format == JpegPixelFormat.Rgb24)
-            JpegColor.PackRgb24(_dest.Slice(j * _stride, OutX * 3), outRow, OutX);
+        if (_packScratch != null)
+            PackRow(j, outRow);
+    }
+
+    /// <summary>Writes the RGBA (or BGRA) row <paramref name="rgba"/> as the 3- or 1-byte output format.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private readonly void PackRow(int j, ReadOnlySpan<byte> rgba)
+    {
+        if (_format == JpegPixelFormat.Gray8)
+            PixelConverter.ConvertRow(rgba, 4, SampleFormat.UInt8, _dest.Slice(j * _stride, OutX), ImagePixelFormat.Gray8, OutX);
+        else
+            JpegColor.PackRgb24(_dest.Slice(j * _stride, OutX * 3), rgba, OutX);
     }
 
     private readonly ReadOnlySpan<byte> Row(int k) => _comp[k].RowArr.AsSpan(_comp[k].RowOff);
+
+    /// <summary>Steps component <paramref name="c"/>'s vertical upsampling position past one output row.</summary>
+    private static void AdvanceLine(Component c)
+    {
+        if (++c.YStep >= c.Vs)
+        {
+            c.YStep = 0;
+            c.Line0 = c.Line1;
+            if (++c.YPos < c.YsScaled)
+                ++c.Line1;
+        }
+    }
 
     private readonly void YccRow(Span<byte> outRow, ReadOnlySpan<byte> y, bool bgr)
     {
@@ -1678,7 +1714,7 @@ internal ref struct JpegCore
     private void IdctToRing(int n, int bx, int by, scoped ReadOnlySpan<short> data, int last, int m)
     {
         BlockHook?.Invoke(n, bx, by, data);
-        if ((Ablation & (JpegAblation.SkipIdct | JpegAblation.SkipBlockSink)) != 0)
+        if ((Ablation & (JpegAblation.SkipIdct | JpegAblation.SkipBlockSink)) != 0 || (_lumaOnly && n != 0))
             return;
         var c = _comp[n];
         var off = ((m & 1) * c.RowsPerMcu + (by - m * c.V) * _blockSize) * c.W2 + bx * _blockSize;

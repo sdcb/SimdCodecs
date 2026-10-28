@@ -62,14 +62,15 @@ public sealed class TiffImageDecoder : IImageDecoder
     /// <remarks>False for float pages: scene-linear float has no canonical 8-bit
     /// projection (see <see cref="RasterImage.ExpandToRgba8"/>) — use
     /// <see cref="TryDecode"/> + <see cref="IDecodedImage.ToFloats"/> instead.</remarks>
-    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination)
-    {
-        if (!TryDecodeCore(data, out var image)) return false;
-        if (image.SampleFormat == SampleFormat.Float32) return false;
-        if (rgbaDestination.Length < (long)image.Width * image.Height * 4) return false;
-        image.ExpandToRgba8(rgbaDestination);
-        return true;
-    }
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format) =>
+        TryDecode(data, out var image) && PixelConverter.TryConvert(image, destination, stride, format);
+
+    /// <summary>
+    /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA: <paramref name="rgbaDestination"/> must be
+    /// at least <c>Width * Height * 4</c> bytes.
+    /// </summary>
+    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
+        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
 
     private static bool TryDecodeCore(ReadOnlySpan<byte> data, [NotNullWhen(true)] out RasterImage? image)
     {

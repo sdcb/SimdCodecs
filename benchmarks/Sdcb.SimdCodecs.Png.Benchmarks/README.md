@@ -109,6 +109,18 @@ Two measures, because they see different things:
   pooled buffers resident ("steady"). One process per measurement makes it slow: select cases.
   Report: `.cache/work/peakmem-decode.md` / `peakmem-encode.md`.
 
+### Display layouts
+
+```bash
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Png.Benchmarks -- formats [--cases RE] [--rounds N]
+```
+
+times `PngImageDecoder.TryDecodeInto` in BGRA, RGB, BGR and grey against the two-step path an RGBA-only
+API leaves a caller (decode to RGBA, then `PixelConverter` over the frame), with RGBA alone and libpng's
+simplified API in the same layout for scale. The two of ours must give identical bytes before anything is
+timed. Default cases: grey, RGB, palette, RGBA and 16-bit RGB, plain and Adam7. Report:
+`.cache/work/formats.md`.
+
 ### Same-process A/B
 
 ```bash

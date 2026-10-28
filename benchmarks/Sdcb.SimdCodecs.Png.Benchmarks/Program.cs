@@ -21,6 +21,8 @@ const string Usage = """
                                    writes .cache/work/matrix.md
       bdn decode|encode            BenchmarkDotNet run (MemoryDiagnoser) of the selected cases; for commit numbers
       verify                       correctness of every contestant on every selected case, no timing
+      formats                      decode into BGRA / RGB / BGR / grey: the native path vs decode-to-RGBA + convert, and libpng
+                                   in the same layout (default cases: the common colour types; writes .cache/work/formats.md)
       peakmem decode|encode        peak working set per operation, one fresh process per run (native memory included)
       inputs [--force]             (re)generate the decode inputs into .cache/inputs (done on demand otherwise)
       baseline [git-ref]           build git-ref's (default HEAD) Sdcb.SimdCodecs.Png as the A/B baseline
@@ -97,6 +99,17 @@ switch (command)
         }
 
         return Write("matrix.md", sb.ToString());
+    }
+    case "formats":
+    {
+        if (Opt("--cases") is null)
+        {
+            Environment.SetEnvironmentVariable(Settings.CasesVariable, Formats.DefaultCases);
+        }
+
+        int rounds = int.TryParse(Opt("--rounds"), out int r) ? r : 7;
+        Console.Write(MachineInfo.Describe());
+        return Write("formats.md", MachineInfo.Describe() + Environment.NewLine + Formats.Run(rounds));
     }
     case "peakmem" when args.Length > 1 && args[1] is "decode" or "encode":
     {

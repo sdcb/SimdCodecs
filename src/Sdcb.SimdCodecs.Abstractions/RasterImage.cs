@@ -85,7 +85,9 @@ public sealed class RasterImage : IDecodedImage
     /// Expands into a caller-provided 8-bit RGBA destination (row-major, 4
     /// bytes/pixel, R,G,B,A byte order). <paramref name="destination"/> must be at
     /// least <c>Width * Height * 4</c> bytes. This is the allocation-free form used
-    /// by a zero-copy display adapter (decode straight into a UI raster's buffer).
+    /// by a zero-copy display adapter (decode straight into a UI raster's buffer). The mapping is
+    /// <see cref="PixelConverter"/>'s; <see cref="PixelConverter.TryConvert"/> writes the other
+    /// <see cref="ImagePixelFormat"/> layouts and strided destinations.
     /// </summary>
     public void ExpandToRgba8(Span<byte> destination)
     {
@@ -93,21 +95,17 @@ public sealed class RasterImage : IDecodedImage
         if (destination.Length < checked(pixelCount * 4))
             throw new ArgumentException("Destination too small for Width*Height*4 RGBA bytes.", nameof(destination));
 
-        switch (SampleFormat)
+        if (SampleFormat == SampleFormat.Float32)
         {
-            case SampleFormat.UInt8:
-                ExpandU8(_pixels, Channels, pixelCount, destination);
-                break;
-            case SampleFormat.UInt16:
-                ExpandU16(_pixels, Channels, pixelCount, destination);
-                break;
-            default:
-                // Float rasters have no canonical 8-bit mapping without a tone/stretch
-                // policy (black/white point, gamma) - that is a consumer decision, not
-                // a codec one. Read Pixels and apply your own conversion.
-                throw new NotSupportedException(
-                    $"{SampleFormat} rasters cannot be expanded to 8-bit RGBA without an explicit tone/stretch policy; read Pixels instead.");
+            // Float rasters have no canonical 8-bit mapping without a tone/stretch policy (black/white
+            // point, gamma) - that is a consumer decision, not a codec one. Read Pixels and apply your
+            // own conversion.
+            throw new NotSupportedException(
+                $"{SampleFormat} rasters cannot be expanded to 8-bit RGBA without an explicit tone/stretch policy; read Pixels instead.");
         }
+
+        // Tightly packed on both sides, so the whole raster is one long row.
+        PixelConverter.ConvertRow(_pixels, Channels, SampleFormat, destination, ImagePixelFormat.Rgba32, pixelCount);
     }
 
     /// <inheritdoc />
@@ -142,74 +140,6 @@ public sealed class RasterImage : IDecodedImage
             default:
                 ExpandF32(_pixels, Channels, pixelCount, destination);
                 break;
-        }
-    }
-
-    private static void ExpandU8(ReadOnlySpan<byte> src, int channels, int pixelCount, Span<byte> dst)
-    {
-        for (int p = 0, s = 0, d = 0; p < pixelCount; p++, s += channels, d += 4)
-        {
-            switch (channels)
-            {
-                case 1: // gray -> RGB, opaque
-                    dst[d] = dst[d + 1] = dst[d + 2] = src[s];
-                    dst[d + 3] = 255;
-                    break;
-                case 2: // gray + alpha
-                    dst[d] = dst[d + 1] = dst[d + 2] = src[s];
-                    dst[d + 3] = src[s + 1];
-                    break;
-                case 3: // RGB, opaque
-                    dst[d] = src[s];
-                    dst[d + 1] = src[s + 1];
-                    dst[d + 2] = src[s + 2];
-                    dst[d + 3] = 255;
-                    break;
-                default: // 4: RGBA, straight copy
-                    dst[d] = src[s];
-                    dst[d + 1] = src[s + 1];
-                    dst[d + 2] = src[s + 2];
-                    dst[d + 3] = src[s + 3];
-                    break;
-            }
-        }
-    }
-
-    private static void ExpandU16(ReadOnlySpan<byte> src, int channels, int pixelCount, Span<byte> dst)
-    {
-        // Host byte order per the IDecodedImage contract, so a straight reinterpret is valid.
-        var s16 = MemoryMarshal.Cast<byte, ushort>(src);
-        for (int p = 0, s = 0, d = 0; p < pixelCount; p++, s += channels, d += 4)
-        {
-            switch (channels)
-            {
-                case 1:
-                {
-                    var v = (byte)(s16[s] >> 8);
-                    dst[d] = dst[d + 1] = dst[d + 2] = v;
-                    dst[d + 3] = 255;
-                    break;
-                }
-                case 2:
-                {
-                    var v = (byte)(s16[s] >> 8);
-                    dst[d] = dst[d + 1] = dst[d + 2] = v;
-                    dst[d + 3] = (byte)(s16[s + 1] >> 8);
-                    break;
-                }
-                case 3:
-                    dst[d] = (byte)(s16[s] >> 8);
-                    dst[d + 1] = (byte)(s16[s + 1] >> 8);
-                    dst[d + 2] = (byte)(s16[s + 2] >> 8);
-                    dst[d + 3] = 255;
-                    break;
-                default: // 4
-                    dst[d] = (byte)(s16[s] >> 8);
-                    dst[d + 1] = (byte)(s16[s + 1] >> 8);
-                    dst[d + 2] = (byte)(s16[s + 2] >> 8);
-                    dst[d + 3] = (byte)(s16[s + 3] >> 8);
-                    break;
-            }
         }
     }
 

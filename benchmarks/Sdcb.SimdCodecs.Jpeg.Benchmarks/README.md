@@ -64,6 +64,18 @@ performance change must show). `--ablate` adds the current decoder with the IDCT
 colour conversion switched off (`JpegAblation`, internal); a stage's cost is the time that
 disappears. Results go to `.cache/work/ab.md`. `--groups` / `--images` replace the quick subset.
 
+### Display layouts
+
+```bash
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks -- formats [--groups RE] [--images RE] [--rounds N]
+```
+
+times `JpegImageDecoder.TryDecodeInto` in BGRA, RGB, BGR and grey against decode-to-RGBA + `PixelConverter`
+(identical bytes are required before timing, except grey), with RGBA alone and libjpeg-turbo's `tj3Decompress8` in
+the same layout, on the quick subset by default. Grey from a YCbCr JPEG is the Y plane for both (checked
+against the plane the full decode reconstructs, with the largest difference from turbo's grey reported).
+Report: `.cache/work/formats.md`.
+
 ### Matrix
 
 - Main: {4:4:4, 4:2:0} × quality {50, 75, 90, 95, 100} × size {12 MP (4000×3000), 3 MP

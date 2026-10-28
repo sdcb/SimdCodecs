@@ -84,14 +84,15 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
     }
 
     /// <inheritdoc />
-    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination)
-    {
-        if (!TryDecode(data, out var image)) return false;
-        if (rgbaDestination.Length < (long)image.Width * image.Height * 4) return false;
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format) =>
+        TryDecode(data, out var image) && PixelConverter.TryConvert(image, destination, stride, format);
 
-        ((RasterImage)image).ExpandToRgba8(rgbaDestination);
-        return true;
-    }
+    /// <summary>
+    /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA: <paramref name="rgbaDestination"/> must be
+    /// at least <c>Width * Height * 4</c> bytes.
+    /// </summary>
+    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
+        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
 
     /// <summary>
     /// The decoded image as a facade raster, or null when its components cannot be presented as RGB

@@ -32,6 +32,22 @@ internal static unsafe class BaselineDecoder
         return fn(jpeg, rgba, 1);
     }
 
+    private static readonly Lazy<IntPtr> LoadedFormat = new(() => Assembly
+        .GetType("Sdcb.SimdCodecs.Jpeg.JpegDecoder", throwOnError: true)!
+        .GetMethods(BindingFlags.Public | BindingFlags.Static)
+        .Single(m => m.Name == "DecodeTo" && m.GetParameters().Length == 5)
+        .MethodHandle.GetFunctionPointer());
+
+    /// <summary>
+    /// The baseline's <c>JpegDecoder.DecodeTo(data, destination, stride, format, JpegScale.Full)</c>;
+    /// <paramref name="format"/> is the int value of its <c>JpegPixelFormat</c> (Rgba32 0, Bgra32 1, Rgb24 2).
+    /// </summary>
+    public static (int Width, int Height) DecodeTo(ReadOnlySpan<byte> jpeg, Span<byte> destination, int stride, int format)
+    {
+        var fn = (delegate*<ReadOnlySpan<byte>, Span<byte>, int, int, int, ValueTuple<int, int>>)LoadedFormat.Value;
+        return fn(jpeg, destination, stride, format, 1);
+    }
+
     /// <summary>The baseline build's <c>Sdcb.SimdCodecs.Jpeg</c> assembly, in its own load context.</summary>
     public static Assembly Assembly => LoadedAssembly.Value;
 
