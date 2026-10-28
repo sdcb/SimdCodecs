@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
@@ -70,6 +71,21 @@ public static class PngReader
     /// for a native-endian view).
     /// </summary>
     public static PngImage Decode(ReadOnlySpan<byte> data)
+    {
+        var header = ReadHeader(data, out var idat);
+        return header with
+        {
+            Pixels = InflateAndUnfilter(data, idat, header.Width, header.Height, header.SourceBitDepth, header.ColorType),
+        };
+    }
+
+    /// <summary>
+    /// Every chunk but the image data: the returned <see cref="PngImage"/> carries the header and the
+    /// metadata with empty <see cref="PngImage.Pixels"/>, and <paramref name="idat"/> says where the IDAT
+    /// payloads lie in <paramref name="data"/>. Lets a caller look at the metadata (the cICP refusal of
+    /// the RGBA8 projection) before deciding how, or whether, to decode the pixels.
+    /// </summary>
+    internal static PngImage ReadHeader(ReadOnlySpan<byte> data, out List<(int Offset, int Length)> idat)
     {
         if (data.Length < Signature.Length || !data[..Signature.Length].SequenceEqual(Signature))
             throw new InvalidDataException("PNG signature missing — not a PNG file");
@@ -245,18 +261,17 @@ public static class PngReader
             throw new InvalidDataException("Indexed-color PNG missing required PLTE chunk");
 
         // The IDAT chunks are one zlib stream — the spec lets a producer split IDATs anywhere, even
-        // mid-deflate-token — inflated straight into the samples a row at a time.
-        var pixels = InflateAndUnfilter(data, idatChunks, width.Value, height!.Value, bitDepth!.Value, colorType!.Value);
-
+        // mid-deflate-token — inflated by the caller, a row at a time.
+        idat = idatChunks;
         return new PngImage
         {
             Width = width.Value,
-            Height = height.Value,
+            Height = height!.Value,
             // A sub-byte image's samples come back unpacked, one byte each: they are 8-bit samples now.
-            BitDepth = bitDepth.Value < 8 ? 8 : bitDepth.Value,
+            BitDepth = bitDepth!.Value < 8 ? 8 : bitDepth.Value,
             SourceBitDepth = bitDepth.Value,
-            ColorType = colorType.Value,
-            Pixels = pixels,
+            ColorType = colorType!.Value,
+            Pixels = [],
             Palette = palette,
             PaletteAlpha = paletteAlpha,
             IccProfile = iccProfileRaw,
@@ -319,40 +334,27 @@ public static class PngReader
         {
             return InflateAndUnfilterSubByte(data, idat, width, height, bitDepth, colorType);
         }
-        var samplesPerPixel = SamplesPerPixel(colorType);
-        var bytesPerSample = bitDepth / 8;
-        var bytesPerPixel = samplesPerPixel * bytesPerSample;
+        var bytesPerPixel = SamplesPerPixel(colorType) * (bitDepth / 8);
         var rowBytes = checked(width * bytesPerPixel);
-        var expected = ((long)rowBytes + 1) * height;
         var pixels = new byte[checked((long)rowBytes * height)];
         var firstRowAbove = new byte[rowBytes];
 
         fixed (byte* pinned = data)
         {
-            // ZLibStream is the .NET 6+ wrapper that handles the 2-byte zlib header
-            // + Adler32 trailer around the raw deflate bitstream.
-            using var z = new ZLibStream(new IdatStream(pinned, idat), CompressionMode.Decompress);
-            Span<byte> filterType = stackalloc byte[1];
-            long inflated = 0;
+            using var rows = new RowInflater(pinned, idat, rowBytes, height, width, bytesPerPixel);
             for (var y = 0; y < height; y++)
             {
                 var row = pixels.AsSpan(y * rowBytes, rowBytes);
-                inflated += ReadFully(z, filterType);
-                inflated += ReadFully(z, row);
-                if (inflated != (long)(y + 1) * (rowBytes + 1))
-                    throw LengthMismatch(inflated, expected, width, height, bytesPerPixel);
+                var filterType = rows.Read(row);
 
                 // PngPredictor's bpp argument is the "bytes per pixel" rounded up to at
                 // least 1 — for 8-bit single-channel images that's 1; for 16-bit RGBA
                 // it's 8. The filter formulas only need the "left neighbour" offset, so
                 // bytesPerPixel here matches PNG spec §9.2.
                 var above = y == 0 ? firstRowAbove : pixels.AsSpan((y - 1) * rowBytes, rowBytes);
-                PngPredictor.UnfilterRow(filterType[0], row, above, bytesPerPixel);
+                PngPredictor.UnfilterRow(filterType, row, above, bytesPerPixel);
             }
-
-            // A byte past the last row is as much a mismatch as a row short.
-            if (z.Read(filterType) != 0)
-                throw LengthMismatch(expected + 1, expected, width, height, bytesPerPixel);
+            rows.Finish();
         }
 
         return pixels;
@@ -370,41 +372,120 @@ public static class PngReader
         int width, int height, int bitDepth, int colorType)
     {
         var packedBytes = checked((int)(((long)width * bitDepth + 7) / 8));
-        var expected = ((long)packedBytes + 1) * height;
         var pixels = new byte[checked((long)width * height)];
         var row = new byte[packedBytes];
         var above = new byte[packedBytes];
-        var max = (1 << bitDepth) - 1;
-        var gray = colorType == 0;
 
         fixed (byte* pinned = data)
         {
-            using var z = new ZLibStream(new IdatStream(pinned, idat), CompressionMode.Decompress);
-            Span<byte> filterType = stackalloc byte[1];
-            long inflated = 0;
+            using var rows = new RowInflater(pinned, idat, packedBytes, height, width, 1);
             for (var y = 0; y < height; y++)
             {
-                inflated += ReadFully(z, filterType);
-                inflated += ReadFully(z, row);
-                if (inflated != (long)(y + 1) * (packedBytes + 1))
-                    throw LengthMismatch(inflated, expected, width, height, 1);
-                PngPredictor.UnfilterRow(filterType[0], row, above, 1);
-
-                var output = pixels.AsSpan(y * width, width);
-                for (var x = 0; x < width; x++)
-                {
-                    var bit = x * bitDepth;
-                    var sample = (row[bit >> 3] >> (8 - bitDepth - (bit & 7))) & max;
-                    output[x] = (byte)(gray ? sample * 255 / max : sample);
-                }
+                PngPredictor.UnfilterRow(rows.Read(row), row, above, 1);
+                PngRgba8Expander.UnpackSubByte(row, pixels.AsSpan(y * width, width), width, bitDepth, scaleGray: colorType == 0);
                 (row, above) = (above, row);
             }
-
-            if (z.Read(filterType) != 0)
-                throw LengthMismatch(expected + 1, expected, width, height, 1);
+            rows.Finish();
         }
 
         return pixels;
+    }
+
+    /// <summary>
+    /// Decodes the image data of a stream <see cref="ReadHeader"/> has read straight to 8-bit RGBA in
+    /// <paramref name="destination"/> (<c>Width * Height * 4</c> bytes, tightly packed), with the mapping
+    /// of <see cref="PngImage.ExpandToRgba8"/>. No buffer the size of the image is allocated: each row is
+    /// inflated and unfiltered in a pooled row buffer and expanded into its place in the destination at
+    /// once, while it is still in cache. 8-bit RGBA, whose samples already are the destination's layout,
+    /// is inflated and unfiltered in the destination itself.
+    /// </summary>
+    internal static unsafe void DecodeRgba8(ReadOnlySpan<byte> data, PngImage header, List<(int Offset, int Length)> idat,
+        Span<byte> destination)
+    {
+        int width = header.Width, height = header.Height, bitDepth = header.SourceBitDepth;
+        var dstStride = checked(width * 4);
+        if (destination.Length < (long)dstStride * height)
+            throw new ArgumentException($"Destination too small: {destination.Length} < {(long)dstStride * height} (Width*Height*4).", nameof(destination));
+
+        var expander = new PngRgba8Expander(header.ColorType, bitDepth, header.Palette, header.PaletteAlpha);
+        var rowBytes = expander.RowBytes(width);
+        var bytesPerPixel = bitDepth < 8 ? 1 : SamplesPerPixel(header.ColorType) * (bitDepth / 8);
+
+        fixed (byte* pinned = data)
+        {
+            using var rows = new RowInflater(pinned, idat, rowBytes, height, width, bytesPerPixel);
+            if (header.ColorType == 6 && bitDepth == 8)
+            {
+                var firstRowAbove = new byte[rowBytes];
+                for (var y = 0; y < height; y++)
+                {
+                    var row = destination.Slice(y * dstStride, dstStride);
+                    var above = y == 0 ? firstRowAbove : destination.Slice((y - 1) * dstStride, dstStride);
+                    PngPredictor.UnfilterRow(rows.Read(row), row, above, bytesPerPixel);
+                }
+            }
+            else
+            {
+                var scratch = ArrayPool<byte>.Shared.Rent(checked(2 * rowBytes));
+                try
+                {
+                    var current = scratch.AsSpan(0, rowBytes);
+                    var above = scratch.AsSpan(rowBytes, rowBytes);
+                    above.Clear();
+                    for (var y = 0; y < height; y++)
+                    {
+                        PngPredictor.UnfilterRow(rows.Read(current), current, above, bytesPerPixel);
+                        expander.Expand(current, destination.Slice(y * dstStride, dstStride), width);
+                        var swap = above;
+                        above = current;
+                        current = swap;
+                    }
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(scratch);
+                }
+            }
+            rows.Finish();
+        }
+    }
+
+    /// <summary>
+    /// The IDAT zlib stream read one scanline at a time: <see cref="Read"/> fills a row and returns its
+    /// filter type, <see cref="Finish"/> rejects a stream with bytes past the last row. A stream that ends
+    /// early, or runs on, is an <see cref="InvalidDataException"/> naming the expected length. Only valid
+    /// inside the <c>fixed</c> scope that pinned the input.
+    /// </summary>
+    private sealed unsafe class RowInflater(byte* data, List<(int Offset, int Length)> idat,
+        int rowBytes, int height, int width, int bytesPerPixel) : IDisposable
+    {
+        // ZLibStream is the .NET 6+ wrapper that handles the 2-byte zlib header
+        // + Adler32 trailer around the raw deflate bitstream.
+        private readonly ZLibStream _z = new(new IdatStream(data, idat), CompressionMode.Decompress);
+        private readonly byte[] _filterType = new byte[1];
+        private long _inflated;
+        private int _row;
+
+        private long Expected => ((long)rowBytes + 1) * height;
+
+        public byte Read(Span<byte> row)
+        {
+            _inflated += ReadFully(_z, _filterType);
+            _inflated += ReadFully(_z, row[..rowBytes]);
+            _row++;
+            if (_inflated != (long)_row * (rowBytes + 1))
+                throw LengthMismatch(_inflated, Expected, width, height, bytesPerPixel);
+            return _filterType[0];
+        }
+
+        public void Finish()
+        {
+            // A byte past the last row is as much a mismatch as a row short.
+            if (_z.Read(_filterType) != 0)
+                throw LengthMismatch(Expected + 1, Expected, width, height, bytesPerPixel);
+        }
+
+        public void Dispose() => _z.Dispose();
     }
 
     private static InvalidDataException LengthMismatch(long inflated, long expected, int width, int height, int bytesPerPixel) =>
@@ -716,69 +797,14 @@ public sealed record PngImage
     {
         var w = Width;
         var h = Height;
-        var src = Pixels;
-        var spp = SamplesPerPixel;
-        var step = BitDepth == 16 ? 2 : 1; // bytes per sample (high byte first for 16-bit)
-        var rowBytes = w * spp * step;
-        if (destination.Length < w * h * 4)
-            throw new ArgumentException($"Destination too small: {destination.Length} < {w * h * 4} (Width*Height*4).", nameof(destination));
+        if (destination.Length < (long)w * h * 4)
+            throw new ArgumentException($"Destination too small: {destination.Length} < {(long)w * h * 4} (Width*Height*4).", nameof(destination));
 
+        // Pixels holds unpacked samples: a sub-byte image's are 8-bit here (BitDepth), its grey already scaled.
+        var expander = new PngRgba8Expander(ColorType, BitDepth, Palette, PaletteAlpha);
+        var rowBytes = expander.RowBytes(w);
         for (var y = 0; y < h; y++)
-        {
-            var srcRow = y * rowBytes;
-            var dstRow = y * w * 4;
-            for (var x = 0; x < w; x++)
-            {
-                var s = srcRow + x * spp * step;
-                byte r, g, b, a;
-                switch (ColorType)
-                {
-                    case 0: // greyscale
-                        r = g = b = src[s];
-                        a = 255;
-                        break;
-                    case 2: // RGB
-                        r = src[s];
-                        g = src[s + step];
-                        b = src[s + 2 * step];
-                        a = 255;
-                        break;
-                    case 3: // indexed: src[s] is an index into Palette (+ optional PaletteAlpha)
-                        if (Palette is not { } pal)
-                            throw new InvalidDataException("Indexed PNG has no palette to expand to RGBA8");
-                        var idx = src[s];
-                        var pi = idx * 3;
-                        if (pi + 2 >= pal.Length)
-                            throw new InvalidDataException(
-                                $"Palette index {idx} out of range (palette has {pal.Length / 3} entries)");
-                        r = pal[pi];
-                        g = pal[pi + 1];
-                        b = pal[pi + 2];
-                        a = PaletteAlpha is { } pa && idx < pa.Length ? pa[idx] : (byte)255;
-                        break;
-                    case 4: // greyscale + alpha
-                        r = g = b = src[s];
-                        a = src[s + step];
-                        break;
-                    case 6: // RGBA
-                        r = src[s];
-                        g = src[s + step];
-                        b = src[s + 2 * step];
-                        a = src[s + 3 * step];
-                        break;
-                    default:
-                        // Unreachable in practice: SamplesPerPixel (read above) already
-                        // throws for any color type outside {0,2,3,4,6}. Kept for definite
-                        // assignment of r/g/b/a and as a defensive backstop.
-                        throw new InvalidDataException($"Cannot expand PNG color type {ColorType} to RGBA8");
-                }
-                var d = dstRow + x * 4;
-                destination[d] = r;
-                destination[d + 1] = g;
-                destination[d + 2] = b;
-                destination[d + 3] = a;
-            }
-        }
+            expander.Expand(Pixels.AsSpan(y * rowBytes, rowBytes), destination.Slice(y * w * 4, w * 4), w);
     }
 }
 

@@ -136,6 +136,10 @@ jobs:
       run: dotnet build tests/Sdcb.SimdCodecs.Tests -c Release
     - name: Test JPEG
       run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Jpeg"
+    # The PNG RGBA8 row expansion shuffles bytes with SSSE3 / AdvSimd TBL and has a scalar twin;
+    # its tests compare all of them against libpng (Magick.NET), so they run on every tier too.
+    - name: Test PNG
+      run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Png"
 
   jpeg-aot:
     # NativeAOT picks the vector tier at compile time: its decodes must equal the JIT's.

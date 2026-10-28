@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -77,18 +78,9 @@ public sealed class PngImageDecoder : IImageDecoder
     /// display context, so HLG refuses alongside PQ).</remarks>
     public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination)
     {
-        if (!TryReadDisplayReferred(data, out var png)) return false;
-        if (rgbaDestination.Length < (long)png.Width * png.Height * 4) return false;
-        try
-        {
-            png.ExpandToRgba8(rgbaDestination);
-            return true;
-        }
-        catch (InvalidDataException)
-        {
-            // An indexed pixel past the palette's end.
-            return false;
-        }
+        if (!TryReadDisplayReferred(data, out var header, out var idat)) return false;
+        if (rgbaDestination.Length < (long)header.Width * header.Height * 4) return false;
+        return TryDecodeRgba8Into(data, header, idat, rgbaDestination);
     }
 
     /// <summary>
@@ -106,34 +98,59 @@ public sealed class PngImageDecoder : IImageDecoder
     {
         rgba = null;
         width = height = 0;
-        if (!TryReadDisplayReferred(data, out var png)) return false;
-        try
-        {
-            rgba = png.ColorType == 6 && png.BitDepth == 8 ? png.Pixels : png.ToRgba8();
-        }
-        catch (InvalidDataException)
-        {
-            // An indexed pixel past the palette's end.
-            return false;
-        }
-        width = png.Width;
-        height = png.Height;
+        if (!TryReadDisplayReferred(data, out var header, out var idat)) return false;
+        var length = (long)header.Width * header.Height * 4;
+        if (length > Array.MaxLength) return false;
+        var pixels = new byte[length];
+        if (!TryDecodeRgba8Into(data, header, idat, pixels)) return false;
+        rgba = pixels;
+        width = header.Width;
+        height = header.Height;
         return true;
     }
 
-    // The shared first step of the RGBA8 projections: PngReader.TryDecode, then the refusal of cICP
-    // PQ/HLG, whose code values are encoded for an HDR EOTF (see TryDecodeIntoRgba8). A float
-    // projection that decodes those starts from PngReader.TryDecode instead and skips the refusal.
-    private static bool TryReadDisplayReferred(ReadOnlySpan<byte> data, [NotNullWhen(true)] out PngImage? png)
+    // The shared first step of the RGBA8 projections: every chunk but the image data, then the refusal
+    // of cICP PQ/HLG, whose code values are encoded for an HDR EOTF (see TryDecodeIntoRgba8) - before a
+    // pixel is inflated. A float projection that decodes those starts from PngReader.TryDecode instead
+    // and skips the refusal.
+    private static bool TryReadDisplayReferred(ReadOnlySpan<byte> data, [NotNullWhen(true)] out PngImage? header,
+        [NotNullWhen(true)] out List<(int Offset, int Length)>? idat)
     {
-        if (!PngReader.TryDecode(data, out png)) return false;
-        if (png.Cicp is { } cicp &&
+        try
+        {
+            header = PngReader.ReadHeader(data, out idat);
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            header = null;
+            idat = null;
+            return false;
+        }
+
+        if (header.Cicp is { } cicp &&
             cicp.TransferFunction is TransferFunction.Pq or TransferFunction.Hlg)
         {
-            png = null;
+            header = null;
+            idat = null;
             return false;
         }
         return true;
+    }
+
+    // The image data straight into the caller's RGBA8 buffer, a row at a time (PngReader.DecodeRgba8).
+    // False for corrupt image data and for an indexed pixel past the palette's end.
+    private static bool TryDecodeRgba8Into(ReadOnlySpan<byte> data, PngImage header, List<(int Offset, int Length)> idat,
+        Span<byte> destination)
+    {
+        try
+        {
+            PngReader.DecodeRgba8(data, header, idat, destination);
+            return true;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
     }
 
     // The layout TryDecode produces. Indexed always expands to RGBA8; the rest keep

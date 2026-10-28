@@ -368,7 +368,7 @@ public static class PngWriter
             // measure ms.Position to compute the chunk length.
             using var z = new ZLibStream(ms, options.CompressionLevel, leaveOpen: true);
             CompressRows(z, samples, 0, height, stride, srcStride, bpp,
-                srcChannels, dstChannels, sampleBytes, checksum: false);
+                srcChannels, dstChannels, sampleBytes, options.CompressionLevel, checksum: false);
         }
 
         long idatEnd = ms.Position;
@@ -415,6 +415,11 @@ public static class PngWriter
     /// scanline. Returns the Adler-32 of exactly those bytes when <paramref name="checksum"/> is set,
     /// which is what the fragmented path needs and the single-stream path gets from
     /// <see cref="ZLibStream"/> for free.
+    /// <para>At <see cref="CompressionLevel.NoCompression"/> every row is written with filter None.
+    /// The filters exist to make rows compressible, and stored blocks compress nothing: the file is
+    /// the same size whatever the filters, so choosing among five per row is pure cost (it made
+    /// storing slower than deflating). Unfiltered stored rows also leave the samples readable as
+    /// they are in the file.</para>
     /// </summary>
     /// <remarks>
     /// <b>A band can start anywhere</b>, because the row above it is a row of the SOURCE image rather
@@ -425,8 +430,10 @@ public static class PngWriter
     /// </remarks>
     private static uint CompressRows(Stream destination, ReadOnlySpan<byte> samples,
         int firstRow, int rowCount, int stride, int srcStride, int bpp,
-        int srcChannels, int dstChannels, int sampleBytes, bool checksum)
+        int srcChannels, int dstChannels, int sampleBytes, CompressionLevel level, bool checksum)
     {
+        var store = level == CompressionLevel.NoCompression;
+
         // current row + previous row + five filter candidates, in one rent.
         var scratch = ArrayPool<byte>.Shared.Rent(checked(stride * 7));
         try
@@ -450,6 +457,19 @@ public static class PngWriter
             for (var y = firstRow; y < firstRow + rowCount; y++)
             {
                 FillRow(samples.Slice(y * srcStride, srcStride), current, srcChannels, dstChannels, sampleBytes);
+
+                if (store)
+                {
+                    filterByte[0] = 0;
+                    destination.Write(filterByte);
+                    destination.Write(current);
+                    if (checksum)
+                    {
+                        AdlerUpdate(ref a, ref b, filterByte);
+                        AdlerUpdate(ref a, ref b, current);
+                    }
+                    continue;  // no filter reads the row above, so it need not be kept
+                }
 
                 var bestFilter = 0;
                 var bestSum = long.MaxValue;
@@ -539,7 +559,7 @@ public static class PngWriter
                 using var buffer = new MemoryStream(rowCount * (stride + 1) / 2);
                 var d = new DeflateStream(buffer, level, leaveOpen: true);
                 checksums[index] = CompressRows(d, view, firstRow, rowCount, stride, srcStride, bpp,
-                    srcChannels, dstChannels, sampleBytes, checksum: true);
+                    srcChannels, dstChannels, sampleBytes, level, checksum: true);
 
                 d.Flush();
                 lengths[index] = (int)buffer.Length;   // BEFORE Dispose writes the final block

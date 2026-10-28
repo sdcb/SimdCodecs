@@ -161,6 +161,28 @@ public sealed class PngWriterParallelDeflateTests
             $"{serial} bytes in one stream, {split} in eight fragments");
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public void StoredRowsAreUnfiltered(int fragments)
+    {
+        // Stored blocks compress nothing, so the filters buy nothing and the encoder skips choosing:
+        // the inflated IDAT is every row's filter byte 0 followed by its samples as they are.
+        var rgb = Pixels8();
+        var png = PngWriter.EncodeRgb8(rgb, Width, Height,
+            new PngWriteOptions { CompressionLevel = CompressionLevel.NoCompression, ParallelFragments = fragments });
+
+        using var inflate = new ZLibStream(new MemoryStream(ExtractIdat(png)), CompressionMode.Decompress);
+        using var raw = new MemoryStream();
+        inflate.CopyTo(raw);
+
+        var expected = new byte[Height * (Width * 3 + 1)];
+        for (var y = 0; y < Height; y++)
+            rgb.AsSpan(y * Width * 3, Width * 3).CopyTo(expected.AsSpan(y * (Width * 3 + 1) + 1));
+        raw.ToArray().ShouldBe(expected);
+        PngReader.Decode(png).Pixels.ShouldBe(rgb);
+    }
+
     /// <summary>The IDAT chunk's payload, which for our writer is the whole zlib stream.</summary>
     private static byte[] ExtractIdat(byte[] png)
     {
