@@ -37,7 +37,7 @@ File.WriteAllBytes("photo.jpg", jpeg);
 `SimdCodecs.TryDecodeInto(file, buffer, stride, format)` writes BGRA (Windows / WPF / Skia surfaces), RGB,
 BGR (OpenCV) or grey (OCR) straight into a buffer, at any row stride; JPEG and PNG produce those layouts
 natively, without an RGBA frame in between (a colour JPEG's grey is its Y plane, chroma skipped). `SimdCodecs.TryDecode` keeps the native layout instead
-(channel count, 8/16-bit or float samples, ICC profile). Each format is also its own package with a
+(channel count — a greyscale JPEG is one channel — 8/16-bit or float samples, ICC profile). Each format is also its own package with a
 richer API: scaled JPEG decoding, multi-page TIFF, animated WebP, Ultra HDR, and more.
 
 ## Formats

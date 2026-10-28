@@ -7,9 +7,9 @@ namespace Sdcb.SimdCodecs.Jpeg;
 
 /// <summary>
 /// <see cref="IImageDecoder"/> adapter for JPEG, bridging <see cref="JpegDecoder"/>
-/// into the <c>Sdcb.SimdCodecs</c> facade. JPEG always decodes to 8-bit RGBA
-/// regardless of the SOF component count, so both the fidelity and display tiers
-/// yield the same 4-channel <see cref="SampleFormat.UInt8"/> raster;
+/// into the <c>Sdcb.SimdCodecs</c> facade. A greyscale JPEG (one SOF component)
+/// decodes to a 1-channel <see cref="SampleFormat.UInt8"/> raster of its samples;
+/// every other JPEG to 4-channel RGBA (JPEG has no alpha, so it is 255).
 /// <see cref="TryDecodeInto"/> is a genuine zero-copy decode in every
 /// <see cref="ImagePixelFormat"/> via
 /// <see cref="JpegDecoder.DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, JpegPixelFormat, JpegScale)"/>.
@@ -31,8 +31,7 @@ public sealed class JpegImageDecoder : IImageDecoder
         info = default;
         try
         {
-            var ji = JpegDecoder.ReadInfo(data);
-            info = new ImageInfo(ji.Width, ji.Height, 4, SampleFormat.UInt8);
+            info = ToImageInfo(JpegDecoder.ReadInfo(data));
             return true;
         }
         catch (InvalidDataException)
@@ -47,6 +46,15 @@ public sealed class JpegImageDecoder : IImageDecoder
         image = null;
         try
         {
+            if (JpegDecoder.ReadInfo(data) is { Components: 1 } grey)
+            {
+                // The samples as stored: Gray8 output of a one-component frame is exactly its Y.
+                var samples = new byte[grey.Width * grey.Height];
+                _ = JpegDecoder.DecodeTo(data, samples, grey.Width, JpegPixelFormat.Gray8);
+                image = new RasterImage(grey.Width, grey.Height, 1, SampleFormat.UInt8, samples);
+                return true;
+            }
+
             var jpeg = JpegDecoder.Decode(data);
             image = new RasterImage(jpeg.Width, jpeg.Height, 4, SampleFormat.UInt8, jpeg.Pixels);
             return true;
@@ -80,6 +88,10 @@ public sealed class JpegImageDecoder : IImageDecoder
     /// </summary>
     public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
         TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
+
+    /// <summary>The <see cref="ImageInfo"/> of what <see cref="TryDecode"/> returns for a stream with header <paramref name="info"/>.</summary>
+    internal static ImageInfo ToImageInfo(JpegInfo info) =>
+        new(info.Width, info.Height, info.Components == 1 ? 1 : 4, SampleFormat.UInt8);
 
     /// <summary>The <see cref="JpegPixelFormat"/> writing the same bytes as <paramref name="format"/>.</summary>
     internal static JpegPixelFormat ToJpegFormat(ImagePixelFormat format) => format switch

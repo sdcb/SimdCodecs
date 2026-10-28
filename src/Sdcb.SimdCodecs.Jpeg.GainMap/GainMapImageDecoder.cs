@@ -35,21 +35,12 @@ public sealed class GainMapImageDecoder : IImageDecoder
     /// <inheritdoc />
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
     {
-        info = default;
-        try
-        {
-            var ji = JpegDecoder.ReadInfo(data);
-            // A reconstructable gain map presents as the HDR float fidelity tier;
-            // the HDR-base form (unsupported reconstruction) reports its SDR primary.
-            info = JpegGainMap.TrySplit(data, out _, out _, out var metadata) && !metadata.BaseRenditionIsHdr
-                ? new ImageInfo(ji.Width, ji.Height, 3, SampleFormat.Float32)
-                : new ImageInfo(ji.Width, ji.Height, 4, SampleFormat.UInt8);
-            return true;
-        }
-        catch (InvalidDataException)
-        {
-            return false;
-        }
+        // A reconstructable gain map presents as the HDR float fidelity tier;
+        // the HDR-base form (unsupported reconstruction) reports its SDR primary.
+        if (!JpegImageDecoder.TryReadInfo(data, out info)) return false;
+        if (JpegGainMap.TrySplit(data, out _, out _, out var metadata) && !metadata.BaseRenditionIsHdr)
+            info = new ImageInfo(info.Width, info.Height, 3, SampleFormat.Float32);
+        return true;
     }
 
     /// <inheritdoc />
@@ -67,16 +58,7 @@ public sealed class GainMapImageDecoder : IImageDecoder
 
         // Graceful degradation: decode the SDR primary as a plain JPEG. This is the
         // same image a gain-map-unaware viewer sees, so nothing is lost visually.
-        try
-        {
-            var jpeg = JpegDecoder.Decode(data);
-            image = new RasterImage(jpeg.Width, jpeg.Height, 4, SampleFormat.UInt8, jpeg.Pixels);
-            return true;
-        }
-        catch (InvalidDataException)
-        {
-            return false;
-        }
+        return JpegImageDecoder.TryDecode(data, out image);
     }
 
     /// <inheritdoc />
