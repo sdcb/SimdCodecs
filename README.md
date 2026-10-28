@@ -39,8 +39,10 @@ BGR (OpenCV) or grey (OCR) straight into a buffer, at any row stride; JPEG and P
 natively, without an RGBA frame in between (a colour JPEG's grey is its Y plane, chroma skipped). `SimdCodecs.TryDecode` keeps the native layout instead
 (channel count — a greyscale JPEG is one channel — 8/16-bit or float samples, ICC profile).
 `TryReadInfo` also reports the stored bit depth, the EXIF orientation (reported, never applied to the
-pixels) and the number of frames or pages, from the headers alone. Each format is also its own package with a
-richer API: scaled JPEG decoding, multi-page TIFF, animated WebP, Ultra HDR, and more.
+pixels) and the number of frames or pages, from the headers alone. `SimdCodecs.TryOpenFrames(file, out reader)`
+decodes them one at a time, by index and in any layout: an animated WebP's composited frames with their
+durations, a multi-page TIFF's pages (any other image is one frame). Each format is also its own package with a
+richer API: scaled JPEG decoding, TIFF segment reads, WebP animation seeking by timestamp, Ultra HDR, and more.
 
 ## Formats
 

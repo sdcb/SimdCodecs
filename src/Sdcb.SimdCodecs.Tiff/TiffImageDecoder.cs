@@ -29,7 +29,7 @@ namespace Sdcb.SimdCodecs.Tiff;
 /// consumers that stretch.
 /// </para>
 /// </summary>
-public sealed class TiffImageDecoder : IImageDecoder
+public sealed class TiffImageDecoder : IMultiFrameImageDecoder
 {
     /// <inheritdoc />
     public static int SignatureLength => 4;
@@ -40,22 +40,58 @@ public sealed class TiffImageDecoder : IImageDecoder
         (header[..4].SequenceEqual("II*\0"u8) || header[..4].SequenceEqual("MM\0*"u8));
 
     /// <inheritdoc />
-    /// <remarks>TIFF geometry lives in the IFD chain, not at a fixed header offset,
-    /// so this decodes the first page rather than peeking a fixed-size prefix.</remarks>
+    /// <remarks>TIFF geometry lives in the IFD chain, not at a fixed header offset, so this parses the
+    /// first page's directory (no strip or tile is decoded) and walks the chain to count the pages.</remarks>
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
     {
-        // The first page's directory alone: no strip or tile is decoded.
+        if (!TryReadPageInfo(data, 0, out info)) return false;
+        info = info with { FrameCount = TiffReader.CountPages(data) };
+        return true;
+    }
+
+    /// <inheritdoc />
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image)
+    {
+        var ok = TryDecodePage(data, 0, out var raster);
+        image = raster;
+        return ok;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>Every page is a frame, with its own size, layout and orientation; a page this adapter
+    /// refuses (palette, CMYK, ...) is listed but fails to decode, without stopping the others. Pages are
+    /// independent, so any order costs the same: the IFD chain's next pointers up to that page, then its
+    /// directory and segments.</remarks>
+    public static bool TryOpenFrames(ReadOnlyMemory<byte> data, [NotNullWhen(true)] out IImageFrameReader? reader)
+    {
+        reader = null;
+        int pages;
+        try
+        {
+            pages = TiffReader.CountPages(data.Span);
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+        if (pages == 0) return false;
+        reader = new TiffFrameReader(data, pages);
+        return true;
+    }
+
+    /// <summary>The layout <see cref="TryDecodePage"/> gives page <paramref name="pageIndex"/>, from its directory alone.</summary>
+    internal static bool TryReadPageInfo(ReadOnlySpan<byte> data, int pageIndex, out ImageInfo info)
+    {
         info = default;
         try
         {
-            var layout = TiffReader.ReadLayout(data, 0);
+            var layout = TiffReader.ReadLayout(data, pageIndex);
             if (!TryMapLayout(layout.Photometric, layout.SamplesPerPixel, layout.BitsPerSample, layout.SampleFormat, out var format))
                 return false;
             info = new ImageInfo(layout.Width, layout.Height, layout.SamplesPerPixel, format)
             {
                 BitDepth = layout.StoredBitsPerSample,
                 Orientation = (ImageOrientation)layout.Orientation,
-                FrameCount = TiffReader.CountPages(data),
             };
             return true;
         }
@@ -63,14 +99,6 @@ public sealed class TiffImageDecoder : IImageDecoder
         {
             return false;
         }
-    }
-
-    /// <inheritdoc />
-    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image)
-    {
-        var ok = TryDecodeCore(data, out var raster);
-        image = raster;
-        return ok;
     }
 
     /// <inheritdoc />
@@ -87,13 +115,14 @@ public sealed class TiffImageDecoder : IImageDecoder
     public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
         TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
 
-    private static bool TryDecodeCore(ReadOnlySpan<byte> data, [NotNullWhen(true)] out RasterImage? image)
+    /// <summary>Page <paramref name="pageIndex"/> as <see cref="TryDecode"/> presents the first.</summary>
+    internal static bool TryDecodePage(ReadOnlySpan<byte> data, int pageIndex, [NotNullWhen(true)] out RasterImage? image)
     {
         image = null;
         TiffPage page;
         try
         {
-            page = TiffReader.ReadPage(data, 0);
+            page = TiffReader.ReadPage(data, pageIndex);
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
         {

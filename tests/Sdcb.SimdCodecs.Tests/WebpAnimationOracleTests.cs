@@ -509,6 +509,19 @@ public sealed class WebpAnimationOracleTests
 
     private static string Sha256(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
+    /// <summary>The fixtures anim_dump 1.6.0 vouches for, every frame of which has a golden.</summary>
+    internal static IEnumerable<string> GoldenFixtures() => OracleFixtureNames();
+
+    /// <summary>Frame <paramref name="frame"/> of <paramref name="fixture"/> as anim_dump 1.6.0 rendered it:
+    /// its duration and the SHA-256 of its full RGBA canvas.</summary>
+    internal static (int DurationMs, string Sha256) GoldenFrame(string fixture, int frame)
+    {
+        var entry = Golden.Value[(fixture, frame)];
+        return (entry.DurationMs, entry.Sha256);
+    }
+
+    internal static string Sha256Hex(byte[] bytes) => Sha256(bytes);
+
     private static string FixtureDirectory() =>
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "webp");
 

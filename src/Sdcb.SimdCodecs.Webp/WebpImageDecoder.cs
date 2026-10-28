@@ -9,12 +9,12 @@ namespace Sdcb.SimdCodecs.Webp;
 /// <c>Sdcb.SimdCodecs</c> facade.
 /// <para>
 /// Lossy (VP8), lossless (VP8L) and animated input are all accepted; an animation is presented as
-/// its first composited frame. Images with alpha decode as 8-bit RGBA, opaque ones as 8-bit RGB, an
+/// its first composited frame, and <see cref="TryOpenFrames"/> reads all of them. Images with alpha decode as 8-bit RGBA, opaque ones as 8-bit RGB, an
 /// ICCP profile is passed through, and the colour encoding is reported as assumed sRGB. Malformed or
 /// unsupported data makes the <c>Try</c> methods return false rather than throw.
 /// </para>
 /// </summary>
-public sealed class WebpImageDecoder : IImageDecoder
+public sealed class WebpImageDecoder : IMultiFrameImageDecoder
 {
     /// <inheritdoc />
     public static int SignatureLength => 12;
@@ -24,6 +24,24 @@ public sealed class WebpImageDecoder : IImageDecoder
         data.Length >= SignatureLength &&
         data[..4].SequenceEqual("RIFF"u8) &&
         data[8..12].SequenceEqual("WEBP"u8);
+
+    /// <inheritdoc />
+    /// <remarks>A still image is one frame. An animation's frames are its composited canvas, in the
+    /// container's channel count, streamed through one <see cref="WebpAnimationDecoder"/>: decoding them in
+    /// order composites each once, and any other order replays from the nearest independent frame.</remarks>
+    public static bool TryOpenFrames(ReadOnlyMemory<byte> data, [NotNullWhen(true)] out IImageFrameReader? reader)
+    {
+        try
+        {
+            reader = WebpFrameReader.Open(data);
+            return true;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            reader = null;
+            return false;
+        }
+    }
 
     /// <inheritdoc />
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)

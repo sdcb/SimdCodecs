@@ -205,6 +205,25 @@ public sealed class WebpAnimationDecoder
     public void Reset() => Seek(0);
 
     /// <summary>
+    /// The working canvas, tightly packed RGBA, as the last decoded frame left it. For
+    /// <see cref="WebpFrameReader"/>, which converts it row by row instead of copying it out first.
+    /// </summary>
+    internal ReadOnlySpan<byte> Canvas => _canvas;
+
+    /// <summary>
+    /// Composites frame <paramref name="frameIndex"/> into <see cref="Canvas"/>: directly when it is the
+    /// next frame, otherwise after <see cref="Seek"/> replays from the nearest independent frame.
+    /// </summary>
+    internal void DecodeFrame(int frameIndex)
+    {
+        if (frameIndex != _nextFrameIndex)
+        {
+            Seek(frameIndex);
+        }
+        DecodeNextFrame();
+    }
+
+    /// <summary>
     /// Returns the frame visible at a timestamp. Frame intervals include their start and exclude
     /// their end; timestamps beyond the animation clamp to the final frame.
     /// </summary>

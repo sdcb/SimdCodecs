@@ -11,7 +11,7 @@
     <PackageId>Sdcb.SimdCodecs.Abstractions</PackageId>
     <Product>Sdcb.SimdCodecs.Abstractions</Product>
     <Authors>sdcb</Authors>
-    <Description>Shared abstractions for the Sdcb.SimdCodecs image codec family: IImageDecoder (magic-byte sniff + fidelity decode + zero-copy decode into RGBA / BGRA / RGB / BGR / grey at any stride), IDecodedImage / RasterImage (a codec-neutral decoded raster) and PixelConverter (SIMD layout conversion). Ships the ITU-T H.273 colour vocabulary (ColorPrimaries / TransferFunction / MatrixCoefficients) and a ColorEncoding record surfacing what decoded samples mean (sRGB, PQ/HLG HDR, linear light). AOT-compatible, zero runtime dependencies.</Description>
+    <Description>Shared abstractions for the Sdcb.SimdCodecs image codec family: IImageDecoder (magic-byte sniff + fidelity decode + zero-copy decode into RGBA / BGRA / RGB / BGR / grey at any stride), IMultiFrameImageDecoder / IImageFrameReader (animation frames and document pages, by index), IDecodedImage / RasterImage (a codec-neutral decoded raster) and PixelConverter (SIMD layout conversion). Ships the ITU-T H.273 colour vocabulary (ColorPrimaries / TransferFunction / MatrixCoefficients) and a ColorEncoding record surfacing what decoded samples mean (sRGB, PQ/HLG HDR, linear light). AOT-compatible, zero runtime dependencies.</Description>
     <PackageTags>image codec decoder raster aot abstractions</PackageTags>
     <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>

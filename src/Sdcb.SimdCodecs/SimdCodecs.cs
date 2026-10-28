@@ -39,8 +39,8 @@ namespace Sdcb.SimdCodecs;
 /// <para>
 /// WebP is decoded by <see cref="WebpImageDecoder"/>: lossy (VP8), lossless (VP8L)
 /// and, for an animation, its first composited frame. It returns RGB8 or RGBA8
-/// according to the container's alpha declaration. The full timeline is available
-/// from <c>WebpDecoder.DecodeAnimation</c> / <c>WebpAnimationDecoder</c>.
+/// according to the container's alpha declaration. Every frame is available through
+/// <see cref="TryOpenFrames"/>, which also reads a multi-page TIFF's pages.
 /// </para>
 /// <para>
 /// Float-sample content (e.g. float TIFF) decodes through
@@ -66,12 +66,15 @@ public static class SimdCodecs
     private delegate bool TryReadInfoFn(ReadOnlySpan<byte> data, out ImageInfo info);
     private delegate bool TryDecodeFn(ReadOnlySpan<byte> data, out IDecodedImage? image);
     private delegate bool TryDecodeIntoFn(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format);
+    private delegate bool TryOpenFramesFn(ReadOnlyMemory<byte> data, out IImageFrameReader? reader);
 
+    // TryOpenFrames is null for a still-only codec: the facade presents its image as one frame.
     private readonly record struct Entry(
         CanDecodeFn CanDecode,
         TryReadInfoFn TryReadInfo,
         TryDecodeFn TryDecode,
-        TryDecodeIntoFn TryDecodeInto);
+        TryDecodeIntoFn TryDecodeInto,
+        TryOpenFramesFn? TryOpenFrames = null);
 
     // Explicit registry: IImageDecoder's static-abstract members are not enumerable
     // and reflection-scanning for implementors is not AOT-safe, so each codec is
@@ -87,14 +90,80 @@ public static class SimdCodecs
         // keeps returning the SDR base.
         Register<GainMapImageDecoder>(),
         Register<JpegImageDecoder>(),
-        Register<TiffImageDecoder>(),
+        RegisterMultiFrame<TiffImageDecoder>(),
         Register<Jbig2ImageDecoder>(),
         Register<Jpeg2000ImageDecoder>(),
-        Register<WebpImageDecoder>(),
+        RegisterMultiFrame<WebpImageDecoder>(),
     ];
 
     private static Entry Register<T>() where T : IImageDecoder =>
         new(T.CanDecode, T.TryReadInfo, T.TryDecode, T.TryDecodeInto);
+
+    private static Entry RegisterMultiFrame<T>() where T : IMultiFrameImageDecoder =>
+        Register<T>() with { TryOpenFrames = T.TryOpenFrames };
+
+    /// <summary>
+    /// Opens a reader over every frame of <paramref name="data"/> — an animated WebP's frames, a multi-page
+    /// TIFF's pages — to decode them one at a time by index (see <see cref="IImageFrameReader"/>). Any
+    /// other image opens as a reader of one frame, its still image, so a caller handles every format the
+    /// same way. The reader keeps <paramref name="data"/>; dispose it when done. Returns false when no
+    /// registered codec recognises the stream or the file is malformed.
+    /// </summary>
+    public static bool TryOpenFrames(ReadOnlyMemory<byte> data, [NotNullWhen(true)] out IImageFrameReader? reader)
+    {
+        foreach (var entry in _registry)
+        {
+            if (!entry.CanDecode(data.Span))
+                continue;
+            if (entry.TryOpenFrames is { } open)
+                return open(data, out reader);
+            if (!entry.TryReadInfo(data.Span, out var info))
+                break;
+            reader = new StillFrameReader(data, info with { FrameCount = 1 }, entry);
+            return true;
+        }
+
+        reader = null;
+        return false;
+    }
+
+    /// <summary>A still image as a reader of one frame, decoded through its codec's entry.</summary>
+    private sealed class StillFrameReader(ReadOnlyMemory<byte> data, ImageInfo info, Entry entry) : IImageFrameReader
+    {
+        private bool _disposed;
+
+        public int FrameCount => 1;
+
+        public int? LoopCount => null;
+
+        public bool TryGetFrameInfo(int index, out ImageFrameInfo frame)
+        {
+            Check(index);
+            frame = new ImageFrameInfo(info, null);
+            return true;
+        }
+
+        public bool TryDecodeFrame(int index, [NotNullWhen(true)] out IDecodedImage? image)
+        {
+            Check(index);
+            return entry.TryDecode(data.Span, out image);
+        }
+
+        public bool TryDecodeFrameInto(int index, Span<byte> destination, int stride, ImagePixelFormat format)
+        {
+            Check(index);
+            return entry.TryDecodeInto(data.Span, destination, stride, format);
+        }
+
+        public void Dispose() => _disposed = true;
+
+        private void Check(int index)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(index);
+            ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, 1);
+            ObjectDisposedException.ThrowIf(_disposed, this);
+        }
+    }
 
     /// <summary>
     /// Decodes <paramref name="data"/> into a codec-neutral <see cref="IDecodedImage"/>
