@@ -89,7 +89,10 @@ public static partial class TiffReader
         var pages = new List<TiffPage>();
         var ifdOffset = (int)ReadUInt32(tiff.Slice(4, 4), fileIsLE);
         var pageIndex = 0;
-        while (ifdOffset != 0)
+        // A next-IFD pointer back into the chain would otherwise re-read the same pages forever: the
+        // walk ends at the first IFD it has already read, keeping every page reachable before it.
+        var visited = new HashSet<long>();
+        while (ifdOffset != 0 && visited.Add(ifdOffset))
         {
             var (page, nextOffset) = ReadPage(tiff, ifdOffset, fileIsLE, pageIndex, ref sink);
             // Only the buffering path re-attaches pixels, and it is the sink that holds them: a
@@ -176,9 +179,12 @@ public static partial class TiffReader
         var fileIsLE = ReadHeader(tiff);
         var src = new SpanBytes(tiff);
         long ifdOffset = ReadUInt32(tiff.Slice(4, 4), fileIsLE);
-        for (var i = 0; i < pageIndex && ifdOffset != 0; i++)
+        // A looping chain has only the pages before the loop, as Read counts them.
+        var visited = new HashSet<long>();
+        for (var i = 0; i < pageIndex && ifdOffset != 0 && visited.Add(ifdOffset); i++)
             ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, fileIsLE);
-        if (ifdOffset == 0) throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
+        if (ifdOffset == 0 || visited.Contains(ifdOffset))
+            throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
 
         var sink = new BufferingSink();
         var (page, _) = ReadPage(tiff, (int)ifdOffset, fileIsLE, pageIndex, ref sink);

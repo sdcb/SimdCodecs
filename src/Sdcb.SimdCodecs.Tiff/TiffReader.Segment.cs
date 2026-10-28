@@ -222,13 +222,17 @@ public static partial class TiffReader
         ArgumentOutOfRangeException.ThrowIfNegative(pageIndex);
         var (fileIsLE, ifdOffset) = TiffIfdParser.ReadHeader(ref src);
 
-        // Pages before the wanted one are walked by their next-IFD pointer alone, never interpreted.
+        // Pages before the wanted one are walked by their next-IFD pointer alone, never interpreted. A
+        // looping chain has only the pages before the loop, as TiffReader.Read counts them.
+        var visited = new HashSet<long>();
         for (var i = 0; i < pageIndex; i++)
         {
-            if (ifdOffset == 0) throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
+            if (ifdOffset == 0 || !visited.Add(ifdOffset))
+                throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
             ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, fileIsLE);
         }
-        if (ifdOffset == 0) throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
+        if (ifdOffset == 0 || visited.Contains(ifdOffset))
+            throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
 
         return new TiffPageLayout(pageIndex, fileIsLE, TiffIfdParser.Parse(ref src, ifdOffset, fileIsLE));
     }
