@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
@@ -19,11 +21,10 @@ namespace Sdcb.SimdCodecs.Png;
 ///   <item>Every bit depth PNG allows: 8 and 16 per sample, and 1, 2 and 4 for greyscale and
 ///   indexed, whose samples are unpacked to one byte each (see <see cref="PngImage.BitDepth"/>).</item>
 ///   <item>Color types 0 (Gray), 2 (RGB), 3 (Indexed, PLTE + tRNS), 4 (Gray + Alpha), 6 (RGBA).</item>
-///   <item>Non-interlaced only (<c>InterlaceMethod = 0</c>).</item>
+///   <item>Both interlace methods: none, and Adam7, whose passes are put back into place as they are
+///   decoded, so the result is the same as for a non-interlaced file of the same image.</item>
 /// </list>
-/// <para>Adam7 interlacing is deferred to a follow-up. APNG and PNG-3 HDR
-/// chunks (<c>cICP</c> / <c>mDCv</c> / <c>cLLI</c>) will layer on top of
-/// this decoder.</para>
+/// <para>APNG will layer on top of this decoder.</para>
 /// </remarks>
 public static class PngReader
 {
@@ -44,7 +45,7 @@ public static class PngReader
 
     /// <summary>
     /// <see cref="Decode"/> without the exceptions: false for a stream that is not a PNG, is corrupt,
-    /// or uses a feature this reader does not cover yet (Adam7 interlace). It makes no
+    /// or uses a feature this reader does not cover. It makes no
     /// judgement about the colour signalling, so it is the shared first step of every projection — the
     /// RGBA8 display ones in <see cref="PngImageDecoder"/>, which refuse cICP PQ/HLG, and a float one
     /// that would decode those.
@@ -75,7 +76,9 @@ public static class PngReader
         var header = ReadHeader(data, out var idat);
         return header with
         {
-            Pixels = InflateAndUnfilter(data, idat, header.Width, header.Height, header.SourceBitDepth, header.ColorType),
+            Pixels = header.Interlaced
+                ? InflateAdam7(data, idat, header.Width, header.Height, header.SourceBitDepth, header.ColorType)
+                : InflateAndUnfilter(data, idat, header.Width, header.Height, header.SourceBitDepth, header.ColorType),
         };
     }
 
@@ -157,8 +160,8 @@ public static class PngReader
                     throw new InvalidDataException($"Unsupported compression method {compressionMethod} (PNG only defines 0)");
                 if (filterMethod != 0)
                     throw new InvalidDataException($"Unsupported filter method {filterMethod} (PNG only defines 0)");
-                if (interlaceMethod != 0)
-                    throw new NotSupportedException("Adam7 interlacing not yet supported (InterlaceMethod=1)");
+                if (interlaceMethod > 1)
+                    throw new InvalidDataException($"Unknown interlace method {interlaceMethod} (PNG defines 0 and 1)");
                 ValidateColorTypeAndBitDepth(colorType.Value, bitDepth.Value);
             }
             else if (typeBytes.SequenceEqual("IDAT"u8))
@@ -261,6 +264,17 @@ public static class PngReader
         if (colorType == 3 && palette is null)
             throw new InvalidDataException("Indexed-color PNG missing required PLTE chunk");
 
+        // Deflate cannot expand more than 1032:1, so image data that would need more than that is cut
+        // short or the header lies. Refusing here keeps a forged header (2^30 × 2^30 over a few bytes)
+        // from reaching an allocation, or an int overflow, at all.
+        long compressed = 0;
+        foreach (var (_, length) in idatChunks)
+            compressed += length;
+        var inflatedSize = InflatedSize(width.Value, height!.Value, bitDepth!.Value, colorType!.Value, interlaceMethod == 1);
+        if (inflatedSize > compressed * 1032 + 1024)
+            throw new InvalidDataException(
+                $"{compressed} bytes of image data cannot inflate to the {inflatedSize} a {width}×{height} image needs");
+
         // The IDAT chunks are one zlib stream — the spec lets a producer split IDATs anywhere, even
         // mid-deflate-token — inflated by the caller, a row at a time.
         idat = idatChunks;
@@ -272,6 +286,7 @@ public static class PngReader
             BitDepth = bitDepth!.Value < 8 ? 8 : bitDepth.Value,
             SourceBitDepth = bitDepth.Value,
             ColorType = colorType!.Value,
+            Interlaced = interlaceMethod == 1,
             Pixels = [],
             Palette = palette,
             PaletteAlpha = paletteAlpha,
@@ -342,7 +357,7 @@ public static class PngReader
 
         fixed (byte* pinned = data)
         {
-            using var rows = new RowInflater(pinned, idat, rowBytes, height, width, bytesPerPixel);
+            using var rows = new RowInflater(pinned, idat, ((long)rowBytes + 1) * height, width, height, bytesPerPixel);
             for (var y = 0; y < height; y++)
             {
                 var row = pixels.AsSpan(y * rowBytes, rowBytes);
@@ -379,7 +394,7 @@ public static class PngReader
 
         fixed (byte* pinned = data)
         {
-            using var rows = new RowInflater(pinned, idat, packedBytes, height, width, 1);
+            using var rows = new RowInflater(pinned, idat, ((long)packedBytes + 1) * height, width, height, 1);
             for (var y = 0; y < height; y++)
             {
                 PngPredictor.UnfilterRow(rows.Read(row), row, above, 1);
@@ -411,12 +426,18 @@ public static class PngReader
             throw new ArgumentException($"Destination too small: {destination.Length} < {(long)dstStride * height} (Width*Height*4).", nameof(destination));
 
         var expander = new PngRgba8Expander(header.ColorType, bitDepth, header.Palette, header.PaletteAlpha);
+        if (header.Interlaced)
+        {
+            DecodeRgba8Adam7(data, header, idat, destination, expander, unfilter, expand);
+            return;
+        }
+
         var rowBytes = expander.RowBytes(width);
         var bytesPerPixel = bitDepth < 8 ? 1 : SamplesPerPixel(header.ColorType) * (bitDepth / 8);
 
         fixed (byte* pinned = data)
         {
-            using var rows = new RowInflater(pinned, idat, rowBytes, height, width, bytesPerPixel);
+            using var rows = new RowInflater(pinned, idat, ((long)rowBytes + 1) * height, width, height, bytesPerPixel);
             if (header.ColorType == 6 && bitDepth == 8)
             {
                 var firstRowAbove = new byte[rowBytes];
@@ -458,31 +479,228 @@ public static class PngReader
         }
     }
 
+    // ---------------- Adam7 (PNG specification §8.2) -----------------------------------------------
+
     /// <summary>
-    /// The IDAT zlib stream read one scanline at a time: <see cref="Read"/> fills a row and returns its
-    /// filter type, <see cref="Finish"/> rejects a stream with bytes past the last row. A stream that ends
-    /// early, or runs on, is an <see cref="InvalidDataException"/> naming the expected length. Only valid
-    /// inside the <c>fixed</c> scope that pinned the input.
+    /// The seven Adam7 passes: pass k holds the pixels at columns <c>X0 + i·Dx</c> and rows
+    /// <c>Y0 + j·Dy</c>, and is stored as an image of its own, filtered on its own (the row above a
+    /// pass's first row is all zeros).
+    /// </summary>
+    private static readonly (int X0, int Y0, int Dx, int Dy)[] Adam7Passes =
+        [(0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4), (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2)];
+
+    /// <summary>Pixels of a pass along one side: 0 when the image is too small to reach its start.</summary>
+    private static int PassExtent(int size, int start, int step) => size > start ? (size - start + step - 1) / step : 0;
+
+    /// <summary>
+    /// Bytes the image data inflates to: one filter byte plus the packed row, per row, per pass when
+    /// interlaced. An empty pass contributes nothing, not even filter bytes.
+    /// </summary>
+    internal static long InflatedSize(int width, int height, int bitDepth, int colorType, bool interlaced)
+    {
+        long bitsPerPixel = SamplesPerPixel(colorType) * bitDepth;
+        long RowBytes(long w) => (w * bitsPerPixel + 7) / 8;
+        if (!interlaced)
+            return (RowBytes(width) + 1) * height;
+
+        long total = 0;
+        foreach (var (x0, y0, dx, dy) in Adam7Passes)
+        {
+            long passWidth = PassExtent(width, x0, dx), passHeight = PassExtent(height, y0, dy);
+            if (passWidth > 0 && passHeight > 0)
+                total += (RowBytes(passWidth) + 1) * passHeight;
+        }
+        return total;
+    }
+
+    /// <summary>
+    /// <see cref="InflateAndUnfilter"/> for an Adam7 image: each pass is inflated and unfiltered a row
+    /// at a time in pooled row buffers, and its pixels are written to their places in the samples
+    /// (a sub-byte row is unpacked first). The samples come out exactly as a non-interlaced file of
+    /// the same image would give them.
+    /// </summary>
+    private static unsafe byte[] InflateAdam7(ReadOnlySpan<byte> data, List<(int Offset, int Length)> idat,
+        int width, int height, int bitDepth, int colorType)
+    {
+        var samplesPerPixel = SamplesPerPixel(colorType);
+        var filterBpp = bitDepth < 8 ? 1 : samplesPerPixel * (bitDepth / 8);
+        var pixelBytes = bitDepth < 8 ? 1 : filterBpp; // in the result: sub-byte samples are unpacked
+        var pixels = new byte[checked((long)width * height * pixelBytes)];
+        var maxRowBytes = checked((int)(((long)width * samplesPerPixel * bitDepth + 7) / 8));
+        var scratch = ArrayPool<byte>.Shared.Rent(checked(2 * maxRowBytes + (bitDepth < 8 ? width : 0)));
+        try
+        {
+            fixed (byte* pinned = data)
+            {
+                using var rows = new RowInflater(pinned, idat, InflatedSize(width, height, bitDepth, colorType, true),
+                    width, height, filterBpp);
+                foreach (var (x0, y0, dx, dy) in Adam7Passes)
+                {
+                    int passWidth = PassExtent(width, x0, dx), passHeight = PassExtent(height, y0, dy);
+                    if (passWidth == 0 || passHeight == 0)
+                        continue;
+
+                    var rowBytes = (int)(((long)passWidth * samplesPerPixel * bitDepth + 7) / 8);
+                    var current = scratch.AsSpan(0, rowBytes);
+                    var above = scratch.AsSpan(maxRowBytes, rowBytes);
+                    var unpacked = scratch.AsSpan(2 * maxRowBytes, bitDepth < 8 ? passWidth : 0);
+                    above.Clear();
+                    for (var r = 0; r < passHeight; r++)
+                    {
+                        PngPredictor.UnfilterRow(rows.Read(current), current, above, filterBpp);
+                        var y = y0 + r * dy;
+                        var target = pixels.AsSpan((y * width + x0) * pixelBytes);
+                        if (bitDepth < 8)
+                        {
+                            PngRgba8Expander.UnpackSubByte(current, unpacked, passWidth, bitDepth, scaleGray: colorType == 0);
+                            Scatter(unpacked, target, passWidth, 1, dx);
+                        }
+                        else
+                        {
+                            Scatter(current, target, passWidth, pixelBytes, dx);
+                        }
+
+                        var swap = above;
+                        above = current;
+                        current = swap;
+                    }
+                }
+                rows.Finish();
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(scratch);
+        }
+
+        return pixels;
+    }
+
+    /// <summary>
+    /// <see cref="DecodeRgba8"/> for an Adam7 image: each pass row is unfiltered and expanded to RGBA
+    /// in a pooled row, then its pixels are written to their places in the destination. The last pass
+    /// (every pixel of the odd rows) is expanded straight into the destination rows.
+    /// </summary>
+    private static unsafe void DecodeRgba8Adam7(ReadOnlySpan<byte> data, PngImage header, List<(int Offset, int Length)> idat,
+        Span<byte> destination, PngRgba8Expander expander, bool unfilter, bool expand)
+    {
+        int width = header.Width, height = header.Height, bitDepth = header.SourceBitDepth, colorType = header.ColorType;
+        var filterBpp = bitDepth < 8 ? 1 : SamplesPerPixel(colorType) * (bitDepth / 8);
+        var maxRowBytes = expander.RowBytes(width);
+        var scratch = ArrayPool<byte>.Shared.Rent(checked(2 * maxRowBytes + 4 * width));
+        try
+        {
+            fixed (byte* pinned = data)
+            {
+                using var rows = new RowInflater(pinned, idat, InflatedSize(width, height, bitDepth, colorType, true),
+                    width, height, filterBpp);
+                foreach (var (x0, y0, dx, dy) in Adam7Passes)
+                {
+                    int passWidth = PassExtent(width, x0, dx), passHeight = PassExtent(height, y0, dy);
+                    if (passWidth == 0 || passHeight == 0)
+                        continue;
+
+                    var rowBytes = expander.RowBytes(passWidth);
+                    var current = scratch.AsSpan(0, rowBytes);
+                    var above = scratch.AsSpan(maxRowBytes, rowBytes);
+                    var rgbaRow = scratch.AsSpan(2 * maxRowBytes, 4 * passWidth);
+                    above.Clear();
+                    for (var r = 0; r < passHeight; r++)
+                    {
+                        var filterType = rows.Read(current);
+                        if (unfilter)
+                            PngPredictor.UnfilterRow(filterType, current, above, filterBpp);
+                        if (expand)
+                        {
+                            var target = destination.Slice(((y0 + r * dy) * width + x0) * 4);
+                            if (dx == 1)
+                            {
+                                expander.Expand(current, target, passWidth);
+                            }
+                            else
+                            {
+                                expander.Expand(current, rgbaRow, passWidth);
+                                Scatter(rgbaRow, target, passWidth, 4, dx);
+                            }
+                        }
+
+                        var swap = above;
+                        above = current;
+                        current = swap;
+                    }
+                }
+                rows.Finish();
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(scratch);
+        }
+    }
+
+    /// <summary>
+    /// Writes <paramref name="count"/> pixels of <paramref name="pixelBytes"/> bytes, packed in
+    /// <paramref name="source"/>, to every <paramref name="step"/>-th pixel of <paramref name="target"/>.
+    /// </summary>
+    private static void Scatter(ReadOnlySpan<byte> source, Span<byte> target, int count, int pixelBytes, int step)
+    {
+        // The one check every unchecked access below relies on: the last pixel read ends inside source,
+        // the last pixel written ends inside target.
+        if (count <= 0)
+            return;
+        if (source.Length < count * pixelBytes || target.Length < ((long)(count - 1) * step + 1) * pixelBytes)
+            throw new ArgumentException("Adam7 scatter out of range");
+
+        ref var s = ref MemoryMarshal.GetReference(source);
+        ref var t = ref MemoryMarshal.GetReference(target);
+        var stride = step * pixelBytes;
+        switch (pixelBytes)
+        {
+            case 1:
+                for (var i = 0; i < count; i++)
+                    Unsafe.Add(ref t, i * stride) = Unsafe.Add(ref s, i);
+                break;
+            case 2:
+                for (var i = 0; i < count; i++)
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref t, i * stride), Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref s, 2 * i)));
+                break;
+            case 4:
+                for (var i = 0; i < count; i++)
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref t, i * stride), Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref s, 4 * i)));
+                break;
+            case 8:
+                for (var i = 0; i < count; i++)
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref t, i * stride), Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref s, 8 * i)));
+                break;
+            default: // 3 and 6
+                for (var i = 0; i < count; i++)
+                    source.Slice(i * pixelBytes, pixelBytes).CopyTo(target.Slice(i * stride, pixelBytes));
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The IDAT zlib stream read one scanline at a time: <see cref="Read"/> fills a row (of any length:
+    /// Adam7's passes differ) and returns its filter type, <see cref="Finish"/> rejects a stream with
+    /// bytes past the last row. A stream that ends early, or runs on, is an
+    /// <see cref="InvalidDataException"/> naming the <paramref name="expected"/> total. Only valid inside
+    /// the <c>fixed</c> scope that pinned the input.
     /// </summary>
     private sealed unsafe class RowInflater(byte* data, List<(int Offset, int Length)> idat,
-        int rowBytes, int height, int width, int bytesPerPixel) : IDisposable
+        long expected, int width, int height, int bytesPerPixel) : IDisposable
     {
         // ZLibStream is the .NET 6+ wrapper that handles the 2-byte zlib header
         // + Adler32 trailer around the raw deflate bitstream.
         private readonly ZLibStream _z = new(new IdatStream(data, idat), CompressionMode.Decompress);
         private readonly byte[] _filterType = new byte[1];
         private long _inflated;
-        private int _row;
-
-        private long Expected => ((long)rowBytes + 1) * height;
 
         public byte Read(Span<byte> row)
         {
-            _inflated += ReadFully(_z, _filterType);
-            _inflated += ReadFully(_z, row[..rowBytes]);
-            _row++;
-            if (_inflated != (long)_row * (rowBytes + 1))
-                throw LengthMismatch(_inflated, Expected, width, height, bytesPerPixel);
+            var got = ReadFully(_z, _filterType) + ReadFully(_z, row);
+            _inflated += got;
+            if (got != row.Length + 1)
+                throw LengthMismatch(_inflated, expected, width, height, bytesPerPixel);
             return _filterType[0];
         }
 
@@ -490,7 +708,7 @@ public static class PngReader
         {
             // A byte past the last row is as much a mismatch as a row short.
             if (_z.Read(_filterType) != 0)
-                throw LengthMismatch(Expected + 1, Expected, width, height, bytesPerPixel);
+                throw LengthMismatch(expected + 1, expected, width, height, bytesPerPixel);
         }
 
         public void Dispose() => _z.Dispose();
@@ -664,6 +882,12 @@ public sealed record PngImage
 
     /// <summary>PNG color type: 0=Gray, 2=RGB, 3=Indexed, 4=Gray+Alpha, 6=RGBA.</summary>
     public required int ColorType { get; init; }
+
+    /// <summary>
+    /// True when the file is Adam7-interlaced (IHDR interlace method 1). <see cref="Pixels"/> is in plain
+    /// row-major order either way: the passes are put back into place while decoding.
+    /// </summary>
+    public bool Interlaced { get; init; }
 
     /// <summary>
     /// Raw unfiltered sample bytes in row-major order. For 16-bit images the

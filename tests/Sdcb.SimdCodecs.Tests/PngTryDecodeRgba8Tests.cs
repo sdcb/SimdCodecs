@@ -70,22 +70,35 @@ public sealed class PngTryDecodeRgba8Tests
     }
 
     [Fact]
-    public void Adam7_IsFalseRatherThanThrowing()
+    public void Adam7_DecodesThroughEveryEntryPoint()
     {
-        // PngReader.Decode throws NotSupportedException for Adam7. TryDecodeIntoRgba8 used to let
-        // that escape; every Try entry point now goes through PngReader.TryDecode.
+        // Adam7 used to be refused (and once escaped TryDecodeIntoRgba8 as NotSupportedException).
+        // Every entry point now decodes it to the pixels that were written.
         var rgb = new byte[16 * 16 * 3];
         new Random(7).NextBytes(rgb);
         using var img = new MagickImage();
         img.ReadPixels(rgb, new PixelReadSettings(16, 16, StorageType.Char, "RGB"));
         img.Settings.Interlace = Interlace.Png;
+        // 256 random pixels fit a palette, which ImageMagick would otherwise choose.
+        img.Settings.SetDefine(MagickFormat.Png, "color-type", "2");
         var png = img.ToByteArray(MagickFormat.Png);
+        (png[25], png[28]).ShouldBe(((byte)2, (byte)1));
 
-        Should.Throw<NotSupportedException>(() => PngReader.Decode(png));
-        PngReader.TryDecode(png, out var decoded).ShouldBeFalse();
-        decoded.ShouldBeNull();
-        PngImageDecoder.TryDecodeRgba8(png, out _, out _, out _).ShouldBeFalse();
-        PngImageDecoder.TryDecodeIntoRgba8(png, new byte[16 * 16 * 4]).ShouldBeFalse();
+        var expected = new byte[16 * 16 * 4];
+        for (var i = 0; i < 16 * 16; i++)
+        {
+            rgb.AsSpan(3 * i, 3).CopyTo(expected.AsSpan(4 * i));
+            expected[4 * i + 3] = 255;
+        }
+
+        PngReader.Decode(png).Pixels.ShouldBe(rgb);
+        PngReader.TryDecode(png, out var decoded).ShouldBeTrue();
+        decoded.Interlaced.ShouldBeTrue();
+        PngImageDecoder.TryDecodeRgba8(png, out var rgba, out _, out _).ShouldBeTrue();
+        rgba.ShouldBe(expected);
+        var into = new byte[16 * 16 * 4];
+        PngImageDecoder.TryDecodeIntoRgba8(png, into).ShouldBeTrue();
+        into.ShouldBe(expected);
     }
 
     [Fact]

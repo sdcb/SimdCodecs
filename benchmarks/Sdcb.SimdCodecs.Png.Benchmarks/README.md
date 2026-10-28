@@ -48,8 +48,7 @@ within 1 for 16-bit sources (narrowing 16 → 8 bits by truncation or by roundin
 every output is decoded and must reproduce the source samples exactly, in the requested colour type and
 depth. Known notes: libpng's simplified API converts 16-bit sources differently when reading to 8-bit
 RGBA (it disagrees by far more than 1, so it is not timed there), and its RGBA16 write does not
-reproduce the samples. Adam7 cases read "unsupported" for our decoder until it implements interlacing;
-the competitors' numbers there are the target.
+reproduce the samples.
 
 `verify` runs exactly these checks over every selected case without timing anything.
 

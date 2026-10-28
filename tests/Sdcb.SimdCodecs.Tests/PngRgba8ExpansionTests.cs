@@ -105,10 +105,12 @@ public sealed class PngRgba8ExpansionTests
     /// A PNG of the given colour type and depth, written by ImageMagick (libpng) from deterministic
     /// content: grey levels the depth can hold, at most as many colours as an indexed depth holds,
     /// alpha that varies, and for 16 bits samples whose low bytes differ from their high bytes.
+    /// The content depends only on the arguments other than <paramref name="interlace"/>, so the
+    /// interlaced and non-interlaced files of one case hold the same pixels.
     /// </summary>
-    private static byte[] Encode(int colorType, int depth, bool paletteAlpha, int width)
+    internal static byte[] Encode(int colorType, int depth, bool paletteAlpha, int width, int height = Height, bool interlace = false)
     {
-        var random = new Random(colorType * 1000 + depth * 100 + width);
+        var random = new Random(colorType * 1000 + depth * 100 + width * 7 + height);
         var hasAlpha = colorType is 4 or 6 || paletteAlpha;
         // An indexed image keeps a palette entry spare, as ImageMagick writes one more than it is given.
         var colours = colorType == 3 ? Math.Min(200, (1 << depth) - 1) : 0;
@@ -117,8 +119,8 @@ public sealed class PngRgba8ExpansionTests
                 A: paletteAlpha ? (ushort)(random.Next(256) * 257) : ushort.MaxValue))
             .ToArray();
 
-        var samples = new ushort[width * Height * 4];
-        for (var i = 0; i < width * Height; i++)
+        var samples = new ushort[width * height * 4];
+        for (var i = 0; i < width * height; i++)
         {
             ushort r, g, b, a = ushort.MaxValue;
             if (colorType == 3)
@@ -155,7 +157,9 @@ public sealed class PngRgba8ExpansionTests
 
         using var image = new MagickImage();
         image.ReadPixels(System.Runtime.InteropServices.MemoryMarshal.AsBytes(samples.AsSpan()).ToArray(),
-            new PixelReadSettings((uint)width, Height, StorageType.Short, "RGBA"));
+            new PixelReadSettings((uint)width, (uint)height, StorageType.Short, "RGBA"));
+        if (interlace)
+            image.Settings.Interlace = Interlace.Png;
         if (colorType == 3)
             image.ColorType = hasAlpha ? ColorType.PaletteAlpha : ColorType.Palette;
         image.Settings.SetDefine(MagickFormat.Png, "bit-depth", depth.ToString(CultureInfo.InvariantCulture));
@@ -166,7 +170,7 @@ public sealed class PngRgba8ExpansionTests
         var png = image.ToByteArray(MagickFormat.Png);
 
         // IHDR's depth, colour type and interlace, so each case is what it says it is.
-        (png[24], png[25], png[28]).ShouldBe(((byte)depth, (byte)colorType, (byte)0));
+        (png[24], png[25], png[28]).ShouldBe(((byte)depth, (byte)colorType, (byte)(interlace ? 1 : 0)));
         if (paletteAlpha)
             png.AsSpan().IndexOf("tRNS"u8).ShouldBeGreaterThan(0);
         return png;
@@ -207,7 +211,7 @@ public sealed class PngRgba8ExpansionTests
         return ms.ToArray();
     }
 
-    private static void Chunk(Stream s, ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)
+    internal static void Chunk(Stream s, ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)
     {
         Span<byte> be = stackalloc byte[4];
         BinaryPrimitives.WriteInt32BigEndian(be, data.Length);

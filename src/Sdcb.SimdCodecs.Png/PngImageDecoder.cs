@@ -92,7 +92,7 @@ public sealed class PngImageDecoder : IImageDecoder
     /// nothing else references, so a caller can adopt it (DIR.Lib's <c>RgbaImage(width, height, pixels)</c>)
     /// rather than copy it.
     /// </summary>
-    /// <remarks>False for a stream this reader rejects (Adam7 interlace, sub-byte depths, a corrupt
+    /// <remarks>False for a stream this reader rejects (a corrupt
     /// file) and, like <see cref="TryDecodeIntoRgba8"/>, for cICP PQ/HLG-tagged files.</remarks>
     public static bool TryDecodeRgba8(ReadOnlySpan<byte> data, [NotNullWhen(true)] out byte[]? rgba, out int width, out int height)
     {
