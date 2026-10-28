@@ -1,10 +1,6 @@
-# Sdcb.SimdCodecs
+# Sdcb.SimdCodecs [![CI](https://github.com/sdcb/SimdCodecs/actions/workflows/dotnet.yml/badge.svg)](https://github.com/sdcb/SimdCodecs/actions/workflows/dotnet.yml) [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **English** | [简体中文](README.zh-CN.md)
-
-[![CI](https://github.com/sdcb/SimdCodecs/actions/workflows/dotnet.yml/badge.svg)](https://github.com/sdcb/SimdCodecs/actions/workflows/dotnet.yml)
-[![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, JPEG 2000 and JBIG2, plus EXIF and ICC.
 No native dependencies, NativeAOT-compatible, and SIMD-accelerated (AVX2, SSE, AdvSimd) with a scalar

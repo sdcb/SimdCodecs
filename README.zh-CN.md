@@ -1,10 +1,6 @@
-# Sdcb.SimdCodecs
+# Sdcb.SimdCodecs [![CI](https://github.com/sdcb/SimdCodecs/actions/workflows/dotnet.yml/badge.svg)](https://github.com/sdcb/SimdCodecs/actions/workflows/dotnet.yml) [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [English](README.md) | **简体中文**
-
-[![CI](https://github.com/sdcb/SimdCodecs/actions/workflows/dotnet.yml/badge.svg)](https://github.com/sdcb/SimdCodecs/actions/workflows/dotnet.yml)
-[![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 纯托管的 .NET 10 图像编解码库：JPEG、PNG、TIFF、WebP、JPEG 2000、JBIG2，外加 EXIF 和 ICC。
 没有任何原生依赖，兼容 NativeAOT，用 SIMD（AVX2、SSE、AdvSimd）加速，并带标量回退。
