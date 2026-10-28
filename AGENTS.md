@@ -1,207 +1,107 @@
 # AGENTS.md
 
-Guidance for humans and coding agents working in this repository.
+Decisions already made for this repository. The how-to lives next to the code it is about:
+[`tests/Sdcb.SimdCodecs.Tests/Oracle/README.md`](tests/Sdcb.SimdCodecs.Tests/Oracle/README.md) (oracles,
+goldens, quality gates) and [`benchmarks/README.md`](benchmarks/README.md) (how to measure, and the
+lessons behind these rules).
 
-## What this is
+## Goal
 
-`Sdcb.SimdCodecs` — pure-managed .NET 10 image codecs (JPEG, PNG, TIFF, EXIF, ICC, JBIG2,
-JPEG 2000, WebP decode) plus a sniff-and-dispatch facade. MIT (`LICENSE`). Derived from the
-upstream credited in `README.md` (Unlicense); its JPEG XR, JPEG XL and OpenEXR codecs were
-deliberately not carried over (they were ported from third-party implementations: jxrlib, jxl-oxide).
+Pure-managed .NET 10 image codecs plus a sniff-and-dispatch facade, where **every encoder and
+decoder is world-class** — not a minimal "it works" codec in the stb mould: AVX2/AVX-512 → Vector128
+→ scalar, low memory, at or beyond the reference native library (libjpeg-turbo, libpng, libwebp, …)
+and ImageSharp. **Measure first**, end to end.
 
-Long-term goal: a world-class JPEG decoder (AVX2/AVX-512 → Vector128 → scalar), low memory,
-at or beyond libjpeg-turbo and ImageSharp. **Measure first** — see `benchmarks/`.
+Tuned against that bar so far: JPEG encode and decode, WebP decode, PNG encode and decode (each has a
+benchmark project). The other codecs are correct and tested but not yet optimised; bring one up to
+the bar the same way — a benchmark project with a native and a managed competitor first, then
+changes that it proves.
 
 ## Clean-room rules (non-negotiable)
 
-- **Never read, decompile, step into with a debugger, or paraphrase** the source of:
-  ImageSharp (Six Labors licence), libjpeg-turbo, libjpeg / IJG, jxl-oxide, libjxl, jxrlib,
-  OpenEXR, libwebp, libvpx (and the reference decoder source printed in RFC 6386 §20), or any
-  GPL/AGPL code (e.g. jbig2dec).
-- They **may be used as black-box binaries**: to benchmark, to compare outputs, to generate
-  test data. Running a program or calling a released binary through its documented API is
-  not reading its source.
-- Algorithms may only come from: ITU-T specs (T.81, T.83, T.88, T.800, …) and their ISO twins,
-  the prose and tables of RFC 6386 (VP8) and RFC 9649 (WebP) -- not the source code in RFC 6386 §20,
-  academic papers (AAN, Loeffler–Ligtenberg–Moschytz, …), CPU vendor optimisation manuals and
-  instruction tables, and public-domain code (stb_image — the JPEG decoder's marker/entropy
-  layer is a port of it; the decoder's sample arithmetic is defined in-repo from T.81/T.871, see
-  `JpegIdct`, `JpegResample`, `JpegColor`; the encoder is written from T.81 (Annexes A, F, G, K),
-  T.871 and the AAN paper, see `JpegEncoderKernels`, `JpegProgressiveEncoder`).
-- Anything of uncertain provenance does not go into the repo — code, comments, test fixtures
-  or images. Third-party test images are fetched by URL + SHA-256 into git-ignored caches,
-  never committed, and must be Public Domain or CC0.
+- **Never read, decompile, step into with a debugger, or paraphrase** the source of ImageSharp,
+  libjpeg-turbo, libjpeg / IJG, libpng, jxl-oxide, libjxl, jxrlib, OpenEXR, libwebp, libvpx
+  (including the decoder source printed in RFC 6386 §20), or any GPL/AGPL code (e.g. jbig2dec).
+- They **may** be used as black-box binaries — to benchmark, compare outputs, generate test data —
+  through their documented APIs. Interop comes from the published docs and is self-checked against
+  the binary (`TurboJpeg.SelfCheck`, `LibPng.SelfCheck`), never from headers.
+- Algorithms come only from: ITU-T / ISO specs (T.81, T.83, T.88, T.800, …), the PNG specification,
+  the prose and tables of RFC 6386 / RFC 9649, academic papers, CPU vendor manuals, and public-domain
+  code (stb_image: the JPEG marker/entropy layer is a port of it). The JPEG sample arithmetic and
+  encoder are defined in-repo from T.81, T.871 and the AAN paper.
+- The upstream's JPEG XR, JPEG XL and OpenEXR codecs (ports of jxrlib and jxl-oxide) were dropped on
+  purpose; do not bring them back.
+- Nothing of uncertain provenance enters the repo — code, comments, fixtures or images. Third-party
+  test images are Public Domain or CC0, fetched by URL + SHA-256 into git-ignored caches, never
+  committed.
+- Do not port third-party code of any licence, even small snippets: every file is first-party MIT,
+  with no third-party notices to carry.
 
-## Layout and conventions
+## Repository decisions
 
-- `src/Sdcb.SimdCodecs.*` — one package per codec; PackageId = assembly = root namespace.
-- `tests/Sdcb.SimdCodecs.Tests` — one xunit v3 + Shouldly project for everything; Magick.NET
-  (ImageMagick: libjpeg, libtiff, libpng) is a test-only black-box encoder/oracle.
-- `benchmarks/Sdcb.SimdCodecs.*.Benchmarks` — in `SimdCodecs.slnx` (so CI compiles them; it never runs
-  them). BenchmarkDotNet harnesses, see `benchmarks/README.md`:
-  - `Jpeg` — decode/encode vs libjpeg-turbo and ImageSharp, accuracy and encoder quality gates.
-  - `Png` — every decode (colour type × bit depth × interlace) and encode (layout × compression level)
-    combination vs ImageSharp and libpng (simplified API, optional); inputs generated into `.cache/`.
-  - `Webp` — decode vs libwebp (P/Invoke into the released shared library). Inputs in `webp-inputs/`
-    are synthetic and generated by `generate-webp-inputs.sh`.
-- `src/*/linqpad-samples/*.linq` — LINQPad samples, packed into each package by `Directory.Build.props`.
-  They download images from `cv-public.sdcb.ai/simdcodecs/samples/v1/`, made by
-  `tools/sample-assets/make-assets.sh` (sources and SHA-256 in `assets.tsv`); never commit the images.
-- `tests/Sdcb.SimdCodecs.AotSmoke` — NativeAOT smoke test (**not** in `SimdCodecs.slnx`):
-  `run.sh` decodes the same inputs under the JIT and as NativeAOT binaries (default and
-  `native` instruction sets) and diffs the pixel digests.
-- `net10.0`, `Nullable` + `ImplicitUsings`, `IsAotCompatible=true`, embedded debug symbols.
-- Package dependency versions live in `Directory.Packages.props` (central management).
-  Packages ship in lockstep: release versions come from the Git tag; non-release
-  builds use `VersionMajorMinor` in `Directory.Build.props` and CI run information.
-- Names that the compiler cannot check: `InternalsVisibleTo` (Abstractions exposes the
-  internal `MqDecoder` to Jbig2 and Jpeg2000), embedded resource manifest names
-  (`Sdcb.SimdCodecs.Color.Icc.sRGB-v4.icc`), and paths in tests/scripts.
+- One package per codec (`src/Sdcb.SimdCodecs.*`, PackageId = assembly = root namespace); packages
+  ship in lockstep, versioned from the Git tag. Package versions are central
+  (`Directory.Packages.props`).
+- One test project for everything (xunit v3 + Shouldly); Magick.NET is the test-only black box.
+- Benchmarks are in `SimdCodecs.slnx` (compiled by CI, never run by it). The NativeAOT smoke test
+  (`tests/Sdcb.SimdCodecs.AotSmoke`) is not.
+- Sample images are downloaded at run time, never committed (`tools/sample-assets/`).
+- Names the compiler cannot check — `InternalsVisibleTo`, embedded resource names
+  (`Sdcb.SimdCodecs.Color.Icc.sRGB-v4.icc`), paths in tests and scripts — break silently on rename.
 
-## Build and test
+## Build, test, warnings
 
 ```bash
 dotnet build SimdCodecs.slnx -c Release
-dotnet test  SimdCodecs.slnx -c Release
-dotnet test  tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg"
-REQUIRE_ORACLES=1 dotnet test SimdCodecs.slnx -c Release   # what CI runs
-
-# Every JPEG vector kernel has a Vector256 -> Vector128 -> scalar ladder; force the lower tiers:
-DOTNET_EnableAVX2=0        dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg"
-DOTNET_EnableHWIntrinsic=0 dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg"
-# Soak the mutation fuzzer after touching the entropy decoder (default run is 4000 mutants):
-JPEG_FUZZ_ITERATIONS=300000 dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~JpegFuzz"
-bash tests/Sdcb.SimdCodecs.AotSmoke/run.sh                 # NativeAOT == JIT, needs AOT prerequisites
+REQUIRE_ORACLES=1 dotnet test SimdCodecs.slnx -c Release            # what CI runs
+DOTNET_EnableAVX2=0        dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg|FullyQualifiedName~Png"
+DOTNET_EnableHWIntrinsic=0 dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg|FullyQualifiedName~Png"
+bash tests/Sdcb.SimdCodecs.AotSmoke/run.sh                          # NativeAOT output == JIT output
 ```
 
-CI runs all of these (the forced tiers in the build job, plus `jpeg-arm64` on an AdvSimd runner
-and `jpeg-aot`).
+- **No new warnings.** The build stays at its current set (pre-existing XML-doc warnings only); fix
+  what you introduce, never suppress it.
+- **A skipped oracle is not a passing oracle.** Oracle tests skip when their tool is missing; read the
+  skip messages, or run with `REQUIRE_ORACLES=1`.
+- Every vector kernel has a scalar twin and must produce identical output on every tier
+  (Vector256 / Vector128 / scalar, x64 and arm64); CI forces each tier.
+- After touching the JPEG entropy decoder, soak the fuzzer:
+  `JPEG_FUZZ_ITERATIONS=300000 … --filter "FullyQualifiedName~JpegFuzz"`.
 
-No new warnings: the build must stay at its current warning set (all pre-existing XML-doc
-warnings); fix rather than suppress anything you introduce.
+## Output contracts
 
-## Oracles — how to get them
+- **Never regenerate a golden to make a test pass.** A golden (`Fixtures/*-golden.tsv`) moves only for
+  an intentional, reviewed output change, with the diff as part of the review. Pinned oracle versions
+  (OpenJPEG, libjpeg-turbo, libwebp) are contract too.
+- **The JPEG decoder's arithmetic is frozen** (`JpegIdct`, `JpegResample`, `JpegColor`): every tier and
+  fast path reproduces its operation sequence bit for bit — no FMA, no reassociation. Changing it
+  requires passing `accuracy --gate` first and lands as its own commit with the gate table.
+- **The JPEG encoder's contract is quality, not bytes:** `encode --gate` must pass, and optimised /
+  progressive streams decode to exactly the baseline's pixels.
+- **WebP decode is byte-exact against libwebp 1.6.0.** PNG decode is lossless: exact equality, never
+  a tolerance.
 
-Every oracle test **skips** when its tool is missing, so a clean clone stays green. That means
-*a silently skipped oracle is not a passing oracle*: read the skip messages, and run with
-`REQUIRE_ORACLES=1` (CI does), which turns a missing oracle into a failure.
+Gate thresholds and the oracle set: [`Oracle/README.md`](tests/Sdcb.SimdCodecs.Tests/Oracle/README.md).
 
-| Oracle | Used for | Get it (Linux / Windows Git Bash) |
-|---|---|---|
-| `jpegenc` (stb_image_write, PD) | JPEG encoder byte-exactness | `bash tests/Sdcb.SimdCodecs.Tests/Oracle/jpegenc/build.sh` — pinned header (SHA-256), built with clang or `zig cc` into `Oracle/bin/` |
-| OpenJPEG 2.5.4 (BSD-2, binary only) | JPEG 2000 lossy path | `bash tests/Sdcb.SimdCodecs.Tests/Oracle/jpeg2000/fetch.sh` — official release, SHA-256 pinned |
-| jbig2dec (AGPL, binary only) | JBIG2 conformance | Linux: `apt-get install jbig2dec`; Windows: `bash tests/Sdcb.SimdCodecs.Tests/Oracle/jbig2/fetch-windows.sh` (MSYS2 build, SHA-256 pinned) |
-| libwebp `dwebp` / `anim_dump` (BSD-3, binary only) | WebP live comparisons (`WebpOracleTests`, `WebpAnimationOracleTests`); digests in `Fixtures/webp/*-golden.tsv` run without them | Linux: `apt-get install webp`; or put libwebp release binaries on `PATH` / set `DWEBP` + `ANIM_DUMP`; `bash tests/Sdcb.SimdCodecs.Tests/Oracle/webp/build.sh` builds `anim_dump` 1.6.0 (the version the digests were made with) |
-| Magick.NET (NuGet) | JPEG inputs, libjpeg tolerance check, Group 4 MMR, tiled TIFF | nothing to install |
-| libjpeg-turbo 3.2.0 (binary only) | JPEG decode benchmark + accuracy tables | `bash benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/scripts/fetch-libjpeg-turbo.sh` — official release, SHA-256 pinned, only `bin/` extracted (Windows needs 7-Zip) |
-| ImageSharp 3.1.12 (NuGet, binary only) | JPEG decode benchmark | benchmark project only; 3.2.0/4.x need a Six Labors license key to build |
+## Validation
 
-Golden digests are part of the contract:
+- Exact assertions over tolerances; foreign bytes (Magick.NET, hand-assembled streams, OpenJPEG,
+  jbig2enc) over round trips through our own encoder.
+- When a test should catch a deliberate bug, break the code and confirm that it does.
+- Untrusted input fails with `InvalidDataException` (or `false` from `Try*`) — never a hang,
+  unbounded allocation, `OverflowException` or `OutOfMemoryException`.
+- `Unsafe` / `MemoryMarshal` access in hot loops only where one up-front check proves every index in
+  range, with the proof in a comment beside it. Fuzz tests are the safety net, not the proof.
+- `JpegDecoder.DecodeTo` into a caller buffer allocates nothing (`JpegAllocationTests`); its per-thread
+  state cache is reset on every rent — new fields go into the `Reset` methods.
 
-- `Fixtures/jpeg-oracle-golden.tsv` pins the JPEG decoder's RGBA output: the arithmetic defined
-  in `JpegIdct` (single-precision T.81 IDCT), `JpegResample` (16×-scale linear chroma
-  interpolation) and `JpegColor` (T.871), frozen once the accuracy tables showed it at least as
-  close to a double-precision reference as libjpeg-turbo. Performance work keeps it: every ISA
-  tier (Vector256 / Vector128 / scalar) and every fast path reproduces that operation sequence
-  bit for bit — no FMA, no reassociation (`JpegIdctEquivalenceTests` compares the pre-rounding
-  floats, because a reordered sum rarely moves a rounded byte). An arithmetic change that is
-  worth moving it for must pass the quality gate on the matrix first —
-  `dotnet run -c Release -- accuracy --gate` in the benchmark project, against a `baseline` of
-  the parent commit: per group RGB PSNR within 0.2 dB of the baseline, ≥ 0.5 dB above
-  libjpeg-turbo where chroma is interpolated (4:4:4: not below it), peak error ≤ 2, IEEE 1180
-  limits met — and land as its own commit with the gate table in the message.
-- The JPEG encoder has no byte golden: its contract is quality. `encode --gate` in the benchmark
-  project must pass (per configuration on the corpus: PSNR-Y ≥ libjpeg-turbo, size ≤ +1%, in
-  baseline, optimised-Huffman and progressive mode), optimised / progressive streams must decode
-  to exactly the baseline's pixels, and the kernels stay identical across ISA tiers
-  (`JpegEncoderEquivalenceTests`) so output does not depend on the machine.
-- `Fixtures/webp/webp-oracle-golden.tsv` and `webp-animation-oracle-golden.tsv` pin the WebP
-  decoder's RGBA output byte for byte against libwebp 1.6.0; the vector paths (VP8L predictors,
-  fancy upsampling) are asserted equal to their scalar twins by the `*EquivalenceTests`.
-- Never regenerate a golden (e.g. `REGEN_JPEG_ORACLE=1`) to make a
-  test pass. A golden only moves for an intentional, reviewed output change, and the diff is
-  part of that review. Pins (OpenJPEG version, libjpeg-turbo version) are contract
-  too: bumping one can change expected bytes.
+## Performance work
 
-## Validation discipline
+Read [`benchmarks/README.md`](benchmarks/README.md) before optimising anything. The rules:
 
-- Prefer exact assertions (byte equality, golden digests, reversible round-trips) over
-  tolerances; a global tolerance throws away the sharpest check a format offers.
-- An independent implementation beats a round-trip: a test encoder that shares code with the
-  decoder shares its bugs. Use foreign bytes (Magick.NET, hand-assembled streams, jbig2enc,
-  OpenJPEG) wherever possible.
-- When a check should have caught a deliberate bug, break the code and confirm it does.
-- Untrusted input must fail with `InvalidDataException` (or return `false` from `Try*`), never
-  hang, allocate unboundedly, or throw `OverflowException` / `OutOfMemoryException`.
-- Unchecked (`Unsafe` / `MemoryMarshal`) access in the JPEG hot loops is allowed only where one
-  up-front check proves every index in range (state the proof in a comment next to it).
-  `JpegFuzzTests` is the safety net, not the proof: an out-of-range unsafe write need not crash.
-- `TestJpegWriter` (tests) is an independent baseline writer for streams stock encoders never
-  produce (any sampling, non-interleaved scans, colour restarts, YCCK/RGB, cut streams); its
-  output is checked against libjpeg before anything is pinned with it.
-- `JpegDecoder.DecodeTo` into a caller buffer allocates nothing on the managed heap
-  (`JpegAllocationTests`); per-decode state comes from a per-thread cache that is reset to
-  "freshly constructed" on every rent — add new fields to the `Reset` methods.
-
-## Benchmarking lessons (read before optimising anything)
-
-- **Attribute time by instrumentation + ablation, not by a sampling profiler.** A sampled-
-  thread-time `dotnet-trace` once attributed decode time to `Monitor.Enter_Slowpath`; an A/B
-  run disproved it immediately. Time stages with explicit timers, and measure what disappears
-  when a stage is switched off.
-- **A kernel's isolated speed-up is not the decoder's speed-up.** A kernel timed alone in a hot
-  loop has the cache and memory bandwidth to itself. One change measured 5× faster in isolation
-  and moved the end-to-end decode by under 6%. A "faster" vectorised colour converter once
-  measured 42% *slower* in the real pipeline (it was store-bound). Only the end-to-end number
-  decides whether a change worked.
-- **A number from a previous session is not a baseline.** Machine state moves results by >10%.
-  Compare A and B back-to-back in the same run (BenchmarkDotNet, same process launch), and
-  re-measure the baseline every time. The benchmark's `baseline [git-ref]` + `ab [--ablate]`
-  commands do exactly this: the previous commit's decoder is loaded side by side with the
-  current one, and `--ablate` reports each stage's cost as the time that disappears when it is
-  skipped (`JpegAblation`). BenchmarkDotNet rebuilds from source when it starts, so to keep
-  editing while it runs, measure from a `git worktree` of the commit with
-  `SIMDCODECS_BENCH_ROOT` pointing at the main checkout's benchmark directory (corpus,
-  libjpeg-turbo and baseline caches live there), and do not build while it is timing.
-- **Dynamic PGO can make one file 2–3× slower than its neighbours.** Tiered PGO inlined the
-  hot IDCT call chain into the scan loop and ran out of inlining budget for the
-  `AggressiveInlining` Vector256 helpers, which then passed vectors through memory — only for
-  files whose warm-up profile tipped it (444-q95 sea-ibiza: 36 ms, 13.8 ms with
-  `DOTNET_TieredPGO=0`). A single-file outlier that its `-opt` twin does not share is a JIT
-  effect, not the algorithm: re-run it with `DOTNET_TieredPGO=0`. Vector kernels are
-  `NoInlining | AggressiveOptimization` for that reason; keep new ones that way.
-- **Read the JIT's code before guessing.** `DOTNET_JitDisasm=<method>` with
-  `DOTNET_JitStdOutFile=<file>` (and `DOTNET_TieredCompilation=0` in a throwaway probe, or
-  tier-0 code gets timed) found every one of these, each worth 5–18% end to end:
-  - Since .NET 9, `Vector128/256.Min/Max` on floats follow IEEE 754-2019 (NaN, ±0) and
-    `ConvertToInt32` saturates: each is a compare/blend sequence (~10 instructions per vector).
-    Use `MinNative` / `MaxNative` / `ConvertToInt32Native` where inputs are never NaN.
-  - An `out` argument pins the caller's local to the stack for the whole method: a slow-path
-    helper with `out len` put a store + reload on the Huffman decoder's critical chain. Return
-    packed values instead. The same goes for `ref` to non-inlined callees.
-  - A branch on a data bit (a coefficient sign, a progressive correction bit) mispredicts about
-    half the time; make it arithmetic.
-- **Don't count multiplies; count what the core is short of.** Zen 3 runs float adds and
-  multiplies/FMAs on separate pipe pairs, plus shuffles: a hand-derived 5-multiply AAN IDCT was
-  no faster than the 22-multiply direct form (same adds), and the IDCT's real cost was codegen
-  (above), register spills and the Windows ABI's xmm6–15 saves.
-- **Interleave latency-bound and throughput-bound work.** Entropy decoding is one serial
-  dependency chain (~8 cycles per symbol); the IDCT is wide float work. Decoding a block and
-  transforming it straight away lets the out-of-order core overlap the two; decoding a whole
-  MCU first and transforming afterwards measured 2–7% *slower*.
-- `ab --ablate` also times libjpeg-turbo decoding to component planes (entropy + IDCT, no
-  upsampling or colour), giving its stage split as a black box — compare like with like before
-  deciding which of our stages is behind.
-- Check correctness before timing: the benchmark refuses to time a decoder whose output differs
-  from the others by PSNR ≤ 40 dB, so a broken fast path cannot post a good number.
-- Interop with a black box comes from its published API docs, then gets verified against the
-  binary's behaviour (see `TurboJpeg.SelfCheck`) — never from its headers or sources.
-- BenchmarkDotNet `--filter` matches `Namespace.Type.Method`, not `Description` text.
-- Record CPU, OS, .NET version and `Vector256/512.IsHardwareAccelerated` with every result.
-
-## Licence
-
-The repository is MIT (`LICENSE`); new code is contributed under it. The clean-room rules above
-still hold: do not port third-party code — permissive (MIT/BSD/Apache) or copyleft — even
-"small" snippets. Every file stays first-party, so the whole tree ships under one licence with
-no third-party notices to carry.
+- Only an end-to-end number decides; a kernel's isolated speed-up is not the codec's.
+- Compare A and B in the same run against a freshly built baseline (`baseline` + `ab` / `matrix`);
+  a number from an earlier session is not a baseline. Record the machine with every result.
+- Attribute time by ablation (switch a stage off, see what disappears), not by a sampling profiler.
+- Check correctness before timing; a benchmark refuses to time wrong output.
+- Vector kernels are `MethodImplOptions.NoInlining | AggressiveOptimization`.
