@@ -48,9 +48,16 @@ public sealed class PngImageDecoder : IImageDecoder
         int bitDepth = data[24];
         int colorType = data[25];
         if (width <= 0 || height <= 0) return false;
-        if (!TryMapLayout(colorType, bitDepth, HasTransparentColor(data, colorType), out var channels, out var format)) return false;
+        var chunks = ScanChunks(data, colorType);
+        if (!TryMapLayout(colorType, bitDepth, chunks.TransparentColor, out var channels, out var format)) return false;
 
-        info = new ImageInfo(width, height, channels, format);
+        info = new ImageInfo(width, height, channels, format)
+        {
+            // A palette's entries are 8-bit whatever the index depth.
+            BitDepth = colorType == 3 ? 8 : bitDepth,
+            Orientation = chunks.Orientation,
+            FrameCount = chunks.FrameCount,
+        };
         return true;
     }
 
@@ -173,22 +180,41 @@ public sealed class PngImageDecoder : IImageDecoder
         }
     }
 
-    // Whether a greyscale or RGB file carries a tRNS transparent colour: the chunks before the first IDAT
-    // are walked (lengths only, no CRCs), with the length test PngReader.ReadHeader applies.
-    private static bool HasTransparentColor(ReadOnlySpan<byte> data, int colorType)
+    private readonly record struct ChunkFacts(bool TransparentColor, ImageOrientation Orientation, int FrameCount);
+
+    // What TryReadInfo needs beyond IHDR, from chunk headers alone (lengths, no CRCs). Before the first
+    // IDAT: whether a greyscale or RGB file carries a tRNS transparent colour, with the length test
+    // PngReader.ReadHeader applies, and an APNG's acTL frame count (the APNG spec puts acTL there). Anywhere
+    // up to IEND: the first eXIf, which the 2017 extension lets a writer place before or after IDAT.
+    private static ChunkFacts ScanChunks(ReadOnlySpan<byte> data, int colorType)
     {
-        if (colorType is not (0 or 2)) return false;
+        var transparent = false;
+        var frames = 1;
+        var orientation = ImageOrientation.Normal;
+        var exifSeen = false;
+        var beforeIdat = true;
         var pos = 8;
         while (pos + 8 <= data.Length)
         {
             var length = BinaryPrimitives.ReadUInt32BigEndian(data.Slice(pos, 4));
             var type = data.Slice(pos + 4, 4);
-            if (type.SequenceEqual("IDAT"u8) || type.SequenceEqual("IEND"u8)) return false;
-            if (type.SequenceEqual("tRNS"u8)) return length == (colorType == 0 ? 2u : 6u);
-            if (length > int.MaxValue - 12) return false;
+            // A chunk running past the end stops the walk (PngReader refuses the file).
+            if (length > data.Length - pos - 12 || type.SequenceEqual("IEND"u8)) break;
+            var payload = data.Slice(pos + 8, (int)length);
+            if (type.SequenceEqual("IDAT"u8))
+                beforeIdat = false;
+            else if (beforeIdat && type.SequenceEqual("tRNS"u8))
+                transparent = colorType is 0 or 2 && length == (colorType == 0 ? 2u : 6u);
+            else if (beforeIdat && type.SequenceEqual("acTL"u8) && payload.Length == 8)
+                frames = (int)Math.Clamp(BinaryPrimitives.ReadUInt32BigEndian(payload), 1u, int.MaxValue);
+            else if (!exifSeen && type.SequenceEqual("eXIf"u8))
+            {
+                exifSeen = true;
+                orientation = ExifOrientation.Read(payload);
+            }
             pos += 12 + (int)length;
         }
-        return false;
+        return new ChunkFacts(transparent, orientation, frames);
     }
 
     // The layout TryDecode produces. Indexed always expands to RGBA8; the rest keep

@@ -119,12 +119,24 @@ public static class Jbig2Decoder
     /// segment is missing, or the page is striped with no end-of-stripe segment
     /// to bound it.
     /// </summary>
-    public static bool TryReadFileInfo(ReadOnlySpan<byte> file, out int width, out int height)
+    public static bool TryReadFileInfo(ReadOnlySpan<byte> file, out int width, out int height) =>
+        TryReadFileInfo(file, out width, out height, out _);
+
+    /// <summary>
+    /// <see cref="TryReadFileInfo(ReadOnlySpan{byte}, out int, out int)"/>, plus the number of pages:
+    /// page information segments, one per page (T.88 §7.4.8). Only page 1 is decoded.
+    /// </summary>
+    internal static bool TryReadFileInfo(ReadOnlySpan<byte> file, out int width, out int height, out int pages)
     {
         width = height = 0;
+        pages = 0;
         try
         {
             var segments = ReadFile(file, out var body);
+            foreach (var segment in segments)
+            {
+                if (segment.Type == SegmentType.PageInformation) pages++;
+            }
             return TryFindPageSize(body, segments, out width, out height);
         }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException or ArgumentException)

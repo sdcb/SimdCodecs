@@ -66,7 +66,7 @@ internal sealed record ParsedIfd(
     bool IsTiled, int TileWidth, int TileHeight,
     uint[] SegmentOffsets, uint[] SegmentByteCounts, TiffSegmentGeometry Geometry,
     float? SMin, float? SMax, byte[]? Icc, int? ExifIfdOffset, int? GpsInfoIfdOffset,
-    long NextIfdOffset, bool LsbFirst = false, uint FaxOptions = 0)
+    long NextIfdOffset, bool LsbFirst = false, uint FaxOptions = 0, int Orientation = 1)
 {
     /// <summary>Bits per sample of <see cref="TiffPage.Pixels"/>: a 1/2/4-bit page is expanded to 8.</summary>
     public int OutputBitsPerSample => BitsPerSample < 8 ? 8 : BitsPerSample;
@@ -141,6 +141,7 @@ internal static class TiffIfdParser
         var fillOrder = 1;
         uint t4Options = 0;
         uint t6Options = 0;
+        var orientation = 1;
 
         for (var i = 0; i < entryCount; i++)
         {
@@ -184,6 +185,11 @@ internal static class TiffIfdParser
                 case TiffTag.FillOrder: fillOrder = (int)Scalar(type, valueSpan, fileIsLE); break;
                 case TiffTag.T4Options: t4Options = Scalar(type, valueSpan, fileIsLE); break;
                 case TiffTag.T6Options: t6Options = Scalar(type, valueSpan, fileIsLE); break;
+                case TiffTag.Orientation:
+                    // Metadata, never a reason to refuse a page: anything but one SHORT in 1..8 means the default.
+                    var o = type == TiffFieldType.Short && count == 1 ? U16(valueSpan[..2], fileIsLE) : 0;
+                    orientation = o is >= 1 and <= 8 ? o : 1;
+                    break;
                 default:
                     // Unrecognised tag: TIFF spec says skip unknown tags.
                     break;
@@ -266,7 +272,7 @@ internal static class TiffIfdParser
             sampleFormat, planarConfig, predictor, rowsPerStrip, isTiled, tileWidth, tileHeight,
             segmentOffsets, segmentByteCounts, geometry, sMin, sMax, icc, exifIfdOffset, gpsIfdOffset,
             nextIfdOffset, LsbFirst: fillOrder == 2,
-            FaxOptions: compression == TiffCompression.CcittT6 ? t6Options : t4Options);
+            FaxOptions: compression == TiffCompression.CcittT6 ? t6Options : t4Options, Orientation: orientation);
     }
 
     public static ushort U16(ReadOnlySpan<byte> b, bool le) =>

@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);SIMDCODECS_PNG</DefineConstants>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -43,6 +44,11 @@
          IccProfiles.WithCicp - one vocabulary for PNG cICP signalling, ICC cicp
          signalling, and the codec-neutral decode contract. -->
     <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
+    <Compile Include="..\Shared\ExifOrientation.cs" Link="Shared\ExifOrientation.cs" />
   </ItemGroup>
 
 </Project>

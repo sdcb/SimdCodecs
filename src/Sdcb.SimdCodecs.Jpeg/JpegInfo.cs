@@ -1,3 +1,5 @@
+using Sdcb.SimdCodecs.Abstractions;
+
 namespace Sdcb.SimdCodecs.Jpeg;
 
 /// <summary>
@@ -15,6 +17,12 @@ public sealed record JpegInfo(int Width, int Height, int Components, bool Progre
     /// scale for such streams.
     /// </summary>
     public bool ChromaSubsampled { get; init; }
+
+    /// <summary>
+    /// The EXIF orientation from the first APP1 <c>Exif</c> segment, <see cref="ImageOrientation.Normal"/>
+    /// when there is none. The decoder does not apply it: pixels come out as stored.
+    /// </summary>
+    public ImageOrientation Orientation { get; init; } = ImageOrientation.Normal;
 
     /// <summary>
     /// Output dimensions when decoding at <paramref name="scale"/> —

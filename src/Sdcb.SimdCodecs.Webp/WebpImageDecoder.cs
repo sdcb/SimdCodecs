@@ -28,14 +28,22 @@ public sealed class WebpImageDecoder : IImageDecoder
     /// <inheritdoc />
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
     {
-        if (!WebpDecoder.TryReadInfo(data, out WebpInfo webpInfo))
+        try
+        {
+            WebpContainer container = WebpContainer.Read(data);
+            WebpInfo webpInfo = container.Info;
+            info = new ImageInfo(webpInfo.Width, webpInfo.Height, webpInfo.HasAlpha ? 4 : 3, SampleFormat.UInt8)
+            {
+                Orientation = container.HasExif ? ExifOrientation.Read(container.Exif) : ImageOrientation.Normal,
+                FrameCount = Math.Max(1, webpInfo.FrameCount),
+            };
+            return true;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
         {
             info = default;
             return false;
         }
-
-        info = new ImageInfo(webpInfo.Width, webpInfo.Height, webpInfo.HasAlpha ? 4 : 3, SampleFormat.UInt8);
-        return true;
     }
 
     /// <inheritdoc />

@@ -39,7 +39,7 @@ public sealed class GainMapImageDecoder : IImageDecoder
         // the HDR-base form (unsupported reconstruction) reports its SDR primary.
         if (!JpegImageDecoder.TryReadInfo(data, out info)) return false;
         if (JpegGainMap.TrySplit(data, out _, out _, out var metadata) && !metadata.BaseRenditionIsHdr)
-            info = new ImageInfo(info.Width, info.Height, 3, SampleFormat.Float32);
+            info = new ImageInfo(info.Width, info.Height, 3, SampleFormat.Float32) { Orientation = info.Orientation };
         return true;
     }
 

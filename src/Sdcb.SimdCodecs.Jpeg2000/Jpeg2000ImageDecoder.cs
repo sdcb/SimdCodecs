@@ -57,7 +57,8 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
             var siz = CodestreamReader.Read(codestream).Siz;
             if (!Presentable(siz.Components.Length, colour)) return false;
 
-            info = new ImageInfo(siz.Width, siz.Height, siz.Components.Length, FormatFor(siz.Components[0].BitDepth));
+            var depth = siz.Components[0].BitDepth;
+            info = new ImageInfo(siz.Width, siz.Height, siz.Components.Length, FormatFor(depth)) { BitDepth = depth };
             return true;
         }
         catch (Exception e) when (IsUndecodable(e))

@@ -91,7 +91,7 @@ public sealed class JpegImageDecoder : IImageDecoder
 
     /// <summary>The <see cref="ImageInfo"/> of what <see cref="TryDecode"/> returns for a stream with header <paramref name="info"/>.</summary>
     internal static ImageInfo ToImageInfo(JpegInfo info) =>
-        new(info.Width, info.Height, info.Components == 1 ? 1 : 4, SampleFormat.UInt8);
+        new(info.Width, info.Height, info.Components == 1 ? 1 : 4, SampleFormat.UInt8) { Orientation = info.Orientation };
 
     /// <summary>The <see cref="JpegPixelFormat"/> writing the same bytes as <paramref name="format"/>.</summary>
     internal static JpegPixelFormat ToJpegFormat(ImagePixelFormat format) => format switch

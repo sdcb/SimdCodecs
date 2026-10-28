@@ -31,8 +31,9 @@ public interface IImageDecoder
 
     /// <summary>
     /// Reads dimensions + layout from the header without decoding pixels, so a
-    /// caller can size a destination for <see cref="TryDecodeInto"/>. Returns
-    /// false when the header is truncated or malformed.
+    /// caller can size a destination for <see cref="TryDecodeInto"/>, together with
+    /// the file's bit depth, EXIF orientation and frame count (see <see cref="ImageInfo"/>).
+    /// Returns false when the header is truncated or malformed.
     /// </summary>
     static abstract bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info);
 

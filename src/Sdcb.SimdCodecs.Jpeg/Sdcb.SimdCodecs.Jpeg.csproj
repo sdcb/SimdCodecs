@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);SIMDCODECS_JPEG</DefineConstants>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
@@ -35,6 +36,11 @@
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
     <!-- JpegDiagnostics (coefficients + pre-upsampling planes) for the accuracy tooling. -->
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Jpeg.Benchmarks" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
+    <Compile Include="..\Shared\ExifOrientation.cs" Link="Shared\ExifOrientation.cs" />
   </ItemGroup>
 
 </Project>

@@ -42,6 +42,8 @@ public sealed class TiffPageLayout
         IsTiled = ifd.IsTiled;
         TileWidth = ifd.IsTiled ? ifd.TileWidth : 0;
         TileHeight = ifd.IsTiled ? ifd.TileHeight : 0;
+        Photometric = ifd.Photometric;
+        Orientation = ifd.Orientation;
     }
 
     public int PageIndex { get; }
@@ -59,6 +61,16 @@ public sealed class TiffPageLayout
     internal bool LsbFirst { get; }
     internal uint FaxOptions { get; }
     public TiffSampleFormat SampleFormat { get; }
+
+    /// <summary>What the samples mean (tag 262): what 0 is for grey, RGB, palette, and so on.</summary>
+    public TiffPhotometric Photometric { get; }
+
+    /// <summary>
+    /// The Orientation tag (274), 1..8 as TIFF 6.0 defines it: 1 (the default, also used for an
+    /// out-of-range value) means row 0 is the top and column 0 the left. Pixels are read as stored.
+    /// </summary>
+    public int Orientation { get; }
+
     public TiffCompression Compression { get; }
     public TiffPredictor Predictor { get; }
     public bool IsTiled { get; }

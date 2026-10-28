@@ -185,6 +185,32 @@ public static partial class TiffReader
         return page with { Pixels = sink.TakePixels() };
     }
 
+    /// <summary>
+    /// The number of pages: the IFD chain's length, walked by next-IFD pointers without interpreting a
+    /// tag. The walk stops at an IFD it has already visited (a looping chain) or one it cannot read, so
+    /// it counts the pages a reader can reach.
+    /// </summary>
+    internal static int CountPages(ReadOnlySpan<byte> tiff)
+    {
+        var src = new SpanBytes(tiff);
+        var (fileIsLE, ifdOffset) = TiffIfdParser.ReadHeader(ref src);
+        var visited = new HashSet<long>();
+        var pages = 0;
+        while (ifdOffset != 0 && visited.Add(ifdOffset))
+        {
+            try
+            {
+                ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, fileIsLE);
+            }
+            catch (InvalidDataException)
+            {
+                break; // this IFD is unreadable: it is not counted
+            }
+            pages++;
+        }
+        return pages;
+    }
+
     /// <summary>Decode every page from a TIFF stream (slurped to a byte array).</summary>
     public static TiffDocument Read(Stream stream)
     {

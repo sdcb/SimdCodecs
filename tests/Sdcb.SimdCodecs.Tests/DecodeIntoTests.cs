@@ -221,6 +221,50 @@ public sealed class DecodeIntoTests
         direct.ShouldBe(rgba);
     }
 
+    [Theory]
+    [MemberData(nameof(Inputs))]
+    public void InfoDescribesTheDecodedImage(string name)
+    {
+        var data = Corpus()[name];
+        if (!SimdCodecs.TryDecode(data, out var image))
+            return;
+
+        SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+        (info.Width, info.Height, info.Channels, info.SampleFormat)
+            .ShouldBe((image.Width, image.Height, image.Channels, image.SampleFormat));
+        info.BitDepth.ShouldBe(ExpectedBitDepth(name));
+        info.Orientation.ShouldBe(ImageOrientation.Normal);
+        // Animated WebP fixtures: the frames ImageMagick (libwebp's demuxer) reads; every other entry is a still.
+        info.FrameCount.ShouldBe(name.StartsWith("webp anim", StringComparison.Ordinal)
+            ? new MagickImageCollection(data).Count
+            : 1);
+    }
+
+    // The bit depth each corpus entry was written with, from how it was made rather than from our reader.
+    private static int ExpectedBitDepth(string name)
+    {
+        if (name.StartsWith("png ct3", StringComparison.Ordinal)) return 8; // palette entries are 8-bit
+        if (name.StartsWith("png ct", StringComparison.Ordinal))
+            return int.Parse(name.Split(' ')[2][1..], System.Globalization.CultureInfo.InvariantCulture);
+        if (name == "jpeg gain map") return 32; // the reconstructed HDR is float
+        if (name.StartsWith("j2k ", StringComparison.Ordinal))
+        {
+            // OpenJPEG's decode of the fixture sits beside it as a PGM / PPM whose maxval is 2^depth - 1.
+            var fixtures = Path.Combine(AppContext.BaseDirectory, "Fixtures", "jpeg2000");
+            var stem = Path.GetFileNameWithoutExtension(name[4..]);
+            var reference = Directory.GetFiles(fixtures, stem + ".p?m").Single();
+            var header = System.Text.Encoding.ASCII.GetString(File.ReadAllBytes(reference), 0, 32)
+                .Split((char[])[' ', '\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            return 32 - System.Numerics.BitOperations.LeadingZeroCount(uint.Parse(header[3], System.Globalization.CultureInfo.InvariantCulture));
+        }
+        return name switch
+        {
+            "jbig2" => 1,
+            "tiff grey16 23x7" or "tiff rgb16 23x7" => 16,
+            _ => 8, // 8-bit PNG / JPEG / TIFF, WebP
+        };
+    }
+
     [Fact]
     public void TheCorpusDecodes()
     {

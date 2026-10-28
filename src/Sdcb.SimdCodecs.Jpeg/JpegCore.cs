@@ -65,6 +65,8 @@ internal ref struct JpegCore
     private bool _progressive;
     private bool _jfif;
     private int _app14ColorTransform = -1;
+    private ImageOrientation _orientation = ImageOrientation.Normal; // from the first APP1 Exif segment
+    private bool _exifSeen;
     private int _rgbCount;
     private int _restartInterval;
     private int _todo;
@@ -262,7 +264,7 @@ internal ref struct JpegCore
                 subsampled = true;
         }
 
-        return new JpegInfo(ImgX, ImgY, ImgN, _progressive) { ChromaSubsampled = subsampled };
+        return new JpegInfo(ImgX, ImgY, ImgN, _progressive) { ChromaSubsampled = subsampled, Orientation = _orientation };
     }
 
     /// <summary>
@@ -1818,6 +1820,14 @@ internal ref struct JpegCore
                 l -= 5;
                 if (ok)
                     _jfif = true;
+            }
+            else if (m == 0xE1 && l >= 6 && !_exifSeen && _data.Length - _pos >= l
+                     && _data.Slice(_pos, 6).SequenceEqual("Exif\0\0"u8))
+            {
+                // APP1 EXIF: a TIFF structure after the identifier. Only the first one counts, as in
+                // every reader; the segment is skipped below like any other.
+                _exifSeen = true;
+                _orientation = ExifOrientation.Read(_data.Slice(_pos + 6, l - 6));
             }
             else if (m == 0xEE && l >= 12)
             {

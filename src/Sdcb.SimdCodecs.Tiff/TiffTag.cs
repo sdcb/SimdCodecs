@@ -10,6 +10,7 @@ public static class TiffTag
     public const ushort PhotometricInterp = 262;
     public const ushort FillOrder         = 266;
     public const ushort StripOffsets      = 273;
+    public const ushort Orientation       = 274;
     public const ushort SamplesPerPixel   = 277;
     public const ushort RowsPerStrip      = 278;
     public const ushort StripByteCounts   = 279;
