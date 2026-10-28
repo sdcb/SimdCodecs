@@ -164,6 +164,12 @@ missing oracle fail instead (CI does). How to get each oracle is in [`AGENTS.md`
 also holds the clean-room rules every contribution follows. Benchmarks are built on their own, by
 path: see [`benchmarks/README.md`](benchmarks/README.md). Releasing: [`RELEASING.md`](RELEASING.md).
 
+## Contact
+
+![WeChat group QR code](https://io.starworks.cc:88/cv-public/2026/ocr-wxg-qr.png?1027)
+
+If the WeChat group is full or the QR code has expired, join the QQ group [C#/.NET Computer Vision 579060605](https://qm.qq.com/q/bPw5jAK4qk).
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE). Derived from SharpAstro/Codecs (released under the Unlicense).

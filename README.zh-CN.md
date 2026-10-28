@@ -160,6 +160,12 @@ dotnet test  SimdCodecs.slnx -c Release
 [`AGENTS.md`](AGENTS.md)。基准测试需要按路径单独构建，见 [`benchmarks/README.md`](benchmarks/README.md)。
 发版流程见 [`RELEASING.md`](RELEASING.md)。
 
+## 交流
+
+![微信群二维码](https://io.starworks.cc:88/cv-public/2026/ocr-wxg-qr.png?1027)
+
+如果微信群满了或二维码过期了，请加入 QQ 群 [C#/.NET计算机视觉技术交流 579060605](https://qm.qq.com/q/bPw5jAK4qk)。
+
 ## 许可证
 
 MIT，见 [`LICENSE`](LICENSE)。本项目派生自 SharpAstro/Codecs（以 Unlicense 发布）。
