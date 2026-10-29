@@ -27,6 +27,7 @@
   <ItemGroup>
     <ProjectReference Include="../Sdcb.SimdCodecs.Abstractions/Sdcb.SimdCodecs.Abstractions.csproj" />
     <ProjectReference Include="../Sdcb.SimdCodecs.Jpeg/Sdcb.SimdCodecs.Jpeg.csproj" />
+    <ProjectReference Include="../Sdcb.SimdCodecs.Color.Icc/Sdcb.SimdCodecs.Color.Icc.csproj" />
   </ItemGroup>
 
 </Project>

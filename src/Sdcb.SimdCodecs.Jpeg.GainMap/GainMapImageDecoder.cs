@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Color.Icc;
 
 namespace Sdcb.SimdCodecs.Jpeg;
 
@@ -52,13 +53,23 @@ public sealed class GainMapImageDecoder : IImageDecoder
         // form is not (ReconstructHdr rejects it), so fall through to the SDR base.
         if (JpegGainMap.TryRead(data, out var gainMap) && !gainMap.Metadata.BaseRenditionIsHdr)
         {
-            image = new GainMapDecodedImage(gainMap, gainMap.Metadata.HdrCapacityMax);
+            image = new GainMapDecodedImage(gainMap, gainMap.Metadata.HdrCapacityMax, BasePrimaries(data));
             return true;
         }
 
         // Graceful degradation: decode the SDR primary as a plain JPEG. This is the
         // same image a gain-map-unaware viewer sees, so nothing is lost visually.
         return JpegImageDecoder.TryDecode(data, out image);
+    }
+
+    // The base's primaries from its ICC profile: untagged is sRGB (BT.709), a profile that names
+    // no H.273 primaries (Adobe RGB, a display's own) is Unspecified rather than a wrong BT.709.
+    private static ColorPrimaries BasePrimaries(ReadOnlySpan<byte> data)
+    {
+        var icc = JpegDecoder.ReadIccProfile(data);
+        if (icc is null)
+            return ColorPrimaries.BT709;
+        return IccProfiles.TryGetPrimaries(icc, out var primaries) ? primaries : ColorPrimaries.Unspecified;
     }
 
     /// <inheritdoc />

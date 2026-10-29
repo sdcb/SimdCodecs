@@ -148,6 +148,7 @@ Sdcb.SimdCodecs (facade)
  │                └─ Abstractions
  ├─ Jpeg ─────────── Abstractions
  ├─ Jpeg.GainMap ─┬─ Jpeg
+ │                ├─ Color.Icc
  │                └─ Abstractions
  ├─ Jbig2 ────────── Abstractions
  ├─ Jpeg2000 ─────── Abstractions

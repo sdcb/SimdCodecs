@@ -31,12 +31,16 @@ public sealed class GainMapDecodedImage : IDecodedImage
     /// <param name="displayHeadroom">The linear display headroom to reconstruct the
     /// float path at (the facade uses <see cref="GainMapMetadata.HdrCapacityMax"/>,
     /// the full authored HDR).</param>
-    public GainMapDecodedImage(GainMapImage source, double displayHeadroom)
+    /// <param name="primaries">The SDR base's colour primaries, which the reconstructed HDR
+    /// shares: the gain map is applied in the base image's colour space. The facade reads them
+    /// from the base's ICC profile (<see cref="GainMapImageDecoder.TryDecode"/>).</param>
+    public GainMapDecodedImage(GainMapImage source, double displayHeadroom, ColorPrimaries primaries = ColorPrimaries.BT709)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(displayHeadroom);
         Source = source;
         _displayHeadroom = displayHeadroom;
+        ColorEncoding = new() { Primaries = primaries, Transfer = TransferFunction.Linear, Float = FloatSemantics.DisplayReferred };
     }
 
     /// <summary>The underlying decoded gain-map pair — the escape hatch to the full
@@ -68,10 +72,9 @@ public sealed class GainMapDecodedImage : IDecodedImage
     public ReadOnlySpan<byte> IccProfile => default;
 
     /// <summary>Linear, display-referred (1.0 = SDR white) — what
-    /// <see cref="GainMapImage.ReconstructHdr"/> produces. Stated without forcing
-    /// reconstruction.</summary>
-    public ColorEncoding ColorEncoding { get; } =
-        new() { Transfer = TransferFunction.Linear, Float = FloatSemantics.DisplayReferred };
+    /// <see cref="GainMapImage.ReconstructHdr"/> produces — in the base image's primaries.
+    /// Stated without forcing reconstruction.</summary>
+    public ColorEncoding ColorEncoding { get; }
 
     /// <summary>The full authored HDR as RGBA float32 (linear, display-referred).
     /// This is the "just works" float path.</summary>
