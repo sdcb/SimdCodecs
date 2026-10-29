@@ -11,8 +11,8 @@
     <PackageId>Sdcb.SimdCodecs.Gif</PackageId>
     <Product>Sdcb.SimdCodecs.Gif</Product>
     <Authors>sdcb</Authors>
-    <Description>Pure-managed GIF (87a / 89a) decoder for .NET: still and animated images, interlacing, transparency, every disposal method, loop count; composited full-canvas RGBA frames with random access. Spec-derived from the GIF89a specification. AOT-compatible.</Description>
-    <PackageTags>gif image codec decoder animation lzw aot</PackageTags>
+    <Description>Pure-managed GIF (87a / 89a) decoder and encoder for .NET. Decodes still and animated images (interlacing, transparency, every disposal method, loop count) to composited full-canvas RGBA frames with random access. Encodes stills and animations: lossless when the colours fit a palette, otherwise Wu quantization with optional Floyd-Steinberg dithering; opaque animations store only what changed. Spec-derived from the GIF89a specification. AOT-compatible.</Description>
+    <PackageTags>gif image codec decoder encoder animation lzw quantization aot</PackageTags>
     <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>

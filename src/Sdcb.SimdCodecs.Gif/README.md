@@ -1,6 +1,6 @@
 # Sdcb.SimdCodecs.Gif
 
-Pure-managed GIF (87a / 89a) decoding for .NET 10, derived from the GIF89a specification: global and local
+Pure-managed GIF (87a / 89a) decoding and encoding for .NET 10, derived from the GIF89a specification: global and local
 colour tables, interlacing, transparency, every disposal method and the NETSCAPE2.0 loop count. A frame is
 the whole canvas as a viewer shows it, every earlier frame composited in.
 
@@ -26,6 +26,29 @@ using (reader)
         Show(buffer, frame.Duration);
 }
 ```
+
+## Encoding
+
+```csharp
+byte[] gif = GifEncoder.Encode(rgba, width, height, channels: 4);
+
+byte[] animation = GifEncoder.EncodeAnimation(
+    [new GifAnimationFrame(frame0, TimeSpan.FromMilliseconds(100)), new GifAnimationFrame(frame1, TimeSpan.FromMilliseconds(100))],
+    width, height, channels: 4, new GifEncodeOptions { LoopCount = 0, Dither = true });
+```
+
+GIF holds at most 256 colours and 1-bit transparency, so the encoder:
+
+- treats alpha below 128 as transparent, the rest as opaque;
+- uses one global palette for every frame: exact (lossless) when the opaque colours of all frames fit in 256,
+  or 255 beside a transparent index; otherwise built by Wu's variance-minimising quantizer, with optional
+  Floyd–Steinberg dithering (`Dither`);
+- writes an opaque animation's frames as the rectangle that changed, unchanged pixels as the transparent
+  index; an animation with transparency writes whole frames, each cleared before the next;
+- takes `LoopCount` as plays (0 forever, 1 writes no loop extension), the same meaning the frame reader reports.
+
+Input is 1 (grey), 3 (RGB) or 4 (RGBA) channels of 8 bits. The quantizer's quality and the encoder's speed
+are not tuned yet: a benchmark and quality gate come separately.
 
 ## Decisions
 
