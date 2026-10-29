@@ -61,12 +61,13 @@ REQUIRE_ORACLES=1 dotnet test SimdCodecs.slnx -c Release            # what CI ru
 DOTNET_EnableAVX2=0        dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg|FullyQualifiedName~Png"
 DOTNET_EnableHWIntrinsic=0 dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg|FullyQualifiedName~Png"
 bash tests/Sdcb.SimdCodecs.AotSmoke/run.sh                          # NativeAOT output == JIT output
-bash tests/Sdcb.SimdCodecs.WasmSmoke/run.sh                         # Mono AOT (browser-wasm) output == JIT output
+bash tests/Sdcb.SimdCodecs.WasmSmoke/run.sh                         # Mono AOT (browser-wasm) output == JIT output; slow, CI runs it on release tags only
 ```
 
 - The facade binds each codec's static members to delegates by concrete method group, never inside
   a generic method: Mono AOT (browser-wasm, iOS, Android) traps on a delegate over a type
-  parameter's static abstract member. The wasm smoke test covers every facade entry point.
+  parameter's static abstract member. The wasm smoke test covers every facade entry point; run it
+  locally after touching the facade or a codec's `IImageDecoder` adapter.
 - **No new warnings.** The build stays at its current set (pre-existing XML-doc warnings only); fix
   what you introduce, never suppress it.
 - **A skipped oracle is not a passing oracle.** Oracle tests skip when their tool is missing; read the

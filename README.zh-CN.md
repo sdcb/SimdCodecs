@@ -35,15 +35,21 @@ byte[] jpeg = JpegEncoder.Encode(rgba, info.Width, info.Height, channels: 4, new
 File.WriteAllBytes("photo.jpg", jpeg);
 ```
 
-`SimdCodecs.TryDecodeInto(file, buffer, stride, format)` 可以按任意行跨度（stride）直接写出 BGRA
-（Windows / WPF / Skia 表面）、RGB、BGR（OpenCV）或灰度（OCR）；JPEG 和 PNG 原生输出这些布局，中间不经过
-RGBA 整帧（彩色 JPEG 的灰度就是它的 Y 平面，色度直接跳过）。`SimdCodecs.TryDecode` 则保留原始布局（通道数，
-灰度 JPEG 为单通道、彩色 JPEG 为三通道；8/16 位或浮点采样；ICC 配置文件）。`TryReadInfo` 只读文件头，还会给出
-格式（`info.Format`）、存储位深、EXIF 方向（只报告，不会旋转像素）和帧数或页数；`SimdCodecs.DetectFormat(file)`
-还能认出不支持解码的格式（HEIF、AVIF、JPEG XL、BMP 等）。`SimdCodecs.TryOpenFrames(file, out reader)` 按索引、以任意布局逐帧
-解码：动画 WebP 和 GIF 是合成好的帧及其时长，多页 TIFF 是各页（其他图片就是一帧）；
-`reader.EnumerateFramesInto(buffer, stride, format)` 用同一块缓冲区按顺序播放。每种格式也有独立的包，
-API 更丰富：JPEG 缩放解码、TIFF 按块读取、WebP 动画按时间戳定位、Ultra HDR 等。
+门面的其他入口：
+
+- `SimdCodecs.TryDecodeInto(file, buffer, stride, format)`：按任意行跨度直接写出 BGRA（Windows / WPF /
+  Skia）、RGB、BGR（OpenCV）或灰度（OCR）。JPEG 和 PNG 原生输出这些布局，不经过 RGBA 整帧；彩色 JPEG
+  的灰度就是它的 Y 平面。
+- `SimdCodecs.TryDecode(file, out image)`：保留原始布局：通道数（灰度 JPEG 为 1，彩色 JPEG 为 3）、
+  8/16 位或浮点采样、ICC 配置文件。
+- `SimdCodecs.TryReadInfo(file, out info)`：只读文件头：格式、存储位深、EXIF 方向（只报告，不旋转像素）、
+  帧数或页数。
+- `SimdCodecs.DetectFormat(file)`：还能认出不支持解码的格式（HEIF、AVIF、JPEG XL、BMP 等）。
+- `SimdCodecs.TryOpenFrames(file, out reader)`：按索引、以任意布局逐帧解码：动画 WebP / GIF 是合成好的帧
+  及其时长，多页 TIFF 是各页（其他图片就是一帧）；`reader.EnumerateFramesInto(buffer, stride, format)`
+  用同一块缓冲区按顺序播放。
+
+每种格式也有独立的包，API 更丰富：JPEG 缩放解码、TIFF 按块读取、WebP 动画按时间戳定位、Ultra HDR 等。
 
 ## 支持的格式
 

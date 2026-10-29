@@ -36,17 +36,23 @@ byte[] jpeg = JpegEncoder.Encode(rgba, info.Width, info.Height, channels: 4, new
 File.WriteAllBytes("photo.jpg", jpeg);
 ```
 
-`SimdCodecs.TryDecodeInto(file, buffer, stride, format)` writes BGRA (Windows / WPF / Skia surfaces), RGB,
-BGR (OpenCV) or grey (OCR) straight into a buffer, at any row stride; JPEG and PNG produce those layouts
-natively, without an RGBA frame in between (a colour JPEG's grey is its Y plane, chroma skipped). `SimdCodecs.TryDecode` keeps the native layout instead
-(channel count — a greyscale JPEG is one channel, a colour JPEG three — 8/16-bit or float samples, ICC profile).
-`TryReadInfo` also reports the format (`info.Format`), the stored bit depth, the EXIF orientation (reported, never applied to the
-pixels) and the number of frames or pages, from the headers alone; `SimdCodecs.DetectFormat(file)` also names
-formats it recognises but does not decode (HEIF, AVIF, JPEG XL, BMP, …). `SimdCodecs.TryOpenFrames(file, out reader)`
-decodes them one at a time, by index and in any layout: an animated WebP's or GIF's composited frames with their
-durations, a multi-page TIFF's pages (any other image is one frame). `reader.EnumerateFramesInto(buffer, stride, format)`
-plays them in order through one buffer. Each format is also its own package with a
-richer API: scaled JPEG decoding, TIFF segment reads, WebP animation seeking by timestamp, Ultra HDR, and more.
+The rest of the facade:
+
+- `SimdCodecs.TryDecodeInto(file, buffer, stride, format)` — BGRA (Windows / WPF / Skia), RGB, BGR (OpenCV)
+  or grey (OCR) straight into your buffer, at any row stride. JPEG and PNG write these natively, with no RGBA
+  frame in between; a colour JPEG's grey is its Y plane.
+- `SimdCodecs.TryDecode(file, out image)` — the native layout: channel count (grey JPEG 1, colour JPEG 3),
+  8/16-bit or float samples, ICC profile.
+- `SimdCodecs.TryReadInfo(file, out info)` — from the headers alone: format, stored bit depth, EXIF
+  orientation (reported, never applied), frame or page count.
+- `SimdCodecs.DetectFormat(file)` — also names formats it recognises but does not decode (HEIF, AVIF,
+  JPEG XL, BMP, …).
+- `SimdCodecs.TryOpenFrames(file, out reader)` — every frame, by index, in any layout: animated WebP / GIF
+  frames with durations, multi-page TIFF pages (any other image is one frame).
+  `reader.EnumerateFramesInto(buffer, stride, format)` plays them in order through one buffer.
+
+Each format is also its own package with a richer API: scaled JPEG decoding, TIFF segment reads, WebP
+animation seeking by timestamp, Ultra HDR, and more.
 
 ## Formats
 
