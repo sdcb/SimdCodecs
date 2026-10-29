@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Sdcb.SimdCodecs.Jpeg;
 
 /// <summary>
@@ -37,6 +39,24 @@ public static class JpegDecoder
         finally
         {
             core.ReturnBuffers();
+        }
+    }
+
+    /// <summary>
+    /// <see cref="ReadInfo"/> for untrusted input: false, rather than an exception, when the stream is
+    /// not a decodable JPEG.
+    /// </summary>
+    public static bool TryReadInfo(ReadOnlySpan<byte> data, [NotNullWhen(true)] out JpegInfo? info)
+    {
+        try
+        {
+            info = ReadInfo(data);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            info = null;
+            return false;
         }
     }
 

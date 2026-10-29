@@ -29,15 +29,10 @@ public sealed class JpegImageDecoder : IImageDecoder
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
     {
         info = default;
-        try
-        {
-            info = ToImageInfo(JpegDecoder.ReadInfo(data));
-            return true;
-        }
-        catch (InvalidDataException)
-        {
+        if (!JpegDecoder.TryReadInfo(data, out var jpeg))
             return false;
-        }
+        info = ToImageInfo(jpeg);
+        return true;
     }
 
     /// <inheritdoc />

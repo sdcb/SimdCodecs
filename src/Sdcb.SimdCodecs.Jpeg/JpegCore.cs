@@ -258,13 +258,20 @@ internal ref struct JpegCore
         }
 
         var subsampled = false;
+        var components = new JpegComponentInfo[ImgN];
         for (var i = 0; i < ImgN; ++i)
         {
             if (_comp[i].H != hMax || _comp[i].V != vMax)
                 subsampled = true;
+            components[i] = new JpegComponentInfo(_comp[i].Id, _comp[i].H, _comp[i].V);
         }
 
-        return new JpegInfo(ImgX, ImgY, ImgN, _progressive) { ChromaSubsampled = subsampled, Orientation = _orientation };
+        return new JpegInfo(ImgX, ImgY, ImgN, _progressive)
+        {
+            ChromaSubsampled = subsampled,
+            ComponentInfo = components,
+            Orientation = _orientation,
+        };
     }
 
     /// <summary>

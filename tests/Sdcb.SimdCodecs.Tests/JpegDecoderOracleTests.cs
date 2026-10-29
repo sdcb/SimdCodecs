@@ -724,7 +724,7 @@ public sealed class JpegDecoderOracleTests
     {
         var baseline = EncodeJpeg(MakeRgbPattern(67, 45), 67, 45, 90, "4:2:0");
         JpegDecoder.ReadInfo(baseline).ShouldBe(
-            new JpegInfo(67, 45, 3, Progressive: false) { ChromaSubsampled = true });
+            new JpegInfo(67, 45, 3, Progressive: false) { ChromaSubsampled = true, ComponentInfo = [new(1, 2, 2), new(2, 1, 1), new(3, 1, 1)] });
 
         var progressive = EncodeJpeg(MakeRgbPattern(20, 10), 20, 10, 90, progressive: true);
         var progInfo = JpegDecoder.ReadInfo(progressive);
@@ -744,6 +744,46 @@ public sealed class JpegDecoderOracleTests
 
         var cmyk = EncodeJpeg(MakeRgbPattern(12, 9), 12, 9, 90, cmyk: true);
         JpegDecoder.ReadInfo(cmyk).Components.ShouldBe(4);
+    }
+
+    [Theory]
+    [InlineData("4:4:4", 1, 1, "4:4:4")]
+    [InlineData("4:2:2", 2, 1, "4:2:2")]
+    [InlineData("4:2:0", 2, 2, "4:2:0")]
+    [InlineData("4:4:0", 1, 2, "4:4:0")]
+    [InlineData("4:1:1", 4, 1, "4:1:1")]
+    public void ReadInfo_ReportsSamplingFactors(string sampling, int lumaH, int lumaV, string ratio)
+    {
+        // libjpeg (Magick.NET) writes the luma factors; chroma stays 1×1.
+        var jpeg = EncodeJpeg(MakeRgbPattern(40, 24), 40, 24, 90, sampling);
+        var info = JpegDecoder.ReadInfo(jpeg);
+        info.ComponentInfo.ShouldBe([new(1, lumaH, lumaV), new(2, 1, 1), new(3, 1, 1)]);
+        info.ChromaSubsamplingRatio.ShouldBe(ratio);
+        info.ChromaSubsampled.ShouldBe(ratio != "4:4:4");
+    }
+
+    [Fact]
+    public void ReadInfo_NoRatioForGreyOrCmyk()
+    {
+        var gray = JpegDecoder.ReadInfo(EncodeJpeg(MakeRgbPattern(12, 9), 12, 9, 90, gray: true));
+        gray.ComponentInfo.Count.ShouldBe(1);
+        gray.ChromaSubsamplingRatio.ShouldBeNull();
+        var cmyk = JpegDecoder.ReadInfo(EncodeJpeg(MakeRgbPattern(12, 9), 12, 9, 90, cmyk: true));
+        cmyk.ComponentInfo.Count.ShouldBe(4);
+        cmyk.ChromaSubsamplingRatio.ShouldBeNull();
+    }
+
+    [Fact]
+    public void TryReadInfo_ReturnsFalseOnBadInput()
+    {
+        var jpeg = EncodeJpeg(MakeRgbPattern(16, 16), 16, 16, 90, "4:2:0");
+        JpegDecoder.TryReadInfo(jpeg, out var info).ShouldBeTrue();
+        info.ShouldBe(JpegDecoder.ReadInfo(jpeg));
+
+        JpegDecoder.TryReadInfo("not a jpeg"u8, out info).ShouldBeFalse();
+        info.ShouldBeNull();
+        JpegDecoder.TryReadInfo(jpeg.AsSpan(0, 20), out _).ShouldBeFalse();
+        JpegDecoder.TryReadInfo([], out _).ShouldBeFalse();
     }
 
     [Fact]
