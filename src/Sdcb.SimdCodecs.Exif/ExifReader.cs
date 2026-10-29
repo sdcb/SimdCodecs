@@ -9,7 +9,7 @@ using Sdcb.SimdCodecs.Tiff;
 namespace Sdcb.SimdCodecs.Exif;
 
 /// <summary>
-/// Reads EXIF metadata from JPEG / TIFF / PNG containers. EXIF is
+/// Reads EXIF metadata from JPEG / TIFF / PNG / WebP containers. EXIF is
 /// structurally a TIFF-IFD chain regardless of where it's embedded:
 /// <list type="bullet">
 /// <item>JPEG carries it in the APP1 segment (<c>FF E1</c>) prefixed with
@@ -17,8 +17,9 @@ namespace Sdcb.SimdCodecs.Exif;
 /// <item>TIFF carries it in a sub-IFD pointed at by tag 34665 (ExifIFD).</item>
 /// <item>PNG carries it in the optional <c>eXIf</c> ancillary chunk
 ///   (introduced in the 2017 PNG 1.2 errata).</item>
+/// <item>WebP carries it in the extended format's <c>EXIF</c> RIFF chunk.</item>
 /// </list>
-/// All three are handled by stripping the container framing and feeding
+/// All four are handled by stripping the container framing and feeding
 /// the raw "TIFF-with-IFDs" payload to the same IFD walker.
 ///
 /// Returns <c>null</c> when no EXIF blob is found — that's the common case
@@ -31,8 +32,8 @@ public static class ExifReader
 {
     /// <summary>
     /// Auto-detect the container and decode EXIF. Sniffs the first few
-    /// bytes for JPEG (<c>FF D8</c>), TIFF (<c>II</c>/<c>MM</c>+42), or
-    /// PNG (89 50 4E 47 …) and dispatches.
+    /// bytes for JPEG (<c>FF D8</c>), TIFF (<c>II</c>/<c>MM</c>+42),
+    /// PNG (89 50 4E 47 …) or WebP (<c>RIFF</c> … <c>WEBP</c>) and dispatches.
     /// </summary>
     public static ExifMetadata? FromBytes(ReadOnlySpan<byte> bytes)
     {
@@ -44,6 +45,8 @@ public static class ExifReader
             && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47
             && bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A)
             return FromPng(bytes);
+        if (bytes.Length >= 12 && bytes[..4].SequenceEqual("RIFF"u8) && bytes.Slice(8, 4).SequenceEqual("WEBP"u8))
+            return FromWebp(bytes);
         return null;
     }
 
@@ -147,6 +150,35 @@ public static class ExifReader
             if (type[0] == (byte)'I' && type[1] == (byte)'E' && type[2] == (byte)'N' && type[3] == (byte)'D')
                 return null;
             pos += 12 + (int)length; // length(4) + type(4) + data + crc(4)
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Locate and decode EXIF from a WebP file's <c>EXIF</c> chunk (RFC 9649, the extended
+    /// file format). The chunk holds the TIFF-format EXIF data; a leading <c>Exif\0\0</c>, which some
+    /// writers copy over from JPEG's APP1, is skipped. Returns <c>null</c> if the file isn't a WebP
+    /// or carries no <c>EXIF</c> chunk.
+    /// </summary>
+    public static ExifMetadata? FromWebp(ReadOnlySpan<byte> webp)
+    {
+        if (webp.Length < 12 || !webp[..4].SequenceEqual("RIFF"u8) || !webp.Slice(8, 4).SequenceEqual("WEBP"u8))
+            return null;
+
+        // The RIFF size counts from offset 8; a file cut short is scanned as far as it goes.
+        var end = (int)Math.Min(8L + BinaryPrimitives.ReadUInt32LittleEndian(webp.Slice(4, 4)), webp.Length);
+        var pos = 12;
+        while (pos + 8 <= end)
+        {
+            var size = BinaryPrimitives.ReadUInt32LittleEndian(webp.Slice(pos + 4, 4));
+            if (size > (uint)(end - pos - 8)) return null;
+            if (webp.Slice(pos, 4).SequenceEqual("EXIF"u8))
+            {
+                var payload = webp.Slice(pos + 8, (int)size);
+                if (payload.StartsWith("Exif\0\0"u8)) payload = payload[6..];
+                return FromTiff(payload);
+            }
+            pos += 8 + (int)size + (int)(size & 1); // chunks are padded to an even length
         }
         return null;
     }

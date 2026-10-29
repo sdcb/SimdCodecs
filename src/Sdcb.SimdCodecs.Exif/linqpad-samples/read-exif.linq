@@ -7,7 +7,7 @@
 </Query>
 
 // Camera metadata from a JPEG straight out of a Sony A7R III (downscaled, EXIF kept). FromBytes
-// sniffs JPEG / TIFF / PNG; FromJpeg, FromTiff and FromPng skip the sniffing.
+// sniffs JPEG / TIFF / PNG / WebP; FromJpeg, FromTiff, FromPng and FromWebp skip the sniffing.
 async Task Main()
 {
 	using HttpClient http = new();

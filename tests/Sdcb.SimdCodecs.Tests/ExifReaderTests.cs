@@ -177,6 +177,73 @@ public sealed class ExifReaderTests
     }
 
     [Fact]
+    public void FromWebp_ExifChunk_ReadsCameraMetadata()
+    {
+        var exifTiff = BuildTiff(false, new[] { AsciiTag(ExifTag.Make, "Canon"), AsciiTag(ExifTag.Model, "R5") });
+        // An odd-sized chunk ahead of EXIF exercises the RIFF pad byte.
+        var webp = BuildWebp(("VP8X", new byte[10]), ("ICCP", new byte[3]), ("EXIF", exifTiff), ("VP8L", new byte[5]));
+
+        var exif = ExifReader.FromWebp(webp).ShouldNotBeNull();
+        exif.Make.ShouldBe("Canon");
+        exif.Model.ShouldBe("R5");
+        ExifReader.FromBytes(webp).ShouldNotBeNull()!.Make.ShouldBe("Canon");
+    }
+
+    [Fact]
+    public void FromWebp_ExifChunkWithJpegSignature_IsRead()
+    {
+        // Some writers keep APP1's "Exif\0\0" in front of the TIFF data.
+        var exifTiff = BuildTiff(true, new[] { AsciiTag(ExifTag.Make, "Nikon") });
+        var webp = BuildWebp(("VP8X", new byte[10]), ("EXIF", [.. "Exif\0\0"u8, .. exifTiff]));
+
+        ExifReader.FromWebp(webp).ShouldNotBeNull()!.Make.ShouldBe("Nikon");
+    }
+
+    [Fact]
+    public void FromWebp_LibwebpFixture_IsRead()
+    {
+        // webpmux output: its EXIF chunk is the fixture's metadata.exif.
+        var directory = Path.Combine(AppContext.BaseDirectory, "Fixtures", "webp");
+        var expected = File.ReadAllBytes(Path.Combine(directory, "metadata.exif"));
+        var exif = ExifReader.FromBytes(File.ReadAllBytes(Path.Combine(directory, "webp-metadata.webp"))).ShouldNotBeNull();
+        exif.RawTags.Count.ShouldBe(ExifReader.FromTiff(expected.AsSpan(6)).ShouldNotBeNull().RawTags.Count);
+    }
+
+    [Fact]
+    public void FromWebp_NoExifOrMalformed_ReturnsNull()
+    {
+        ExifReader.FromWebp(BuildWebp(("VP8L", new byte[5]))).ShouldBeNull();
+        ExifReader.FromWebp("RIFF\0\0\0\0WEBP"u8).ShouldBeNull();
+        ExifReader.FromWebp("RIFF\0\0\0\0WAVE"u8).ShouldBeNull();
+
+        // A chunk claiming more bytes than the file holds.
+        var exifTiff = BuildTiff(true, new[] { AsciiTag(ExifTag.Make, "Nikon") });
+        var webp = BuildWebp(("EXIF", exifTiff));
+        ExifReader.FromWebp(webp.AsSpan(0, webp.Length - 4)).ShouldBeNull();
+    }
+
+    // A RIFF/WEBP file of the given chunks, each padded to an even length.
+    private static byte[] BuildWebp(params (string FourCc, byte[] Data)[] chunks)
+    {
+        var body = new List<byte>("WEBP"u8.ToArray());
+        foreach (var (fourCc, data) in chunks)
+        {
+            foreach (var c in fourCc) body.Add((byte)c);
+            var size = new byte[4];
+            BinaryPrimitives.WriteUInt32LittleEndian(size, (uint)data.Length);
+            body.AddRange(size);
+            body.AddRange(data);
+            if ((data.Length & 1) != 0) body.Add(0);
+        }
+
+        var riff = new byte[8 + body.Count];
+        "RIFF"u8.CopyTo(riff);
+        BinaryPrimitives.WriteUInt32LittleEndian(riff.AsSpan(4), (uint)body.Count);
+        body.CopyTo(riff, 8);
+        return riff;
+    }
+
+    [Fact]
     public void FromBytes_NotAnImage_ReturnsNull()
     {
         ExifReader.FromBytes(new byte[] { 0x00, 0x01, 0x02, 0x03 }).ShouldBeNull();

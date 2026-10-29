@@ -60,7 +60,7 @@ richer API: scaled JPEG decoding, TIFF segment reads, WebP animation seeking by 
 | GIF | ✅ | ✅ | 87a / 89a: interlacing, transparency, every disposal method; animation with seeking; encodes stills and animations (exact palette, or Wu quantization + dithering) |
 | JPEG 2000 | ✅ | — | Part 1 (T.800), for PDF `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88, for PDF `/JBIG2Decode` |
-| EXIF | ✅ | ✅ | From JPEG, TIFF and PNG; `ExifWriter` builds a block for the JPEG encoder |
+| EXIF | ✅ | ✅ | From JPEG, TIFF, PNG and WebP; `ExifWriter` builds a block for the JPEG encoder |
 | ICC profiles | ✅ | ✅ | Decoders return embedded profiles; bundled sRGB v4 profile; splice a profile into an existing JPEG |
 
 The table describes the individual format packages. The `Sdcb.SimdCodecs` facade intentionally exposes a narrower dispatch/display contract; for example, the separate `LosslessJpeg.FromMemory` API supports SOF3 directly, while `JpegDecoder` and the facade reject it. The other facade-specific limits are listed in [docs/known-gaps.md](docs/known-gaps.md) (in Chinese).
@@ -126,7 +126,7 @@ All packages ship in lockstep under one version.
   count; composited frames with seek. The decisions the spec leaves open are listed in the package README. Encoder:
   stills and animations, exact palettes or Wu quantization with optional Floyd–Steinberg dithering, changed-rectangle
   frames for opaque animations.
-- **Exif** — reads JPEG, TIFF and PNG; `ExifWriter` builds a blob for `JpegEncodeOptions.Exif`.
+- **Exif** — reads JPEG, TIFF, PNG and WebP; `ExifWriter` builds a blob for `JpegEncodeOptions.Exif`.
 
 </details>
 

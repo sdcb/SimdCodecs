@@ -57,7 +57,7 @@ API 更丰富：JPEG 缩放解码、TIFF 按块读取、WebP 动画按时间戳�
 | GIF | ✅ | ✅ | 87a / 89a：隔行、透明、全部 dispose 方式；动画及跳转；编码静态图和动画（精确调色板，或 Wu 量化 + 抖动） |
 | JPEG 2000 | ✅ | — | Part 1（T.800），用于 PDF 的 `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88，用于 PDF 的 `/JBIG2Decode` |
-| EXIF | ✅ | ✅ | 读取 JPEG、TIFF、PNG 中的 EXIF；`ExifWriter` 生成可交给 JPEG 编码器的数据块 |
+| EXIF | ✅ | ✅ | 读取 JPEG、TIFF、PNG、WebP 中的 EXIF；`ExifWriter` 生成可交给 JPEG 编码器的数据块 |
 | ICC 配置文件 | ✅ | ✅ | 解码器返回内嵌的配置文件；内置 sRGB v4；可把配置文件写入现有 JPEG |
 
 上表描述的是各格式包本身的能力。`Sdcb.SimdCodecs` 门面有意提供更窄的识别和显示契约；例如独立的 `LosslessJpeg.FromMemory` API 可以直接处理 SOF3，而 `JpegDecoder` 和门面会拒绝这类文件。其他门面限制见 [docs/known-gaps.md](docs/known-gaps.md)。
@@ -121,7 +121,7 @@ JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插
 - **Gif**：GIF89a：全局 / 局部调色板、隔行、透明、全部 dispose 方式、NETSCAPE2.0 循环次数；合成好的帧，
   可跳转。规范没有定死的行为，按浏览器的做法处理，列在包的 README 里。编码器：静态图和动画，精确调色板或
   Wu 量化（可选 Floyd–Steinberg 抖动），不透明动画只写变化的矩形。
-- **Exif**：读取 JPEG、TIFF 和 PNG；`ExifWriter` 生成可赋给 `JpegEncodeOptions.Exif` 的数据块。
+- **Exif**：读取 JPEG、TIFF、PNG 和 WebP；`ExifWriter` 生成可赋给 `JpegEncodeOptions.Exif` 的数据块。
 
 </details>
 
