@@ -9,7 +9,8 @@ namespace Sdcb.SimdCodecs.Jpeg;
 /// <see cref="IImageDecoder"/> adapter for JPEG, bridging <see cref="JpegDecoder"/>
 /// into the <c>Sdcb.SimdCodecs</c> facade. A greyscale JPEG (one SOF component)
 /// decodes to a 1-channel <see cref="SampleFormat.UInt8"/> raster of its samples;
-/// every other JPEG (YCbCr, RGB, CMYK, YCCK) to 3-channel RGB - JPEG has no alpha.
+/// every other JPEG (YCbCr, RGB, CMYK, YCCK) to 3-channel RGB - JPEG has no alpha. The
+/// embedded APP2 ICC profile, if any, comes back as <see cref="IDecodedImage.IccProfile"/>.
 /// <see cref="TryDecodeInto"/> is a genuine zero-copy decode in every
 /// <see cref="ImagePixelFormat"/> via
 /// <see cref="JpegDecoder.DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, JpegPixelFormat, JpegScale)"/>.
@@ -47,7 +48,7 @@ public sealed class JpegImageDecoder : IImageDecoder
             var (channels, format) = info.Components == 1 ? (1, JpegPixelFormat.Gray8) : (3, JpegPixelFormat.Rgb24);
             var pixels = new byte[info.Width * info.Height * channels];
             _ = JpegDecoder.DecodeTo(data, pixels, info.Width * channels, format);
-            image = new RasterImage(info.Width, info.Height, channels, SampleFormat.UInt8, pixels);
+            image = new RasterImage(info.Width, info.Height, channels, SampleFormat.UInt8, pixels, JpegDecoder.ReadIccProfile(data));
             return true;
         }
         catch (InvalidDataException)

@@ -60,6 +60,58 @@ public static class JpegDecoder
         }
     }
 
+    /// <summary>
+    /// The embedded ICC profile: the APP2 <c>ICC_PROFILE</c> chunks (ICC.1 Annex B.4), joined in
+    /// sequence order. A profile over 64 KB spans several chunks, each with its 1-based sequence number
+    /// and the chunk count.
+    /// </summary>
+    /// <returns>The profile, or null when there is none or its chunks are inconsistent (a count that
+    /// differs between chunks, a missing or repeated sequence number) or the header is malformed.</returns>
+    public static byte[]? ReadIccProfile(ReadOnlySpan<byte> data)
+    {
+        List<JpegSegment> segments;
+        try
+        {
+            segments = JpegSegmentScanner.Scan(data);
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
+
+        // Identifier, then sequence number and chunk count, one byte each.
+        ReadOnlySpan<byte> identifier = "ICC_PROFILE\0"u8;
+        Range[]? chunks = null;
+        var found = 0;
+        foreach (var segment in segments)
+        {
+            var payload = segment.Payload(data);
+            if (segment.Marker != 0xE2 || payload.Length < identifier.Length + 2 || !payload.StartsWith(identifier))
+                continue;
+            int sequence = payload[identifier.Length], count = payload[identifier.Length + 1];
+            chunks ??= new Range[count];
+            if (count != chunks.Length || sequence < 1 || sequence > count || !chunks[sequence - 1].Equals(default(Range)))
+                return null;
+            var start = segment.PayloadOffset + identifier.Length + 2;
+            chunks[sequence - 1] = start..(segment.PayloadOffset + segment.PayloadLength);
+            found++;
+        }
+
+        if (chunks is null || found != chunks.Length)
+            return null;
+        var length = 0;
+        foreach (var chunk in chunks)
+            length += chunk.End.Value - chunk.Start.Value;
+        var profile = new byte[length];
+        var at = 0;
+        foreach (var chunk in chunks)
+        {
+            data[chunk].CopyTo(profile.AsSpan(at));
+            at += chunk.End.Value - chunk.Start.Value;
+        }
+        return profile.Length == 0 ? null : profile;
+    }
+
     /// <summary>Decodes to a freshly allocated RGBA image at the requested scale.</summary>
     /// <exception cref="InvalidDataException">The stream is not a decodable JPEG.</exception>
     public static JpegImage Decode(ReadOnlySpan<byte> data, JpegScale scale = JpegScale.Full)
