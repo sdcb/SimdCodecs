@@ -11,7 +11,7 @@ namespace Sdcb.SimdCodecs.Jpeg;
 /// accepts. The read path (<see cref="TryRead"/> / <see cref="TrySplit"/>)
 /// locates the gain map via MPF first, GContainer second.
 /// <para>
-/// Like <see cref="JpegIccInjector"/>, assembly splices metadata around
+/// Like <c>JpegIccInjector</c>, assembly splices metadata around
 /// already-encoded baseline JPEGs — bring any encoder. Decoding goes through
 /// <see cref="JpegDecoder"/>.
 /// </para>
@@ -249,7 +249,7 @@ public static class JpegGainMap
     }
 
     /// <summary>Where new APP segments go: after the APPn run that follows SOI —
-    /// the same placement rule as <see cref="JpegIccInjector"/>.</summary>
+    /// the same placement rule as <c>JpegIccInjector</c>.</summary>
     private static int FindInsertionPoint(ReadOnlySpan<byte> jpeg, string paramName)
     {
         List<JpegSegment> segments;

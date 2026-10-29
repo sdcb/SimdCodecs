@@ -21,7 +21,7 @@ namespace Sdcb.SimdCodecs.Png;
 /// alpha is dropped during the per-row gather the encoder performs anyway, so
 /// it costs nothing and takes a quarter off every pass that follows.</para>
 ///
-/// Used by both production code ("save my <see cref="RgbaImage"/> render to
+/// Used by both production code ("save my <c>RgbaImage</c> render to
 /// disk") and the test suite, where committed baselines for golden-image
 /// regression tests live as PNGs. Those are read back in-family via
 /// <see cref="PngReader"/> (or, in <c>PngWriterBitDepthTests</c>, a hand-rolled

@@ -20,35 +20,39 @@ namespace Sdcb.SimdCodecs.Exif;
 /// </list>
 /// Use <see cref="RawTags"/> for vendor-private tags that aren't in the
 /// well-known set, or to read MakerNote (0x927C) as a bag of bytes.
+/// <param name="Make">Camera make, when present.</param>
+/// <param name="Model">Camera model, when present.</param>
+/// <param name="CaptureTime">0x9003 DateTimeOriginal, falling back to 0x0132 DateTime.</param>
+/// <param name="FileTime">0x0132 DateTime (image-file modification timestamp).</param>
+/// <param name="ExposureTime">0x829A ExposureTime in seconds.</param>
+/// <param name="FNumber">0x829D FNumber (for example, 28/10 = f/2.8).</param>
+/// <param name="Iso">0x8827 ISOSpeedRatings (the first value if multi-valued).</param>
+/// <param name="FocalLength">0x920A FocalLength in millimetres.</param>
+/// <param name="FocalLengthIn35mm">0xA405 FocalLengthIn35mmFilm in millimetres.</param>
+/// <param name="Software">0x0131 Software string.</param>
+/// <param name="Artist">0x013B Artist string.</param>
+/// <param name="Copyright">0x8298 Copyright string.</param>
+/// <param name="Orientation">0x0112 Orientation (1..8 per EXIF 2.31 / TIFF 6.0).</param>
+/// <param name="PixelWidth">0xA002 PixelXDimension (full image width).</param>
+/// <param name="PixelHeight">0xA003 PixelYDimension (full image height).</param>
+/// <param name="Gps">GPS coordinates reconstructed from the GPS IFD, when present.</param>
+/// <param name="RawTags">The raw tag-to-value map, including vendor-private tags.</param>
 /// </summary>
 public sealed record ExifMetadata(
     string? Make,
     string? Model,
-    /// <summary>0x9003 DateTimeOriginal preferred; falls back to 0x0132 DateTime.</summary>
     DateTime? CaptureTime,
-    /// <summary>0x0132 DateTime (image-file modification timestamp).</summary>
     DateTime? FileTime,
-    /// <summary>0x829A ExposureTime in seconds.</summary>
     Rational? ExposureTime,
-    /// <summary>0x829D FNumber (e.g. 28/10 = f/2.8).</summary>
     Rational? FNumber,
-    /// <summary>0x8827 ISOSpeedRatings (first value if multi-valued).</summary>
     int? Iso,
-    /// <summary>0x920A FocalLength in mm.</summary>
     Rational? FocalLength,
-    /// <summary>0xA405 FocalLengthIn35mmFilm in mm.</summary>
     int? FocalLengthIn35mm,
-    /// <summary>0x0131 Software string.</summary>
     string? Software,
-    /// <summary>0x013B Artist string.</summary>
     string? Artist,
-    /// <summary>0x8298 Copyright string.</summary>
     string? Copyright,
-    /// <summary>0x0112 Orientation (1..8 per EXIF 2.31 / TIFF 6.0).</summary>
     ushort? Orientation,
-    /// <summary>0xA002 PixelXDimension (full image width).</summary>
     int? PixelWidth,
-    /// <summary>0xA003 PixelYDimension (full image height).</summary>
     int? PixelHeight,
     GpsCoordinates? Gps,
     IReadOnlyDictionary<ushort, ExifTagValue> RawTags);

@@ -209,7 +209,7 @@ internal static class RefinementRegionDecoder
     internal static int TypicalPredictionContext(int template) => TypicalPredictionContexts[template];
 
     /// <summary>
-    /// True when the pixel at (<paramref name="x"/>, <paramref name="y"/>) would
+    /// True when the pixel at (<paramref name="rx"/>, <paramref name="ry"/>) would
     /// be skipped by TPGRON — exposed so a test encoder can make the same
     /// decision the decoder will.
     /// </summary>

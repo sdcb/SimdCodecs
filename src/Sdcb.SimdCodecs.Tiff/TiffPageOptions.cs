@@ -1,7 +1,7 @@
 namespace Sdcb.SimdCodecs.Tiff;
 
 /// <summary>
-/// Per-page options for <see cref="TiffWriter.AddPageAsync"/>.
+/// Per-page options for <c>TiffWriter.AddPageAsync</c>.
 /// </summary>
 public sealed record TiffPageOptions
 {
