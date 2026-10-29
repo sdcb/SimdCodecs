@@ -90,6 +90,110 @@ public static class PixelConverter
     }
 
     /// <summary>
+    /// Projects <paramref name="image"/> to 8-bit RGBA by stretching its colour range linearly onto
+    /// 0..255: the display path for float rasters (a float TIFF, a reconstructed HDR), which
+    /// <see cref="TryConvert"/> refuses because 8 bits need a tone decision. This is that decision at
+    /// its simplest, for viewing: the smallest finite R, G or B value becomes 0 and the largest 255
+    /// (<see cref="TryGetColorRange"/>), every channel on the same scale so hues keep their ratios. A
+    /// constant or wholly non-finite image falls back to the range 0..1. Integer rasters are stretched
+    /// too, from their <see cref="IDecodedImage.ToFloats"/> values. See
+    /// <see cref="StretchToRgba8(ReadOnlySpan{float}, Span{byte}, float, float)"/> for the mapping.
+    /// </summary>
+    public static byte[] StretchToRgba8(IDecodedImage image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        var rgba = image.ToFloats();
+        if (!TryGetColorRange(rgba, out var min, out var max) || !(max > min))
+            (min, max) = (0f, 1f);
+        var destination = new byte[rgba.Length];
+        StretchToRgba8(rgba, destination, min, max);
+        return destination;
+    }
+
+    /// <summary>
+    /// <see cref="StretchToRgba8(IDecodedImage)"/> onto a range the caller chooses — fixed across the
+    /// frames of a sequence, or clipped to a percentile.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="min"/> and <paramref name="max"/> are not finite
+    /// with <c>min &lt; max</c>.</exception>
+    public static byte[] StretchToRgba8(IDecodedImage image, float min, float max)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        var rgba = image.ToFloats();
+        var destination = new byte[rgba.Length];
+        StretchToRgba8(rgba, destination, min, max);
+        return destination;
+    }
+
+    /// <summary>
+    /// The smallest and largest finite R, G and B values of interleaved float RGBA (the
+    /// <see cref="IDecodedImage.ToFloats"/> layout); alpha, NaN and ±∞ are ignored.
+    /// </summary>
+    /// <returns>False when there is no finite colour value; <paramref name="min"/> and
+    /// <paramref name="max"/> are then 0.</returns>
+    /// <exception cref="ArgumentException">The length is not a multiple of 4.</exception>
+    public static bool TryGetColorRange(ReadOnlySpan<float> rgba, out float min, out float max)
+    {
+        if (rgba.Length % 4 != 0)
+            throw new ArgumentException("Interleaved RGBA needs a multiple of 4 values.", nameof(rgba));
+        min = float.PositiveInfinity;
+        max = float.NegativeInfinity;
+        for (var i = 0; i < rgba.Length; i += 4)
+        {
+            for (var c = 0; c < 3; c++)
+            {
+                var v = rgba[i + c];
+                if (!float.IsFinite(v)) continue;
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
+        }
+
+        if (min > max)
+        {
+            min = max = 0;
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Stretches interleaved float RGBA onto 8-bit RGBA: R, G and B map <paramref name="min"/>..
+    /// <paramref name="max"/> linearly onto 0..255, rounded to nearest and clamped outside the range;
+    /// alpha maps 0..1 the same way. NaN becomes 0, +∞ 255 and −∞ 0. The arithmetic is in double
+    /// precision, so a range spanning the whole float line does not overflow.
+    /// </summary>
+    /// <param name="rgba">Interleaved RGBA floats, the <see cref="IDecodedImage.ToFloats"/> layout.</param>
+    /// <param name="destination">At least <c>rgba.Length</c> bytes; must not overlap <paramref name="rgba"/>.</param>
+    /// <exception cref="ArgumentException">The length is not a multiple of 4, the destination is too
+    /// small, or <paramref name="min"/> and <paramref name="max"/> are not finite with <c>min &lt; max</c>.</exception>
+    public static void StretchToRgba8(ReadOnlySpan<float> rgba, Span<byte> destination, float min, float max)
+    {
+        if (rgba.Length % 4 != 0)
+            throw new ArgumentException("Interleaved RGBA needs a multiple of 4 values.", nameof(rgba));
+        if (destination.Length < rgba.Length)
+            throw new ArgumentException("Destination too small.", nameof(destination));
+        if (!float.IsFinite(min) || !float.IsFinite(max) || !(min < max))
+            throw new ArgumentException("The range must be finite with min < max.", nameof(max));
+
+        var scale = 255.0 / ((double)max - min);
+        for (var i = 0; i < rgba.Length; i += 4)
+        {
+            destination[i] = Stretch(rgba[i], min, scale);
+            destination[i + 1] = Stretch(rgba[i + 1], min, scale);
+            destination[i + 2] = Stretch(rgba[i + 2], min, scale);
+            destination[i + 3] = Stretch(rgba[i + 3], 0, 255.0);
+        }
+    }
+
+    private static byte Stretch(float value, double min, double scale)
+    {
+        // NaN fails both comparisons and lands on 0; ±∞ clamps like any out-of-range value.
+        var x = (value - min) * scale + 0.5;
+        return x >= 255 ? (byte)255 : x >= 1 ? (byte)x : (byte)0;
+    }
+
+    /// <summary>
     /// Converts one row of <paramref name="width"/> pixels.
     /// </summary>
     /// <param name="source">Interleaved samples, <paramref name="channels"/> per pixel (1 grey, 2 grey+alpha,

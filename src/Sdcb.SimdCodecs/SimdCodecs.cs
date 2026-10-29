@@ -48,7 +48,8 @@ namespace Sdcb.SimdCodecs;
 /// <see cref="TryDecode"/> with <see cref="IDecodedImage.ColorEncoding"/>
 /// declaring its meaning; <see cref="TryDecodeInto"/> serves the
 /// integer-sample display path only - projecting HDR float to 8 bits is a
-/// consumer tone/stretch decision, not a codec one.
+/// consumer tone/stretch decision, not a codec one. For viewing,
+/// <see cref="PixelConverter.StretchToRgba8(IDecodedImage)"/> stretches the colour range linearly onto 0..255.
 /// </para>
 /// <para>
 /// A gain-map ("Ultra HDR") JPEG is recognised too: <see cref="TryDecode"/> +
