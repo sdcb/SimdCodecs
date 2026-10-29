@@ -37,6 +37,13 @@ public sealed class JpegIccWriteTests
 
         JpegDecoder.Decode(tagged).Pixels.ShouldBe(JpegDecoder.Decode(plain).Pixels);
         JpegEncoder.Encode(Rgb, 64, 48, 3, new JpegEncodeOptions { Quality = 85, IccProfile = null }).ShouldBe(plain);
+
+        // The trap: C# converts a null byte[], or `cond ? null : memory`, to an empty ReadOnlyMemory, not to
+        // null - an image without a profile must still encode, unchanged.
+        byte[]? none = null;
+        JpegEncoder.Encode(Rgb, 64, 48, 3, new JpegEncodeOptions { Quality = 85, IccProfile = none }).ShouldBe(plain);
+        SimdCodecs.TryDecode(plain, out var image).ShouldBeTrue();
+        JpegEncoder.Encode(Rgb, 64, 48, 3, new JpegEncodeOptions { Quality = 85, IccProfile = image.IccProfile.ToArray() }).ShouldBe(plain);
     }
 
     [Fact]
@@ -47,7 +54,6 @@ public sealed class JpegIccWriteTests
         var jpeg = JpegEncoder.Encode(Rgb, 64, 48, 3, new JpegEncodeOptions { IccProfile = two });
         Icc(jpeg).ShouldBe(two);
 
-        Should.Throw<ArgumentException>(() => JpegEncoder.Encode(Rgb, 64, 48, 3, new JpegEncodeOptions { IccProfile = Array.Empty<byte>() }));
         Should.Throw<ArgumentException>(() => JpegEncoder.Encode(Rgb, 64, 48, 3,
             new JpegEncodeOptions { IccProfile = new byte[JpegEncodeOptions.MaxIccProfileBytes + 1] }));
     }

@@ -184,9 +184,8 @@ public sealed class JpegExifWriteTests
     }
 
     [Fact]
-    public void BlobThatIsEmptyOrNotTiff_IsRefused()
+    public void BlobThatIsNotTiff_IsRefused()
     {
-        Should.Throw<ArgumentException>(() => Encode(Array.Empty<byte>()));
         Should.Throw<ArgumentException>(() => Encode(new byte[16]));
         // The signature is the encoder's to add; a blob that already carries it is a mistake worth catching.
         var signed = new byte[] { (byte)'E', (byte)'x', (byte)'i', (byte)'f', 0, 0 }.Concat(AllFieldsBlob()).ToArray();
@@ -201,6 +200,11 @@ public sealed class JpegExifWriteTests
         var plain = JpegEncoder.Encode(Pixels(), W, H, 3);
         Encode(null).ShouldBe(plain);
         JpegEncoder.Encode(Pixels(), W, H, 3, new JpegEncodeOptions { Exif = null }).ShouldBe(plain);
+
+        // C# turns a null byte[] into an empty (not a null) ReadOnlyMemory<byte>?: that is unset too.
+        byte[]? none = null;
+        JpegEncoder.Encode(Pixels(), W, H, 3, new JpegEncodeOptions { Exif = none }).ShouldBe(plain);
+        Encode(Array.Empty<byte>()).ShouldBe(plain);
     }
 
     [Fact]

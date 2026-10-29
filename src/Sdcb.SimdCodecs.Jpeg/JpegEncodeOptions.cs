@@ -50,12 +50,13 @@ public sealed record JpegEncodeOptions
     /// When set, written as an APP1 <c>Exif\0\0</c> segment right after the APP0 JFIF header. The bytes are the
     /// TIFF-structured EXIF blob itself (<c>II*\0</c> or <c>MM\0*</c> onwards, <b>without</b> the <c>Exif\0\0</c>
     /// signature, which the encoder adds); <c>Sdcb.SimdCodecs.Exif</c>'s <c>ExifWriter.Build</c> makes one. Taking bytes
-    /// keeps this package free of a dependency on the Exif package. <c>null</c> (the default) writes no segment and
-    /// leaves the output byte-identical to an encode without the option.
+    /// keeps this package free of a dependency on the Exif package. <c>null</c> (the default) or an empty blob writes
+    /// no segment and leaves the output byte-identical to an encode without the option. (Empty counts as unset because
+    /// C# converts a null <c>byte[]</c> to an empty memory, not to a null <c>ReadOnlyMemory&lt;byte&gt;?</c>.)
     /// <para>
     /// The segment length field is 16 bits, so the blob is at most <see cref="MaxExifBytes"/> bytes (65527: 65535
-    /// less the length field and the six signature bytes). A blob that is longer, empty, or does not start with a TIFF
-    /// header is an <see cref="System.ArgumentException"/> from <see cref="JpegEncoder.Encode"/>, before any output.
+    /// less the length field and the six signature bytes). A blob that is longer, or does not start with a TIFF
+    /// header, is an <see cref="System.ArgumentException"/> from <see cref="JpegEncoder.Encode"/>, before any output.
     /// </para>
     /// </summary>
     public ReadOnlyMemory<byte>? Exif { get; init; }
@@ -80,10 +81,10 @@ public sealed record JpegEncodeOptions
     /// the EXIF and XMP segments: one per <see cref="MaxIccChunkBytes"/> bytes, each numbered, so a profile of
     /// any size up to <see cref="MaxIccProfileBytes"/> fits. Pass the decoded image's
     /// <see cref="Abstractions.IDecodedImage.IccProfile"/> to keep a Display P3 or Adobe RGB photo's colour
-    /// space through a re-encode. The bytes are written as given, not validated as a profile; an empty or
-    /// oversized one is an <see cref="System.ArgumentException"/> from <see cref="JpegEncoder.Encode"/>.
-    /// <c>null</c> (the default) writes no segment and leaves the output byte-identical to an encode
-    /// without the option.
+    /// space through a re-encode, whether or not it has one. The bytes are written as given, not validated as
+    /// a profile; an oversized one is an <see cref="System.ArgumentException"/> from <see cref="JpegEncoder.Encode"/>.
+    /// <c>null</c> (the default) or an empty profile writes no segment and leaves the output byte-identical
+    /// to an encode without the option.
     /// </summary>
     public ReadOnlyMemory<byte>? IccProfile { get; init; }
 

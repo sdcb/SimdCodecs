@@ -611,9 +611,11 @@ public static class JpegEncoder
     // -------------------------------------------------------------- marker segments
 
     /// <summary>Checks the EXIF blob before anything is written; returns it, or empty for "no segment".</summary>
+    // An empty blob counts as unset, like null: C# turns a null byte[] (or `cond ? null : memory`) into an
+    // empty ReadOnlyMemory rather than a null ReadOnlyMemory?, so callers pass one without meaning to.
     private static ReadOnlyMemory<byte> ValidateExif(ReadOnlyMemory<byte>? exif)
     {
-        if (exif is not { } blob) return default;
+        if (exif is not { IsEmpty: false } blob) return default;
         if (blob.Length > JpegEncodeOptions.MaxExifBytes)
             throw new ArgumentException($"EXIF blob is {blob.Length} bytes; one APP1 segment holds at most {JpegEncodeOptions.MaxExifBytes}.", "options");
         var s = blob.Span;
@@ -640,9 +642,7 @@ public static class JpegEncoder
 
     private static ReadOnlyMemory<byte> ValidateIcc(ReadOnlyMemory<byte>? icc)
     {
-        if (icc is not { } profile) return default;
-        if (profile.IsEmpty)
-            throw new ArgumentException("ICC profile is empty.", "options");
+        if (icc is not { IsEmpty: false } profile) return default; // empty is unset, as for EXIF
         if (profile.Length > JpegEncodeOptions.MaxIccProfileBytes)
             throw new ArgumentException($"ICC profile is {profile.Length} bytes; 255 APP2 segments hold at most {JpegEncodeOptions.MaxIccProfileBytes}.", "options");
         return profile;
