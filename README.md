@@ -67,7 +67,7 @@ animation seeking by timestamp, Ultra HDR, and more.
 | JPEG 2000 | ✅ | — | Part 1 (T.800), for PDF `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88, for PDF `/JBIG2Decode` |
 | EXIF | ✅ | ✅ | From JPEG, TIFF, PNG and WebP; `ExifWriter` builds a block for the JPEG encoder |
-| ICC profiles | ✅ | ✅ | Decoders return embedded profiles; bundled sRGB v4 profile; splice a profile into an existing JPEG |
+| ICC profiles | ✅ | ✅ | Decoders return embedded profiles; `IccProfiles.Describe` names one; bundled sRGB v4 profile; splice a profile into an existing JPEG |
 
 The table describes the individual format packages. The `Sdcb.SimdCodecs` facade intentionally exposes a narrower dispatch/display contract; for example, the separate `LosslessJpeg.FromMemory` API supports SOF3 directly, while `JpegDecoder` and the facade reject it. The other facade-specific limits are listed in [docs/known-gaps.md](docs/known-gaps.md) (in Chinese).
 

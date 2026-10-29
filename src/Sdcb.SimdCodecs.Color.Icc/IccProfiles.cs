@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Text;
 using Sdcb.SimdCodecs.Abstractions;
 
 namespace Sdcb.SimdCodecs.Color.Icc;
@@ -29,6 +30,90 @@ public static class IccProfiles
     /// interpreted as sRGB by downstream readers.
     /// </summary>
     public static ReadOnlyMemory<byte> SRgbV4 => _sRgbV4.Value;
+
+    /// <summary>
+    /// The profile's description: its <c>desc</c> tag, the name a colour-managed application shows
+    /// ("sRGB IEC61966-2.1", "Display P3"). A v2 profile stores it as <c>textDescriptionType</c>
+    /// (7-bit ASCII); a v4 profile as <c>multiLocalizedUnicodeType</c> (UTF-16BE records per language),
+    /// from which the en-US record is taken, else the first English one, else the first. Trailing NULs
+    /// and whitespace are trimmed.
+    /// </summary>
+    /// <param name="profile">A complete ICC profile, e.g. <c>IDecodedImage.IccProfile</c>. Untrusted
+    /// input is fine: every offset is checked against the bytes given.</param>
+    /// <returns>The description, or null when the profile is malformed, has no <c>desc</c> tag, or
+    /// stores it in another type.</returns>
+    public static string? Describe(ReadOnlySpan<byte> profile)
+    {
+        // Header (128 bytes), then the tag count and 12-byte entries: signature, offset, size.
+        if (profile.Length < 132)
+            return null;
+        var count = BinaryPrimitives.ReadUInt32BigEndian(profile[128..]);
+        for (long i = 0, entry = 132; i < count && entry + 12 <= profile.Length; i++, entry += 12)
+        {
+            var e = profile.Slice((int)entry, 12);
+            if (!e[..4].SequenceEqual("desc"u8))
+                continue;
+            var offset = BinaryPrimitives.ReadUInt32BigEndian(e[4..]);
+            var size = BinaryPrimitives.ReadUInt32BigEndian(e[8..]);
+            if (offset > (uint)profile.Length || size > (uint)profile.Length - offset)
+                return null;
+            var tag = profile.Slice((int)offset, (int)size);
+            if (tag.StartsWith("desc"u8))
+                return TextDescription(tag);
+            if (tag.StartsWith("mluc"u8))
+                return MultiLocalized(tag);
+            return null;
+        }
+
+        return null;
+    }
+
+    // textDescriptionType (ICC.1:2001): 'desc', reserved, ASCII count (including the NUL), ASCII.
+    private static string? TextDescription(ReadOnlySpan<byte> tag)
+    {
+        if (tag.Length < 12)
+            return null;
+        var count = BinaryPrimitives.ReadUInt32BigEndian(tag[8..]);
+        if (count > (uint)(tag.Length - 12))
+            return null;
+        return Clean(Encoding.ASCII.GetString(tag.Slice(12, (int)count)));
+    }
+
+    // multiLocalizedUnicodeType (ICC.1:2010 10.15): 'mluc', reserved, record count, record size (12),
+    // then records of language, country, length and offset, the offset counted from the tag's start.
+    private static string? MultiLocalized(ReadOnlySpan<byte> tag)
+    {
+        if (tag.Length < 16)
+            return null;
+        var records = BinaryPrimitives.ReadUInt32BigEndian(tag[8..]);
+        var recordSize = BinaryPrimitives.ReadUInt32BigEndian(tag[12..]);
+        if (recordSize < 12 || records == 0 || records > (uint)(tag.Length - 16) / recordSize)
+            return null;
+
+        var best = -1;
+        var bestRank = int.MaxValue;
+        for (var r = 0; r < (int)records; r++)
+        {
+            var record = tag.Slice(16 + r * (int)recordSize, 12);
+            var rank = record[..2].SequenceEqual("en"u8) ? (record.Slice(2, 2).SequenceEqual("US"u8) ? 0 : 1) : 2;
+            if (rank < bestRank)
+                (best, bestRank) = (r, rank);
+        }
+
+        var chosen = tag.Slice(16 + best * (int)recordSize, 12);
+        var length = BinaryPrimitives.ReadUInt32BigEndian(chosen[4..]);
+        var offset = BinaryPrimitives.ReadUInt32BigEndian(chosen[8..]);
+        if (offset > (uint)tag.Length || length > (uint)tag.Length - offset || length % 2 != 0)
+            return null;
+        return Clean(Encoding.BigEndianUnicode.GetString(tag.Slice((int)offset, (int)length)));
+    }
+
+    private static string? Clean(string text)
+    {
+        var end = text.IndexOf('\0');
+        var trimmed = (end >= 0 ? text[..end] : text).Trim();
+        return trimmed.Length == 0 ? null : trimmed;
+    }
 
     private static byte[] LoadEmbeddedResource(string logicalName)
     {

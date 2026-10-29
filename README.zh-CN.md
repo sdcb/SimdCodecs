@@ -64,7 +64,7 @@ File.WriteAllBytes("photo.jpg", jpeg);
 | JPEG 2000 | ✅ | — | Part 1（T.800），用于 PDF 的 `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88，用于 PDF 的 `/JBIG2Decode` |
 | EXIF | ✅ | ✅ | 读取 JPEG、TIFF、PNG、WebP 中的 EXIF；`ExifWriter` 生成可交给 JPEG 编码器的数据块 |
-| ICC 配置文件 | ✅ | ✅ | 解码器返回内嵌的配置文件；内置 sRGB v4；可把配置文件写入现有 JPEG |
+| ICC 配置文件 | ✅ | ✅ | 解码器返回内嵌的配置文件；`IccProfiles.Describe` 读出其名称；内置 sRGB v4；可把配置文件写入现有 JPEG |
 
 上表描述的是各格式包本身的能力。`Sdcb.SimdCodecs` 门面有意提供更窄的识别和显示契约；例如独立的 `LosslessJpeg.FromMemory` API 可以直接处理 SOF3，而 `JpegDecoder` 和门面会拒绝这类文件。其他门面限制见 [docs/known-gaps.md](docs/known-gaps.md)。
 
