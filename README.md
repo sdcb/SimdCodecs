@@ -146,8 +146,9 @@ Sdcb.SimdCodecs (facade)
 Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
 ```
 
-The MQ arithmetic decoder (JBIG2, JPEG 2000) and the T.4 fax code tables (JBIG2, TIFF) are shared as
-source (`src/Shared`), compiled into each package that uses them: no package uses another's internals.
+The MQ arithmetic decoder (JBIG2, JPEG 2000), the T.4 fax code tables (JBIG2, TIFF) and the EXIF
+orientation reader (JPEG, PNG, WebP) are shared as source (`src/Shared`), compiled into each package that
+uses them: no package uses another's internals.
 
 </details>
 

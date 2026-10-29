@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-纯托管的 .NET 10 图像编解码库：JPEG、PNG、TIFF、WebP、JPEG 2000、JBIG2，外加 EXIF 和 ICC。
+纯托管的 .NET 10 图像编解码库：JPEG、PNG、TIFF、WebP、GIF、JPEG 2000、JBIG2，外加 EXIF 和 ICC。
 没有任何原生依赖，兼容 NativeAOT，用 SIMD（AVX2、SSE、AdvSimd）加速，并带标量回退。
 在基准测试语料上，JPEG 解码比 libjpeg-turbo 更快。
 
@@ -21,7 +21,7 @@ using Sdcb.SimdCodecs;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Jpeg;
 
-byte[] file = File.ReadAllBytes("photo.webp");   // JPEG、PNG、TIFF、WebP、JPEG 2000 或 JBIG2
+byte[] file = File.ReadAllBytes("photo.webp");   // JPEG、PNG、TIFF、WebP、GIF、JPEG 2000 或 JBIG2
 
 // 门面类根据文件头识别格式，解码到你自己的缓冲区（R G B A）。
 if (!SimdCodecs.TryReadInfo(file, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
@@ -33,8 +33,14 @@ byte[] jpeg = JpegEncoder.Encode(rgba, info.Width, info.Height, channels: 4, new
 File.WriteAllBytes("photo.jpg", jpeg);
 ```
 
-`SimdCodecs.TryDecode` 则保留原始布局（通道数、8/16 位或浮点采样、ICC 配置文件）。每种格式也有
-独立的包，API 更丰富：JPEG 缩放解码、多页 TIFF、WebP 动画、Ultra HDR 等。
+`SimdCodecs.TryDecodeInto(file, buffer, stride, format)` 可以按任意行跨度（stride）直接写出 BGRA
+（Windows / WPF / Skia 表面）、RGB、BGR（OpenCV）或灰度（OCR）；JPEG 和 PNG 原生输出这些布局，中间不经过
+RGBA 整帧（彩色 JPEG 的灰度就是它的 Y 平面，色度直接跳过）。`SimdCodecs.TryDecode` 则保留原始布局（通道数，
+灰度 JPEG 为单通道；8/16 位或浮点采样；ICC 配置文件）。`TryReadInfo` 只读文件头，还会给出存储位深、EXIF
+方向（只报告，不会旋转像素）和帧数或页数。`SimdCodecs.TryOpenFrames(file, out reader)` 按索引、以任意布局逐帧
+解码：动画 WebP 和 GIF 是合成好的帧及其时长，多页 TIFF 是各页（其他图片就是一帧）；
+`reader.EnumerateFramesInto(buffer, stride, format)` 用同一块缓冲区按顺序播放。每种格式也有独立的包，
+API 更丰富：JPEG 缩放解码、TIFF 按块读取、WebP 动画按时间戳定位、Ultra HDR 等。
 
 ## 支持的格式
 
@@ -45,6 +51,7 @@ File.WriteAllBytes("photo.jpg", jpeg);
 | PNG | ✅ | ✅ | 全部位深（1–16 位、调色板）；文本块；HDR 标记（cICP、mDCV、cLLI） |
 | TIFF | ✅ | ✅ | 多页；8/16/32 位整数和浮点；条带或分块；读取 Deflate、LZW、PackBits、CCITT G3/G4，可只读单个分块；写入 Deflate |
 | WebP | ✅ | — | 有损、无损、alpha；动画及跳转；输出与 libwebp 逐字节一致 |
+| GIF | ✅ | ✅ | 87a / 89a：隔行、透明、全部 dispose 方式；动画及跳转；编码静态图和动画（精确调色板，或 Wu 量化 + 抖动） |
 | JPEG 2000 | ✅ | — | Part 1（T.800），用于 PDF 的 `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88，用于 PDF 的 `/JBIG2Decode` |
 | EXIF | ✅ | ✅ | 读取 JPEG、TIFF、PNG 中的 EXIF；`ExifWriter` 生成可交给 JPEG 编码器的数据块 |
@@ -85,11 +92,12 @@ JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插
 | `Sdcb.SimdCodecs.Png` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Png.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Png) | PNG 解码器和编码器 |
 | `Sdcb.SimdCodecs.Tiff` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Tiff.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Tiff) | TIFF 读写 |
 | `Sdcb.SimdCodecs.Webp` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Webp.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Webp) | WebP 解码器（含动画） |
+| `Sdcb.SimdCodecs.Gif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Gif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Gif) | GIF 解码器和编码器（含动画） |
 | `Sdcb.SimdCodecs.Jpeg2000` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jpeg2000.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jpeg2000) | JPEG 2000 解码器 |
 | `Sdcb.SimdCodecs.Jbig2` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jbig2.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jbig2) | JBIG2 解码器 |
 | `Sdcb.SimdCodecs.Exif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Exif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Exif) | EXIF 读写 |
 | `Sdcb.SimdCodecs.Color.Icc` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Color.Icc.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Color.Icc) | sRGB v4 ICC 配置文件、`cicp` 标签注入 |
-| `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | 公共类型：`IImageDecoder`、`RasterImage`、H.273 色彩描述 |
+| `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | 公共类型：`IImageDecoder`、`RasterImage`、`ImagePixelFormat` / `PixelConverter`、`IImageFrameReader`（帧与页）、H.273 色彩描述 |
 
 <details>
 <summary>各包的详细特性</summary>
@@ -102,8 +110,12 @@ JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插
 - **Tiff**：多页；8/16/32 位整数和浮点；Deflate / LZW（另可读 PackBits）；条带或分块；chunky 或
   planar；按需读取单个条带或分块；读取 1/2/4 位页面（扩展为 8 位）、CCITT 传真（Group 3 1D/2D、
   Group 4、Modified Huffman）和浮点预测器。
-- **Webp**：RFC 6386 / RFC 9649：VP8 有损、VP8L 无损、ALPH、带跳转的动画、ICC / EXIF / XMP。门面
-  返回静态图或动画的第 0 帧；完整时间轴请用 `WebpDecoder.DecodeAnimation` 或 `WebpAnimationDecoder`。
+- **Webp**：RFC 6386 / RFC 9649：VP8 有损、VP8L 无损、ALPH、带跳转的动画、ICC / EXIF / XMP。门面的
+  `TryDecode` 返回静态图或动画的第 0 帧，`TryOpenFrames` 返回所有帧；`WebpAnimationDecoder` 另外提供
+  按时间戳定位和每帧的矩形。
+- **Gif**：GIF89a：全局 / 局部调色板、隔行、透明、全部 dispose 方式、NETSCAPE2.0 循环次数；合成好的帧，
+  可跳转。规范没有定死的行为，按浏览器的做法处理，列在包的 README 里。编码器：静态图和动画，精确调色板或
+  Wu 量化（可选 Floyd–Steinberg 抖动），不透明动画只写变化的矩形。
 - **Exif**：读取 JPEG、TIFF 和 PNG；`ExifWriter` 生成可赋给 `JpegEncodeOptions.Exif` 的数据块。
 
 </details>
@@ -117,16 +129,20 @@ Sdcb.SimdCodecs (facade)
  ├─ Png ──────────┬─ Color.Icc ─ Abstractions
  │                └─ Abstractions
  ├─ Tiff ─────────┬─ Png
- │                └─ Abstractions (shares the internal T.4 fax code tables)
+ │                └─ Abstractions
  ├─ Jpeg ─────────── Abstractions
  ├─ Jpeg.GainMap ─┬─ Jpeg
  │                └─ Abstractions
- ├─ Jbig2 ────────── Abstractions (shares the internal MQ decoder and T.4 code tables)
- ├─ Jpeg2000 ─────── Abstractions (shares the internal MQ decoder)
- └─ Webp ─────────── Abstractions
+ ├─ Jbig2 ────────── Abstractions
+ ├─ Jpeg2000 ─────── Abstractions
+ ├─ Webp ─────────── Abstractions
+ └─ Gif ──────────── Abstractions
 
 Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
 ```
+
+MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF）和 EXIF 方向读取（JPEG、PNG、WebP）以源码形式
+共享（`src/Shared`），编译进每个用到它们的包：没有哪个包使用另一个包的内部成员。
 
 </details>
 
