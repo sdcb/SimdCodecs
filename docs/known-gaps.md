@@ -33,9 +33,10 @@ PNG 编码和解码，各有自己的基准项目。
   整个文件。
 - **EXIF 方向只报告、不应用。** `ImageInfo.Orientation` 告诉你该怎样旋转或翻转，像素本身始终是存储时的
   方向。
-- **浮点图像没有 8 位投影。** 浮点 TIFF、增益图 JPEG 重建出的 HDR 等，`TryDecodeInto` 返回 `false`
+- **浮点图像没有自动的 8 位投影。** 浮点 TIFF、增益图 JPEG 重建出的 HDR 等，`TryDecodeInto` 返回 `false`
   （增益图返回的是 SDR 基础图），`EnumerateFramesInto` 抛出 `NotSupportedException`。HDR 到 8 位需要色调映射，
-  这是调用方的决定，不是编解码器的。
+  这是调用方的决定，不是编解码器的。只为查看的话，`PixelConverter.StretchToRgba8` 把颜色范围线性拉伸到
+  0..255，但不做色调映射。
 - **多帧读取器的帧数可能少于文件里的帧数。** `ImageInfo.FrameCount` 报告文件里有多少帧或页，但：
   - APNG：解码还没实现，读取器只给出 PNG 的默认图（1 帧）；
   - JBIG2：独立 `.jb2` 文件只解码第 1 页，读取器只有 1 帧。
@@ -52,8 +53,6 @@ PNG 编码和解码，各有自己的基准项目。
   分层（hierarchical）JPEG 不支持。
 - **无损 JPEG（SOF3）不走门面。** 它由单独的 `LosslessJpeg.FromMemory` API 解码，`JpegDecoder` 和门面会拒绝
   这类文件。
-- **彩色 JPEG 的保真层是 4 通道 RGBA。** JPEG 没有 alpha，按“保留原始通道数”的原则应该是 3 通道；灰度 JPEG
-  已经是 1 通道。
 - **EXIF 方向只从 APP1 的 Exif 段读取**，不看 XMP 里的 `tiff:Orientation`。
 - **编码器**：只写 8 位；色度采样只有 4:4:4、4:2:0 和灰度（没有 4:2:2）；不写 restart interval；不支持算术
   编码和无损编码。
@@ -134,5 +133,5 @@ PNG 编码和解码，各有自己的基准项目。
 
 ## EXIF
 
-- **只从 JPEG、TIFF 和 PNG 读取**（`ExifReader`），不读 WebP 的 `EXIF` 块；WebP 的方向由解码器自己读取，只用于
-  `ImageInfo.Orientation`。
+- **只读取 JPEG、TIFF、PNG 和 WebP 里的 EXIF**（`ExifReader`）；HEIF、AVIF 等容器不读。
+- **门面不返回 EXIF。** `ImageInfo` 只带方向；其他字段请把同一份文件交给 `ExifReader.FromBytes`。
