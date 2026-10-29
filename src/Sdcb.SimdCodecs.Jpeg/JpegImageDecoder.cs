@@ -48,7 +48,7 @@ public sealed class JpegImageDecoder : IImageDecoder
             var (channels, format) = info.Components == 1 ? (1, JpegPixelFormat.Gray8) : (3, JpegPixelFormat.Rgb24);
             var pixels = new byte[info.Width * info.Height * channels];
             _ = JpegDecoder.DecodeTo(data, pixels, info.Width * channels, format);
-            image = new RasterImage(info.Width, info.Height, channels, SampleFormat.UInt8, pixels, JpegDecoder.ReadIccProfile(data));
+            image = new RasterImage(info.Width, info.Height, channels, SampleFormat.UInt8, pixels, JpegDecoder.TryReadIccProfile(data, out var icc) ? icc : null);
             return true;
         }
         catch (InvalidDataException)

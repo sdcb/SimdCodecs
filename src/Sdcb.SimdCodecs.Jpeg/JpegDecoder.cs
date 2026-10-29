@@ -65,9 +65,17 @@ public static class JpegDecoder
     /// sequence order. A profile over 64 KB spans several chunks, each with its 1-based sequence number
     /// and the chunk count.
     /// </summary>
-    /// <returns>The profile, or null when there is none or its chunks are inconsistent (a count that
-    /// differs between chunks, a missing or repeated sequence number) or the header is malformed.</returns>
-    public static byte[]? ReadIccProfile(ReadOnlySpan<byte> data)
+    /// <param name="data">The JPEG file.</param>
+    /// <param name="profile">The profile, or null on false.</param>
+    /// <returns>False when there is none, its chunks are inconsistent (a count that differs between
+    /// chunks, a missing or repeated sequence number) or the header is malformed.</returns>
+    public static bool TryReadIccProfile(ReadOnlySpan<byte> data, [NotNullWhen(true)] out byte[]? profile)
+    {
+        profile = JoinIccChunks(data);
+        return profile is not null;
+    }
+
+    private static byte[]? JoinIccChunks(ReadOnlySpan<byte> data)
     {
         List<JpegSegment> segments;
         try

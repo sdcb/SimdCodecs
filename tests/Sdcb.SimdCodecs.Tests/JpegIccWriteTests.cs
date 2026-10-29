@@ -26,7 +26,7 @@ public sealed class JpegIccWriteTests
 
         using var image = new MagickImage(jpeg);
         image.GetColorProfile().ShouldNotBeNull().ToByteArray().ShouldBe(profile);
-        JpegDecoder.ReadIccProfile(jpeg).ShouldBe(profile);
+        Icc(jpeg).ShouldBe(profile);
     }
 
     [Fact]
@@ -45,10 +45,19 @@ public sealed class JpegIccWriteTests
         var two = new byte[2 * JpegEncodeOptions.MaxIccChunkBytes];
         new Random(5).NextBytes(two);
         var jpeg = JpegEncoder.Encode(Rgb, 64, 48, 3, new JpegEncodeOptions { IccProfile = two });
-        JpegDecoder.ReadIccProfile(jpeg).ShouldBe(two);
+        Icc(jpeg).ShouldBe(two);
 
         Should.Throw<ArgumentException>(() => JpegEncoder.Encode(Rgb, 64, 48, 3, new JpegEncodeOptions { IccProfile = Array.Empty<byte>() }));
         Should.Throw<ArgumentException>(() => JpegEncoder.Encode(Rgb, 64, 48, 3,
             new JpegEncodeOptions { IccProfile = new byte[JpegEncodeOptions.MaxIccProfileBytes + 1] }));
+    }
+
+    // TryReadIccProfile as a value: the profile, or null when it returns false (and then gives null).
+    private static byte[]? Icc(ReadOnlySpan<byte> jpeg)
+    {
+        if (JpegDecoder.TryReadIccProfile(jpeg, out var profile))
+            return profile;
+        profile.ShouldBeNull();
+        return null;
     }
 }

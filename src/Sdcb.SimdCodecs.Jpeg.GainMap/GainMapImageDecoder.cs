@@ -66,8 +66,7 @@ public sealed class GainMapImageDecoder : IImageDecoder
     // no H.273 primaries (Adobe RGB, a display's own) is Unspecified rather than a wrong BT.709.
     private static ColorPrimaries BasePrimaries(ReadOnlySpan<byte> data)
     {
-        var icc = JpegDecoder.ReadIccProfile(data);
-        if (icc is null)
+        if (!JpegDecoder.TryReadIccProfile(data, out var icc))
             return ColorPrimaries.BT709;
         return IccProfiles.TryGetPrimaries(icc, out var primaries) ? primaries : ColorPrimaries.Unspecified;
     }
