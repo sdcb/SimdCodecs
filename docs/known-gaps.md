@@ -31,6 +31,9 @@ PNG 编码和解码，各有自己的基准项目。
 - **输入必须整个在内存里。** 所有入口接收 `ReadOnlySpan<byte>` / `ReadOnlyMemory<byte>`，没有 `Stream`
   入口（TIFF 包的 `ReadLayout` / `ReadSegment` 除外，它们可以从可寻址的流里按块读取）。多帧读取器也会持有
   整个文件。
+- **`ColorEncoding` 不反映 ICC。** 只有格式自己的色彩标记（PNG 的 cICP，以及表示线性的 gAMA 1.0）会写进
+  `IDecodedImage.ColorEncoding`；只带 ICC 的图片（例如 Display P3 照片）仍报默认的 sRGB。要知道 ICC 声明的
+  色彩空间，请读 `IccProfile`。
 - **EXIF 方向只报告、不应用。** `ImageInfo.Orientation` 告诉你该怎样旋转或翻转，像素本身始终是存储时的
   方向。
 - **浮点图像没有自动的 8 位投影。** 浮点 TIFF、增益图 JPEG 重建出的 HDR 等，`TryDecodeInto` 返回 `false`
@@ -59,6 +62,9 @@ PNG 编码和解码，各有自己的基准项目。
 
 ## Ultra HDR / 增益图 JPEG
 
+- **重建出的 HDR 不带 ICC。** `IDecodedImage.IccProfile` 有意留空：浮点结果是线性光，底图的 ICC 描述的是
+  非线性的显示曲线，套上去会误导色彩管理。需要底图的配置文件时，用 `JpegDecoder.ReadIccProfile(file)` 读取，
+  并注明它属于 SDR 底图。
 - **只支持 SDR 基础图的形式。** 基础图本身是 HDR 的文件（`BaseRenditionIsHDR=true`）不支持 HDR 重建，门面会
   退回去解码它的主图。
 

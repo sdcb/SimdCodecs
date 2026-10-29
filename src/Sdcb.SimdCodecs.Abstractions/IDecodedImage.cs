@@ -46,6 +46,10 @@ public interface IDecodedImage
     /// Informational like <see cref="IccProfile"/> — never rescales pixels.
     /// Defaults to <see cref="ColorEncoding.AssumedSrgb"/> so implementations
     /// (and consumers) that predate colour signalling keep today's meaning.
+    /// It is not derived from <see cref="IccProfile"/>: an ICC-tagged image
+    /// (a Display P3 photo) still reports the default unless its format signals
+    /// colour some other way (PNG cICP, or gAMA 1.0 for linear). Read the profile for the
+    /// colour space an ICC tag declares.
     /// Note <see cref="ToRgba8"/>'s code-value projection is only colour-correct
     /// for display-referred sRGB-ish content — check here before relying on it
     /// (a PQ/HLG-tagged raster needs a colour-managed conversion instead).
