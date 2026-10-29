@@ -171,14 +171,14 @@ public sealed class GainMapFacadeTests
 
         SimdCodecs.TryDecode(plain, out var image).ShouldBeTrue();
 
-        // Falls through to the base JPEG decoder: ordinary 8-bit RGBA, not HDR.
+        // Falls through to the base JPEG decoder: ordinary 8-bit RGB, not HDR.
         image.ShouldBeOfType<RasterImage>();
         image!.SampleFormat.ShouldBe(SampleFormat.UInt8);
-        image.Channels.ShouldBe(4);
+        image.Channels.ShouldBe(3);
 
         SimdCodecs.TryReadInfo(plain, out var info).ShouldBeTrue();
         info.SampleFormat.ShouldBe(SampleFormat.UInt8);
-        info.Channels.ShouldBe(4);
+        info.Channels.ShouldBe(3);
     }
 
     [Fact]

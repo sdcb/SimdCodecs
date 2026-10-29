@@ -9,7 +9,7 @@ namespace Sdcb.SimdCodecs.Jpeg;
 /// <see cref="IImageDecoder"/> adapter for JPEG, bridging <see cref="JpegDecoder"/>
 /// into the <c>Sdcb.SimdCodecs</c> facade. A greyscale JPEG (one SOF component)
 /// decodes to a 1-channel <see cref="SampleFormat.UInt8"/> raster of its samples;
-/// every other JPEG to 4-channel RGBA (JPEG has no alpha, so it is 255).
+/// every other JPEG (YCbCr, RGB, CMYK, YCCK) to 3-channel RGB - JPEG has no alpha.
 /// <see cref="TryDecodeInto"/> is a genuine zero-copy decode in every
 /// <see cref="ImagePixelFormat"/> via
 /// <see cref="JpegDecoder.DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, JpegPixelFormat, JpegScale)"/>.
@@ -46,17 +46,13 @@ public sealed class JpegImageDecoder : IImageDecoder
         image = null;
         try
         {
-            if (JpegDecoder.ReadInfo(data) is { Components: 1 } grey)
-            {
-                // The samples as stored: Gray8 output of a one-component frame is exactly its Y.
-                var samples = new byte[grey.Width * grey.Height];
-                _ = JpegDecoder.DecodeTo(data, samples, grey.Width, JpegPixelFormat.Gray8);
-                image = new RasterImage(grey.Width, grey.Height, 1, SampleFormat.UInt8, samples);
-                return true;
-            }
-
-            var jpeg = JpegDecoder.Decode(data);
-            image = new RasterImage(jpeg.Width, jpeg.Height, 4, SampleFormat.UInt8, jpeg.Pixels);
+            // A one-component frame keeps its samples as stored (Gray8 output is exactly its Y);
+            // every other frame is colour, written as RGB since JPEG carries no alpha.
+            var info = JpegDecoder.ReadInfo(data);
+            var (channels, format) = info.Components == 1 ? (1, JpegPixelFormat.Gray8) : (3, JpegPixelFormat.Rgb24);
+            var pixels = new byte[info.Width * info.Height * channels];
+            _ = JpegDecoder.DecodeTo(data, pixels, info.Width * channels, format);
+            image = new RasterImage(info.Width, info.Height, channels, SampleFormat.UInt8, pixels);
             return true;
         }
         catch (InvalidDataException)
@@ -91,7 +87,7 @@ public sealed class JpegImageDecoder : IImageDecoder
 
     /// <summary>The <see cref="ImageInfo"/> of what <see cref="TryDecode"/> returns for a stream with header <paramref name="info"/>.</summary>
     internal static ImageInfo ToImageInfo(JpegInfo info) =>
-        new(info.Width, info.Height, info.Components == 1 ? 1 : 4, SampleFormat.UInt8) { Orientation = info.Orientation };
+        new(info.Width, info.Height, info.Components == 1 ? 1 : 3, SampleFormat.UInt8) { Orientation = info.Orientation };
 
     /// <summary>The <see cref="JpegPixelFormat"/> writing the same bytes as <paramref name="format"/>.</summary>
     internal static JpegPixelFormat ToJpegFormat(ImagePixelFormat format) => format switch

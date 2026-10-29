@@ -133,17 +133,22 @@ public sealed class SimdCodecsTests
     // --- JPEG (synthetic photo) ---
 
     [Fact]
-    public void Jpeg_decodes_as_rgba8_matching_ReadInfo()
+    public void Jpeg_decodes_as_rgb8_matching_ReadInfo()
     {
         var bytes = JpegFixture.Value;
         var expected = JpegDecoder.ReadInfo(bytes);
 
+        // JPEG has no alpha: a colour JPEG reports and decodes to 3 channels, the RGB of the RGBA decode.
+        SimdCodecs.TryReadInfo(bytes, out var info).ShouldBeTrue();
+        info.Channels.ShouldBe(3);
         SimdCodecs.TryDecode(bytes, out var img).ShouldBeTrue();
         img!.Width.ShouldBe(expected.Width);
         img.Height.ShouldBe(expected.Height);
-        img.Channels.ShouldBe(4);
+        img.Channels.ShouldBe(3);
         img.SampleFormat.ShouldBe(SampleFormat.UInt8);
-        img.Pixels.Length.ShouldBe(expected.Width * expected.Height * 4);
+        var rgba = JpegDecoder.Decode(bytes).Pixels;
+        img.Pixels.ToArray().ShouldBe(rgba.Where((_, i) => i % 4 != 3).ToArray());
+        img.ToRgba8().ShouldBe(rgba);
     }
 
     [Fact]
