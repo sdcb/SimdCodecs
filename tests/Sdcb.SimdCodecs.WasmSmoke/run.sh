@@ -11,9 +11,12 @@ here="$(cd "$(dirname "$0")" && pwd)"
 work="${1:-$here/bin/wasm-smoke}"
 mkdir -p "$work"
 
-# The JIT reference runs while the (much longer) AOT publish does. Line endings are
+# The JIT reference runs while the (much longer) AOT publish does. It is built first: two
+# concurrent builds of the shared codec projects race on their obj folders. Line endings are
 # normalised: the JIT writes CRLF on Windows, Node LF.
-dotnet run --project "$here/../Sdcb.SimdCodecs.AotSmoke" -c Release > "$work/jit-raw.txt" &
+dotnet build "$here/../Sdcb.SimdCodecs.AotSmoke" -c Release > "$work/jit-build.log" \
+  || { cat "$work/jit-build.log"; exit 1; }
+dotnet run --project "$here/../Sdcb.SimdCodecs.AotSmoke" -c Release --no-build > "$work/jit-raw.txt" &
 jit=$!
 dotnet publish "$here" -c Release -o "$work/publish" > "$work/publish.log" \
   || { cat "$work/publish.log"; exit 1; }
