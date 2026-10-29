@@ -60,6 +60,8 @@ richer API: scaled JPEG decoding, TIFF segment reads, WebP animation seeking by 
 | EXIF | ✅ | ✅ | From JPEG, TIFF and PNG; `ExifWriter` builds a block for the JPEG encoder |
 | ICC profiles | ✅ | ✅ | Decoders return embedded profiles; bundled sRGB v4 profile; splice a profile into an existing JPEG |
 
+What each codec does not do yet, refuses on purpose, or has not been tuned for: [docs/known-gaps.md](docs/known-gaps.md) (in Chinese).
+
 ## Performance
 
 Single-threaded, AMD Ryzen 7 5800X, .NET 10. Time relative to the native library (lower is faster):

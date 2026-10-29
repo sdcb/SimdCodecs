@@ -57,6 +57,8 @@ API 更丰富：JPEG 缩放解码、TIFF 按块读取、WebP 动画按时间戳�
 | EXIF | ✅ | ✅ | 读取 JPEG、TIFF、PNG 中的 EXIF；`ExifWriter` 生成可交给 JPEG 编码器的数据块 |
 | ICC 配置文件 | ✅ | ✅ | 解码器返回内嵌的配置文件；内置 sRGB v4；可把配置文件写入现有 JPEG |
 
+各编解码器还没做到、有意不做和尚未调优的地方，见 [docs/known-gaps.md](docs/known-gaps.md)。
+
 ## 性能
 
 单线程，AMD Ryzen 7 5800X，.NET 10。时间以原生库为基准（越小越快）：
