@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <!-- Mono AOT (browser-wasm) smoke test; not part of SimdCodecs.slnx. It compiles the NativeAOT
+       smoke test's sources, so run.sh can diff its output against the JIT's: Mono AOT is the
+       runtime of browser-wasm, iOS and Android, and compiles generic code and delegates its own
+       way. Needs the wasm-tools workload and Node.js. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <WasmEnableSIMD>true</WasmEnableSIMD>
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <CompressionEnabled>false</CompressionEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Sdcb.SimdCodecs.AotSmoke\*.cs" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs\Sdcb.SimdCodecs.csproj" />
+  </ItemGroup>
+
+  <Import Project="..\Sdcb.SimdCodecs.AotSmoke\Fixtures.props" />
+
+</Project>

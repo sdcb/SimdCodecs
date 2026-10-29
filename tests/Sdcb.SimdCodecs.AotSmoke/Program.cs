@@ -1,5 +1,6 @@
 using System.Runtime.Intrinsics;
 using System.Security.Cryptography;
+using Sdcb.SimdCodecs.AotSmoke;
 using Sdcb.SimdCodecs.Jpeg;
 
 // One "label<TAB>sha256" line per decode on stdout (diffed by run.sh); the vector
@@ -33,24 +34,29 @@ foreach (var (w, h) in new[] { (67, 45), (16, 16), (1, 1), (130, 7), (333, 21) }
     }
 }
 
-Console.Error.WriteLine($"aot-smoke: {count} decodes");
+var facade = await FacadeSmoke.RunAsync();
+Console.Error.WriteLine($"aot-smoke: {count} decodes, {facade} facade images");
 return 0;
 
-static byte[] Pattern(int w, int h)
+// The partial class lets FacadeSmoke share the pattern.
+internal static partial class Program
 {
-    var rgb = new byte[w * h * 3];
-    var seed = 0x2545F491u;
-    for (var y = 0; y < h; y++)
+    internal static byte[] Pattern(int w, int h)
     {
-        for (var x = 0; x < w; x++)
+        var rgb = new byte[w * h * 3];
+        var seed = 0x2545F491u;
+        for (var y = 0; y < h; y++)
         {
-            seed = seed * 1664525u + 1013904223u;
-            var i = (y * w + x) * 3;
-            rgb[i] = (byte)(x * 255 / Math.Max(1, w - 1) ^ (seed >> 29));
-            rgb[i + 1] = (byte)(y * 255 / Math.Max(1, h - 1) + (((x >> 2) ^ (y >> 2)) & 1) * 40);
-            rgb[i + 2] = (byte)(128 + 100 * Math.Sin(x * 0.3 + y * 0.1));
+            for (var x = 0; x < w; x++)
+            {
+                seed = seed * 1664525u + 1013904223u;
+                var i = (y * w + x) * 3;
+                rgb[i] = (byte)(x * 255 / Math.Max(1, w - 1) ^ (seed >> 29));
+                rgb[i + 1] = (byte)(y * 255 / Math.Max(1, h - 1) + (((x >> 2) ^ (y >> 2)) & 1) * 40);
+                rgb[i + 2] = (byte)(128 + 100 * Math.Sin(x * 0.3 + y * 0.1));
+            }
         }
-    }
 
-    return rgb;
+        return rgb;
+    }
 }

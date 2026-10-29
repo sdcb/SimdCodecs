@@ -19,8 +19,7 @@ namespace Sdcb.SimdCodecs;
 /// <para>
 /// Registers PNG, JPEG, TIFF, JBIG2, JPEG 2000, WebP and GIF. To add a
 /// format, implement <see cref="IImageDecoder"/> in its codec package and add a
-/// <c>Register&lt;T&gt;()</c> line to <see cref="_registry"/> - the order is the
-/// sniff order.
+/// line binding its members to <see cref="_registry"/> - the order is the sniff order.
 /// </para>
 /// <para>
 /// JBIG2 is registered for standalone <c>.jb2</c> files only. Its real use -
@@ -79,30 +78,27 @@ public static class SimdCodecs
 
     // Explicit registry: IImageDecoder's static-abstract members are not enumerable
     // and reflection-scanning for implementors is not AOT-safe, so each codec is
-    // registered by hand. Binding delegates to the static members via a generic
-    // instantiation stays fully AOT-friendly.
+    // registered by hand. Each delegate is bound to the concrete type's method group,
+    // never inside a generic method (Register<T>() => new(T.CanDecode, ...)): Mono AOT
+    // (browser-wasm, iOS, Android) compiles a delegate over a static abstract member
+    // of a type parameter into a call that traps with "function signature mismatch".
+    // tests/Sdcb.SimdCodecs.WasmSmoke runs every entry point under Mono AOT.
     private static readonly Entry[] _registry =
     [
-        Register<PngImageDecoder>(),
+        new(PngImageDecoder.CanDecode, PngImageDecoder.TryReadInfo, PngImageDecoder.TryDecode, PngImageDecoder.TryDecodeInto),
         // GainMap must precede the plain JPEG decoder: both answer the FF D8 FF
         // signature, but GainMapImageDecoder.CanDecode only claims a JPEG that
         // actually carries a locatable gain map, so ordinary JPEGs fall through.
         // It makes ToFloats() reconstruct the authored HDR while the 8-bit path
         // keeps returning the SDR base.
-        Register<GainMapImageDecoder>(),
-        Register<JpegImageDecoder>(),
-        RegisterMultiFrame<TiffImageDecoder>(),
-        Register<Jbig2ImageDecoder>(),
-        Register<Jpeg2000ImageDecoder>(),
-        RegisterMultiFrame<WebpImageDecoder>(),
-        RegisterMultiFrame<GifImageDecoder>(),
+        new(GainMapImageDecoder.CanDecode, GainMapImageDecoder.TryReadInfo, GainMapImageDecoder.TryDecode, GainMapImageDecoder.TryDecodeInto),
+        new(JpegImageDecoder.CanDecode, JpegImageDecoder.TryReadInfo, JpegImageDecoder.TryDecode, JpegImageDecoder.TryDecodeInto),
+        new(TiffImageDecoder.CanDecode, TiffImageDecoder.TryReadInfo, TiffImageDecoder.TryDecode, TiffImageDecoder.TryDecodeInto, TiffImageDecoder.TryOpenFrames),
+        new(Jbig2ImageDecoder.CanDecode, Jbig2ImageDecoder.TryReadInfo, Jbig2ImageDecoder.TryDecode, Jbig2ImageDecoder.TryDecodeInto),
+        new(Jpeg2000ImageDecoder.CanDecode, Jpeg2000ImageDecoder.TryReadInfo, Jpeg2000ImageDecoder.TryDecode, Jpeg2000ImageDecoder.TryDecodeInto),
+        new(WebpImageDecoder.CanDecode, WebpImageDecoder.TryReadInfo, WebpImageDecoder.TryDecode, WebpImageDecoder.TryDecodeInto, WebpImageDecoder.TryOpenFrames),
+        new(GifImageDecoder.CanDecode, GifImageDecoder.TryReadInfo, GifImageDecoder.TryDecode, GifImageDecoder.TryDecodeInto, GifImageDecoder.TryOpenFrames),
     ];
-
-    private static Entry Register<T>() where T : IImageDecoder =>
-        new(T.CanDecode, T.TryReadInfo, T.TryDecode, T.TryDecodeInto);
-
-    private static Entry RegisterMultiFrame<T>() where T : IMultiFrameImageDecoder =>
-        Register<T>() with { TryOpenFrames = T.TryOpenFrames };
 
     /// <summary>
     /// Opens a reader over every frame of <paramref name="data"/> — an animated WebP's frames, a multi-page

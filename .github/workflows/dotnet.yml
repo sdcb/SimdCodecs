@@ -157,9 +157,20 @@ jobs:
     - name: NativeAOT smoke test
       run: bash tests/Sdcb.SimdCodecs.AotSmoke/run.sh
 
+  wasm-aot:
+    # Mono AOT (browser-wasm; also the runtime of iOS and Android) compiles generic code and
+    # delegates its own way: the same JPEG decodes and facade calls must equal the JIT's.
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install wasm-tools workload
+      run: sudo dotnet workload install wasm-tools
+    - name: Mono AOT (browser-wasm) smoke test
+      run: bash tests/Sdcb.SimdCodecs.WasmSmoke/run.sh
+
   publish-nuget:
     # Every check must pass before a release goes out, not just the build job.
-    needs: [ build, jpeg-isa, jpeg-aot ]
+    needs: [ build, jpeg-isa, jpeg-aot, wasm-aot ]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     permissions:

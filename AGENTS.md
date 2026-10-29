@@ -47,8 +47,8 @@ changes that it proves.
   time. Code two packages need is shared as source (`src/Shared`, compiled under each package's
   namespace); code a consumer needs is public in `Abstractions`.
 - One test project for everything (xunit v3 + Shouldly); Magick.NET is the test-only black box.
-- Benchmarks are in `SimdCodecs.slnx` (compiled by CI, never run by it). The NativeAOT smoke test
-  (`tests/Sdcb.SimdCodecs.AotSmoke`) is not.
+- Benchmarks are in `SimdCodecs.slnx` (compiled by CI, never run by it). The NativeAOT and Mono AOT
+  smoke tests (`tests/Sdcb.SimdCodecs.AotSmoke`, `tests/Sdcb.SimdCodecs.WasmSmoke`) are not.
 - Sample images are downloaded at run time, never committed (`tools/sample-assets/`).
 - Names the compiler cannot check — `InternalsVisibleTo`, embedded resource names
   (`Sdcb.SimdCodecs.Color.Icc.sRGB-v4.icc`), paths in tests and scripts — break silently on rename.
@@ -61,8 +61,12 @@ REQUIRE_ORACLES=1 dotnet test SimdCodecs.slnx -c Release            # what CI ru
 DOTNET_EnableAVX2=0        dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg|FullyQualifiedName~Png"
 DOTNET_EnableHWIntrinsic=0 dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg|FullyQualifiedName~Png"
 bash tests/Sdcb.SimdCodecs.AotSmoke/run.sh                          # NativeAOT output == JIT output
+bash tests/Sdcb.SimdCodecs.WasmSmoke/run.sh                         # Mono AOT (browser-wasm) output == JIT output
 ```
 
+- The facade binds each codec's static members to delegates by concrete method group, never inside
+  a generic method: Mono AOT (browser-wasm, iOS, Android) traps on a delegate over a type
+  parameter's static abstract member. The wasm smoke test covers every facade entry point.
 - **No new warnings.** The build stays at its current set (pre-existing XML-doc warnings only); fix
   what you introduce, never suppress it.
 - **A skipped oracle is not a passing oracle.** Oracle tests skip when their tool is missing; read the

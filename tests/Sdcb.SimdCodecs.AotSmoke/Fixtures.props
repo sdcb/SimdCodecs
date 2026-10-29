@@ -1,0 +1,18 @@
+<Project>
+
+  <!-- The test project's fixtures FacadeSmoke decodes, embedded under their file names (browser-wasm
+       has no file system). Shared by the NativeAOT and the browser-wasm smoke projects. -->
+  <PropertyGroup>
+    <_SmokeFixtures>$(MSBuildThisFileDirectory)..\Sdcb.SimdCodecs.Tests\Fixtures\</_SmokeFixtures>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="$(_SmokeFixtures)jbig2\sym.jb2" LogicalName="sym.jb2" />
+    <EmbeddedResource Include="$(_SmokeFixtures)jpeg2000\rgb-struct64.j2k" LogicalName="rgb-struct64.j2k" />
+    <EmbeddedResource Include="$(_SmokeFixtures)jpeg2000\jp2-rgb-struct64.jp2" LogicalName="jp2-rgb-struct64.jp2" />
+    <EmbeddedResource Include="$(_SmokeFixtures)webp\astronaut-192-q20-normal.webp" LogicalName="astronaut-192-q20-normal.webp" />
+    <EmbeddedResource Include="$(_SmokeFixtures)webp\lossless-palette-16.webp" LogicalName="lossless-palette-16.webp" />
+    <EmbeddedResource Include="$(_SmokeFixtures)webp\anim-img2webp-mixed.webp" LogicalName="anim-img2webp-mixed.webp" />
+  </ItemGroup>
+
+</Project>

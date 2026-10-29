@@ -1,9 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- NativeAOT smoke test for the JPEG decoder; not part of SimdCodecs.slnx. run.sh
-       decodes the same inputs under the JIT and as a NativeAOT binary and diffs the
-       pixel digests: the AOT compiler fixes the ISA tier at build time, so this is the
-       check that its dispatch lands on a bit-identical kernel. -->
+  <!-- NativeAOT smoke test; not part of SimdCodecs.slnx. run.sh decodes the same inputs under
+       the JIT and as a NativeAOT binary and diffs the pixel digests: the AOT compiler fixes the
+       ISA tier at build time, so this is the check that its dispatch lands on a bit-identical
+       kernel, and that the facade's delegate registry survives ahead-of-time compilation.
+       tests/Sdcb.SimdCodecs.WasmSmoke compiles these same sources for Mono AOT (browser-wasm). -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -16,7 +17,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Jpeg\Sdcb.SimdCodecs.Jpeg.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs\Sdcb.SimdCodecs.csproj" />
   </ItemGroup>
+
+  <Import Project="Fixtures.props" />
 
 </Project>
