@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Sdcb.SimdCodecs package icon: a picture (sky, sun, hills) with a lightning bolt for speed.
+       Rendered to icon.png for the NuGet packages. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6CC8FF"/>
+      <stop offset="1" stop-color="#CDEFFF"/>
+    </linearGradient>
+    <clipPath id="sq"><rect width="256" height="256" rx="52"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#sq)">
+    <rect width="256" height="256" fill="url(#sky)"/>
+    <circle cx="68" cy="68" r="24" fill="#FFD166"/>
+    <path d="M0,256 L0,214 L100,104 L150,164 L190,122 L256,196 L256,256 Z" fill="#2E9E85"/>
+    <path d="M0,256 L0,176 L80,150 L170,256 Z" fill="#1D6E5E"/>
+  </g>
+
+  <path transform="translate(138,104) scale(1.12)" d="M58,0 L14,56 L44,56 L36,100 L86,38 L54,38 L66,0 Z"
+        fill="#FFC233" stroke="#0B1F3A" stroke-width="7" stroke-linejoin="round" paint-order="stroke"/>
+</svg>
