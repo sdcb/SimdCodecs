@@ -46,7 +46,7 @@ API 更丰富：JPEG 缩放解码、TIFF 按块读取、WebP 动画按时间戳�
 
 | 格式 | 解码 | 编码 | 特性 |
 |---|:-:|:-:|---|
-| JPEG | ✅ | ✅ | 解码 baseline 和 progressive DCT JPEG、任意采样、CMYK / YCCK，支持 1/2–1/8 缩放和零分配 `DecodeTo`；SOF3 无损 JPEG 由独立的 `LosslessJpegDecoder` 支持；编码 baseline / 优化 Huffman / progressive，可写入 EXIF 和 XMP |
+| JPEG | ✅ | ✅ | 解码 baseline 和 progressive DCT JPEG、任意采样、CMYK / YCCK，支持 1/2–1/8 缩放和零分配 `DecodeTo`；SOF3 无损 JPEG 由独立的 `LosslessJpeg.FromMemory` API 支持；编码 baseline / 优化 Huffman / progressive，可写入 EXIF 和 XMP |
 | Ultra HDR JPEG | ✅ | ✅ | 增益图（gain map）读取、组装和 HDR 重建（Ultra HDR / Adobe） |
 | PNG | ✅ | ✅ | 全部位深（1–16 位、调色板）；文本块；HDR 标记（cICP、mDCV、cLLI） |
 | TIFF | ✅ | ✅ | 多页；8/16/32 位整数和浮点；条带或分块；读取 Deflate、LZW、PackBits、CCITT G3/G4，可只读单个分块；写入 Deflate |
@@ -57,7 +57,7 @@ API 更丰富：JPEG 缩放解码、TIFF 按块读取、WebP 动画按时间戳�
 | EXIF | ✅ | ✅ | 读取 JPEG、TIFF、PNG 中的 EXIF；`ExifWriter` 生成可交给 JPEG 编码器的数据块 |
 | ICC 配置文件 | ✅ | ✅ | 解码器返回内嵌的配置文件；内置 sRGB v4；可把配置文件写入现有 JPEG |
 
-上表描述的是各格式包本身的能力。`Sdcb.SimdCodecs` 门面有意提供更窄的识别和显示契约；例如 `LosslessJpegDecoder` 可以直接处理 SOF3，而 `JpegDecoder` 和门面会拒绝这类文件。其他门面限制见 [docs/known-gaps.md](docs/known-gaps.md)。
+上表描述的是各格式包本身的能力。`Sdcb.SimdCodecs` 门面有意提供更窄的识别和显示契约；例如独立的 `LosslessJpeg.FromMemory` API 可以直接处理 SOF3，而 `JpegDecoder` 和门面会拒绝这类文件。其他门面限制见 [docs/known-gaps.md](docs/known-gaps.md)。
 
 ## 性能
 

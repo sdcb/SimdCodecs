@@ -49,7 +49,7 @@ richer API: scaled JPEG decoding, TIFF segment reads, WebP animation seeking by 
 
 | Format | Decode | Encode | Highlights |
 |---|:-:|:-:|---|
-| JPEG | ✅ | ✅ | Decodes baseline and progressive DCT JPEG, any subsampling, CMYK / YCCK, scaled 1/2–1/8, zero-allocation `DecodeTo`; the separate `LosslessJpegDecoder` handles SOF3; encodes baseline / optimised Huffman / progressive with EXIF and XMP |
+| JPEG | ✅ | ✅ | Decodes baseline and progressive DCT JPEG, any subsampling, CMYK / YCCK, scaled 1/2–1/8, zero-allocation `DecodeTo`; the separate `LosslessJpeg.FromMemory` API handles SOF3; encodes baseline / optimised Huffman / progressive with EXIF and XMP |
 | Ultra HDR JPEG | ✅ | ✅ | Gain-map read, assemble and HDR reconstruction (Ultra HDR / Adobe) |
 | PNG | ✅ | ✅ | All bit depths (1–16, indexed); text chunks; HDR signalling (cICP, mDCV, cLLI) |
 | TIFF | ✅ | ✅ | Multi-page; 8/16/32-bit integer and float; strips or tiles; reads Deflate, LZW, PackBits, CCITT G3/G4 and single tiles; writes Deflate |
@@ -60,7 +60,7 @@ richer API: scaled JPEG decoding, TIFF segment reads, WebP animation seeking by 
 | EXIF | ✅ | ✅ | From JPEG, TIFF and PNG; `ExifWriter` builds a block for the JPEG encoder |
 | ICC profiles | ✅ | ✅ | Decoders return embedded profiles; bundled sRGB v4 profile; splice a profile into an existing JPEG |
 
-The table describes the individual format packages. The `Sdcb.SimdCodecs` facade intentionally exposes a narrower dispatch/display contract; for example, `LosslessJpegDecoder` supports SOF3 directly, while `JpegDecoder` and the facade reject it. The other facade-specific limits are listed in [docs/known-gaps.md](docs/known-gaps.md) (in Chinese).
+The table describes the individual format packages. The `Sdcb.SimdCodecs` facade intentionally exposes a narrower dispatch/display contract; for example, the separate `LosslessJpeg.FromMemory` API supports SOF3 directly, while `JpegDecoder` and the facade reject it. The other facade-specific limits are listed in [docs/known-gaps.md](docs/known-gaps.md) (in Chinese).
 
 ## Performance
 

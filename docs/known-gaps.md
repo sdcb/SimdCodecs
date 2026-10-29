@@ -50,7 +50,7 @@ PNG 编码和解码，各有自己的基准项目。
 - **只支持 8 位精度。** 12 位 JPEG（SOF 精度为 12）会被拒绝。
 - **只支持 Huffman 编码的 SOF0 / SOF1 / SOF2**（baseline、extended、progressive）。算术编码（SOF9–SOF11）和
   分层（hierarchical）JPEG 不支持。
-- **无损 JPEG（SOF3）不走门面。** 它由单独的 `LosslessJpegDecoder.Decode` 解码，`JpegDecoder` 和门面会拒绝
+- **无损 JPEG（SOF3）不走门面。** 它由单独的 `LosslessJpeg.FromMemory` API 解码，`JpegDecoder` 和门面会拒绝
   这类文件。
 - **彩色 JPEG 的保真层是 4 通道 RGBA。** JPEG 没有 alpha，按“保留原始通道数”的原则应该是 3 通道；灰度 JPEG
   已经是 1 通道。
