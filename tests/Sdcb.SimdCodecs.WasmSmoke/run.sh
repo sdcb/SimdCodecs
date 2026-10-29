@@ -11,13 +11,16 @@ here="$(cd "$(dirname "$0")" && pwd)"
 work="${1:-$here/bin/wasm-smoke}"
 mkdir -p "$work"
 
-# Line endings are normalised: the JIT writes CRLF on Windows, Node LF.
-dotnet run --project "$here/../Sdcb.SimdCodecs.AotSmoke" -c Release | tr -d '\r' > "$work/jit.txt"
-lines="$(wc -l < "$work/jit.txt" | tr -d ' ')"
-[ "$lines" -gt 0 ] || { echo "no decodes ran" >&2; exit 1; }
-
+# The JIT reference runs while the (much longer) AOT publish does. Line endings are
+# normalised: the JIT writes CRLF on Windows, Node LF.
+dotnet run --project "$here/../Sdcb.SimdCodecs.AotSmoke" -c Release > "$work/jit-raw.txt" &
+jit=$!
 dotnet publish "$here" -c Release -o "$work/publish" > "$work/publish.log" \
   || { cat "$work/publish.log"; exit 1; }
+wait "$jit" || { echo "JIT run failed" >&2; exit 1; }
+tr -d '\r' < "$work/jit-raw.txt" > "$work/jit.txt"
+lines="$(wc -l < "$work/jit.txt" | tr -d ' ')"
+[ "$lines" -gt 0 ] || { echo "no decodes ran" >&2; exit 1; }
 cp "$here/main.mjs" "$work/publish/wwwroot/"
 (cd "$work/publish/wwwroot" && node main.mjs) | tr -d '\r' > "$work/wasm.txt"
 if ! diff -u "$work/jit.txt" "$work/wasm.txt"; then

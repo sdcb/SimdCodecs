@@ -61,8 +61,7 @@ REQUIRE_ORACLES=1 dotnet test SimdCodecs.slnx -c Release            # what CI ru
 DOTNET_EnableAVX2=0        dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg|FullyQualifiedName~Png"
 DOTNET_EnableHWIntrinsic=0 dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg|FullyQualifiedName~Png"
 bash tests/Sdcb.SimdCodecs.AotSmoke/run.sh                          # NativeAOT output == JIT output
-bash tests/Sdcb.SimdCodecs.WasmSmoke/run.sh                         # Mono AOT (browser-wasm) output == JIT output; slow, CI runs it on release tags only
-```
+bash tests/Sdcb.SimdCodecs.WasmSmoke/run.sh                         # Mono AOT (browser-wasm) output == JIT output```
 
 - The facade binds each codec's static members to delegates by concrete method group, never inside
   a generic method: Mono AOT (browser-wasm, iOS, Android) traps on a delegate over a type

@@ -15,6 +15,11 @@
     <WasmEnableSIMD>true</WasmEnableSIMD>
     <RunAOTCompilation>true</RunAOTCompilation>
     <CompressionEnabled>false</CompressionEnabled>
+    <!-- A smoke test, not a shipped app: emscripten at -O1 instead of the Release default cuts
+         the publish by a quarter, and the output must still equal the JIT's. -->
+    <EmccCompileOptimizationFlag>-O1</EmccCompileOptimizationFlag>
+    <EmccLinkOptimizationFlag>-O1</EmccLinkOptimizationFlag>
+    <WasmNativeDebugSymbols>false</WasmNativeDebugSymbols>
   </PropertyGroup>
 
   <ItemGroup>

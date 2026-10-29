@@ -160,9 +160,6 @@ jobs:
   wasm-aot:
     # Mono AOT (browser-wasm; also the runtime of iOS and Android) compiles generic code and
     # delegates its own way: the same JPEG decodes and facade calls must equal the JIT's.
-    # AOT-compiling the whole runtime makes it the slowest job by far, so it runs for releases
-    # and on demand only, not on every push.
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
