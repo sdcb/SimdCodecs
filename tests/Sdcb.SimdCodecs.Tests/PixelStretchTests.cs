@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Sdcb.SimdCodecs.Abstractions;
 using Shouldly;
@@ -72,6 +73,63 @@ public sealed class PixelStretchTests
 
         PixelConverter.StretchToRgba8(grey).ShouldBe(new byte[] { 0, 0, 0, 255, 255, 255, 255, 255 });
     }
+
+    [Fact]
+    public void Srgb_encoding_applies_the_IEC_61966_2_1_curve_to_colour_only()
+    {
+        // Linear 0.5 is sRGB 0.7354 (188), 18% grey 0.4614 (118), 0.001 is on the linear toe (12.92 × 0.001 → 3).
+        var image = FloatImage(3, 1, 0f, 0.5f, 1f, 0.5f, 0.18f, 0.001f, 2f, 1f, float.NaN, float.PositiveInfinity, -1f, 0.25f);
+
+        PixelConverter.StretchToRgba8(image, 0f, 1f, srgbEncode: true).ShouldBe(new byte[]
+        {
+            0, 188, 255, 128, // alpha is never encoded: 0.5 → 128
+            118, 3, 255, 255,
+            0, 255, 0, 64,
+        });
+        PixelConverter.StretchToRgba8(image, 0f, 1f).ShouldBe(new byte[]
+        {
+            0, 128, 255, 128,
+            46, 0, 255, 255,
+            0, 255, 0, 64,
+        });
+    }
+
+    [Fact]
+    public void Srgb_encoding_matches_the_curve_on_every_16_bit_step()
+    {
+        var rgba = new float[65536 * 4];
+        for (var i = 0; i < 65536; i++)
+        {
+            rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = i / 65535f;
+            rgba[i * 4 + 3] = 1f;
+        }
+
+        var destination = new byte[rgba.Length];
+        PixelConverter.StretchToRgba8(rgba, destination, 0f, 1f, srgbEncode: true);
+
+        for (var i = 0; i < 65536; i++)
+        {
+            var t = Math.Round((double)(i / 65535f) * 65535) / 65535;
+            var encoded = t <= 0.0031308 ? 12.92 * t : 1.055 * Math.Pow(t, 1 / 2.4) - 0.055;
+            destination[i * 4].ShouldBe((byte)Math.Round(encoded * 255, MidpointRounding.AwayFromZero), $"step {i}");
+        }
+    }
+
+    [Fact]
+    public void Srgb_encoding_brightens_a_reconstructed_gain_map_hdr()
+    {
+        // The reconstructed HDR is linear light: stretched as is, its mid-tones sit far below the SDR base's.
+        SimdCodecs.TryDecode(GainMapFacadeTests.BuildUltraHdr(out _), out var hdr).ShouldBeTrue();
+        hdr.ColorEncoding.Transfer.ShouldBe(TransferFunction.Linear);
+
+        var plain = PixelConverter.StretchToRgba8(hdr);
+        var encoded = PixelConverter.StretchToRgba8(hdr, srgbEncode: true);
+
+        Mean(encoded).ShouldBeGreaterThan(Mean(plain) + 30);
+    }
+
+    private static double Mean(byte[] rgba) =>
+        Enumerable.Range(0, rgba.Length / 4).Average(p => (rgba[p * 4] + rgba[p * 4 + 1] + rgba[p * 4 + 2]) / 3.0);
 
     [Fact]
     public void Bad_arguments_throw()

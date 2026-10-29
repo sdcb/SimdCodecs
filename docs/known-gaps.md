@@ -36,7 +36,7 @@ PNG 编码和解码，各有自己的基准项目。
 - **浮点图像没有自动的 8 位投影。** 浮点 TIFF、增益图 JPEG 重建出的 HDR 等，`TryDecodeInto` 返回 `false`
   （增益图返回的是 SDR 基础图），`EnumerateFramesInto` 抛出 `NotSupportedException`。HDR 到 8 位需要色调映射，
   这是调用方的决定，不是编解码器的。只为查看的话，`PixelConverter.StretchToRgba8` 把颜色范围线性拉伸到
-  0..255，但不做色调映射。
+  0..255（线性光数据如增益图 HDR 再加 `srgbEncode: true`），但不做色调映射。
 - **多帧读取器的帧数可能少于文件里的帧数。** `ImageInfo.FrameCount` 报告文件里有多少帧或页，但：
   - APNG：解码还没实现，读取器只给出 PNG 的默认图（1 帧）；
   - JBIG2：独立 `.jb2` 文件只解码第 1 页，读取器只有 1 帧。

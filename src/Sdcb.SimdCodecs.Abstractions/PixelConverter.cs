@@ -97,31 +97,37 @@ public static class PixelConverter
     /// (<see cref="TryGetColorRange"/>), every channel on the same scale so hues keep their ratios. A
     /// constant or wholly non-finite image falls back to the range 0..1. Integer rasters are stretched
     /// too, from their <see cref="IDecodedImage.ToFloats"/> values. See
-    /// <see cref="StretchToRgba8(ReadOnlySpan{float}, Span{byte}, float, float)"/> for the mapping.
+    /// <see cref="StretchToRgba8(ReadOnlySpan{float}, Span{byte}, float, float, bool)"/> for the mapping.
     /// </summary>
-    public static byte[] StretchToRgba8(IDecodedImage image)
+    /// <param name="image">The image to project.</param>
+    /// <param name="srgbEncode">Apply the sRGB transfer function after stretching. Pass true for linear-light
+    /// data meant for display, such as a reconstructed gain-map HDR (<see cref="TransferFunction.Linear"/>
+    /// with <see cref="FloatSemantics.DisplayReferred"/>), which otherwise looks far too dark. It is not
+    /// inferred from <see cref="IDecodedImage.ColorEncoding"/>: a float TIFF reports linear too, whatever
+    /// its values hold.</param>
+    public static byte[] StretchToRgba8(IDecodedImage image, bool srgbEncode = false)
     {
         ArgumentNullException.ThrowIfNull(image);
         var rgba = image.ToFloats();
         if (!TryGetColorRange(rgba, out var min, out var max) || !(max > min))
             (min, max) = (0f, 1f);
         var destination = new byte[rgba.Length];
-        StretchToRgba8(rgba, destination, min, max);
+        StretchToRgba8(rgba, destination, min, max, srgbEncode);
         return destination;
     }
 
     /// <summary>
-    /// <see cref="StretchToRgba8(IDecodedImage)"/> onto a range the caller chooses — fixed across the
+    /// <see cref="StretchToRgba8(IDecodedImage, bool)"/> onto a range the caller chooses — fixed across the
     /// frames of a sequence, or clipped to a percentile.
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="min"/> and <paramref name="max"/> are not finite
     /// with <c>min &lt; max</c>.</exception>
-    public static byte[] StretchToRgba8(IDecodedImage image, float min, float max)
+    public static byte[] StretchToRgba8(IDecodedImage image, float min, float max, bool srgbEncode = false)
     {
         ArgumentNullException.ThrowIfNull(image);
         var rgba = image.ToFloats();
         var destination = new byte[rgba.Length];
-        StretchToRgba8(rgba, destination, min, max);
+        StretchToRgba8(rgba, destination, min, max, srgbEncode);
         return destination;
     }
 
@@ -162,12 +168,21 @@ public static class PixelConverter
     /// <paramref name="max"/> linearly onto 0..255, rounded to nearest and clamped outside the range;
     /// alpha maps 0..1 the same way. NaN becomes 0, +∞ 255 and −∞ 0. The arithmetic is in double
     /// precision, so a range spanning the whole float line does not overflow.
+    /// <para>
+    /// With <paramref name="srgbEncode"/>, R, G and B are first stretched onto 0..1, quantised to 16 bits
+    /// (<c>round(t × 65535)</c>) and then encoded with the IEC 61966-2-1 sRGB curve
+    /// (<c>12.92·t</c> up to 0.0031308, else <c>1.055·t^(1/2.4) − 0.055</c>) and rounded to 8 bits, through a
+    /// table built once. Alpha is never encoded.
+    /// </para>
     /// </summary>
     /// <param name="rgba">Interleaved RGBA floats, the <see cref="IDecodedImage.ToFloats"/> layout.</param>
     /// <param name="destination">At least <c>rgba.Length</c> bytes; must not overlap <paramref name="rgba"/>.</param>
+    /// <param name="min">The value that maps to 0.</param>
+    /// <param name="max">The value that maps to 255.</param>
+    /// <param name="srgbEncode">Apply the sRGB transfer function after stretching (linear-light input).</param>
     /// <exception cref="ArgumentException">The length is not a multiple of 4, the destination is too
     /// small, or <paramref name="min"/> and <paramref name="max"/> are not finite with <c>min &lt; max</c>.</exception>
-    public static void StretchToRgba8(ReadOnlySpan<float> rgba, Span<byte> destination, float min, float max)
+    public static void StretchToRgba8(ReadOnlySpan<float> rgba, Span<byte> destination, float min, float max, bool srgbEncode = false)
     {
         if (rgba.Length % 4 != 0)
             throw new ArgumentException("Interleaved RGBA needs a multiple of 4 values.", nameof(rgba));
@@ -175,6 +190,20 @@ public static class PixelConverter
             throw new ArgumentException("Destination too small.", nameof(destination));
         if (!float.IsFinite(min) || !float.IsFinite(max) || !(min < max))
             throw new ArgumentException("The range must be finite with min < max.", nameof(max));
+
+        if (srgbEncode)
+        {
+            var table = SrgbEncodeTable;
+            var unit = 65535.0 / ((double)max - min);
+            for (var i = 0; i < rgba.Length; i += 4)
+            {
+                destination[i] = table[Quantise16(rgba[i], min, unit)];
+                destination[i + 1] = table[Quantise16(rgba[i + 1], min, unit)];
+                destination[i + 2] = table[Quantise16(rgba[i + 2], min, unit)];
+                destination[i + 3] = Stretch(rgba[i + 3], 0, 255.0);
+            }
+            return;
+        }
 
         var scale = 255.0 / ((double)max - min);
         for (var i = 0; i < rgba.Length; i += 4)
@@ -184,6 +213,29 @@ public static class PixelConverter
             destination[i + 2] = Stretch(rgba[i + 2], min, scale);
             destination[i + 3] = Stretch(rgba[i + 3], 0, 255.0);
         }
+    }
+
+    // The 16-bit index into SrgbEncodeTable; NaN lands on 0 like Stretch.
+    private static int Quantise16(float value, double min, double unit)
+    {
+        var x = (value - min) * unit + 0.5;
+        return x >= 65535 ? 65535 : x >= 1 ? (int)x : 0;
+    }
+
+    // round(255 × sRGB(i / 65535)) for every 16-bit linear value: one pow per entry, built on first use.
+    private static byte[] SrgbEncodeTable => _srgbEncodeTable ??= BuildSrgbEncodeTable();
+    private static byte[]? _srgbEncodeTable;
+
+    private static byte[] BuildSrgbEncodeTable()
+    {
+        var table = new byte[65536];
+        for (var i = 0; i < table.Length; i++)
+        {
+            var t = i / 65535.0;
+            var encoded = t <= 0.0031308 ? 12.92 * t : 1.055 * Math.Pow(t, 1 / 2.4) - 0.055;
+            table[i] = (byte)Math.Min(255, (int)(encoded * 255 + 0.5));
+        }
+        return table;
     }
 
     private static byte Stretch(float value, double min, double scale)
