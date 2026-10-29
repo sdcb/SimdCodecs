@@ -48,6 +48,7 @@ public static class JpegEncoder
 
         var exif = ValidateExif(options.Exif);
         var xmp = options.Xmp is { } xmpOptions ? BuildXmpPacket(xmpOptions) : default;
+        var icc = ValidateIcc(options.IccProfile);
 
         var required = (long)width * height * channels;
         if (pixels.Length < required)
@@ -75,7 +76,7 @@ public static class JpegEncoder
         var w = new JpegBitWriter(EstimateCapacity(width, height, channels));
         try
         {
-            WriteHeaders(ref w, exif.Span, xmp, lumaQuant, gray ? null : chromaQuant);
+            WriteHeaders(ref w, exif.Span, xmp, icc.Span, lumaQuant, gray ? null : chromaQuant);
             if (!stored)
             {
                 WriteFrame(ref w, frame, progressive: false);
@@ -637,7 +638,18 @@ public static class JpegEncoder
         }
     }
 
-    private static void WriteHeaders(ref JpegBitWriter w, ReadOnlySpan<byte> exif, ReadOnlySpan<byte> xmp, byte[] lumaQuant, byte[]? chromaQuant)
+    private static ReadOnlyMemory<byte> ValidateIcc(ReadOnlyMemory<byte>? icc)
+    {
+        if (icc is not { } profile) return default;
+        if (profile.IsEmpty)
+            throw new ArgumentException("ICC profile is empty.", "options");
+        if (profile.Length > JpegEncodeOptions.MaxIccProfileBytes)
+            throw new ArgumentException($"ICC profile is {profile.Length} bytes; 255 APP2 segments hold at most {JpegEncodeOptions.MaxIccProfileBytes}.", "options");
+        return profile;
+    }
+
+    private static void WriteHeaders(ref JpegBitWriter w, ReadOnlySpan<byte> exif, ReadOnlySpan<byte> xmp, ReadOnlySpan<byte> icc,
+        byte[] lumaQuant, byte[]? chromaQuant)
     {
         // SOI + APP0 JFIF 1.01, no density, no thumbnail.
         w.WriteBytes([0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10, (byte)'J', (byte)'F', (byte)'I', (byte)'F', 0, 1, 1, 0, 0, 1, 0, 1, 0, 0]);
@@ -658,6 +670,23 @@ public static class JpegEncoder
             w.WriteUInt16(2 + id.Length + xmp.Length);
             w.WriteBytes(id);
             w.WriteBytes(xmp);
+        }
+
+        if (!icc.IsEmpty)
+        {
+            // APP2 "ICC_PROFILE\0", 1-based sequence number, chunk count, then up to MaxIccChunkBytes of the
+            // profile; the size was range-checked, so the count fits its byte.
+            var count = (icc.Length + JpegEncodeOptions.MaxIccChunkBytes - 1) / JpegEncodeOptions.MaxIccChunkBytes;
+            for (var i = 0; i < count; i++)
+            {
+                var chunk = icc.Slice(i * JpegEncodeOptions.MaxIccChunkBytes,
+                    Math.Min(JpegEncodeOptions.MaxIccChunkBytes, icc.Length - i * JpegEncodeOptions.MaxIccChunkBytes));
+                w.WriteBytes([0xFF, 0xE2]);
+                w.WriteUInt16(2 + 12 + 2 + chunk.Length);
+                w.WriteBytes("ICC_PROFILE\0"u8);
+                w.WriteBytes([(byte)(i + 1), (byte)count]);
+                w.WriteBytes(chunk);
+            }
         }
 
         // DQT: 8-bit tables in zig-zag order.

@@ -74,4 +74,23 @@ public sealed record JpegEncodeOptions
 
     /// <summary>Largest XMP packet that fits one APP1 segment: 65535 - 2 (length field) - 29 (<c>http://ns.adobe.com/xap/1.0/\0</c>).</summary>
     public const int MaxXmpPacketBytes = 65535 - 2 - 29;
+
+    /// <summary>
+    /// When set, the ICC profile to embed, written as APP2 <c>ICC_PROFILE</c> segments (ICC.1 Annex B.4) after
+    /// the EXIF and XMP segments: one per <see cref="MaxIccChunkBytes"/> bytes, each numbered, so a profile of
+    /// any size up to <see cref="MaxIccProfileBytes"/> fits. Pass the decoded image's
+    /// <see cref="Abstractions.IDecodedImage.IccProfile"/> to keep a Display P3 or Adobe RGB photo's colour
+    /// space through a re-encode. The bytes are written as given, not validated as a profile; an empty or
+    /// oversized one is an <see cref="System.ArgumentException"/> from <see cref="JpegEncoder.Encode"/>.
+    /// <c>null</c> (the default) writes no segment and leaves the output byte-identical to an encode
+    /// without the option.
+    /// </summary>
+    public ReadOnlyMemory<byte>? IccProfile { get; init; }
+
+    /// <summary>Profile bytes one APP2 segment carries: 65535 - 2 (length field) - 12 (<c>ICC_PROFILE\0</c>) - 2
+    /// (sequence number and count).</summary>
+    public const int MaxIccChunkBytes = 65535 - 2 - 12 - 2;
+
+    /// <summary>Largest <see cref="IccProfile"/>: 255 segments, the most a one-byte count can number.</summary>
+    public const int MaxIccProfileBytes = 255 * MaxIccChunkBytes;
 }

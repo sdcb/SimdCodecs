@@ -56,7 +56,7 @@ File.WriteAllBytes("photo.jpg", jpeg);
 
 | 格式 | 解码 | 编码 | 特性 |
 |---|:-:|:-:|---|
-| JPEG | ✅ | ✅ | 解码 baseline 和 progressive DCT JPEG、任意采样、CMYK / YCCK，支持 1/2–1/8 缩放和零分配 `DecodeTo`；SOF3 无损 JPEG 由独立的 `LosslessJpeg.FromMemory` API 支持；编码 baseline / 优化 Huffman / progressive，可写入 EXIF 和 XMP |
+| JPEG | ✅ | ✅ | 解码 baseline 和 progressive DCT JPEG、任意采样、CMYK / YCCK，支持 1/2–1/8 缩放和零分配 `DecodeTo`；SOF3 无损 JPEG 由独立的 `LosslessJpeg.FromMemory` API 支持；编码 baseline / 优化 Huffman / progressive，可写入 EXIF、XMP 和 ICC |
 | Ultra HDR JPEG | ✅ | ✅ | 增益图（gain map）读取、组装和 HDR 重建（Ultra HDR / Adobe） |
 | PNG | ✅ | ✅ | 全部位深（1–16 位、调色板）；文本块；HDR 标记（cICP、mDCV、cLLI） |
 | TIFF | ✅ | ✅ | 多页；8/16/32 位整数和浮点；条带或分块；读取 Deflate、LZW、PackBits、CCITT G3/G4，可只读单个分块；写入 Deflate |
@@ -116,7 +116,7 @@ JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插
 
 - **Jpeg**：T.81 解码器，支持 baseline、progressive、restart interval、任意采样方式，灰度 / YCbCr /
   RGB / CMYK / YCCK，1/2–1/8 缩放解码，无损（SOF3）。SIMD 编码器支持 baseline、优化 Huffman 或
-  progressive；4:4:4 / 4:2:0 / 灰度；可写入 EXIF（APP1）和 XMP。
+  progressive；4:4:4 / 4:2:0 / 灰度；可写入 EXIF（APP1）、XMP 和 ICC 配置文件（APP2）。
 - **Png**：所有标准位深（包括 1/2/4 位灰度和调色板），tEXt / zTXt / iTXt 文本块，PNG-3 的 cICP /
   mDCV / cLLI HDR 标记。
 - **Tiff**：多页；8/16/32 位整数和浮点；Deflate / LZW（另可读 PackBits）；条带或分块；chunky 或

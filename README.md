@@ -58,7 +58,7 @@ animation seeking by timestamp, Ultra HDR, and more.
 
 | Format | Decode | Encode | Highlights |
 |---|:-:|:-:|---|
-| JPEG | ✅ | ✅ | Decodes baseline and progressive DCT JPEG, any subsampling, CMYK / YCCK, scaled 1/2–1/8, zero-allocation `DecodeTo`; the separate `LosslessJpeg.FromMemory` API handles SOF3; encodes baseline / optimised Huffman / progressive with EXIF and XMP |
+| JPEG | ✅ | ✅ | Decodes baseline and progressive DCT JPEG, any subsampling, CMYK / YCCK, scaled 1/2–1/8, zero-allocation `DecodeTo`; the separate `LosslessJpeg.FromMemory` API handles SOF3; encodes baseline / optimised Huffman / progressive with EXIF, XMP and ICC |
 | Ultra HDR JPEG | ✅ | ✅ | Gain-map read, assemble and HDR reconstruction (Ultra HDR / Adobe) |
 | PNG | ✅ | ✅ | All bit depths (1–16, indexed); text chunks; HDR signalling (cICP, mDCV, cLLI) |
 | TIFF | ✅ | ✅ | Multi-page; 8/16/32-bit integer and float; strips or tiles; reads Deflate, LZW, PackBits, CCITT G3/G4 and single tiles; writes Deflate |
@@ -119,7 +119,7 @@ All packages ship in lockstep under one version.
 
 - **Jpeg** — T.81 decoder: baseline, progressive, restart intervals, any subsampling,
   grey / YCbCr / RGB / CMYK / YCCK, scaled 1/2–1/8 decode, lossless (SOF3). SIMD encoder: baseline,
-  optimised Huffman or progressive; 4:4:4 / 4:2:0 / grey; embeds EXIF (APP1) and XMP.
+  optimised Huffman or progressive; 4:4:4 / 4:2:0 / grey; embeds EXIF (APP1), XMP and an ICC profile (APP2).
 - **Png** — every standard bit depth (including 1/2/4-bit grey and indexed), tEXt / zTXt / iTXt text
   chunks, PNG-3 cICP / mDCV / cLLI HDR signalling.
 - **Tiff** — multi-page; 8/16/32-bit integer and float; Deflate / LZW (+ PackBits read); strips or
