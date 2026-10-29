@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Gif;
@@ -70,6 +71,7 @@ public static class SimdCodecs
 
     // TryOpenFrames is null for a still-only codec: the facade presents its image as one frame.
     private readonly record struct Entry(
+        ImageFormat Format,
         CanDecodeFn CanDecode,
         TryReadInfoFn TryReadInfo,
         TryDecodeFn TryDecode,
@@ -85,19 +87,19 @@ public static class SimdCodecs
     // tests/Sdcb.SimdCodecs.WasmSmoke runs every entry point under Mono AOT.
     private static readonly Entry[] _registry =
     [
-        new(PngImageDecoder.CanDecode, PngImageDecoder.TryReadInfo, PngImageDecoder.TryDecode, PngImageDecoder.TryDecodeInto),
+        new(ImageFormat.Png, PngImageDecoder.CanDecode, PngImageDecoder.TryReadInfo, PngImageDecoder.TryDecode, PngImageDecoder.TryDecodeInto),
         // GainMap must precede the plain JPEG decoder: both answer the FF D8 FF
         // signature, but GainMapImageDecoder.CanDecode only claims a JPEG that
         // actually carries a locatable gain map, so ordinary JPEGs fall through.
         // It makes ToFloats() reconstruct the authored HDR while the 8-bit path
         // keeps returning the SDR base.
-        new(GainMapImageDecoder.CanDecode, GainMapImageDecoder.TryReadInfo, GainMapImageDecoder.TryDecode, GainMapImageDecoder.TryDecodeInto),
-        new(JpegImageDecoder.CanDecode, JpegImageDecoder.TryReadInfo, JpegImageDecoder.TryDecode, JpegImageDecoder.TryDecodeInto),
-        new(TiffImageDecoder.CanDecode, TiffImageDecoder.TryReadInfo, TiffImageDecoder.TryDecode, TiffImageDecoder.TryDecodeInto, TiffImageDecoder.TryOpenFrames),
-        new(Jbig2ImageDecoder.CanDecode, Jbig2ImageDecoder.TryReadInfo, Jbig2ImageDecoder.TryDecode, Jbig2ImageDecoder.TryDecodeInto),
-        new(Jpeg2000ImageDecoder.CanDecode, Jpeg2000ImageDecoder.TryReadInfo, Jpeg2000ImageDecoder.TryDecode, Jpeg2000ImageDecoder.TryDecodeInto),
-        new(WebpImageDecoder.CanDecode, WebpImageDecoder.TryReadInfo, WebpImageDecoder.TryDecode, WebpImageDecoder.TryDecodeInto, WebpImageDecoder.TryOpenFrames),
-        new(GifImageDecoder.CanDecode, GifImageDecoder.TryReadInfo, GifImageDecoder.TryDecode, GifImageDecoder.TryDecodeInto, GifImageDecoder.TryOpenFrames),
+        new(ImageFormat.Jpeg, GainMapImageDecoder.CanDecode, GainMapImageDecoder.TryReadInfo, GainMapImageDecoder.TryDecode, GainMapImageDecoder.TryDecodeInto),
+        new(ImageFormat.Jpeg, JpegImageDecoder.CanDecode, JpegImageDecoder.TryReadInfo, JpegImageDecoder.TryDecode, JpegImageDecoder.TryDecodeInto),
+        new(ImageFormat.Tiff, TiffImageDecoder.CanDecode, TiffImageDecoder.TryReadInfo, TiffImageDecoder.TryDecode, TiffImageDecoder.TryDecodeInto, TiffImageDecoder.TryOpenFrames),
+        new(ImageFormat.Jbig2, Jbig2ImageDecoder.CanDecode, Jbig2ImageDecoder.TryReadInfo, Jbig2ImageDecoder.TryDecode, Jbig2ImageDecoder.TryDecodeInto),
+        new(ImageFormat.Jpeg2000, Jpeg2000ImageDecoder.CanDecode, Jpeg2000ImageDecoder.TryReadInfo, Jpeg2000ImageDecoder.TryDecode, Jpeg2000ImageDecoder.TryDecodeInto),
+        new(ImageFormat.Webp, WebpImageDecoder.CanDecode, WebpImageDecoder.TryReadInfo, WebpImageDecoder.TryDecode, WebpImageDecoder.TryDecodeInto, WebpImageDecoder.TryOpenFrames),
+        new(ImageFormat.Gif, GifImageDecoder.CanDecode, GifImageDecoder.TryReadInfo, GifImageDecoder.TryDecode, GifImageDecoder.TryDecodeInto, GifImageDecoder.TryOpenFrames),
     ];
 
     /// <summary>
@@ -224,6 +226,58 @@ public static class SimdCodecs
     /// </summary>
     public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
         TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
+
+    /// <summary>
+    /// The format of <paramref name="data"/> by its leading signature: one the facade decodes (the
+    /// codec that would be dispatched to), or one it recognises but does not decode — BMP, ICO, HEIF,
+    /// AVIF, JPEG XL, JPEG XR, OpenEXR, PSD, QOI — so a caller can name what it cannot open.
+    /// <see cref="ImageFormat.Unknown"/> otherwise. Like <see cref="CanDecode"/>, it reads the
+    /// signature only; pass at least the first 64 bytes (an ISO-BMFF <c>ftyp</c> box lists HEIF and
+    /// AVIF brands past its start).
+    /// </summary>
+    public static ImageFormat DetectFormat(ReadOnlySpan<byte> data)
+    {
+        foreach (var entry in _registry)
+        {
+            if (entry.CanDecode(data))
+                return entry.Format;
+        }
+
+        if (data.StartsWith("BM"u8) && data.Length >= 14) return ImageFormat.Bmp;
+        // ICO: reserved 0, type 1, then a non-zero image count.
+        if (data.Length >= 6 && data.StartsWith((ReadOnlySpan<byte>)[0x00, 0x00, 0x01, 0x00]) && (data[4] | data[5]) != 0)
+            return ImageFormat.Ico;
+        if (data.StartsWith((ReadOnlySpan<byte>)[0xFF, 0x0A])
+            || data.StartsWith((ReadOnlySpan<byte>)[0x00, 0x00, 0x00, 0x0C, (byte)'J', (byte)'X', (byte)'L', (byte)' ', 0x0D, 0x0A, 0x87, 0x0A]))
+            return ImageFormat.JpegXl;
+        if (data.StartsWith((ReadOnlySpan<byte>)[(byte)'I', (byte)'I', 0xBC, 0x01])) return ImageFormat.JpegXr;
+        if (data.StartsWith((ReadOnlySpan<byte>)[0x76, 0x2F, 0x31, 0x01])) return ImageFormat.OpenExr;
+        if (data.StartsWith("8BPS"u8)) return ImageFormat.Psd;
+        if (data.StartsWith("qoif"u8)) return ImageFormat.Qoi;
+        return DetectIsoBmff(data);
+    }
+
+    // HEIF and AVIF are ISO-BMFF files that open with an 'ftyp' box: size, 'ftyp', a major brand,
+    // a minor version, then compatible brands. An AVIF brand anywhere wins over the HEIF ones,
+    // since AVIF files commonly also list the generic 'mif1'.
+    private static ImageFormat DetectIsoBmff(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 16 || !data[4..8].SequenceEqual("ftyp"u8))
+            return ImageFormat.Unknown;
+        var size = (int)Math.Min(BinaryPrimitives.ReadUInt32BigEndian(data), (uint)data.Length);
+        var heif = false;
+        for (var at = 8; at + 4 <= size; at += at == 8 ? 8 : 4) // skip the minor version after the major brand
+        {
+            var brand = data.Slice(at, 4);
+            if (brand.SequenceEqual("avif"u8) || brand.SequenceEqual("avis"u8))
+                return ImageFormat.Avif;
+            heif |= brand.SequenceEqual("heic"u8) || brand.SequenceEqual("heix"u8) || brand.SequenceEqual("heim"u8)
+                || brand.SequenceEqual("heis"u8) || brand.SequenceEqual("hevc"u8) || brand.SequenceEqual("hevx"u8)
+                || brand.SequenceEqual("mif1"u8) || brand.SequenceEqual("msf1"u8);
+        }
+
+        return heif ? ImageFormat.Heif : ImageFormat.Unknown;
+    }
 
     /// <summary>
     /// True if any registered codec recognises the stream's leading bytes. Does not

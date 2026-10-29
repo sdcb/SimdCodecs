@@ -33,7 +33,7 @@ internal static class FacadeSmoke
                 var last = reader.FrameCount - 1;
                 Check(reader.TryDecodeFrame(last, out var frame), label, "TryDecodeFrame");
                 Console.WriteLine(
-                    $"facade {label} {info.Width}x{info.Height}x{info.Channels} {info.SampleFormat} frames={reader.FrameCount}" +
+                    $"facade {label} {SimdCodecs.DetectFormat(data)}/{info.Format} {info.Width}x{info.Height}x{info.Channels} {info.SampleFormat} frames={reader.FrameCount}" +
                     $"\t{Hash(image.ToRgba8())} {Hash(rgba)} {Hash(frame.ToRgba8())}");
             }
 

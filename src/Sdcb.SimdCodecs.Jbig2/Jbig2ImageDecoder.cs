@@ -42,7 +42,7 @@ public sealed class Jbig2ImageDecoder : IImageDecoder
         if (!Jbig2Decoder.TryReadFileInfo(data, out var width, out var height, out var pages)) return false;
 
         // Bilevel: one bit per pixel in the file, decoded as 0 / 255 grey.
-        info = new ImageInfo(width, height, 1, SampleFormat.UInt8) { BitDepth = 1, FrameCount = Math.Max(1, pages) };
+        info = new ImageInfo(width, height, 1, SampleFormat.UInt8) { Format = ImageFormat.Jbig2, BitDepth = 1, FrameCount = Math.Max(1, pages) };
         return true;
     }
 

@@ -90,6 +90,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
                 return false;
             info = new ImageInfo(layout.Width, layout.Height, layout.SamplesPerPixel, format)
             {
+                Format = ImageFormat.Tiff,
                 BitDepth = layout.StoredBitsPerSample,
                 Orientation = (ImageOrientation)layout.Orientation,
             };

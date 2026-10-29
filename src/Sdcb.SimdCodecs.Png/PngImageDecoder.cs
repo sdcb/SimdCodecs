@@ -53,6 +53,7 @@ public sealed class PngImageDecoder : IImageDecoder
 
         info = new ImageInfo(width, height, channels, format)
         {
+            Format = ImageFormat.Png,
             // A palette's entries are 8-bit whatever the index depth.
             BitDepth = colorType == 3 ? 8 : bitDepth,
             Orientation = chunks.Orientation,

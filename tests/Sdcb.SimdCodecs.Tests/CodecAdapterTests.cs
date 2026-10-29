@@ -24,7 +24,7 @@ public sealed class CodecAdapterTests
 
         SimdCodecs.CanDecode(tiff).ShouldBeTrue();
         SimdCodecs.TryReadInfo(tiff, out var info).ShouldBeTrue();
-        info.ShouldBe(new ImageInfo(2, 2, 1, SampleFormat.UInt16));
+        info.ShouldBe(new ImageInfo(2, 2, 1, SampleFormat.UInt16) { Format = ImageFormat.Tiff });
 
         SimdCodecs.TryDecode(tiff, out var img).ShouldBeTrue();
         img.ShouldNotBeNull();

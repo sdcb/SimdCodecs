@@ -52,6 +52,7 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
             WebpInfo webpInfo = container.Info;
             info = new ImageInfo(webpInfo.Width, webpInfo.Height, webpInfo.HasAlpha ? 4 : 3, SampleFormat.UInt8)
             {
+                Format = ImageFormat.Webp,
                 Orientation = container.HasExif ? ExifOrientation.Read(container.Exif) : ImageOrientation.Normal,
                 FrameCount = Math.Max(1, webpInfo.FrameCount),
             };

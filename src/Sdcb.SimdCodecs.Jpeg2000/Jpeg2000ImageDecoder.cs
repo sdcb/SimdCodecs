@@ -58,7 +58,7 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
             if (!Presentable(siz.Components.Length, colour)) return false;
 
             var depth = siz.Components[0].BitDepth;
-            info = new ImageInfo(siz.Width, siz.Height, siz.Components.Length, FormatFor(depth)) { BitDepth = depth };
+            info = new ImageInfo(siz.Width, siz.Height, siz.Components.Length, FormatFor(depth)) { Format = ImageFormat.Jpeg2000, BitDepth = depth };
             return true;
         }
         catch (Exception e) when (IsUndecodable(e))

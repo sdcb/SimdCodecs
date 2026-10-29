@@ -11,22 +11,39 @@ namespace Sdcb.SimdCodecs.Abstractions;
 /// <para>
 /// <see cref="Width"/>, <see cref="Height"/>, <see cref="Channels"/> and <see cref="SampleFormat"/>
 /// describe exactly the raster <see cref="IImageDecoder.TryDecode"/> returns. The init-only
-/// properties describe the file: <see cref="BitDepth"/>, <see cref="Orientation"/> and
-/// <see cref="FrameCount"/>. Left unset they read as the plain case (the format's full depth,
-/// <see cref="ImageOrientation.Normal"/>, one frame), so an implementation that predates them keeps
-/// its meaning.
+/// properties describe the file: <see cref="Format"/>, <see cref="BitDepth"/>, <see cref="Orientation"/>
+/// and <see cref="FrameCount"/>. Left unset they read as the plain case (<see cref="ImageFormat.Unknown"/>,
+/// the format's full depth, <see cref="ImageOrientation.Normal"/>, one frame), so an implementation that
+/// predates them keeps its meaning.
 /// </para>
 /// </summary>
 /// <param name="Width">Pixel width, as stored (before <see cref="Orientation"/> is applied).</param>
 /// <param name="Height">Pixel height, as stored.</param>
-/// <param name="Channels">Samples per pixel: 1 (gray), 2 (gray+alpha), 3 (RGB), 4 (RGBA).</param>
+/// <param name="Channels">Samples per pixel of the decoded raster: 1 (gray), 2 (gray+alpha), 3 (RGB),
+/// 4 (RGBA). A channel is alpha only when the file can carry one: a colour JPEG is 3.</param>
 /// <param name="SampleFormat">The per-channel sample type the full decode will produce.</param>
 public readonly record struct ImageInfo(int Width, int Height, int Channels, SampleFormat SampleFormat)
 {
     // Each stored so that the zero of default(ImageInfo) or an unset property is the plain case.
     private readonly byte _bitDepth;     // 0: SampleFormat's full width
+    private readonly byte _format;       // ImageFormat
     private readonly byte _orientation;  // ImageOrientation - 1
     private readonly int _extraFrames;   // FrameCount - 1
+
+    /// <summary>
+    /// The file format, set by the decoder that read the header. Defaults to <see cref="ImageFormat.Unknown"/>.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">Set to a value that is not a defined member.</exception>
+    public ImageFormat Format
+    {
+        get => (ImageFormat)_format;
+        init
+        {
+            if (value is < ImageFormat.Unknown or > ImageFormat.Qoi)
+                throw new ArgumentOutOfRangeException(nameof(value), value, "Not a defined ImageFormat.");
+            _format = (byte)value;
+        }
+    }
 
     /// <summary>
     /// Bits of precision per sample in the file: 1 for a bilevel image, 2 or 4 for low-depth grey,
@@ -97,9 +114,9 @@ public readonly record struct ImageInfo(int Width, int Height, int Channels, Sam
     public bool Equals(ImageInfo other) =>
         Width == other.Width && Height == other.Height && Channels == other.Channels
         && SampleFormat == other.SampleFormat && BitDepth == other.BitDepth
-        && Orientation == other.Orientation && FrameCount == other.FrameCount;
+        && Orientation == other.Orientation && FrameCount == other.FrameCount && Format == other.Format;
 
     /// <inheritdoc />
     public override int GetHashCode() =>
-        HashCode.Combine(Width, Height, Channels, SampleFormat, BitDepth, Orientation, FrameCount);
+        HashCode.Combine(Width, Height, Channels, SampleFormat, BitDepth, Orientation, FrameCount, Format);
 }

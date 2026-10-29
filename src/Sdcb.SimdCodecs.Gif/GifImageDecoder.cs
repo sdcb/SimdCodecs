@@ -101,6 +101,7 @@ public sealed class GifImageDecoder : IMultiFrameImageDecoder
     internal static ImageInfo ToImageInfo(GifContainer container) =>
         new(container.Width, container.Height, container.IsOpaque ? 3 : 4, SampleFormat.UInt8)
         {
+            Format = ImageFormat.Gif,
             BitDepth = 8,
             FrameCount = container.Frames.Length,
         };
