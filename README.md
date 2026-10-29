@@ -46,7 +46,7 @@ The rest of the facade:
 - `SimdCodecs.TryReadInfo(file, out info)` — from the headers alone: format, stored bit depth, EXIF
   orientation (reported, never applied), frame or page count.
 - `SimdCodecs.DetectFormat(file)` — also names formats it recognises but does not decode (HEIF, AVIF,
-  JPEG XL, BMP, …).
+  JPEG XL, BMP, …); `SimdCodecs.IsDecodable(format)` tells the two apart.
 - `SimdCodecs.TryOpenFrames(file, out reader)` — every frame, by index, in any layout: animated WebP / GIF
   frames with durations, multi-page TIFF pages (any other image is one frame).
   `reader.EnumerateFramesInto(buffer, stride, format)` plays them in order through one buffer.

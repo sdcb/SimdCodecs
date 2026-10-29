@@ -44,7 +44,8 @@ File.WriteAllBytes("photo.jpg", jpeg);
   8/16 位或浮点采样、ICC 配置文件。
 - `SimdCodecs.TryReadInfo(file, out info)`：只读文件头：格式、存储位深、EXIF 方向（只报告，不旋转像素）、
   帧数或页数。
-- `SimdCodecs.DetectFormat(file)`：还能认出不支持解码的格式（HEIF、AVIF、JPEG XL、BMP 等）。
+- `SimdCodecs.DetectFormat(file)`：还能认出不支持解码的格式（HEIF、AVIF、JPEG XL、BMP 等）；
+  `SimdCodecs.IsDecodable(format)` 判断某个格式能否解码。
 - `SimdCodecs.TryOpenFrames(file, out reader)`：按索引、以任意布局逐帧解码：动画 WebP / GIF 是合成好的帧
   及其时长，多页 TIFF 是各页（其他图片就是一帧）；`reader.EnumerateFramesInto(buffer, stride, format)`
   用同一块缓冲区按顺序播放。

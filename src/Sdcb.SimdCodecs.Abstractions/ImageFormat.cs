@@ -2,9 +2,10 @@ namespace Sdcb.SimdCodecs.Abstractions;
 
 /// <summary>
 /// An image file format, as recognised by its leading signature (<c>SimdCodecs.DetectFormat</c>) and
-/// reported by a decoder in <see cref="ImageInfo.Format"/>. The members up to <see cref="Gif"/> are the
-/// formats the Sdcb.SimdCodecs family decodes; the rest are recognised only, so a caller can say what a
-/// file is ("HEIF is not supported") instead of "unknown".
+/// reported by a decoder in <see cref="ImageInfo.Format"/>. Some members are formats the Sdcb.SimdCodecs
+/// family decodes; the rest are recognised only, so a caller can say what a file is ("HEIF is not
+/// supported") instead of "unknown". Ask <c>SimdCodecs.IsDecodable</c> which is which rather than
+/// reading it from the member order: a format that gains a decoder keeps its place and value.
 /// </summary>
 public enum ImageFormat
 {

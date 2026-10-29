@@ -258,6 +258,22 @@ public static class SimdCodecs
         return DetectIsoBmff(data);
     }
 
+    /// <summary>
+    /// True when the facade decodes <paramref name="format"/> — a format some registered codec reports,
+    /// as opposed to one <see cref="DetectFormat"/> only recognises. False for
+    /// <see cref="ImageFormat.Unknown"/>.
+    /// </summary>
+    public static bool IsDecodable(ImageFormat format)
+    {
+        foreach (var entry in _registry)
+        {
+            if (entry.Format == format)
+                return true;
+        }
+
+        return false;
+    }
+
     // HEIF and AVIF are ISO-BMFF files that open with an 'ftyp' box: size, 'ftyp', a major brand,
     // a minor version, then compatible brands. An AVIF brand anywhere wins over the HEIF ones,
     // since AVIF files commonly also list the generic 'mif1'.

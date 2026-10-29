@@ -122,6 +122,15 @@ public sealed class ImageFormatTests
     }
 
     [Fact]
+    public void IsDecodable_names_exactly_the_registered_formats()
+    {
+        ImageFormat[] decodable =
+            [ImageFormat.Png, ImageFormat.Jpeg, ImageFormat.Tiff, ImageFormat.Jbig2, ImageFormat.Jpeg2000, ImageFormat.Webp, ImageFormat.Gif];
+        foreach (var format in Enum.GetValues<ImageFormat>())
+            SimdCodecs.IsDecodable(format).ShouldBe(decodable.Contains(format), format.ToString());
+    }
+
+    [Fact]
     public void Format_takes_part_in_equality()
     {
         var info = new ImageInfo(4, 4, 3, SampleFormat.UInt8);
