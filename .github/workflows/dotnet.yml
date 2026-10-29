@@ -172,7 +172,20 @@ jobs:
       uses: NuGet/login@v1
       with:
         user: ${{ vars.NUGET_USER }}
-    - name: Push NuGet package
+    - name: Push NuGet packages
       env:
         NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
-      run: dotnet nuget push **/*.nupkg -s https://api.nuget.org/v3/index.json -k "$NUGET_API_KEY"
+      shell: bash
+      run: |
+        found=0
+        while IFS= read -r -d '' package; do
+          found=1
+          dotnet nuget push "$package" \
+            -s https://api.nuget.org/v3/index.json \
+            -k "$NUGET_API_KEY" \
+            --skip-duplicate
+        done < <(find . -type f -name '*.nupkg' -print0)
+        if [ "$found" -eq 0 ]; then
+          echo "No NuGet packages were found in the downloaded artifact." >&2
+          exit 1
+        fi
