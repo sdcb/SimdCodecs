@@ -262,6 +262,32 @@ public sealed class JpegGainMapTests
     }
 
     [Fact]
+    public void RemoveGainMapMetadata_Undoes_Assemble_And_Lets_The_Halves_Be_Reassembled()
+    {
+        var baseJpeg = EncodeJpeg(GrayRampRgb(64, 32), 64, 32);
+        var mapJpeg = EncodeJpeg(GrayToRgb(new byte[16 * 8]), 16, 8);
+        var assembled = JpegGainMap.Assemble(baseJpeg, mapJpeg, Boost4X);
+        JpegGainMap.TrySplit(assembled, out var splitBase, out var splitMap, out _).ShouldBeTrue();
+
+        // Stripping takes out exactly what Assemble put in.
+        var cleanBase = JpegGainMap.RemoveGainMapMetadata(assembled[splitBase]);
+        var cleanMap = JpegGainMap.RemoveGainMapMetadata(assembled[splitMap]);
+        cleanBase.ShouldBe(baseJpeg);
+        cleanMap.ShouldBe(mapJpeg);
+
+        // Keep the gain map, swap the base, re-encoding neither.
+        var newBase = EncodeJpeg(GrayRampRgb(64, 32).Reverse().ToArray(), 64, 32);
+        JpegGainMap.TryRead(JpegGainMap.Assemble(newBase, cleanMap, Boost4X), out var swapped).ShouldBeTrue();
+        swapped!.GainMap.Width.ShouldBe(16);
+
+        // Nothing to strip: unchanged, camera XMP included.
+        var withXmp = JpegEncoder.Encode(GrayRampRgb(64, 32), 64, 32, 3,
+            new JpegEncodeOptions { Quality = 100, Xmp = new JpegXmp { Description = "plain" } });
+        JpegGainMap.RemoveGainMapMetadata(withXmp).ShouldBe(withXmp);
+        Should.Throw<ArgumentException>(() => JpegGainMap.RemoveGainMapMetadata("not a jpeg"u8)).ParamName.ShouldBe("jpeg");
+    }
+
+    [Fact]
     public void Assembled_File_Still_Decodes_As_A_Plain_Jpeg()
     {
         // The legacy-viewer guarantee: splicing must not disturb the base image's

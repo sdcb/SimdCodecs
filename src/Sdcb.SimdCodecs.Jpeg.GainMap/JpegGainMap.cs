@@ -125,8 +125,8 @@ public static class JpegGainMap
     /// </summary>
     /// <exception cref="ArgumentException">Either input is not a JPEG starting with SOI,
     /// has a malformed header, or already carries gain-map metadata (an MPF index, or
-    /// hdrgm / GContainer XMP) — such as the base range <see cref="TrySplit"/> returns,
-    /// which keeps the original file's.</exception>
+    /// hdrgm / GContainer XMP) — such as the halves <see cref="TrySplit"/> returns, which
+    /// keep the original file's; <see cref="RemoveGainMapMetadata"/> strips it.</exception>
     /// <exception cref="InvalidOperationException"><paramref name="metadata"/> is unusable
     /// (see <see cref="GainMapMetadata.Validate"/>).</exception>
     public static byte[] Assemble(ReadOnlySpan<byte> sdrBaseJpeg, ReadOnlySpan<byte> gainMapJpeg, GainMapMetadata metadata)
@@ -154,6 +154,51 @@ public static class JpegGainMap
         gainMapJpeg[gainMapInsert..].CopyTo(output.AsSpan(pos));
 
         return output;
+    }
+
+    /// <summary>
+    /// A copy of <paramref name="jpeg"/> without its gain-map metadata: the MPF index (APP2 <c>MPF\0</c>)
+    /// and any XMP APP1 segment in the hdrgm or GContainer namespace. Everything else - the image, EXIF,
+    /// ICC, ordinary XMP - is kept byte for byte. Use it on the halves <see cref="TrySplit"/> returns to
+    /// pass them back to <see cref="Assemble"/>: keep the gain map and swap the base, or the reverse,
+    /// without re-encoding either. A JPEG without such metadata comes back unchanged.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="jpeg"/> is not a JPEG starting with SOI, or has a
+    /// malformed header.</exception>
+    public static byte[] RemoveGainMapMetadata(ReadOnlySpan<byte> jpeg)
+    {
+        List<JpegSegment> segments;
+        try
+        {
+            segments = JpegSegmentScanner.Scan(jpeg);
+        }
+        catch (InvalidDataException e)
+        {
+            throw new ArgumentException($"Not a structurally valid JPEG: {e.Message}", nameof(jpeg));
+        }
+
+        var output = new List<byte>(jpeg.Length);
+        var copied = 0;
+        foreach (var segment in segments)
+        {
+            if (!IsGainMapMetadata(segment, jpeg))
+                continue;
+            output.AddRange(jpeg[copied..segment.SegmentOffset]);
+            copied = segment.SegmentOffset + segment.TotalLength;
+        }
+
+        output.AddRange(jpeg[copied..]);
+        return output.ToArray();
+    }
+
+    // An MPF index, or XMP in the hdrgm / GContainer namespaces. Ordinary XMP (a camera's) is not.
+    private static bool IsGainMapMetadata(JpegSegment segment, ReadOnlySpan<byte> jpeg)
+    {
+        var payload = segment.Payload(jpeg);
+        return (segment.Marker == 0xE2 && payload.StartsWith(MpfSegment.Identifier))
+            || (segment.Marker == 0xE1 && payload.StartsWith(GainMapXmp.App1Identifier)
+                && (payload.IndexOf("http://ns.adobe.com/hdr-gain-map/1.0/"u8) >= 0
+                    || payload.IndexOf("http://ns.google.com/photos/1.0/container/"u8) >= 0));
     }
 
     /// <summary>
@@ -269,15 +314,11 @@ public static class JpegGainMap
         // treat the file as a plain JPEG. Ordinary XMP (a camera's) is fine.
         foreach (var segment in segments)
         {
-            var payload = segment.Payload(jpeg);
-            if ((segment.Marker == 0xE2 && payload.StartsWith(MpfSegment.Identifier))
-                || (segment.Marker == 0xE1 && payload.StartsWith(GainMapXmp.App1Identifier)
-                    && (payload.IndexOf("http://ns.adobe.com/hdr-gain-map/1.0/"u8) >= 0
-                        || payload.IndexOf("http://ns.google.com/photos/1.0/container/"u8) >= 0)))
+            if (IsGainMapMetadata(segment, jpeg))
             {
                 throw new ArgumentException(
                     "The JPEG already carries gain-map metadata (an MPF index or hdrgm / GContainer XMP); " +
-                    "pass a plain JPEG, e.g. one re-encoded from the decoded pixels.", paramName);
+                    "strip it with RemoveGainMapMetadata first.", paramName);
             }
         }
 
