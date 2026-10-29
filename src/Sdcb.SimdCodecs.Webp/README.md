@@ -6,8 +6,9 @@ There is no encoder.
 Supported input includes VP8 lossy, VP8L lossless, ALPH transparency, and
 animated WebP with full-canvas RGBA frames, random seeking, and frame timing.
 ICC, EXIF, and XMP metadata are preserved. The `Sdcb.SimdCodecs` facade
-decodes still images and returns frame 0 for animated WebP; use this package's
-animation API to access the full timeline. Images larger than 67,108,864 pixels
+decodes a still image or frame 0 of an animation with `TryDecode`, and every
+frame with `TryOpenFrames`; this package's animation API adds seeking by
+timestamp and the frame rectangles. Images larger than 67,108,864 pixels
 are rejected to bound decoder allocations.
 
 ```csharp

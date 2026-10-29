@@ -101,7 +101,7 @@ All packages ship in lockstep under one version.
 | `Sdcb.SimdCodecs.Jbig2` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jbig2.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jbig2) | JBIG2 decoder |
 | `Sdcb.SimdCodecs.Exif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Exif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Exif) | EXIF reader and writer |
 | `Sdcb.SimdCodecs.Color.Icc` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Color.Icc.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Color.Icc) | sRGB v4 ICC profile, `cicp` tag injector |
-| `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | Shared types: `IImageDecoder`, `RasterImage`, `ImagePixelFormat` / `PixelConverter`, H.273 colour vocabulary |
+| `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | Shared types: `IImageDecoder`, `RasterImage`, `ImagePixelFormat` / `PixelConverter`, `IImageFrameReader` (frames and pages), H.273 colour vocabulary |
 
 <details>
 <summary>Feature details per package</summary>
@@ -115,12 +115,12 @@ All packages ship in lockstep under one version.
   tiles; chunky or planar; on-demand single strip or tile reads; reads 1/2/4-bit pages (expanded to
   8-bit), CCITT fax (Group 3 1D/2D, Group 4, Modified Huffman) and the floating-point predictor.
 - **Webp** — RFC 6386 / RFC 9649: VP8 lossy, VP8L lossless, ALPH, animation with seek, ICC / EXIF / XMP.
+  The facade's `TryDecode` returns a still or frame 0 of an animation, `TryOpenFrames` every frame;
+  `WebpAnimationDecoder` adds seeking by timestamp and the frame rectangles.
 - **Gif** — GIF89a: global / local colour tables, interlacing, transparency, all disposal methods, NETSCAPE2.0 loop
   count; composited frames with seek. The decisions the spec leaves open are listed in the package README. Encoder:
   stills and animations, exact palettes or Wu quantization with optional Floyd–Steinberg dithering, changed-rectangle
   frames for opaque animations.
-  The facade returns stills and frame 0 of an animation; `WebpDecoder.DecodeAnimation` and
-  `WebpAnimationDecoder` give the timeline.
 - **Exif** — reads JPEG, TIFF and PNG; `ExifWriter` builds a blob for `JpegEncodeOptions.Exif`.
 
 </details>

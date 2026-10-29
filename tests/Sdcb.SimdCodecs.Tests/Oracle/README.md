@@ -16,7 +16,7 @@ interfaces only.
 | OpenJPEG 2.5.4 (BSD-2, binary only) | JPEG 2000 lossy path | `bash tests/Sdcb.SimdCodecs.Tests/Oracle/jpeg2000/fetch.sh` — official release, SHA-256 pinned |
 | jbig2dec (AGPL, binary only) | JBIG2 conformance | Linux: `apt-get install jbig2dec`; Windows: `bash tests/Sdcb.SimdCodecs.Tests/Oracle/jbig2/fetch-windows.sh` (MSYS2 build, SHA-256 pinned) |
 | libwebp `dwebp` / `anim_dump` (BSD-3, binary only) | WebP live comparisons (`WebpOracleTests`, `WebpAnimationOracleTests`); the digests in `Fixtures/webp/*-golden.tsv` run without them | Linux: `apt-get install webp`; or libwebp release binaries on `PATH` / `DWEBP` + `ANIM_DUMP`; `bash tests/Sdcb.SimdCodecs.Tests/Oracle/webp/build.sh` builds `anim_dump` 1.6.0 (the version the digests were made with) |
-| Magick.NET (NuGet) | JPEG inputs, libjpeg tolerance check, PNG (libpng) decode of every colour type and depth, Group 4 MMR, tiled TIFF | nothing to install |
+| Magick.NET (NuGet) | JPEG inputs, libjpeg tolerance check, PNG (libpng) decode of every colour type and depth, Group 4 MMR, tiled TIFF, GIF (stills and animations it writes, its coalesced frames, and reading back our encoder's output) | nothing to install |
 | libjpeg-turbo 3.2.0 (binary only) | JPEG decode benchmark + accuracy tables | `bash benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/scripts/fetch-libjpeg-turbo.sh` — official release, SHA-256 pinned, only `bin/` extracted (Windows needs 7-Zip) |
 | ImageSharp 3.1.12 (NuGet, binary only) | JPEG and PNG benchmarks | benchmark projects only; 3.2.0 / 4.x need a Six Labors license key to build |
 | libpng (binary only, optional) | PNG benchmark | any libpng16 shared library via `LIBPNG_PATH` (see the PNG benchmark README) |
