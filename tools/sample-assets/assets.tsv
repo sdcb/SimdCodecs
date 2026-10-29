@@ -9,6 +9,7 @@ fuji-indexed.png	a935af69c8024b87f94de45d6768501a2ac970a21c8fe2b62ac1394bd39fe85
 fuji.webp	ce155706014a888be81c8f4c032e0a9e1904d04bbc32096fcda0b5937a3c6e37	120706	cwebp -q 80: lossy	sunrise-fuji
 cutout-lossless.webp	8136231b6724132313fab4f9747bc26f572f45b9bbd51fea0e0a4d259177e68f	556434	cwebp -lossless: 960px with a soft rounded alpha mask	sunrise-fuji
 mandelbrot-zoom.webp	cdc8901e4b509e0d3427eaf9eeefaaf74c807e8ac1dde59bddd85f2196e71fc0	3041386	copied as published: 121 frames, 125 ms each	mandelbrot
+animated.gif	ddbd53bfe71678afe1edb6b2c90d19775921c3aa5a9545407d071092b85e9756	16226	first-party generated: 8-frame transparent-window animation	repository owner
 fuji-deflate.tif	9df817ed04845eb2b9baf37815cfe56d429647e680100ca23969d8d2279564c0	1902156	ImageMagick: 1600px RGB8, Deflate	sunrise-fuji
 fuji-16bit-tiled.tif	7ad6c65294f29dff01f4b3359bf936588c2fbc898d99ae722647c39e51013f7b	4794458	ImageMagick: 1200px RGB16, 256x256 tiles, Deflate + Predictor 2	sunrise-fuji
 fuji-gray-float32.tif	1e0934853a521d40d7e0c687495596fe5fddff7c857192d5eab437addd9fa953	1734354	ImageMagick: 1200px grey float32, Deflate + Predictor 3	sunrise-fuji

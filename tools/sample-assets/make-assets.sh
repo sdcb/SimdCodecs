@@ -44,6 +44,30 @@ im.save("/tmp/cutout.png")
 PY
 cwebp -quiet -lossless -z 9 -exact /tmp/cutout.png -o "$OUT/cutout-lossless.webp"
 
+# --- Animated GIF: a small first-party animation with a moving transparent window.
+python3 - <<'PY'
+from math import sin
+from PIL import Image, ImageDraw
+
+width, height = 320, 180
+frames = []
+for i in range(8):
+    image = Image.new("RGBA", (width, height), (18, 24, 48, 255))
+    draw = ImageDraw.Draw(image)
+    for y in range(height):
+        c = int(40 + 90 * y / (height - 1))
+        draw.line((0, y, width, y), fill=(c // 2, c // 3, c, 255))
+    x = 32 + i * 34
+    y = 90 + int(35 * sin(i * 0.8))
+    draw.ellipse((x - 28, y - 28, x + 28, y + 28), fill=(255, 185, 32, 255), outline=(255, 245, 180, 255), width=3)
+    draw.ellipse((x - 10, y - 12, x - 2, y - 4), fill=(20, 25, 45, 255))
+    draw.ellipse((x + 2, y - 12, x + 10, y - 4), fill=(20, 25, 45, 255))
+    draw.arc((x - 14, y - 2, x + 14, y + 20), 15, 165, fill=(20, 25, 45, 255), width=3)
+    frames.append(image)
+frames[0].save("out/animated.gif", save_all=True, append_images=frames[1:], duration=[120] * len(frames),
+               loop=0, disposal=2, transparency=0, optimize=False)
+PY
+
 # --- TIFF variants.
 magick /tmp/fuji8.png  -compress Zip "$OUT/fuji-deflate.tif"
 magick /tmp/fuji16.png -resize 1200x -compress Zip -define tiff:predictor=2 -define tiff:tile-geometry=256x256 "$OUT/fuji-16bit-tiled.tif"

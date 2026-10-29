@@ -68,3 +68,12 @@ The specification leaves these to the decoder; they are made as browsers make th
 | Loop count | NETSCAPE2.0 counts repetitions after the first play: a stored `n` plays `n + 1` times (the frame reader's `LoopCount`; `GifInfo.LoopCount` is the stored value), 0 forever; an animation without it plays once |
 
 Canvases and images above 2^26 pixels are refused, to bound what a decode allocates.
+
+## LINQPad samples
+
+The package ships two runnable samples in `linqpad-samples/`:
+
+- `decode`: reads a real animated GIF, displays its metadata and first frame, then composites frames
+  one at a time into a reused RGBA buffer.
+- `encode`: creates a small RGBA animation, compares palette quantization with and without dithering,
+  and decodes the result back for display.

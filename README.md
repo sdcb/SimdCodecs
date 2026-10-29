@@ -168,6 +168,7 @@ Each package ships runnable samples in `linqpad-samples/`, which LINQPad lists i
 | `Sdcb.SimdCodecs.Tiff` | `multi-page` (incl. CCITT Group 4), `float-and-tiles`, `write` |
 | `Sdcb.SimdCodecs.Exif` | `read-exif` |
 | `Sdcb.SimdCodecs.Webp` | `decode`, `animation` |
+| `Sdcb.SimdCodecs.Gif` | `decode`, `encode` |
 
 They download their images from `https://cv-public.sdcb.ai/simdcodecs/samples/v1/`; how those were
 made and where they come from is in [tools/sample-assets](tools/sample-assets/README.md).

@@ -162,6 +162,7 @@ MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF）�
 | `Sdcb.SimdCodecs.Tiff` | `multi-page`（含 CCITT Group 4）、`float-and-tiles`、`write` |
 | `Sdcb.SimdCodecs.Exif` | `read-exif` |
 | `Sdcb.SimdCodecs.Webp` | `decode`、`animation` |
+| `Sdcb.SimdCodecs.Gif` | `decode`、`encode` |
 
 样例图片从 `https://cv-public.sdcb.ai/simdcodecs/samples/v1/` 下载，它们的生成方式和来源见
 [tools/sample-assets](tools/sample-assets/README.md)。
