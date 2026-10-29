@@ -50,6 +50,7 @@ jobs:
           done
           echo "BUILD_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "FILE_VERSION=${CORE_VERSION}.0" >> "$GITHUB_ENV"
+          echo "ASSEMBLY_VERSION=${CORE_VERSION}.0" >> "$GITHUB_ENV"
         else
           MM="$(dotnet msbuild Directory.Build.props -getProperty:VersionMajorMinor -nologo)"
           case "$MM" in
@@ -58,6 +59,7 @@ jobs:
           esac
           echo "BUILD_VERSION=${MM}.${GITHUB_RUN_NUMBER}${GITHUB_RUN_ATTEMPT}+${GITHUB_SHA}" >> "$GITHUB_ENV"
           echo "FILE_VERSION=${MM}.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+          echo "ASSEMBLY_VERSION=${MM}.0.0" >> "$GITHUB_ENV"
         fi
     # jbig2dec is the reference JBIG2 decoder that Jbig2OracleTests checks our
     # codestreams against. Used strictly as a BINARY -- it is AGPL and can never
@@ -90,7 +92,7 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore SimdCodecs.slnx
     - name: Build
-      run: dotnet build SimdCodecs.slnx -c "$BUILD_CONF" --no-restore -p:Version="$BUILD_VERSION" -p:FileVersion="$FILE_VERSION" -p:ContinuousIntegrationBuild=true
+      run: dotnet build SimdCodecs.slnx -c "$BUILD_CONF" --no-restore -p:Version="$BUILD_VERSION" -p:FileVersion="$FILE_VERSION" -p:AssemblyVersion="$ASSEMBLY_VERSION" -p:ContinuousIntegrationBuild=true
     - name: Test
       # REQUIRE_ORACLES turns "oracle missing" from a skip into a failure. Every
       # oracle harness degrades to a skip so a clean clone stays green, which is
