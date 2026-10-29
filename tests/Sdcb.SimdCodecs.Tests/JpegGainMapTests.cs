@@ -242,6 +242,26 @@ public sealed class JpegGainMapTests
     }
 
     [Fact]
+    public void Assemble_Rejects_Inputs_That_Already_Carry_Gain_Map_Metadata()
+    {
+        var baseJpeg = EncodeJpeg(GrayRampRgb(64, 32), 64, 32);
+        var mapJpeg = EncodeJpeg(GrayToRgb(new byte[16 * 8]), 16, 8);
+        var assembled = JpegGainMap.Assemble(baseJpeg, mapJpeg, Boost4X);
+        JpegGainMap.TrySplit(assembled, out var splitBase, out var splitMap, out _).ShouldBeTrue();
+
+        // The split halves keep their MPF + GContainer XMP and hdrgm XMP respectively.
+        Should.Throw<ArgumentException>(() => JpegGainMap.Assemble(assembled[splitBase], mapJpeg, Boost4X))
+            .ParamName.ShouldBe("sdrBaseJpeg");
+        Should.Throw<ArgumentException>(() => JpegGainMap.Assemble(baseJpeg, assembled[splitMap], Boost4X))
+            .ParamName.ShouldBe("gainMapJpeg");
+
+        // Ordinary XMP in the base is not gain-map metadata.
+        var withXmp = JpegEncoder.Encode(GrayRampRgb(64, 32), 64, 32, 3,
+            new JpegEncodeOptions { Quality = 100, Xmp = new JpegXmp { Description = "plain", CreatorTool = "camera" } });
+        JpegGainMap.TryRead(JpegGainMap.Assemble(withXmp, mapJpeg, Boost4X), out _).ShouldBeTrue();
+    }
+
+    [Fact]
     public void Assembled_File_Still_Decodes_As_A_Plain_Jpeg()
     {
         // The legacy-viewer guarantee: splicing must not disturb the base image's

@@ -124,7 +124,9 @@ public static class JpegGainMap
     /// neither is re-encoded. Legacy viewers see only the base.
     /// </summary>
     /// <exception cref="ArgumentException">Either input is not a JPEG starting with SOI,
-    /// or has a malformed header.</exception>
+    /// has a malformed header, or already carries gain-map metadata (an MPF index, or
+    /// hdrgm / GContainer XMP) — such as the base range <see cref="TrySplit"/> returns,
+    /// which keeps the original file's.</exception>
     /// <exception cref="InvalidOperationException"><paramref name="metadata"/> is unusable
     /// (see <see cref="GainMapMetadata.Validate"/>).</exception>
     public static byte[] Assemble(ReadOnlySpan<byte> sdrBaseJpeg, ReadOnlySpan<byte> gainMapJpeg, GainMapMetadata metadata)
@@ -260,6 +262,23 @@ public static class JpegGainMap
         catch (InvalidDataException e)
         {
             throw new ArgumentException($"Not a structurally valid JPEG: {e.Message}", paramName);
+        }
+
+        // An input that already carries gain-map structure - the base half of TrySplit, say, which
+        // keeps its MPF index and GContainer XMP - would come out with two of each, and readers then
+        // treat the file as a plain JPEG. Ordinary XMP (a camera's) is fine.
+        foreach (var segment in segments)
+        {
+            var payload = segment.Payload(jpeg);
+            if ((segment.Marker == 0xE2 && payload.StartsWith(MpfSegment.Identifier))
+                || (segment.Marker == 0xE1 && payload.StartsWith(GainMapXmp.App1Identifier)
+                    && (payload.IndexOf("http://ns.adobe.com/hdr-gain-map/1.0/"u8) >= 0
+                        || payload.IndexOf("http://ns.google.com/photos/1.0/container/"u8) >= 0)))
+            {
+                throw new ArgumentException(
+                    "The JPEG already carries gain-map metadata (an MPF index or hdrgm / GContainer XMP); " +
+                    "pass a plain JPEG, e.g. one re-encoded from the decoded pixels.", paramName);
+            }
         }
 
         for (var i = 1; i < segments.Count; i++)
