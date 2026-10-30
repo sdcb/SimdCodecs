@@ -302,52 +302,87 @@ internal static class BmpPixels
             throw new ArgumentException("The spans are shorter than the row.");
         ref var s = ref MemoryMarshal.GetReference(source);
         ref var d = ref MemoryMarshal.GetReference(destination);
-        ref var table = ref MemoryMarshal.GetReference(lut);
-        // Every index is a byte, or a part of one, so it is below 256 = lut.Length; source and destination
-        // indices stay below the row lengths checked above.
-        var perByte = 8 / bpp;
-        var mask = (1 << bpp) - 1;
-        switch (outBytes)
+        ref var t = ref MemoryMarshal.GetReference(lut);
+        // Bounds: every index is a byte or part of one, so below 256 <= lut.Length; pixel x reads source byte
+        // x >> shift < ceil(width * bpp / 8) <= source.Length and writes bytes [x * outBytes, (x + 1) * outBytes)
+        // within width * outBytes <= destination.Length (the 3-byte case's 4-byte store excepted, see there).
+        var shift = bpp switch { 8 => 0, 4 => 1, 2 => 2, _ => 3 }; // log2 of the pixels in a byte
+        int mask = (1 << bpp) - 1, last = (1 << shift) - 1;
+        var x = 0;
+        if (outBytes == 4)
         {
-            case 4:
-                if (bpp == 8)
-                {
-                    for (var x = 0; x < width; x++)
-                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * x), Unsafe.Add(ref table, Unsafe.Add(ref s, x)));
+            // Whole source bytes first, each unpacked with constant shifts.
+            switch (bpp)
+            {
+                case 8:
+                    for (; x < width; x++)
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * x), Unsafe.Add(ref t, Unsafe.Add(ref s, x)));
+                    return;
+                case 4:
+                    for (var i = 0; i < width >> 1; i++, x += 2)
+                    {
+                        uint b = Unsafe.Add(ref s, i);
+                        ref var o = ref Unsafe.Add(ref d, 4 * x);
+                        Unsafe.WriteUnaligned(ref o, Unsafe.Add(ref t, b >> 4));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 4), Unsafe.Add(ref t, b & 15));
+                    }
                     break;
-                }
-                for (var x = 0; x < width; x++)
-                {
-                    var index = (Unsafe.Add(ref s, x / perByte) >> (8 - bpp - bpp * (x % perByte))) & mask;
-                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * x), Unsafe.Add(ref table, index));
-                }
-                break;
-            case 3:
-                // Four-byte stores, each overwriting the next pixel's first byte, except the last pixel's.
-                for (var x = 0; x < width; x++)
-                {
-                    var index = bpp == 8 ? Unsafe.Add(ref s, x) : (Unsafe.Add(ref s, x / perByte) >> (8 - bpp - bpp * (x % perByte))) & mask;
-                    var v = Unsafe.Add(ref table, index);
-                    if (x + 1 < width)
+                case 2:
+                    for (var i = 0; i < width >> 2; i++, x += 4)
                     {
-                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 3 * x), v);
+                        uint b = Unsafe.Add(ref s, i);
+                        ref var o = ref Unsafe.Add(ref d, 4 * x);
+                        Unsafe.WriteUnaligned(ref o, Unsafe.Add(ref t, b >> 6));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 4), Unsafe.Add(ref t, (b >> 4) & 3));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 8), Unsafe.Add(ref t, (b >> 2) & 3));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 12), Unsafe.Add(ref t, b & 3));
                     }
-                    else
+                    break;
+                default:
+                    for (var i = 0; i < width >> 3; i++, x += 8)
                     {
-                        Unsafe.Add(ref d, 3 * x) = (byte)v;
-                        Unsafe.Add(ref d, 3 * x + 1) = (byte)(v >> 8);
-                        Unsafe.Add(ref d, 3 * x + 2) = (byte)(v >> 16);
+                        uint b = Unsafe.Add(ref s, i);
+                        ref var o = ref Unsafe.Add(ref d, 4 * x);
+                        Unsafe.WriteUnaligned(ref o, Unsafe.Add(ref t, b >> 7));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 4), Unsafe.Add(ref t, (b >> 6) & 1));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 8), Unsafe.Add(ref t, (b >> 5) & 1));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 12), Unsafe.Add(ref t, (b >> 4) & 1));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 16), Unsafe.Add(ref t, (b >> 3) & 1));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 20), Unsafe.Add(ref t, (b >> 2) & 1));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 24), Unsafe.Add(ref t, (b >> 1) & 1));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 28), Unsafe.Add(ref t, b & 1));
                     }
-                }
-                break;
-            default:
-                for (var x = 0; x < width; x++)
-                {
-                    var index = bpp == 8 ? Unsafe.Add(ref s, x) : (Unsafe.Add(ref s, x / perByte) >> (8 - bpp - bpp * (x % perByte))) & mask;
-                    Unsafe.Add(ref d, x) = (byte)Unsafe.Add(ref table, index);
-                }
-                break;
+                    break;
+            }
+            for (; x < width; x++)
+            {
+                var index = (Unsafe.Add(ref s, x >> shift) >> (8 - bpp - bpp * (x & last))) & mask;
+                Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * x), Unsafe.Add(ref t, index));
+            }
+            return;
         }
+        if (outBytes == 3)
+        {
+            // Four-byte stores, each overwriting the next pixel's first byte, except the last pixel's: for
+            // x <= width - 2 the store ends at 3x + 4 <= 3 * width - 2.
+            for (; x < width; x++)
+            {
+                var v = Unsafe.Add(ref t, (Unsafe.Add(ref s, x >> shift) >> (8 - bpp - bpp * (x & last))) & mask);
+                if (x + 1 < width)
+                {
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 3 * x), v);
+                }
+                else
+                {
+                    Unsafe.Add(ref d, 3 * x) = (byte)v;
+                    Unsafe.Add(ref d, 3 * x + 1) = (byte)(v >> 8);
+                    Unsafe.Add(ref d, 3 * x + 2) = (byte)(v >> 16);
+                }
+            }
+            return;
+        }
+        for (; x < width; x++)
+            Unsafe.Add(ref d, x) = (byte)Unsafe.Add(ref t, (Unsafe.Add(ref s, x >> shift) >> (8 - bpp - bpp * (x & last))) & mask);
     }
 
     // ---- Alpha -------------------------------------------------------------------------------------------------
@@ -383,13 +418,18 @@ internal static class BmpPixels
     // ---- Run-length coding (RLE8, RLE4, OS/2 RLE24) --------------------------------------------------------------
 
     /// <summary>
-    /// Writes runs into the output, rows stored bottom-up (compressed bitmaps are never top-down). Pixels the
-    /// stream never reaches stay opaque black; runs past the right edge are clipped.
+    /// The output of a compressed bitmap, written in stored order (bottom row first: compressed bitmaps are never
+    /// top-down). The codes only ever move forward — a run or literal to the right, a delta right and up, an end of
+    /// line up — so the canvas keeps a frontier, the first stored pixel not yet written: before each write the pixels
+    /// the stream skipped up to it are filled opaque black, and <see cref="Finish"/> fills the rest. Every pixel is
+    /// written once. Runs past the right edge are clipped.
     /// </summary>
     private ref struct Canvas
     {
         private readonly Span<byte> _destination;
         private readonly int _rowStride, _bytes, _width, _height;
+        private readonly uint _black;
+        private long _frontier;
 
         public Canvas(Span<byte> destination, int rowStride, ImagePixelFormat format, int width, int height)
         {
@@ -398,37 +438,194 @@ internal static class BmpPixels
             _bytes = PixelConverter.BytesPerPixel(format);
             _width = width;
             _height = height;
-            var black = Pack(0, 0, 0, format);
-            for (var y = 0; y < height; y++) Fill(destination.Slice(y * rowStride, width * _bytes), black, width);
+            _black = Pack(0, 0, 0, format);
         }
 
-        public void Put(int x, int y, uint value, int count)
-        {
-            if (y >= _height || x >= _width) return;
-            count = Math.Min(count, _width - x);
-            var row = _destination.Slice((_height - 1 - y) * _rowStride + x * _bytes, count * _bytes);
-            Fill(row, value, count);
-        }
+        public readonly int Bytes => _bytes;
 
-        private void Fill(Span<byte> span, uint value, int count)
+        /// <summary>The span of <paramref name="count"/> pixels from (<paramref name="x"/>, <paramref name="y"/>), clipped
+        /// to the row, after filling what was skipped to reach it; empty when it lies outside the bitmap.</summary>
+        public Span<byte> At(int x, int y, ref int count)
         {
-            switch (_bytes)
+            if (y >= _height || x >= _width || count <= 0)
             {
-                case 4:
-                    MemoryMarshal.Cast<byte, uint>(span[..(count * 4)]).Fill(value); // unaligned access is fine on every target .NET runs
+                count = 0;
+                return default;
+            }
+            count = Math.Min(count, _width - x);
+            var start = (long)y * _width + x;
+            if (start > _frontier) Fill(_frontier, start);
+            _frontier = Math.Max(_frontier, start + count);
+            return _destination.Slice((_height - 1 - y) * _rowStride + x * _bytes, count * _bytes);
+        }
+
+        public void Run(int x, int y, uint value, int count)
+        {
+            var span = At(x, y, ref count);
+            Store(span, value, count, _bytes);
+        }
+
+        /// <summary>Fills every pixel the stream never reached.</summary>
+        public readonly void Finish() => Fill(_frontier, (long)_width * _height);
+
+        // Opaque black over stored pixels [from, to), row by row.
+        private readonly void Fill(long from, long to)
+        {
+            while (from < to)
+            {
+                int y = (int)(from / _width), x = (int)(from % _width);
+                var count = (int)Math.Min(_width - x, to - from);
+                Store(_destination.Slice((_height - 1 - y) * _rowStride + x * _bytes, count * _bytes), _black, count, _bytes);
+                from += count;
+            }
+        }
+    }
+
+    /// <summary>
+    /// <see cref="DecodeRle"/> for RLE4 and RLE8 into a 4-byte layout, the common case, written straight into the
+    /// current row: the same codes and the same result, without the canvas's per-code bookkeeping. Writing is
+    /// sequential within a row, so the skipped pixels are filled only where the position jumps (end of line, delta,
+    /// end of bitmap).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void DecodeIndexedRleTo32(ReadOnlySpan<byte> s, BmpHeader h, Span<byte> destination, int rowStride,
+        ReadOnlySpan<uint> lut, uint black)
+    {
+        int width = h.Width, height = h.Height, pos = 0, x = 0, y = 0;
+        var four = h.Compression == BmpCompression.Rle4;
+        ref var t = ref MemoryMarshal.GetReference(lut);
+        var row = RowOf(destination, rowStride, height, width, 0);
+        // Each code consumes at least two bytes, so the stream's length bounds the work.
+        while (pos + 1 < s.Length && y < height)
+        {
+            int count = s[pos], code = s[pos + 1];
+            pos += 2;
+            if (count > 0)
+            {
+                var n = Math.Min(count, width - x);
+                if (n > 0)
+                {
+                    // Bounds: x + n <= width, and the row is width * 4 bytes; indices are bytes or nibbles (< 256).
+                    ref var d = ref Unsafe.Add(ref MemoryMarshal.GetReference(row), 4 * x);
+                    uint hi = Unsafe.Add(ref t, four ? code >> 4 : code), lo = Unsafe.Add(ref t, four ? code & 15 : code);
+                    if (n >= 16)
+                    {
+                        // A long run: the vectorised fill, of one pixel or of the two-pixel pattern.
+                        var span = row.Slice(4 * x, 4 * n);
+                        if (hi == lo)
+                        {
+                            MemoryMarshal.Cast<byte, uint>(span).Fill(hi);
+                        }
+                        else
+                        {
+                            MemoryMarshal.Cast<byte, ulong>(span[..(n / 2 * 8)]).Fill(hi | (ulong)lo << 32);
+                            if ((n & 1) != 0) MemoryMarshal.Write(span[((n - 1) * 4)..], hi);
+                        }
+                    }
+                    else if (hi == lo)
+                    {
+                        for (var i = 0; i < n; i++) Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * i), hi);
+                    }
+                    else
+                    {
+                        var i = 0;
+                        for (; i + 1 < n; i += 2)
+                        {
+                            Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * i), hi);
+                            Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * i + 4), lo);
+                        }
+                        if (i < n) Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * i), hi);
+                    }
+                }
+                x += count;
+                continue;
+            }
+            switch (code)
+            {
+                case 0: // end of line
+                    Skip(destination, rowStride, height, width, black, ref x, ref y, 0, y + 1);
                     break;
-                case 1:
-                    span[..count].Fill((byte)value);
+                case 1: // end of bitmap
+                    goto end;
+                case 2: // delta
+                    if (pos + 1 >= s.Length) goto end;
+                    Skip(destination, rowStride, height, width, black, ref x, ref y, x + s[pos], y + s[pos + 1]);
+                    pos += 2;
                     break;
                 default:
-                    for (var i = 0; i < count; i++)
+                {
+                    // Absolute mode, padded to 16 bits; a literal the data cuts short paints the pixels it has.
+                    var bytesIn = four ? (code + 1) / 2 : code;
+                    var literal = s.Slice(pos, Math.Min(bytesIn, s.Length - pos));
+                    var n = Math.Min(Math.Min(code, four ? 2 * literal.Length : literal.Length), width - x);
+                    if (n > 0)
                     {
-                        span[3 * i] = (byte)value;
-                        span[3 * i + 1] = (byte)(value >> 8);
-                        span[3 * i + 2] = (byte)(value >> 16);
+                        // Bounds: as for a run; literal index i >> 1 (RLE4) or i (RLE8) < literal.Length.
+                        ref var d = ref Unsafe.Add(ref MemoryMarshal.GetReference(row), 4 * x);
+                        ref var l = ref MemoryMarshal.GetReference(literal);
+                        if (!four)
+                        {
+                            for (var i = 0; i < n; i++) Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * i), Unsafe.Add(ref t, Unsafe.Add(ref l, i)));
+                        }
+                        else
+                        {
+                            for (var i = 0; i < n; i++)
+                            {
+                                var b = Unsafe.Add(ref l, i >> 1);
+                                Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * i), Unsafe.Add(ref t, (i & 1) == 0 ? b >> 4 : b & 15));
+                            }
+                        }
                     }
+                    x += code;
+                    pos += bytesIn + (bytesIn & 1);
                     break;
+                }
             }
+            if (y < height) row = RowOf(destination, rowStride, height, width, y);
+        }
+    end:
+        Skip(destination, rowStride, height, width, black, ref x, ref y, 0, height);
+    }
+
+    private static Span<byte> RowOf(Span<byte> destination, int rowStride, int height, int width, int y) =>
+        destination.Slice((height - 1 - y) * rowStride, width * 4);
+
+    // Opaque black from (x, y) to (toX, toY) in stored order (x clipped to the row), then moves there.
+    private static void Skip(Span<byte> destination, int rowStride, int height, int width, uint black, ref int x, ref int y, int toX, int toY)
+    {
+        for (; y < toY && y < height; y++, x = 0)
+        {
+            var from = Math.Min(x, width);
+            MemoryMarshal.Cast<byte, uint>(RowOf(destination, rowStride, height, width, y)[(4 * from)..]).Fill(black);
+        }
+        if (y == toY && y < height)
+        {
+            int from = Math.Min(x, width), to = Math.Min(toX, width);
+            if (to > from) MemoryMarshal.Cast<byte, uint>(RowOf(destination, rowStride, height, width, y)[(4 * from)..(4 * to)]).Fill(black);
+        }
+        x = toX;
+        y = Math.Max(y, toY);
+    }
+
+    /// <summary><paramref name="count"/> copies of a 1-, 3- or 4-byte pixel value.</summary>
+    private static void Store(Span<byte> span, uint value, int count, int bytes)
+    {
+        switch (bytes)
+        {
+            case 4:
+                MemoryMarshal.Cast<byte, uint>(span[..(count * 4)]).Fill(value); // unaligned access is fine on every target .NET runs
+                break;
+            case 1:
+                span[..count].Fill((byte)value);
+                break;
+            default:
+                for (var i = 0; i < count; i++)
+                {
+                    span[3 * i] = (byte)value;
+                    span[3 * i + 1] = (byte)(value >> 8);
+                    span[3 * i + 2] = (byte)(value >> 16);
+                }
+                break;
         }
     }
 
@@ -437,8 +634,13 @@ internal static class BmpPixels
         var canvas = new Canvas(destination, rowStride, format, h.Width, h.Height);
         Span<uint> lut = stackalloc uint[256];
         if (h.Compression != BmpCompression.Rle24) BuildPalette(data, h, format, lut);
+        if (canvas.Bytes == 4 && h.Compression != BmpCompression.Rle24)
+        {
+            DecodeIndexedRleTo32(data[h.PixelOffset..], h, destination, rowStride, lut, Pack(0, 0, 0, format));
+            return;
+        }
         var s = data[h.PixelOffset..];
-        int pos = 0, x = 0, y = 0;
+        int pos = 0, x = 0, y = 0, bytes = canvas.Bytes;
         // Each step consumes at least two bytes, so the stream's length bounds the work.
         while (pos + 1 < s.Length && y < h.Height)
         {
@@ -450,15 +652,32 @@ internal static class BmpPixels
                 switch (h.Compression)
                 {
                     case BmpCompression.Rle8:
-                        canvas.Put(x, y, lut[code], count);
+                        canvas.Run(x, y, lut[code], count);
                         break;
                     case BmpCompression.Rle4:
+                    {
                         uint hi = lut[code >> 4], lo = lut[code & 15];
-                        for (var i = 0; i < count && x + i < h.Width; i++) canvas.Put(x + i, y, (i & 1) == 0 ? hi : lo, 1);
+                        var n = count;
+                        var span = canvas.At(x, y, ref n);
+                        if (hi == lo)
+                        {
+                            Store(span, hi, n, bytes);
+                        }
+                        else if (bytes == 4)
+                        {
+                            // The two pixels as one 64-bit pattern, then the odd one out.
+                            MemoryMarshal.Cast<byte, ulong>(span[..(n / 2 * 8)]).Fill(hi | (ulong)lo << 32);
+                            if ((n & 1) != 0) MemoryMarshal.Write(span[((n - 1) * 4)..], hi);
+                        }
+                        else
+                        {
+                            for (var i = 0; i < n; i++) Store(span.Slice(i * bytes, bytes), (i & 1) == 0 ? hi : lo, 1, bytes);
+                        }
                         break;
+                    }
                     default:
-                        if (pos + 1 >= s.Length) return;
-                        canvas.Put(x, y, Pack(s[pos + 1], s[pos], code, format), count);
+                        if (pos + 1 >= s.Length) goto end;
+                        canvas.Run(x, y, Pack(s[pos + 1], s[pos], code, format), count);
                         pos += 2;
                         break;
                 }
@@ -472,52 +691,49 @@ internal static class BmpPixels
                     y++;
                     break;
                 case 1: // end of bitmap
-                    return;
+                    goto end;
                 case 2: // delta: move right and up
-                    if (pos + 1 >= s.Length) return;
+                    if (pos + 1 >= s.Length) goto end;
                     x += s[pos];
                     y += s[pos + 1];
                     pos += 2;
                     break;
                 default:
                 {
-                    // Absolute mode: `code` literal pixels, padded to a 16-bit boundary.
+                    // Absolute mode: `code` literal pixels, padded to a 16-bit boundary. A literal the data cuts
+                    // short paints the pixels it has.
                     var n = code;
-                    var bytes = h.Compression switch
+                    var bytesIn = h.Compression switch
                     {
                         BmpCompression.Rle8 => n,
                         BmpCompression.Rle4 => (n + 1) / 2,
                         _ => 3 * n,
                     };
-                    var available = Math.Min(bytes, s.Length - pos);
-                    var literal = s.Slice(pos, available);
-                    for (var i = 0; i < n; i++)
+                    var literal = s.Slice(pos, Math.Min(bytesIn, s.Length - pos));
+                    var painted = Math.Min(n, h.Compression switch
                     {
-                        uint value;
-                        switch (h.Compression)
-                        {
-                            case BmpCompression.Rle8:
-                                if (i >= literal.Length) goto done;
-                                value = lut[literal[i]];
-                                break;
-                            case BmpCompression.Rle4:
-                                if (i / 2 >= literal.Length) goto done;
-                                value = lut[(i & 1) == 0 ? literal[i / 2] >> 4 : literal[i / 2] & 15];
-                                break;
-                            default:
-                                if (3 * i + 2 >= literal.Length) goto done;
-                                value = Pack(literal[3 * i + 2], literal[3 * i + 1], literal[3 * i], format);
-                                break;
-                        }
-                        canvas.Put(x + i, y, value, 1);
+                        BmpCompression.Rle8 => literal.Length,
+                        BmpCompression.Rle4 => 2 * literal.Length,
+                        _ => literal.Length / 3,
+                    });
+                    var span = canvas.At(x, y, ref painted);
+                    if (h.Compression == BmpCompression.Rle24)
+                    {
+                        for (var i = 0; i < painted; i++)
+                            Store(span.Slice(i * bytes, bytes), Pack(literal[3 * i + 2], literal[3 * i + 1], literal[3 * i], format), 1, bytes);
                     }
-                done:
+                    else if (painted > 0)
+                    {
+                        ExpandIndexed(literal, span, painted, h.Compression == BmpCompression.Rle8 ? 8 : 4, lut, bytes);
+                    }
                     x += n;
-                    pos += bytes + (bytes & 1);
+                    pos += bytesIn + (bytesIn & 1);
                     break;
                 }
             }
         }
+    end:
+        canvas.Finish();
     }
 
     // ---- OS/2 Huffman 1D ---------------------------------------------------------------------------------------
@@ -538,7 +754,7 @@ internal static class BmpPixels
         for (var y = 0; y < h.Height; y++)
         {
             reader.SkipEols();
-            if (reader.AtEnd) return;
+            if (reader.AtEnd) break;
             var x = 0;
             var colour = 0;
             while (x < h.Width)
@@ -546,11 +762,12 @@ internal static class BmpPixels
                 var run = reader.ReadRun(colour);
                 if (run > h.Width - x)
                     throw new InvalidDataException($"Huffman 1D row {y} runs past the {h.Width}-pixel edge.");
-                canvas.Put(x, y, lut[colour], run);
+                canvas.Run(x, y, lut[colour], run);
                 x += run;
                 colour ^= 1;
             }
         }
+        canvas.Finish();
     }
 
     private ref struct BitReader(ReadOnlySpan<byte> data)

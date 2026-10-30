@@ -90,7 +90,8 @@ internal static unsafe class Baseline
         var sha = Run("git", $"-C \"{repo}\" rev-parse --short=12 {gitRef}^{{commit}}").Trim();
         var subject = Run("git", $"-C \"{repo}\" log -1 --format=%s {sha}").Trim();
         var outDir = Path.Combine(Dir, sha);
-        var worktree = Path.Combine(Path.GetTempPath(), "simdcodecs-bmp-baseline-" + sha);
+        // Inside the git-ignored cache rather than the temp directory, which some machines keep tools out of.
+        var worktree = Path.Combine(BenchPaths.Cache, "worktree-" + sha);
         if (Directory.Exists(worktree)) Run("git", $"-C \"{repo}\" worktree remove --force \"{worktree}\"");
         Run("git", $"-C \"{repo}\" worktree add --detach \"{worktree}\" {sha}");
         try
@@ -113,6 +114,9 @@ internal static unsafe class Baseline
     private static string Run(string file, string args)
     {
         var psi = new ProcessStartInfo(file, args) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        // MSBuild makes its own temporary folders: give it one under the cache, for machines that keep tools out of %TEMP%.
+        var temp = Directory.CreateDirectory(Path.Combine(BenchPaths.Cache, "tmp")).FullName;
+        psi.Environment["TMP"] = psi.Environment["TEMP"] = temp;
         using var p = Process.Start(psi)!;
         var stdout = p.StandardOutput.ReadToEndAsync();
         var stderr = p.StandardError.ReadToEndAsync();
