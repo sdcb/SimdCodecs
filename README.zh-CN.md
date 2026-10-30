@@ -84,12 +84,19 @@ File.WriteAllBytes("photo.jpg", jpeg);
 | libwebp 1.6.0（原生） | 1.00× | 1.00× | 1.00× |
 | **Sdcb.SimdCodecs** | **0.88×** | **0.53×** | **0.72×** |
 
+| JPEG 2000 解码，1600×1200 | 无损 (5/3) | 有损 (9/7, q=40) | PSNR vs 原生 |
+|---|---:|---:|---:|
+| libopenjp2 2.5.4（原生） | 1.00× (221 ms) | 1.00× (49 ms) | 基准 |
+| **Sdcb.SimdCodecs** | **1.96×** (433 ms) | **2.03×** (99 ms) | 无损 Exact / 有损 84 dB |
+
 JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插值时，相对精确参考值的 RGB PSNR 高约
 1 dB），并且在 AVX2、SSE、AdvSimd、标量和 NativeAOT 下输出逐位一致。WebP 输出与 libwebp 逐字节一致。
+JPEG 2000 无损解码与 libopenjp2 逐位一致，有损解码 PSNR 超过 84 dB。
 完整数据、语料和测量方法见
-[JPEG](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md) 和
-[WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md)
-（在接近照片内容、不带 alpha 的有损文件上，WebP 与 libwebp 持平：0.87–1.13×）。
+[JPEG](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md)、
+[WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md) 和
+[JPEG 2000](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md)
+（在接近照片内容、不带 alpha 的有损文件上，WebP 与 libwebp 持平：0.87–1.13×；JPEG 2000 目前单核纯托管解码耗时约为 libopenjp2 的 2× 左右）。
 
 ## 包列表
 

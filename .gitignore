@@ -264,6 +264,7 @@ __pycache__/
 BenchmarkDotNet.Artifacts/
 # Benchmark caches: corpus originals/masters/matrix and libjpeg-turbo binaries (never committed).
 benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/.cache/
+benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/.cache/
 benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/.cache/
 benchmarks/Sdcb.SimdCodecs.Png.Benchmarks/.cache/
 

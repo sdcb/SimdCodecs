@@ -86,13 +86,20 @@ Single-threaded, AMD Ryzen 7 5800X, .NET 10. Time relative to the native library
 | libwebp 1.6.0 (native) | 1.00× | 1.00× | 1.00× |
 | **Sdcb.SimdCodecs** | **0.88×** | **0.53×** | **0.72×** |
 
+| JPEG 2000 decode, 1600×1200 | lossless (5/3) | lossy (9/7, q=40) | PSNR vs native |
+|---|---:|---:|---:|
+| libopenjp2 2.5.4 (native) | 1.00× (221 ms) | 1.00× (49 ms) | baseline |
+| **Sdcb.SimdCodecs** | **1.96×** (433 ms) | **2.03×** (99 ms) | Lossless Exact / Lossy 84 dB |
+
 The JPEG decoder is also at least as accurate as libjpeg-turbo's default (about 1 dB higher RGB PSNR
 against an exact reference where chroma is upsampled), and its output is bit-identical on AVX2, SSE,
-AdvSimd, scalar and NativeAOT. WebP output is byte-identical to libwebp. Full tables, corpora and
-methodology:
+AdvSimd, scalar and NativeAOT. WebP output is byte-identical to libwebp.
+JPEG 2000 lossless decode is bit-identical to libopenjp2, and lossy decode achieves >84 dB PSNR.
+Full tables, corpora and methodology:
 [JPEG](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md),
-[WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md)
-(on photo-like opaque lossy files WebP is on par: 0.87–1.13×).
+[WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md), and
+[JPEG 2000](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md)
+(on photo-like opaque lossy files WebP is on par: 0.87–1.13×; JPEG 2000 pure managed single-threaded decode is currently about 2× of libopenjp2).
 
 ## Packages
 

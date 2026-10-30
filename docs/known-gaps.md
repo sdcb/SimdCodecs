@@ -19,7 +19,7 @@
 AGENTS.md 的目标是每个编解码器都达到或超过对应的原生参考库。目前**已调优**的有：JPEG 编码和解码、WebP 解码、
 PNG 编码和解码，各有自己的基准项目。
 
-**未调优**：TIFF、JPEG 2000、JBIG2、GIF（解码和编码）、EXIF。它们的门面路径也比较朴素：`TryDecodeInto`
+**未调优**：TIFF、JBIG2、GIF（解码和编码）、EXIF。JPEG 2000 已建立基准项目并测得初始基线（~2× libopenjp2），算术解码与并发优化尚未开始。它们的门面路径也比较朴素：`TryDecodeInto`
 先完整解码出一张图，再整帧转换成目标像素格式，中间会分配一整帧内存；JPEG、PNG、WebP 则是直接写进调用方的缓冲区。
 
 ### 门面与公共接口
@@ -126,7 +126,7 @@ PNG 编码和解码，各有自己的基准项目。
 - **门面只呈现 1 或 3 个分量、且不是 sYCC 的图像**；带 alpha、CMYK、sYCC 的图门面返回 `false`，
   `Jpeg2000Decoder.Decode` 仍会返回全部分量。
 - **没有分辨率缩减（reduce）解码。**
-- 未调优。
+- **已有基准测试，性能待调优**：基准项目 `Sdcb.SimdCodecs.Jpeg2000.Benchmarks` 已建立并在 `results/` 记录初始基线；目前纯托管单核解码耗时约为 libopenjp2 纯 C 核心的 1.9×~2.2×；EBCOT 条带位掩码快速跳过、Code-block 级多线程并发与系数重构缓冲区复用尚未实现。
 
 ## JBIG2
 
