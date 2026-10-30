@@ -224,6 +224,18 @@ public sealed class PngImageDecoder : IImageDecoder
     private static bool TryMapLayout(int colorType, int bitDepth, bool transparentColor, out int channels, out SampleFormat format)
     {
         format = bitDepth == 16 ? SampleFormat.UInt16 : SampleFormat.UInt8;
+        // The depths PNG allows for each colour type (Table 11.1): anything else is a corrupt IHDR, not a layout.
+        var allowed = colorType switch
+        {
+            0 => bitDepth is 1 or 2 or 4 or 8 or 16,
+            3 => bitDepth is 1 or 2 or 4 or 8,
+            _ => bitDepth is 8 or 16,
+        };
+        if (!allowed)
+        {
+            channels = 0;
+            return false;
+        }
         switch (colorType)
         {
             case 0: channels = transparentColor ? 2 : 1; break;             // greyscale (+ tRNS alpha)

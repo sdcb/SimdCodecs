@@ -381,4 +381,20 @@ public sealed class PngReaderTests
         }
         return -1;
     }
+
+    [Theory]
+    [InlineData(0, 3)]
+    [InlineData(2, 4)]
+    [InlineData(3, 16)]
+    [InlineData(6, 235)]
+    public void An_ihdr_depth_its_colour_type_does_not_allow_is_refused(int colorType, int bitDepth)
+    {
+        // Found by the BMP fuzzer through BI_PNG: an impossible depth reached ImageInfo.BitDepth's range check,
+        // so TryReadInfo threw instead of returning false.
+        var png = PngWriter.Encode(new byte[4 * 4 * 4], 4, 4);
+        png[24] = (byte)bitDepth;
+        png[25] = (byte)colorType;
+        Sdcb.SimdCodecs.Png.PngImageDecoder.TryReadInfo(png, out _).ShouldBeFalse();
+        Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecodeInto(png, new byte[64], 0, Sdcb.SimdCodecs.Abstractions.ImagePixelFormat.Rgba32).ShouldBeFalse();
+    }
 }
