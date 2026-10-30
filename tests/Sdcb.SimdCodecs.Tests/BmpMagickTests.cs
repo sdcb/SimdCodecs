@@ -123,6 +123,10 @@ public sealed class BmpMagickTests
             var options = new BmpEncodeOptions { Format = format, Header = header, Rle = rle, TopDown = topDown };
             var bmp = BmpEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32, options);
             var because = $"{format}, {header}, RLE {rle}, top-down {topDown}, width {width}";
+            var streamed = new MemoryStream();
+            streamed.Write([1, 2, 3]); // written from the stream's position on
+            BmpEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32, streamed, options);
+            streamed.ToArray()[3..].ShouldBe(bmp, because);
             var info = BmpDecoder.ReadInfo(bmp);
             info.HeaderKind.ShouldBe(header switch
             {
@@ -132,6 +136,15 @@ public sealed class BmpMagickTests
                 _ => BmpHeaderKind.V5,
             }, because);
             info.TopDown.ShouldBe(topDown, because);
+            if (!rle)
+            {
+                // Exactly the headers, masks, palette and rows: a direct-colour core file once carried a 2^24-entry palette.
+                var bpp = info.BitsPerPixel;
+                var headerBytes = header switch { BmpHeaderVersion.Core => 12, BmpHeaderVersion.Info => 40, BmpHeaderVersion.V4 => 108, _ => 124 };
+                var masks = header == BmpHeaderVersion.Info && info.Compression == BmpCompression.Bitfields ? 12 : 0;
+                var paletteBytes = bpp > 8 ? 0 : header == BmpHeaderVersion.Core ? 3 << bpp : 4 * info.PaletteSize;
+                bmp.Length.ShouldBe(14 + headerBytes + masks + paletteBytes + (width * bpp + 31) / 32 * 4 * height, because);
+            }
 
             BmpDecoderTests.ShouldMatch(MagickRgba(bmp), rgba, because);
             var ours = new byte[rgba.Length];

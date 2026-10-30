@@ -77,7 +77,7 @@ internal static class PeakMemory
                       ". \"steady\" is the rise of a second operation, pooled buffers already resident. Native and unmanaged " +
                       "memory counts, so WIC and ImageSharp are measured on the same footing as the managed codecs.");
         sb.AppendLine();
-        string[] order = [Names.Current, Names.CurrentBgra, Names.Baseline, Names.ImageSharp, Names.Wic];
+        string[] order = [Names.Current, Names.CurrentStream, Names.CurrentBgra, Names.Baseline, Names.ImageSharp, Names.Wic];
         string[] present = order.Where(o => samples.Any(s => s.Contestant == o)).ToArray();
         sb.AppendLine("| Case | " + string.Join(" | ", present.Select(p => Names.Label(p) + " first / steady")) + " |");
         sb.AppendLine("|---|" + string.Concat(present.Select(_ => "---:|")));

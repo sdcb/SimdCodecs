@@ -63,6 +63,7 @@ internal static class Names
 {
     public const string Current = "Current";
     public const string CurrentBgra = "CurrentBgra";
+    public const string CurrentStream = "CurrentStream";
     public const string Baseline = "Baseline";
     public const string ImageSharp = "ImageSharp";
     public const string Wic = "Wic";
@@ -71,6 +72,7 @@ internal static class Names
     {
         Current => "current",
         CurrentBgra => "current BGR(A)",
+        CurrentStream => "current → stream",
         Baseline => "baseline",
         Wic => "WIC",
         _ => name,

@@ -70,7 +70,10 @@ public class BmpEncodeBenchmarks
     [Benchmark]
     public void Wic() => _run[Names.Wic]();
 
-    public static readonly string[] Methods = BmpDecodeBenchmarks.Methods;
+    [Benchmark]
+    public void CurrentStream() => _run[Names.CurrentStream]();
+
+    public static readonly string[] Methods = [Names.Current, Names.CurrentStream, Names.CurrentBgra, Names.Baseline, Names.ImageSharp, Names.Wic];
 }
 
 /// <summary>Runs every contestant of a case back to back before the next case, in the matrix's order.</summary>

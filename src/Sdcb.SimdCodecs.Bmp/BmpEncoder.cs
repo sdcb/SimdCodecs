@@ -1,5 +1,7 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Sdcb.SimdCodecs.Abstractions;
 
 namespace Sdcb.SimdCodecs.Bmp;
@@ -115,6 +117,25 @@ public static class BmpEncoder
         BmpEncodeOptions? options = null, int stride = 0) =>
         Write(pixels, width, height, format, options ?? new BmpEncodeOptions(), stride, file: true, iconImage: false);
 
+    /// <summary>
+    /// Encodes a bitmap file into <paramref name="output"/> a row at a time, through one pooled row: no buffer of the
+    /// whole file is allocated (an RLE or palette layout still holds the image's indices).
+    /// </summary>
+    /// <param name="pixels">The image, top row first.</param>
+    /// <param name="width">Width in pixels.</param>
+    /// <param name="height">Height in pixels.</param>
+    /// <param name="format">The input layout.</param>
+    /// <param name="output">Where the file is written, from its current position.</param>
+    /// <param name="options">The output layout; null for <see cref="BmpEncodeFormat.Auto"/>.</param>
+    /// <param name="stride">Bytes from one input row to the next; 0 means tightly packed.</param>
+    /// <exception cref="ArgumentException">The size, buffer or options do not fit.</exception>
+    public static void Encode(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, Stream output,
+        BmpEncodeOptions? options = null, int stride = 0)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        Write(pixels, width, height, format, options ?? new BmpEncodeOptions(), stride, file: true, iconImage: false, output);
+    }
+
     /// <summary>Encodes a bitmap file from 1 (grey), 3 (RGB) or 4 (RGBA) channels, tightly packed.</summary>
     /// <exception cref="ArgumentException">The size, channel count, buffer or options do not fit.</exception>
     public static byte[] Encode(ReadOnlySpan<byte> pixels, int width, int height, int channels, BmpEncodeOptions? options = null) =>
@@ -144,7 +165,17 @@ public static class BmpEncoder
     };
 
     private static byte[] Write(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
-        BmpEncodeOptions options, int stride, bool file, bool iconImage)
+        BmpEncodeOptions options, int stride, bool file, bool iconImage) =>
+        Write(pixels, width, height, format, options, stride, file, iconImage, stream: null)!;
+
+    /// <summary>
+    /// The encoder: plans the layout, then writes the headers and palette, the rows (or the RLE stream), an icon
+    /// image's AND mask and a V5 profile, in file order — into a new array (<paramref name="stream"/> null; it is not
+    /// zeroed first, as every byte is written), or into <paramref name="stream"/> a row at a time through a pooled
+    /// row, with no buffer of the whole file.
+    /// </summary>
+    private static byte[]? Write(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+        BmpEncodeOptions options, int stride, bool file, bool iconImage, Stream? stream)
     {
         if (width < 1 || height < 1)
             throw new ArgumentOutOfRangeException(nameof(width), $"A bitmap is at least 1x1, not {width}x{height}.");
@@ -197,11 +228,13 @@ public static class BmpEncoder
         int[] palette = [];
         byte[]? indices = null;
         if (indexed) (palette, indices) = Palettize(input, 1 << bpp, options.Dither, blackTransparent: iconImage);
-        var paletteEntries = header == BmpHeaderVersion.Core ? 1 << bpp : palette.Length;
+        // A core header has no colour count, so its palette is always full; direct colour has none.
+        var paletteEntries = header == BmpHeaderVersion.Core && indexed ? 1 << bpp : palette.Length;
         var entrySize = header == BmpHeaderVersion.Core ? 3 : 4;
 
         // The pixel bytes: rows of whole 32-bit words, or the RLE stream.
         var rowBytes = (int)(((long)width * bpp + 31) / 32 * 4);
+        var usedBytes = (int)(((long)width * bpp + 7) / 8);
         byte[]? rle = options.Rle ? Rle.Encode(indices!, width, height, bpp) : null;
         var pixelBytes = rle?.Length ?? (long)rowBytes * height;
         var maskStride = (width + 31) / 32 * 4;
@@ -209,12 +242,14 @@ public static class BmpEncoder
         var icc = header == BmpHeaderVersion.V5 ? options.IccProfile.Span : default;
 
         var fileHeader = file ? 14 : 0;
-        var pixelOffset = fileHeader + headerSize + masksAfterHeader + (long)paletteEntries * entrySize;
+        var pixelOffset = fileHeader + headerSize + masksAfterHeader + paletteEntries * entrySize; // at most 1174
         var total = pixelOffset + pixelBytes + maskBytes + icc.Length;
-        if (total > Array.MaxLength) throw new ArgumentOutOfRangeException(nameof(width), "The bitmap would be larger than an array can hold.");
-        var output = new byte[total];
-        var o = output.AsSpan();
+        if (total > (stream is null ? Array.MaxLength : uint.MaxValue))
+            throw new ArgumentOutOfRangeException(nameof(width), "The bitmap would be larger than the format or an array can hold.");
 
+        // Headers, masks and palette.
+        Span<byte> o = stackalloc byte[pixelOffset];
+        o.Clear();
         if (file)
         {
             o[0] = (byte)'B';
@@ -281,37 +316,71 @@ public static class BmpEncoder
             pal[i * entrySize + 2] = (byte)(palette[i] >> 16);
         }
 
-        var body = o.Slice((int)pixelOffset, (int)pixelBytes);
-        if (rle is not null)
+        var output = stream is null ? GC.AllocateUninitializedArray<byte>((int)total) : null;
+        byte[]? pooled = stream is null ? null : ArrayPool<byte>.Shared.Rent(Math.Max(Math.Max(rowBytes, maskStride), pixelOffset));
+        try
         {
-            rle.CopyTo(body);
-        }
-        else
-        {
-            for (var r = 0; r < height; r++)
+            var at = 0L;
+            // The next `length` bytes of the file: in the array, or in the pooled row until Flush writes it out.
+            Span<byte> Next(int length) => output is not null ? output.AsSpan((int)at, length) : pooled.AsSpan(0, length);
+            void Flush(int length)
             {
-                var y = options.TopDown ? r : height - 1 - r;
-                var row = body.Slice(r * rowBytes, rowBytes);
-                if (indexed) PackIndices(indices.AsSpan(y * width, width), row, bpp);
-                else WriteDirect(input, y, row, layout, iconImage);
+                if (stream is not null) stream.Write(pooled!, 0, length);
+                at += length;
             }
-        }
 
-        if (iconImage)
-        {
-            var mask = o.Slice((int)(pixelOffset + pixelBytes), (int)maskBytes);
-            for (var r = 0; r < height; r++)
+            o.CopyTo(Next(pixelOffset));
+            Flush(pixelOffset);
+
+            if (rle is not null)
             {
-                var y = height - 1 - r;
-                var row = mask.Slice(r * maskStride, maskStride);
-                for (var x = 0; x < width; x++)
+                if (output is not null) rle.CopyTo(Next(rle.Length));
+                else stream!.Write(rle);
+                at += rle.Length;
+            }
+            else
+            {
+                for (var r = 0; r < height; r++)
                 {
-                    if (input.Alpha(x, y) < 128) row[x >> 3] |= (byte)(0x80 >> (x & 7));
+                    var y = options.TopDown ? r : height - 1 - r;
+                    var row = Next(rowBytes);
+                    if (indexed)
+                    {
+                        row.Clear(); // PackIndices ORs bits in
+                        PackIndices(indices.AsSpan(y * width, width), row, bpp);
+                    }
+                    else
+                    {
+                        row[usedBytes..].Clear(); // the padding to a 32-bit word
+                        WriteDirect(input, y, row, layout, iconImage);
+                    }
+                    Flush(rowBytes);
                 }
             }
+
+            if (iconImage)
+            {
+                for (var r = 0; r < height; r++)
+                {
+                    var y = height - 1 - r;
+                    var row = Next(maskStride);
+                    row.Clear();
+                    for (var x = 0; x < width; x++)
+                    {
+                        if (input.Alpha(x, y) < 128) row[x >> 3] |= (byte)(0x80 >> (x & 7));
+                    }
+                    Flush(maskStride);
+                }
+            }
+
+            if (output is not null) icc.CopyTo(output.AsSpan((int)at));
+            else stream!.Write(icc);
+            return output;
         }
-        icc.CopyTo(o[(int)(total - icc.Length)..]);
-        return output;
+        finally
+        {
+            if (pooled is not null) ArrayPool<byte>.Shared.Return(pooled);
+        }
     }
 
     private static void Validate(BmpEncodeOptions options, BmpEncodeFormat layout, BmpHeaderVersion header, int width, int height, bool iconImage)
@@ -451,45 +520,76 @@ public static class BmpEncoder
             }
         }
 
-        var rgba = ArrayPool<byte>.Shared.Rent(width * 4);
-        try
+        // Everything else a pixel at a time, straight from the input: its channel offsets and pixel size.
+        var (ri, gi, bi, ai, step) = input.Format switch
         {
-            input.ToRgba(y, rgba);
-            for (var x = 0; x < width; x++)
-            {
-                int r = rgba[4 * x], g = rgba[4 * x + 1], b = rgba[4 * x + 2], a = rgba[4 * x + 3];
-                if (blackOut && a < 128) r = g = b = 0;
-                switch (layout)
-                {
-                    case BmpEncodeFormat.Rgb555:
-                    case BmpEncodeFormat.Rgb565:
-                    {
-                        var green6 = layout == BmpEncodeFormat.Rgb565;
-                        var v = green6
-                            ? To(r, 5) << 11 | To(g, 6) << 5 | To(b, 5)
-                            : To(r, 5) << 10 | To(g, 5) << 5 | To(b, 5);
-                        row[2 * x] = (byte)v;
-                        row[2 * x + 1] = (byte)(v >> 8);
-                        break;
-                    }
-                    case BmpEncodeFormat.Rgb24:
-                        (row[3 * x], row[3 * x + 1], row[3 * x + 2]) = ((byte)b, (byte)g, (byte)r);
-                        break;
-                    default:
-                        (row[4 * x], row[4 * x + 1], row[4 * x + 2]) = ((byte)b, (byte)g, (byte)r);
-                        row[4 * x + 3] = layout == BmpEncodeFormat.Argb32 ? (byte)a : (byte)255;
-                        break;
-                }
-            }
+            ImagePixelFormat.Rgba32 => (0, 1, 2, 3, 4),
+            ImagePixelFormat.Bgra32 => (2, 1, 0, 3, 4),
+            ImagePixelFormat.Rgb24 => (0, 1, 2, -1, 3),
+            ImagePixelFormat.Bgr24 => (2, 1, 0, -1, 3),
+            _ => (0, 0, 0, -1, 1),
+        };
+        if (layout is BmpEncodeFormat.Rgb555 or BmpEncodeFormat.Rgb565 && !blackOut)
+        {
+            Pack16(source, row, width, step, ri, gi, bi, green6: layout == BmpEncodeFormat.Rgb565);
+            return;
         }
-        finally
+        for (var x = 0; x < width; x++)
         {
-            ArrayPool<byte>.Shared.Return(rgba);
+            var p = source.Slice(step * x, step);
+            int r = p[ri], g = p[gi], b = p[bi], a = ai < 0 ? 255 : p[ai];
+            if (blackOut && a < 128) r = g = b = 0;
+            switch (layout)
+            {
+                case BmpEncodeFormat.Rgb565:
+                    BinaryPrimitives.WriteUInt16LittleEndian(row[(2 * x)..], (ushort)(Five[r] << 11 | Six[g] << 5 | Five[b]));
+                    break;
+                case BmpEncodeFormat.Rgb555:
+                    BinaryPrimitives.WriteUInt16LittleEndian(row[(2 * x)..], (ushort)(Five[r] << 10 | Five[g] << 5 | Five[b]));
+                    break;
+                case BmpEncodeFormat.Rgb24:
+                    (row[3 * x], row[3 * x + 1], row[3 * x + 2]) = ((byte)b, (byte)g, (byte)r);
+                    break;
+                default:
+                    (row[4 * x], row[4 * x + 1], row[4 * x + 2]) = ((byte)b, (byte)g, (byte)r);
+                    row[4 * x + 3] = layout == BmpEncodeFormat.Argb32 ? (byte)a : (byte)255;
+                    break;
+            }
         }
     }
 
-    // An 8-bit value to the nearest of `bits` bits.
-    private static int To(int value, int bits) => (value * ((1 << bits) - 1) + 127) / 255;
+    /// <summary>A row to 16-bit 5-6-5 or x-5-5-5, each channel narrowed to the nearest value by table.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void Pack16(ReadOnlySpan<byte> source, Span<byte> row, int width, int step, int ri, int gi, int bi, bool green6)
+    {
+        if (source.Length < (long)width * step || row.Length < 2L * width)
+            throw new ArgumentException("The spans are shorter than the row.");
+        ref var s = ref MemoryMarshal.GetReference(source);
+        ref var d = ref MemoryMarshal.GetReference(row);
+        ref var five = ref MemoryMarshal.GetArrayDataReference(Five);
+        ref var green = ref MemoryMarshal.GetArrayDataReference(green6 ? Six : Five);
+        var redShift = green6 ? 11 : 10;
+        // Bounds: pixel x reads source bytes step * x + 0..2 (channel offsets below step) and writes row bytes
+        // 2x, 2x + 1, all inside the lengths checked above; table indices are bytes, the tables 256 long.
+        for (var x = 0; x < width; x++)
+        {
+            ref var p = ref Unsafe.Add(ref s, step * x);
+            var v = Unsafe.Add(ref five, Unsafe.Add(ref p, ri)) << redShift
+                | Unsafe.Add(ref green, Unsafe.Add(ref p, gi)) << 5
+                | Unsafe.Add(ref five, Unsafe.Add(ref p, bi));
+            Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 2 * x), (ushort)v);
+        }
+    }
+
+    // An 8-bit value to the nearest 5- or 6-bit one.
+    private static readonly byte[] Five = Narrowing(5), Six = Narrowing(6);
+
+    private static byte[] Narrowing(int bits)
+    {
+        var table = new byte[256];
+        for (var v = 0; v < 256; v++) table[v] = (byte)((v * ((1 << bits) - 1) + 127) / 255);
+        return table;
+    }
 
     // ---- Palettes ----------------------------------------------------------------------------------------------
 

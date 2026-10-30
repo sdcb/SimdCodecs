@@ -171,6 +171,19 @@ internal sealed class EncodeSetup
             setup.Contestants.Add(new(Names.Current, () => BmpEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, options)));
         }
 
+        // The same into a reused stream, as ImageSharp and WIC write.
+        if (Want(Names.CurrentStream))
+        {
+            var stream = new MemoryStream();
+            BmpEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, stream, options);
+            Check(Names.CurrentStream, stream.ToArray());
+            setup.Contestants.Add(new(Names.CurrentStream, () =>
+            {
+                stream.SetLength(0);
+                BmpEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, stream, options);
+            }));
+        }
+
         // B, G, R(, A) input, for the layouts WIC writes.
         byte[]? native = c.Format switch
         {
@@ -181,8 +194,14 @@ internal sealed class EncodeSetup
         var nativeFormat = c.Format == "rgb24" ? ImagePixelFormat.Bgr24 : ImagePixelFormat.Bgra32;
         if (native is not null && Want(Names.CurrentBgra))
         {
-            Check(Names.CurrentBgra, BmpEncoder.Encode(native, w, h, nativeFormat, options));
-            setup.Contestants.Add(new(Names.CurrentBgra, () => BmpEncoder.Encode(native, w, h, nativeFormat, options)));
+            var stream = new MemoryStream();
+            BmpEncoder.Encode(native, w, h, nativeFormat, stream, options);
+            Check(Names.CurrentBgra, stream.ToArray());
+            setup.Contestants.Add(new(Names.CurrentBgra, () =>
+            {
+                stream.SetLength(0);
+                BmpEncoder.Encode(native, w, h, nativeFormat, stream, options);
+            }));
         }
 
         if (Baseline.IsBuilt && Want(Names.Baseline) && Baseline.CanEncode)

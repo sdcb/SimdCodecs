@@ -186,10 +186,26 @@ internal sealed class PaletteQuantizer
         private readonly int[] _cacheKey = new int[1 << 16];
         private readonly byte[] _cacheIndex = new byte[1 << 16];
 
+        // Candidate lists per cell of a 16×16×16 grid over the colour cube (built for large images, whose many
+        // distinct colours miss the cache): cell c's candidates are _candidates[_cellStart[c].._cellStart[c + 1]].
+        private int[]? _cellStart;
+        private byte[]? _candidates;
+
+        private const int CellBits = 4, Cells = 1 << CellBits, CellSize = 256 / Cells;
+
         public byte Nearest(int rgb)
         {
             var slot = (int)((uint)(rgb * -1640531535) >> 16);
             if (_cacheKey[slot] == rgb + 1) return _cacheIndex[slot];
+            var best = _cellStart is null ? Search(rgb) : SearchCell(rgb);
+            _cacheKey[slot] = rgb + 1;
+            _cacheIndex[slot] = best;
+            return best;
+        }
+
+        /// <summary>The nearest entry by squared RGB distance, the lowest index among equals.</summary>
+        internal byte Search(int rgb)
+        {
             int r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
             int best = 0, bestDistance = int.MaxValue;
             for (var i = 0; i < palette.Length; i++)
@@ -203,14 +219,81 @@ internal sealed class PaletteQuantizer
                     if (d == 0) break;
                 }
             }
-            _cacheKey[slot] = rgb + 1;
-            _cacheIndex[slot] = (byte)best;
             return (byte)best;
+        }
+
+        /// <summary>
+        /// <see cref="Search"/> over the colour's cell's candidates only. A cell keeps every entry whose distance to
+        /// the cell's nearest point is at most the smallest, over all entries, distance to the cell's farthest point.
+        /// For a colour in the cell, every entry at the minimum distance m qualifies (its distance to the cell is at
+        /// most m, and m is at most any entry's farthest-point distance), and the candidates keep index order, so the
+        /// strict comparison picks the same lowest index as the full search: the result is identical.
+        /// </summary>
+        internal byte SearchCell(int rgb)
+        {
+            int r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
+            var cell = ((r >> CellBits) * Cells + (g >> CellBits)) * Cells + (b >> CellBits);
+            int best = 0, bestDistance = int.MaxValue;
+            for (int k = _cellStart![cell], end = _cellStart[cell + 1]; k < end; k++)
+            {
+                int i = _candidates![k], p = palette[i];
+                int dr = ((p >> 16) & 255) - r, dg = ((p >> 8) & 255) - g, db = (p & 255) - b;
+                var d = dr * dr + dg * dg + db * db;
+                if (d < bestDistance)
+                {
+                    (best, bestDistance) = (i, d);
+                    if (d == 0) break;
+                }
+            }
+            return (byte)best;
+        }
+
+        /// <summary>Builds the cell candidate lists (see <see cref="SearchCell"/>).</summary>
+        internal void BuildCells()
+        {
+            const int count = Cells * Cells * Cells;
+            var start = new int[count + 1];
+            var lists = new List<byte>(count * 8);
+            Span<int> near = stackalloc int[palette.Length];
+            for (var cell = 0; cell < count; cell++)
+            {
+                int r0 = (cell >> (2 * CellBits)) * CellSize, g0 = ((cell >> CellBits) & (Cells - 1)) * CellSize, b0 = (cell & (Cells - 1)) * CellSize;
+                var bound = int.MaxValue;
+                for (var i = 0; i < palette.Length; i++)
+                {
+                    int p = palette[i], pr = (p >> 16) & 255, pg = (p >> 8) & 255, pb = p & 255;
+                    near[i] = Gap(pr, r0) + Gap(pg, g0) + Gap(pb, b0);
+                    bound = Math.Min(bound, Far(pr, r0) + Far(pg, g0) + Far(pb, b0));
+                }
+                start[cell] = lists.Count;
+                for (var i = 0; i < palette.Length; i++)
+                {
+                    if (near[i] <= bound) lists.Add((byte)i);
+                }
+            }
+            start[count] = lists.Count;
+            _cellStart = start;
+            _candidates = [.. lists];
+
+            // Squared distance from v to the nearest and the farthest point of [lo, lo + CellSize - 1].
+            static int Gap(int v, int lo)
+            {
+                var d = v < lo ? lo - v : v > lo + CellSize - 1 ? v - (lo + CellSize - 1) : 0;
+                return d * d;
+            }
+
+            static int Far(int v, int lo)
+            {
+                var d = Math.Max(Math.Abs(v - lo), Math.Abs(v - (lo + CellSize - 1)));
+                return d * d;
+            }
         }
 
         /// <summary>Maps one frame, optionally with Floyd–Steinberg dithering; transparent pixels are skipped by the diffusion.</summary>
         public void Map(ReadOnlySpan<int> argb, int width, int height, Span<byte> indices, int transparentIndex, bool dither)
         {
+            // The cell lists cost about a millisecond; a large image with a large palette repays them many times.
+            if (_cellStart is null && argb.Length >= 1 << 16 && palette.Length > 16) BuildCells();
             if (!dither)
             {
                 for (var i = 0; i < argb.Length; i++)
