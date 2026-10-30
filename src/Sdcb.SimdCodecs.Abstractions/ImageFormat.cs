@@ -57,9 +57,15 @@ public enum ImageFormat
     /// <summary>Photoshop document (PSD / PSB). Recognised, not decoded.</summary>
     Psd,
 
-    /// <summary>QOI ("Quite OK Image"). Recognised, not decoded.</summary>
+    /// <summary>QOI ("Quite OK Image").</summary>
     Qoi,
 
     /// <summary>Windows cursor (CUR): an icon whose images carry a hotspot.</summary>
     Cur,
+
+    /// <summary>Netpbm PBM, PGM, PPM or PAM (magic numbers P1 to P7).</summary>
+    Pnm,
+
+    /// <summary>PFM, the Netpbm-style float map (magic <c>Pf</c> or <c>PF</c>).</summary>
+    Pfm,
 }

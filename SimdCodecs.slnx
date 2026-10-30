@@ -13,6 +13,8 @@
     <Project Path="src/Sdcb.SimdCodecs.Jpeg.IccInjector/Sdcb.SimdCodecs.Jpeg.IccInjector.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Jpeg2000/Sdcb.SimdCodecs.Jpeg2000.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Png/Sdcb.SimdCodecs.Png.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Pnm/Sdcb.SimdCodecs.Pnm.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Qoi/Sdcb.SimdCodecs.Qoi.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Tiff/Sdcb.SimdCodecs.Tiff.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Webp/Sdcb.SimdCodecs.Webp.csproj" />
   </Folder>

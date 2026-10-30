@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);SIMDCODECS_PNM</DefineConstants>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <PackageId>Sdcb.SimdCodecs.Pnm</PackageId>
+    <Product>Sdcb.SimdCodecs.Pnm</Product>
+    <Authors>sdcb</Authors>
+    <Description>Pure-managed Netpbm decoder and encoder for .NET: PBM, PGM and PPM (P1-P6, plain and raw, any maxval up to 65535), PAM (P7, with alpha) and PFM (32-bit float). Decodes straight into a caller's buffer in any 8-bit layout with no allocation, or to native 8-bit, 16-bit or float samples; encodes every variant, to an array or a stream. SIMD-accelerated, AOT-compatible.</Description>
+    <PackageTags>pnm pbm pgm ppm pam pfm netpbm image codec decoder encoder simd aot</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.QoiPnm.Benchmarks" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
+    <Compile Include="..\Shared\StreamBufferWriter.cs" Link="Shared\StreamBufferWriter.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
