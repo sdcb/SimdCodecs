@@ -17,6 +17,7 @@
     <Project Path="src/Sdcb.SimdCodecs.Webp/Sdcb.SimdCodecs.Webp.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks.csproj" />
     <Project Path="benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks.csproj" />
     <Project Path="benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks.csproj" />
     <Project Path="benchmarks/Sdcb.SimdCodecs.Png.Benchmarks/Sdcb.SimdCodecs.Png.Benchmarks.csproj" />

@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- WIC, the native competitor, is reached through WPF's documented imaging API, which exists only on
+         Windows: there the project targets net10.0-windows (defining WINDOWS); elsewhere it builds without it. -->
+    <TargetFramework Condition="'$(OS)' == 'Windows_NT'">net10.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(OS)' != 'Windows_NT'">net10.0</TargetFramework>
+    <UseWPF Condition="'$(OS)' == 'Windows_NT'">true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Not a shipped package: this project exists to measure the ones that are. -->
+    <IsPackable>false</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <!-- ImageSharp advisories (NU190x) concern hostile input; this tool only reads the images it
+         generates itself and is never shipped. -->
+    <NoWarn>$(NoWarn);NU1901;NU1902;NU1903;NU1904</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WPF's implicit usings leave System.IO out (its Path clashes with System.Windows.Shapes.Path, unused here). -->
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+    <!-- Black-box competitor only. Never read or decompile its source (see AGENTS.md). -->
+    <PackageReference Include="SixLabors.ImageSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Bmp\Sdcb.SimdCodecs.Bmp.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Ico\Sdcb.SimdCodecs.Ico.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The PNG benchmark's two source images (photo, screen), shared rather than copied. -->
+    <Compile Include="..\Sdcb.SimdCodecs.Png.Benchmarks\Sources.cs" Link="Sources.cs" />
+  </ItemGroup>
+
+</Project>

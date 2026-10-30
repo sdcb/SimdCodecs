@@ -267,6 +267,7 @@ benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/.cache/
 benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/.cache/
 benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/.cache/
 benchmarks/Sdcb.SimdCodecs.Png.Benchmarks/.cache/
+benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/.cache/
 
 # Sample asset generation: inputs and outputs are downloaded / generated, never committed (tools/sample-assets/README.md).
 tools/sample-assets/in/
