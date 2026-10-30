@@ -58,8 +58,8 @@ changes that it proves.
 ```bash
 dotnet build SimdCodecs.slnx -c Release
 REQUIRE_ORACLES=1 dotnet test SimdCodecs.slnx -c Release            # what CI runs
-DOTNET_EnableAVX2=0        dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg|FullyQualifiedName~Png"
-DOTNET_EnableHWIntrinsic=0 dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg|FullyQualifiedName~Png"
+DOTNET_EnableAVX2=0        dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg|FullyQualifiedName~Png|FullyQualifiedName~Bmp|FullyQualifiedName~Ico"
+DOTNET_EnableHWIntrinsic=0 dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --filter "FullyQualifiedName~Jpeg|FullyQualifiedName~Png|FullyQualifiedName~Bmp|FullyQualifiedName~Ico"
 bash tests/Sdcb.SimdCodecs.AotSmoke/run.sh                          # NativeAOT output == JIT output
 bash tests/Sdcb.SimdCodecs.WasmSmoke/run.sh                         # Mono AOT (browser-wasm) output == JIT output```
 
@@ -74,7 +74,8 @@ bash tests/Sdcb.SimdCodecs.WasmSmoke/run.sh                         # Mono AOT (
 - Every vector kernel has a scalar twin and must produce identical output on every tier
   (Vector256 / Vector128 / scalar, x64 and arm64); CI forces each tier.
 - After touching the JPEG entropy decoder, soak the fuzzer:
-  `JPEG_FUZZ_ITERATIONS=300000 … --filter "FullyQualifiedName~JpegFuzz"`.
+  `JPEG_FUZZ_ITERATIONS=300000 … --filter "FullyQualifiedName~JpegFuzz"`. The BMP decoder's soak is
+  `BMP_FUZZ_ITERATIONS=300000 … --filter "FullyQualifiedName~BmpRobustness"`.
 
 ## Output contracts
 

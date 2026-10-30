@@ -2,7 +2,9 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Security.Cryptography;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Bmp;
 using Sdcb.SimdCodecs.Gif;
+using Sdcb.SimdCodecs.Ico;
 using Sdcb.SimdCodecs.Jpeg;
 using Sdcb.SimdCodecs.Png;
 using Sdcb.SimdCodecs.Tiff;
@@ -78,6 +80,13 @@ internal static class FacadeSmoke
             ("gif-anim", GifEncoder.EncodeAnimation(
                 [new GifAnimationFrame(rgb, TimeSpan.FromMilliseconds(50)), new GifAnimationFrame(rgb.Reverse().ToArray(), TimeSpan.FromMilliseconds(50))],
                 w, h, 3)),
+            ("bmp", BmpEncoder.Encode(rgb, w, h, 3)),
+            ("bmp-argb", BmpEncoder.Encode(rgba, w, h, 4)),
+            ("bmp-rle8", BmpEncoder.Encode(rgb, w, h, 3, new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed8, Rle = true })),
+            ("bmp-565", BmpEncoder.Encode(rgb, w, h, 3, new BmpEncodeOptions { Format = BmpEncodeFormat.Rgb565 })),
+            ("ico", IcoEncoder.Encode(
+                [new IcoFrame(rgba, w, h), new IcoFrame(rgba, w, h, Encoding: IcoImageEncoding.Png), new IcoFrame(rgb, w, h, ImagePixelFormat.Rgb24, IcoImageEncoding.Bmp4)])),
+            ("cur", IcoEncoder.EncodeCursor([new IcoFrame(rgba, w, h, HotspotX: 3, HotspotY: 4)])),
         ];
     }
 

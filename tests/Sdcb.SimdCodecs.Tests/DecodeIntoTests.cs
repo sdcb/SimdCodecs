@@ -113,6 +113,20 @@ public sealed class DecodeIntoTests
         foreach (var kind in new[] { "mixed", "offsets", "full-frames" })
             corpus[$"gif anim {kind}"] = GifDecoderTests.Animation(kind);
 
+        corpus["bmp rgb24 37x19"] = MagickRgba(37, 19, MagickFormat.Bmp3);
+        corpus["bmp argb 31x6"] = MagickRgba(31, 6, MagickFormat.Bmp);
+        using (var palette = GifDecoderTests.PaletteImage(23, 11, 40, seed: 3))
+        {
+            palette.ColorType = ColorType.Palette;
+            corpus["bmp palette 23x11"] = palette.ToByteArray(MagickFormat.Bmp3);
+        }
+        var bmpSource = Enumerable.Range(0, 19 * 7 * 3).Select(i => (byte)(i * 13 % 7 * 30)).ToArray();
+        corpus["bmp 565 19x7"] = Bmp.BmpEncoder.Encode(bmpSource, 19, 7, 3, new Bmp.BmpEncodeOptions { Format = Bmp.BmpEncodeFormat.Rgb565 });
+        corpus["bmp rle4 19x7"] = Bmp.BmpEncoder.Encode(bmpSource, 19, 7, 3, new Bmp.BmpEncodeOptions { Format = Bmp.BmpEncodeFormat.Indexed4, Rle = true });
+        corpus["ico 3 images"] = Ico.IcoEncoder.Encode([new Ico.IcoFrame(bmpSource, 19, 7, ImagePixelFormat.Rgb24),
+            new Ico.IcoFrame(bmpSource, 7, 19, ImagePixelFormat.Rgb24, Ico.IcoImageEncoding.Png), new Ico.IcoFrame(bmpSource, 11, 3, ImagePixelFormat.Rgb24, Ico.IcoImageEncoding.Bmp8)]);
+        corpus["cur 1 image"] = Ico.IcoEncoder.EncodeCursor([new Ico.IcoFrame(bmpSource, 19, 7, ImagePixelFormat.Rgb24, HotspotX: 2, HotspotY: 3)]);
+
         var fixtures = Path.Combine(AppContext.BaseDirectory, "Fixtures");
         foreach (var file in Directory.GetFiles(Path.Combine(fixtures, "webp"), "*.webp").Order())
             corpus[$"webp {Path.GetFileName(file)}"] = File.ReadAllBytes(file);
@@ -247,10 +261,14 @@ public sealed class DecodeIntoTests
             .ShouldBe((image.Width, image.Height, image.Channels, image.SampleFormat));
         info.BitDepth.ShouldBe(ExpectedBitDepth(name));
         info.Orientation.ShouldBe(ImageOrientation.Normal);
-        // Animated WebP and GIF: the frames ImageMagick reads; every other entry is a still.
-        info.FrameCount.ShouldBe(name.StartsWith("webp anim", StringComparison.Ordinal) || name.StartsWith("gif anim", StringComparison.Ordinal)
-            ? new MagickImageCollection(data).Count
-            : 1);
+        // Animated WebP and GIF, and icons: the frames ImageMagick reads; every other entry is a still.
+        // (ImageMagick does not sniff icons: it is told the format.)
+        info.FrameCount.ShouldBe(
+            name.StartsWith("ico ", StringComparison.Ordinal) ? new MagickImageCollection(data, MagickFormat.Ico).Count
+            : name.StartsWith("cur ", StringComparison.Ordinal) ? new MagickImageCollection(data, MagickFormat.Cur).Count
+            : name.StartsWith("webp anim", StringComparison.Ordinal) || name.StartsWith("gif anim", StringComparison.Ordinal)
+                ? new MagickImageCollection(data).Count
+                : 1);
     }
 
     // The bit depth each corpus entry was written with, from how it was made rather than from our reader.
@@ -274,6 +292,7 @@ public sealed class DecodeIntoTests
         {
             "jbig2" => 1,
             "tiff grey16 23x7" or "tiff rgb16 23x7" => 16,
+            "bmp 565 19x7" => 6, // the widest channel, green
             _ => 8, // 8-bit PNG / JPEG / TIFF, WebP
         };
     }

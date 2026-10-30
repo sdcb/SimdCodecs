@@ -142,6 +142,9 @@ jobs:
     # its tests compare all of them against libpng (Magick.NET), so they run on every tier too.
     - name: Test PNG
       run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Png"
+    # BMP's row kernels (byte shuffles, 5-6-5 widening) have scalar twins too, and ICO decodes through them.
+    - name: Test BMP and ICO
+      run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Bmp|FullyQualifiedName~Ico"
 
   jpeg-aot:
     # NativeAOT picks the vector tier at compile time: its decodes must equal the JIT's.
