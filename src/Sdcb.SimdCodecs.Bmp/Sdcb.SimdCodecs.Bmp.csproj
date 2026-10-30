@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);SIMDCODECS_BMP</DefineConstants>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <PackageId>Sdcb.SimdCodecs.Bmp</PackageId>
+    <Product>Sdcb.SimdCodecs.Bmp</Product>
+    <Authors>sdcb</Authors>
+    <Description>Pure-managed BMP / DIB decoder and encoder for .NET, SIMD-accelerated (AVX2 / SSSE3 / AdvSimd). Decodes every Windows and OS/2 variant: core, OS/2 2.x, BITMAPINFOHEADER, V4 and V5 headers; 1/2/4/8-bit palettes, 16/24/32-bit, BI_BITFIELDS and BI_ALPHABITFIELDS masks, RLE4 / RLE8 with deltas, OS/2 RLE24 and Huffman 1D, embedded PNG, bottom-up and top-down rows, embedded ICC profiles, and headerless packed DIBs (clipboard, icon images with their AND mask). Encodes 1/4/8-bit palettes (exact, or Wu-quantized with optional dithering), RLE4 / RLE8, 16-bit 555 / 565, 24-bit and 32-bit with alpha. Spec-derived. AOT-compatible.</Description>
+    <PackageTags>bmp dib bitmap image codec decoder encoder rle simd aot</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+    <!-- Kernel tiers and stage ablation for the benchmark (attribution by ablation, AGENTS.md). -->
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Bmp.Benchmarks" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- BI_PNG: a BMP whose pixel data is a whole PNG stream, decoded through Png's public adapter. -->
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Png\Sdcb.SimdCodecs.Png.csproj" />
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
+    <Compile Include="..\Shared\MmrCodes.cs" Link="Shared\MmrCodes.cs" />
+    <Compile Include="..\Shared\PaletteQuantizer.cs" Link="Shared\PaletteQuantizer.cs" />
+  </ItemGroup>
+
+</Project>

@@ -34,6 +34,7 @@
     <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Jpeg2000\Sdcb.SimdCodecs.Jpeg2000.csproj" />
     <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Webp\Sdcb.SimdCodecs.Webp.csproj" />
     <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Gif\Sdcb.SimdCodecs.Gif.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Bmp\Sdcb.SimdCodecs.Bmp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

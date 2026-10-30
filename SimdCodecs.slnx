@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Sdcb.SimdCodecs.Abstractions/Sdcb.SimdCodecs.Abstractions.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Bmp/Sdcb.SimdCodecs.Bmp.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Color.Icc/Sdcb.SimdCodecs.Color.Icc.csproj" />
     <Project Path="src/Sdcb.SimdCodecs/Sdcb.SimdCodecs.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Exif/Sdcb.SimdCodecs.Exif.csproj" />

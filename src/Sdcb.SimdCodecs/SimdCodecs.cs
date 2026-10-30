@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Bmp;
 using Sdcb.SimdCodecs.Gif;
 using Sdcb.SimdCodecs.Jbig2;
 using Sdcb.SimdCodecs.Jpeg;
@@ -18,7 +19,7 @@ namespace Sdcb.SimdCodecs;
 /// package pulls the whole codec family in lockstep; consumers call these entry
 /// points instead of hard-wiring per-format decoders.
 /// <para>
-/// Registers PNG, JPEG, TIFF, JBIG2, JPEG 2000, WebP and GIF. To add a
+/// Registers PNG, JPEG, TIFF, JBIG2, JPEG 2000, WebP, GIF and BMP. To add a
 /// format, implement <see cref="IImageDecoder"/> in its codec package and add a
 /// line binding its members to <see cref="_registry"/> - the order is the sniff order.
 /// </para>
@@ -101,6 +102,7 @@ public static class SimdCodecs
         new(ImageFormat.Jpeg2000, Jpeg2000ImageDecoder.CanDecode, Jpeg2000ImageDecoder.TryReadInfo, Jpeg2000ImageDecoder.TryDecode, Jpeg2000ImageDecoder.TryDecodeInto),
         new(ImageFormat.Webp, WebpImageDecoder.CanDecode, WebpImageDecoder.TryReadInfo, WebpImageDecoder.TryDecode, WebpImageDecoder.TryDecodeInto, WebpImageDecoder.TryOpenFrames),
         new(ImageFormat.Gif, GifImageDecoder.CanDecode, GifImageDecoder.TryReadInfo, GifImageDecoder.TryDecode, GifImageDecoder.TryDecodeInto, GifImageDecoder.TryOpenFrames),
+        new(ImageFormat.Bmp, BmpImageDecoder.CanDecode, BmpImageDecoder.TryReadInfo, BmpImageDecoder.TryDecode, BmpImageDecoder.TryDecodeInto),
     ];
 
     /// <summary>
@@ -244,7 +246,6 @@ public static class SimdCodecs
                 return entry.Format;
         }
 
-        if (data.StartsWith("BM"u8) && data.Length >= 14) return ImageFormat.Bmp;
         // ICO: reserved 0, type 1, then a non-zero image count.
         if (data.Length >= 6 && data.StartsWith((ReadOnlySpan<byte>)[0x00, 0x00, 0x01, 0x00]) && (data[4] | data[5]) != 0)
             return ImageFormat.Ico;

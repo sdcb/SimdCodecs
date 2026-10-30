@@ -7,8 +7,10 @@ using System.IO;
 namespace Sdcb.SimdCodecs.Jbig2;
 #elif SIMDCODECS_TIFF
 namespace Sdcb.SimdCodecs.Tiff;
+#elif SIMDCODECS_BMP
+namespace Sdcb.SimdCodecs.Bmp;
 #else
-#error MmrCodes.cs is shared source for Sdcb.SimdCodecs.Jbig2 and Sdcb.SimdCodecs.Tiff only.
+#error MmrCodes.cs is shared source for Sdcb.SimdCodecs.Jbig2, Sdcb.SimdCodecs.Tiff and Sdcb.SimdCodecs.Bmp only.
 #endif
 
 /// <summary>
@@ -24,8 +26,9 @@ namespace Sdcb.SimdCodecs.Tiff;
 /// first use, into flat peek-indexed lookup tables.
 /// </para>
 /// <para>
-/// JBIG2's MMR decoder and TIFF's CCITT fax decoder (Compression 2/3/4) read the
-/// same tables, so this one source file is compiled into both packages.
+/// JBIG2's MMR decoder, TIFF's CCITT fax decoder (Compression 2/3/4) and BMP's OS/2
+/// Huffman 1D decoder read the same tables, so this one source file is compiled into
+/// each of those packages.
 /// </para>
 /// </summary>
 internal static class MmrCodes
