@@ -19,7 +19,7 @@
 AGENTS.md 的目标是每个编解码器都达到或超过对应的原生参考库。目前**已调优**的有：JPEG 编码和解码、WebP 解码、
 PNG 编码和解码，各有自己的基准项目。
 
-BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.Bmp.Benchmarks`。
+BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.Bmp.Benchmarks`；QOI 和 Netpbm（解码和编码）同样已调优，基准项目是 `Sdcb.SimdCodecs.QoiPnm.Benchmarks`。
 
 **未调优**：TIFF、JBIG2、GIF（解码和编码）、EXIF。JPEG 2000 已建立基准项目并测得初始基线（~2× libopenjp2），算术解码与并发优化尚未开始。它们的门面路径也比较朴素：`TryDecodeInto`
 先完整解码出一张图，再整帧转换成目标像素格式，中间会分配一整帧内存；JPEG、PNG、WebP 则是直接写进调用方的缓冲区。
@@ -27,7 +27,7 @@ BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.
 ### 门面与公共接口
 
 - **没有编码器抽象。** 门面只做解码；编码请直接用各格式包（`JpegEncoder`、`PngWriter`、`TiffWriter`、
-  `GifEncoder`、`BmpEncoder`、`IcoEncoder`）。这是有意的决定。
+  `GifEncoder`、`BmpEncoder`、`IcoEncoder`、`QoiEncoder`、`PnmEncoder`）。这是有意的决定。
 - **门面不提供缩放解码。** JPEG 包有 `JpegScale`（1/2、1/4、1/8 的 DCT 缩放），但门面不会走到它；
   JPEG 2000 的分辨率级别缩减（reduce）还没有实现。
 - **输入必须整个在内存里。** 所有入口接收 `ReadOnlySpan<byte>` / `ReadOnlyMemory<byte>`，没有 `Stream`
@@ -142,6 +142,21 @@ BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.
 - **编码器不缩放**：各尺寸的图像要由调用方准备好；每张最大 256×256（解码不限尺寸，上限 2^28 像素）。
 - **不支持动画光标（`.ani`）。** 它是 RIFF 容器，不是 ICO 目录。
 - **门面的 `TryDecode` 只返回最大、位深最高的一张**；要拿其他尺寸，用 `TryOpenFrames` 或 `IcoDecoder`。
+
+## QOI
+
+- **没有原生竞品参照。** 基准只和 ImageSharp 3.1.12 比（解码约 0.29×、编码到流约 0.49×）；QOI 没有现成的原生库二进制，
+  没有和参考实现 qoi.h 比过速度。解码受规范本身的串行性限制（索引哈希和游程逐像素依赖前一个像素），没有 SIMD 内核。
+- 规范没有定死的几处（3 通道图像里的 alpha、超出图像的游程、结尾标记）列在包的 README 里。
+
+## Netpbm（PBM / PGM / PPM / PAM / PFM）
+
+- **只读文件里的第一张图**；后续的图被忽略，门面也不把它们当作多帧。
+- **PFM 不能解码成 8 位布局**：浮点样本需要色调策略，`TryDecodeInto` 返回 false，`DecodeTo` 抛 `NotSupportedException`；
+  用 `PixelConverter.StretchToRgba8` 得到可看的图。PFM 头里 scale 的绝对值只报告，不应用。
+- **PAM 的 DEPTH 只支持 1–4**；更多通道的 PAM 会被拒绝。
+- **原始 8 位格式编码到流**基本是内存拷贝，耗时在 0.03–0.2 ms 量级，与 ImageSharp 的相对比值在不同轮次间波动较大（0.5×–1.8×）。
+- ImageSharp 3.1.12 读写 16 位 PPM 时按小端（低字节在前），而 Netpbm 规范和 ImageMagick 都是大端；所以 16 位用例不和它计时比较。
 
 ## JPEG 2000
 

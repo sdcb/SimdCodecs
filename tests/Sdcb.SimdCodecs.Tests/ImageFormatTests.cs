@@ -6,6 +6,8 @@ using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Bmp;
 using Sdcb.SimdCodecs.Gif;
 using Sdcb.SimdCodecs.Ico;
+using Sdcb.SimdCodecs.Pnm;
+using Sdcb.SimdCodecs.Qoi;
 using Sdcb.SimdCodecs.Jpeg;
 using Sdcb.SimdCodecs.Png;
 using Sdcb.SimdCodecs.Tiff;
@@ -39,6 +41,11 @@ public sealed class ImageFormatTests
         { "bmp", ImageFormat.Bmp },
         { "ico", ImageFormat.Ico },
         { "cur", ImageFormat.Cur },
+        { "qoi", ImageFormat.Qoi },
+        { "pbm", ImageFormat.Pnm },
+        { "ppm-plain", ImageFormat.Pnm },
+        { "pam", ImageFormat.Pnm },
+        { "pfm", ImageFormat.Pfm },
     };
 
     private static byte[] Sample(string kind) => kind switch
@@ -56,6 +63,11 @@ public sealed class ImageFormatTests
         "bmp" => BmpEncoder.Encode(Rgb, 8, 6, 3),
         "ico" => IcoEncoder.Encode([new IcoFrame(Rgb, 8, 6, ImagePixelFormat.Rgb24), new IcoFrame(Rgb, 4, 4, ImagePixelFormat.Rgb24)]),
         "cur" => IcoEncoder.EncodeCursor([new IcoFrame(Rgb, 8, 6, ImagePixelFormat.Rgb24, HotspotX: 3, HotspotY: 2)]),
+        "qoi" => QoiEncoder.Encode(Rgb, 8, 6, ImagePixelFormat.Rgb24),
+        "pbm" => PnmEncoder.Encode(Rgb, 8, 6, ImagePixelFormat.Rgb24, new PnmEncodeOptions { Format = PnmFormat.Bitmap }),
+        "ppm-plain" => PnmEncoder.Encode(Rgb, 8, 6, ImagePixelFormat.Rgb24, new PnmEncodeOptions { Format = PnmFormat.PlainPixmap }),
+        "pam" => PnmEncoder.Encode(Rgb, 8, 6, 3, new PnmEncodeOptions { Format = PnmFormat.Arbitrary }),
+        "pfm" => PnmEncoder.EncodePfm([.. Rgb.Select(v => v / 255f)], 8, 6, 3),
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -103,7 +115,6 @@ public sealed class ImageFormatTests
         { [(byte)'I', (byte)'I', 0xBC, 0x01, 0x08, 0, 0, 0], ImageFormat.JpegXr },
         { [0x76, 0x2F, 0x31, 0x01, 2, 0, 0, 0], ImageFormat.OpenExr },
         { "8BPS\0\u0001"u8.ToArray(), ImageFormat.Psd },
-        { "qoif\0\0\0\u0001"u8.ToArray(), ImageFormat.Qoi },
         // An ISO-BMFF file that is neither (an MP4).
         { Ftyp("isom", "isom", "mp41"), ImageFormat.Unknown },
         { "not an image"u8.ToArray(), ImageFormat.Unknown },
@@ -132,7 +143,7 @@ public sealed class ImageFormatTests
     {
         ImageFormat[] decodable =
             [ImageFormat.Png, ImageFormat.Jpeg, ImageFormat.Tiff, ImageFormat.Jbig2, ImageFormat.Jpeg2000, ImageFormat.Webp, ImageFormat.Gif,
-             ImageFormat.Bmp, ImageFormat.Ico, ImageFormat.Cur];
+             ImageFormat.Bmp, ImageFormat.Ico, ImageFormat.Cur, ImageFormat.Qoi, ImageFormat.Pnm, ImageFormat.Pfm];
         foreach (var format in Enum.GetValues<ImageFormat>())
             SimdCodecs.IsDecodable(format).ShouldBe(decodable.Contains(format), format.ToString());
     }

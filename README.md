@@ -4,7 +4,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, GIF, BMP, ICO / CUR, JPEG 2000 and JBIG2, plus EXIF and ICC.
+Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, GIF, BMP, ICO / CUR, QOI, Netpbm (PBM / PGM / PPM / PAM / PFM), JPEG 2000 and JBIG2, plus EXIF and ICC.
 No native dependencies, NativeAOT-compatible, and SIMD-accelerated (AVX2, SSE, AdvSimd) with a scalar
 fallback. The JPEG decoder is faster than libjpeg-turbo on the benchmark corpus.
 
@@ -24,7 +24,7 @@ using Sdcb.SimdCodecs;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Jpeg;
 
-byte[] file = File.ReadAllBytes("photo.webp");   // JPEG, PNG, TIFF, WebP, GIF, BMP, ICO, CUR, JPEG 2000 or JBIG2
+byte[] file = File.ReadAllBytes("photo.webp");   // JPEG, PNG, TIFF, WebP, GIF, BMP, ICO, CUR, QOI, Netpbm, JPEG 2000 or JBIG2
 
 // The facade sniffs the format from the magic bytes and decodes into a buffer you own (R G B A).
 if (!SimdCodecs.TryReadInfo(file, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
@@ -66,6 +66,8 @@ animation seeking by timestamp, Ultra HDR, and more.
 | GIF | ✅ | ✅ | 87a / 89a: interlacing, transparency, every disposal method; animation with seeking; encodes stills and animations (exact palette, or Wu quantization + dithering) |
 | BMP | ✅ | ✅ | Every Windows and OS/2 variant: core to V5 headers, 1–32 bits, any channel masks, RLE4 / RLE8 / RLE24, OS/2 Huffman 1D, embedded PNG, ICC; SIMD rows into your buffer with no allocation; encodes palettes (exact or quantized), RLE, 555 / 565, 24 / 32-bit |
 | ICO / CUR | ✅ | ✅ | Every image of an icon or cursor, PNG or DIB with its AND mask, hotspots; multi-size encoding |
+| QOI | ✅ | ✅ | RGB and RGBA, from the specification; decodes into your buffer with no allocation; encodes to an array or a stream |
+| Netpbm | ✅ | ✅ | PBM, PGM, PPM plain and raw at any maximum up to 65535, PAM with 1–4 channels, PFM float; native 8/16-bit or float samples, or any layout into your buffer with no allocation; encodes every variant |
 | JPEG 2000 | ✅ | — | Part 1 (T.800), for PDF `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88, for PDF `/JBIG2Decode` |
 | EXIF | ✅ | ✅ | From JPEG, TIFF, PNG and WebP; `ExifWriter` builds a block for the JPEG encoder |
@@ -103,6 +105,13 @@ BMP decoding writes into your buffer in any layout with no allocation and is pix
 (apart from the documented decisions); every RLE, palette and mask layout decodes faster than both WIC and
 ImageSharp, and 5-6-5 and palette encoding are 2–6× faster than ImageSharp.
 
+| 1920×1080, geometric mean vs. ImageSharp 3.1.12 | decode | encode to a stream |
+|---|---:|---:|
+| QOI (RGB, RGBA) | **0.29×** | **0.49×** |
+| Netpbm (P1–P7, 8 and 16-bit, plain) | **0.23×** | **0.54×** |
+
+QOI and Netpbm decode into your buffer with no allocation; both match ImageMagick exactly, both ways.
+
 The JPEG decoder is also at least as accurate as libjpeg-turbo's default (about 1 dB higher RGB PSNR
 against an exact reference where chroma is upsampled), and its output is bit-identical on AVX2, SSE,
 AdvSimd, scalar and NativeAOT. WebP output is byte-identical to libwebp.
@@ -111,7 +120,8 @@ Full tables, corpora and methodology:
 [JPEG](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md),
 [WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md), and
 [JPEG 2000](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md),
-[BMP / ICO](benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/m1-tuned-2026-10-30-amd-ryzen-7-5800x.md)
+[BMP / ICO](benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/m1-tuned-2026-10-30-amd-ryzen-7-5800x.md),
+[QOI / Netpbm](benchmarks/Sdcb.SimdCodecs.QoiPnm.Benchmarks/results/tuned-2026-10-30-amd-ryzen-7-5800x.md)
 (on photo-like opaque lossy files WebP is on par: 0.87–1.13×; JPEG 2000 pure managed single-threaded decode is currently about 2× of libopenjp2).
 
 ## Packages
@@ -130,6 +140,8 @@ All packages ship in lockstep under one version.
 | `Sdcb.SimdCodecs.Gif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Gif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Gif) | GIF decoder and encoder, including animation |
 | `Sdcb.SimdCodecs.Bmp` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Bmp.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Bmp) | BMP / DIB decoder and encoder |
 | `Sdcb.SimdCodecs.Ico` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Ico.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Ico) | ICO / CUR decoder and encoder |
+| `Sdcb.SimdCodecs.Qoi` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Qoi.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Qoi) | QOI decoder and encoder |
+| `Sdcb.SimdCodecs.Pnm` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Pnm.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Pnm) | Netpbm (PBM, PGM, PPM, PAM, PFM) decoder and encoder |
 | `Sdcb.SimdCodecs.Jpeg2000` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jpeg2000.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jpeg2000) | JPEG 2000 decoder |
 | `Sdcb.SimdCodecs.Jbig2` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jbig2.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jbig2) | JBIG2 decoder |
 | `Sdcb.SimdCodecs.Exif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Exif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Exif) | EXIF reader and writer |
@@ -161,6 +173,11 @@ All packages ship in lockstep under one version.
   package README.
 - **Ico** — icons and cursors over Bmp and Png: every image, the largest and deepest by default, hotspots; encodes
   multi-size icons and cursors, each image PNG or a 1/4/8/24/32-bit DIB.
+- **Qoi** — the QOI specification: 3- and 4-channel images, the colour space reported (a linear one as a linear
+  transfer); decodes into any `ImagePixelFormat` without allocating; encodes from RGBA, BGRA, RGB, BGR or grey.
+- **Pnm** — Netpbm: P1–P6 plain and raw at any maximum up to 65535 (16-bit samples above 255), PAM (P7) with 1–4
+  channels, PFM (`Pf` / `PF`) as float samples; only a file's first image. Encodes every format; plain output keeps
+  lines within 70 characters. The decisions the format pages leave open are listed in the package README.
 - **Exif** — reads JPEG, TIFF, PNG and WebP; `ExifWriter` builds a blob for `JpegEncodeOptions.Exif`.
 
 </details>
@@ -185,15 +202,17 @@ Sdcb.SimdCodecs (facade)
  ├─ Gif ──────────── Abstractions
  ├─ Bmp ──────────┬─ Png
  │                └─ Abstractions
- └─ Ico ──────────┬─ Bmp
-                  ├─ Png
-                  └─ Abstractions
+ ├─ Ico ──────────┬─ Bmp
+ │                ├─ Png
+ │                └─ Abstractions
+ ├─ Qoi ──────────── Abstractions
+ └─ Pnm ──────────── Abstractions
 
 Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
 ```
 
 The MQ arithmetic decoder (JBIG2, JPEG 2000), the T.4 fax code tables (JBIG2, TIFF, BMP), Wu's palette
-quantizer (GIF, BMP) and the EXIF orientation reader (JPEG, PNG, WebP) are shared as source (`src/Shared`),
+quantizer (GIF, BMP), the stream and array writers (QOI, Netpbm) and the EXIF orientation reader (JPEG, PNG, WebP) are shared as source (`src/Shared`),
 compiled into each package that uses them: no package uses another's internals.
 
 </details>

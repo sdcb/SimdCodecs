@@ -4,7 +4,7 @@
 
 [English](README.md) | **简体中文**
 
-纯托管的 .NET 10 图像编解码库：JPEG、PNG、TIFF、WebP、GIF、BMP、ICO / CUR、JPEG 2000、JBIG2，外加 EXIF 和 ICC。
+纯托管的 .NET 10 图像编解码库：JPEG、PNG、TIFF、WebP、GIF、BMP、ICO / CUR、QOI、Netpbm（PBM / PGM / PPM / PAM / PFM）、JPEG 2000、JBIG2，外加 EXIF 和 ICC。
 没有任何原生依赖，兼容 NativeAOT，用 SIMD（AVX2、SSE、AdvSimd）加速，并带标量回退。
 在基准测试语料上，JPEG 解码比 libjpeg-turbo 更快。
 
@@ -23,7 +23,7 @@ using Sdcb.SimdCodecs;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Jpeg;
 
-byte[] file = File.ReadAllBytes("photo.webp");   // JPEG、PNG、TIFF、WebP、GIF、BMP、ICO、CUR、JPEG 2000 或 JBIG2
+byte[] file = File.ReadAllBytes("photo.webp");   // JPEG、PNG、TIFF、WebP、GIF、BMP、ICO、CUR、QOI、Netpbm、JPEG 2000 或 JBIG2
 
 // 门面类根据文件头识别格式，解码到你自己的缓冲区（R G B A）。
 if (!SimdCodecs.TryReadInfo(file, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
@@ -64,6 +64,8 @@ File.WriteAllBytes("photo.jpg", jpeg);
 | GIF | ✅ | ✅ | 87a / 89a：隔行、透明、全部 dispose 方式；动画及跳转；编码静态图和动画（精确调色板，或 Wu 量化 + 抖动） |
 | BMP | ✅ | ✅ | Windows 和 OS/2 的全部变体：core 到 V5 各版头部、1–32 位、任意通道掩码、RLE4 / RLE8 / RLE24、OS/2 Huffman 1D、内嵌 PNG、ICC；SIMD 按行直接写进调用方缓冲区、零分配；编码调色板（精确或量化）、RLE、555 / 565、24 / 32 位 |
 | ICO / CUR | ✅ | ✅ | 图标和光标里的每张图（PNG，或带 AND 掩码的 DIB）、热点坐标；多尺寸编码 |
+| QOI | ✅ | ✅ | RGB 和 RGBA，按规范实现；直接解码进调用方缓冲区、零分配；编码到数组或流 |
+| Netpbm | ✅ | ✅ | PBM、PGM、PPM 的 ASCII 和二进制格式，maxval 最高 65535；1–4 通道的 PAM；PFM 浮点；可得到原生的 8/16 位或浮点样本，也可零分配地以任意布局解码进调用方缓冲区；所有变体都能编码 |
 | JPEG 2000 | ✅ | — | Part 1（T.800），用于 PDF 的 `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88，用于 PDF 的 `/JBIG2Decode` |
 | EXIF | ✅ | ✅ | 读取 JPEG、TIFF、PNG、WebP 中的 EXIF；`ExifWriter` 生成可交给 JPEG 编码器的数据块 |
@@ -100,6 +102,13 @@ File.WriteAllBytes("photo.jpg", jpeg);
 BMP 解码直接写进调用方缓冲区、任意布局、零分配，与 WIC 逐像素一致（文档列出的几项决定除外）；所有 RLE、
 调色板和掩码布局的解码都快于 WIC 和 ImageSharp，5-6-5 和调色板编码比 ImageSharp 快 2–6 倍。
 
+| 1920×1080，相对 ImageSharp 3.1.12 的几何平均 | 解码 | 编码到流 |
+|---|---:|---:|
+| QOI（RGB、RGBA） | **0.29×** | **0.49×** |
+| Netpbm（P1–P7，8 位、16 位、ASCII） | **0.23×** | **0.54×** |
+
+QOI 和 Netpbm 都零分配地解码进调用方缓冲区；两者在解码和编码两个方向上都与 ImageMagick 结果完全一致。
+
 JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插值时，相对精确参考值的 RGB PSNR 高约
 1 dB），并且在 AVX2、SSE、AdvSimd、标量和 NativeAOT 下输出逐位一致。WebP 输出与 libwebp 逐字节一致。
 JPEG 2000 无损解码与 libopenjp2 逐位一致，有损解码 PSNR 超过 84 dB。
@@ -107,7 +116,8 @@ JPEG 2000 无损解码与 libopenjp2 逐位一致，有损解码 PSNR 超过 84 
 [JPEG](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md)、
 [WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md) 和
 [JPEG 2000](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md)、
-[BMP / ICO](benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/m1-tuned-2026-10-30-amd-ryzen-7-5800x.md)
+[BMP / ICO](benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/m1-tuned-2026-10-30-amd-ryzen-7-5800x.md)、
+[QOI / Netpbm](benchmarks/Sdcb.SimdCodecs.QoiPnm.Benchmarks/results/tuned-2026-10-30-amd-ryzen-7-5800x.md)
 （在接近照片内容、不带 alpha 的有损文件上，WebP 与 libwebp 持平：0.87–1.13×；JPEG 2000 目前单核纯托管解码耗时约为 libopenjp2 的 2× 左右）。
 
 ## 包列表
@@ -126,6 +136,8 @@ JPEG 2000 无损解码与 libopenjp2 逐位一致，有损解码 PSNR 超过 84 
 | `Sdcb.SimdCodecs.Gif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Gif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Gif) | GIF 解码器和编码器（含动画） |
 | `Sdcb.SimdCodecs.Bmp` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Bmp.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Bmp) | BMP / DIB 解码器和编码器 |
 | `Sdcb.SimdCodecs.Ico` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Ico.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Ico) | ICO / CUR 解码器和编码器 |
+| `Sdcb.SimdCodecs.Qoi` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Qoi.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Qoi) | QOI 解码器和编码器 |
+| `Sdcb.SimdCodecs.Pnm` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Pnm.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Pnm) | Netpbm（PBM、PGM、PPM、PAM、PFM）解码器和编码器 |
 | `Sdcb.SimdCodecs.Jpeg2000` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jpeg2000.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jpeg2000) | JPEG 2000 解码器 |
 | `Sdcb.SimdCodecs.Jbig2` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jbig2.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jbig2) | JBIG2 解码器 |
 | `Sdcb.SimdCodecs.Exif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Exif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Exif) | EXIF 读写 |
@@ -155,6 +167,11 @@ JPEG 2000 无损解码与 libopenjp2 逐位一致，有损解码 PSNR 超过 84 
   文档没有定死的行为列在包的 README 里。
 - **Ico**：基于 Bmp 和 Png 的图标和光标：读出每张图，默认取最大、位深最高的一张，带热点坐标；编码多尺寸图标和光标，
   每张图可选 PNG 或 1/4/8/24/32 位 DIB。
+- **Qoi**：按 QOI 规范实现：3 通道和 4 通道图像；会报告色彩空间（线性色彩空间报告为线性传递函数）；可直接解码成任意
+  `ImagePixelFormat` 且不分配内存；编码输入可以是 RGBA、BGRA、RGB、BGR 或灰度。
+- **Pnm**：Netpbm：P1–P6 的 ASCII 和二进制格式，maxval 最高 65535（大于 255 时为 16 位样本）；1–4 通道的 PAM（P7）；
+  PFM（`Pf` / `PF`）读出浮点样本；文件里只读第一张图。所有格式都能编码，ASCII 输出每行不超过 70 个字符。
+  格式说明没有定死的行为列在包的 README 里。
 - **Exif**：读取 JPEG、TIFF、PNG 和 WebP；`ExifWriter` 生成可赋给 `JpegEncodeOptions.Exif` 的数据块。
 
 </details>
@@ -179,14 +196,16 @@ Sdcb.SimdCodecs (facade)
  ├─ Gif ──────────── Abstractions
  ├─ Bmp ──────────┬─ Png
  │                └─ Abstractions
- └─ Ico ──────────┬─ Bmp
-                  ├─ Png
-                  └─ Abstractions
+ ├─ Ico ──────────┬─ Bmp
+ │                ├─ Png
+ │                └─ Abstractions
+ ├─ Qoi ──────────── Abstractions
+ └─ Pnm ──────────── Abstractions
 
 Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
 ```
 
-MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BMP）、Wu 调色板量化器（GIF、BMP）和 EXIF 方向读取
+MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BMP）、Wu 调色板量化器（GIF、BMP）、流和数组写入器（QOI、Netpbm）和 EXIF 方向读取
 （JPEG、PNG、WebP）以源码形式共享（`src/Shared`），编译进每个用到它们的包：没有哪个包使用另一个包的内部成员。
 
 </details>

@@ -7,6 +7,8 @@ using Sdcb.SimdCodecs.Gif;
 using Sdcb.SimdCodecs.Ico;
 using Sdcb.SimdCodecs.Jpeg;
 using Sdcb.SimdCodecs.Png;
+using Sdcb.SimdCodecs.Pnm;
+using Sdcb.SimdCodecs.Qoi;
 using Sdcb.SimdCodecs.Tiff;
 
 namespace Sdcb.SimdCodecs.AotSmoke;
@@ -28,7 +30,8 @@ internal static class FacadeSmoke
             Check(SimdCodecs.TryReadInfo(data, out var info), label, "TryReadInfo");
             Check(SimdCodecs.TryDecode(data, out var image), label, "TryDecode");
             var rgba = new byte[info.Width * info.Height * 4];
-            Check(SimdCodecs.TryDecodeIntoRgba8(data, rgba), label, "TryDecodeIntoRgba8");
+            // Float samples (PFM) have no 8-bit layout without a tone policy: TryDecodeInto says no.
+            Check(SimdCodecs.TryDecodeIntoRgba8(data, rgba) == (info.SampleFormat != SampleFormat.Float32), label, "TryDecodeIntoRgba8");
             Check(SimdCodecs.TryOpenFrames(data, out var reader), label, "TryOpenFrames");
             using (reader)
             {
@@ -36,7 +39,7 @@ internal static class FacadeSmoke
                 Check(reader.TryDecodeFrame(last, out var frame), label, "TryDecodeFrame");
                 Console.WriteLine(
                     $"facade {label} {SimdCodecs.DetectFormat(data)}/{info.Format} {info.Width}x{info.Height}x{info.Channels} {info.SampleFormat} frames={reader.FrameCount}" +
-                    $"\t{Hash(image.ToRgba8())} {Hash(rgba)} {Hash(frame.ToRgba8())}");
+                    $"\t{Hash(Pixels(image))} {Hash(rgba)} {Hash(Pixels(frame))}");
             }
 
             count++;
@@ -87,6 +90,13 @@ internal static class FacadeSmoke
             ("ico", IcoEncoder.Encode(
                 [new IcoFrame(rgba, w, h), new IcoFrame(rgba, w, h, Encoding: IcoImageEncoding.Png), new IcoFrame(rgb, w, h, ImagePixelFormat.Rgb24, IcoImageEncoding.Bmp4)])),
             ("cur", IcoEncoder.EncodeCursor([new IcoFrame(rgba, w, h, HotspotX: 3, HotspotY: 4)])),
+            ("qoi", QoiEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32)),
+            ("qoi-rgb", QoiEncoder.Encode(rgb, w, h, ImagePixelFormat.Rgb24)),
+            ("ppm", PnmEncoder.Encode(rgb, w, h, ImagePixelFormat.Rgb24)),
+            ("pgm-plain-16", PnmEncoder.Encode(rgb, w, h, ImagePixelFormat.Rgb24, new PnmEncodeOptions { Format = PnmFormat.PlainGraymap, MaxValue = 1000 })),
+            ("pbm", PnmEncoder.Encode(rgb, w, h, ImagePixelFormat.Rgb24, new PnmEncodeOptions { Format = PnmFormat.Bitmap })),
+            ("pam", PnmEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32)),
+            ("pfm", PnmEncoder.EncodePfm([.. rgb.Select(v => v / 255f)], w, h, 3)),
         ];
     }
 
@@ -99,6 +109,10 @@ internal static class FacadeSmoke
         stream.ReadExactly(bytes);
         return bytes;
     }
+
+    // Float rasters (PFM) have no 8-bit form: their samples are hashed as they are.
+    private static byte[] Pixels(IDecodedImage image) =>
+        image.SampleFormat == SampleFormat.Float32 ? [.. System.Runtime.InteropServices.MemoryMarshal.AsBytes(image.ToFloats().AsSpan())] : image.ToRgba8();
 
     private static string Hash(byte[] data) => Convert.ToHexString(SHA256.HashData(data))[..16];
 

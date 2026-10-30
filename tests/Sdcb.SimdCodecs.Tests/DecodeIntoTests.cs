@@ -125,6 +125,12 @@ public sealed class DecodeIntoTests
         corpus["bmp rle4 19x7"] = Bmp.BmpEncoder.Encode(bmpSource, 19, 7, 3, new Bmp.BmpEncodeOptions { Format = Bmp.BmpEncodeFormat.Indexed4, Rle = true });
         corpus["ico 3 images"] = Ico.IcoEncoder.Encode([new Ico.IcoFrame(bmpSource, 19, 7, ImagePixelFormat.Rgb24),
             new Ico.IcoFrame(bmpSource, 7, 19, ImagePixelFormat.Rgb24, Ico.IcoImageEncoding.Png), new Ico.IcoFrame(bmpSource, 11, 3, ImagePixelFormat.Rgb24, Ico.IcoImageEncoding.Bmp8)]);
+        corpus["qoi rgba 31x9"] = MagickRgba(31, 9, MagickFormat.Qoi);
+        corpus["qoi rgb 19x7"] = Qoi.QoiEncoder.Encode(bmpSource, 19, 7, ImagePixelFormat.Rgb24);
+        corpus["pnm ppm 37x19"] = MagickRgba(37, 19, MagickFormat.Ppm);
+        corpus["pnm pam rgba 31x6"] = MagickRgba(31, 6, MagickFormat.Pam);
+        corpus["pnm pgm16 19x7"] = Sdcb.SimdCodecs.Pnm.PnmEncoder.Encode(bmpSource, 19, 7, ImagePixelFormat.Rgb24, new Sdcb.SimdCodecs.Pnm.PnmEncodeOptions { Format = Sdcb.SimdCodecs.Pnm.PnmFormat.Graymap, MaxValue = 4095 });
+        corpus["pnm pbm plain 19x7"] = Sdcb.SimdCodecs.Pnm.PnmEncoder.Encode(bmpSource, 19, 7, ImagePixelFormat.Rgb24, new Sdcb.SimdCodecs.Pnm.PnmEncodeOptions { Format = Sdcb.SimdCodecs.Pnm.PnmFormat.PlainBitmap });
         corpus["cur 1 image"] = Ico.IcoEncoder.EncodeCursor([new Ico.IcoFrame(bmpSource, 19, 7, ImagePixelFormat.Rgb24, HotspotX: 2, HotspotY: 3)]);
 
         var fixtures = Path.Combine(AppContext.BaseDirectory, "Fixtures");
@@ -293,6 +299,8 @@ public sealed class DecodeIntoTests
             "jbig2" => 1,
             "tiff grey16 23x7" or "tiff rgb16 23x7" => 16,
             "bmp 565 19x7" => 6, // the widest channel, green
+            "pnm pgm16 19x7" => 12, // maxval 4095
+            "pnm pbm plain 19x7" => 1,
             _ => 8, // 8-bit PNG / JPEG / TIFF, WebP
         };
     }

@@ -5,6 +5,8 @@ using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Bmp;
 using Sdcb.SimdCodecs.Gif;
 using Sdcb.SimdCodecs.Ico;
+using Sdcb.SimdCodecs.Pnm;
+using Sdcb.SimdCodecs.Qoi;
 using Sdcb.SimdCodecs.Jbig2;
 using Sdcb.SimdCodecs.Jpeg;
 using Sdcb.SimdCodecs.Jpeg2000;
@@ -20,7 +22,7 @@ namespace Sdcb.SimdCodecs;
 /// package pulls the whole codec family in lockstep; consumers call these entry
 /// points instead of hard-wiring per-format decoders.
 /// <para>
-/// Registers PNG, JPEG, TIFF, JBIG2, JPEG 2000, WebP, GIF, BMP, ICO and CUR. To add a
+/// Registers PNG, JPEG, TIFF, JBIG2, JPEG 2000, WebP, GIF, BMP, ICO, CUR, QOI, Netpbm (PBM, PGM, PPM, PAM) and PFM. To add a
 /// format, implement <see cref="IImageDecoder"/> in its codec package and add a
 /// line binding its members to <see cref="_registry"/> - the order is the sniff order.
 /// </para>
@@ -106,6 +108,10 @@ public static class SimdCodecs
         new(ImageFormat.Bmp, BmpImageDecoder.CanDecode, BmpImageDecoder.TryReadInfo, BmpImageDecoder.TryDecode, BmpImageDecoder.TryDecodeInto),
         new(ImageFormat.Ico, IcoImageDecoder.CanDecode, IcoImageDecoder.TryReadInfo, IcoImageDecoder.TryDecode, IcoImageDecoder.TryDecodeInto, IcoImageDecoder.TryOpenFrames),
         new(ImageFormat.Cur, CurImageDecoder.CanDecode, CurImageDecoder.TryReadInfo, CurImageDecoder.TryDecode, CurImageDecoder.TryDecodeInto, CurImageDecoder.TryOpenFrames),
+        new(ImageFormat.Qoi, QoiImageDecoder.CanDecode, QoiImageDecoder.TryReadInfo, QoiImageDecoder.TryDecode, QoiImageDecoder.TryDecodeInto),
+        // Netpbm signatures are two ASCII bytes and a space: sniffed last, after every binary magic.
+        new(ImageFormat.Pnm, PnmImageDecoder.CanDecode, PnmImageDecoder.TryReadInfo, PnmImageDecoder.TryDecode, PnmImageDecoder.TryDecodeInto),
+        new(ImageFormat.Pfm, PfmImageDecoder.CanDecode, PfmImageDecoder.TryReadInfo, PfmImageDecoder.TryDecode, PfmImageDecoder.TryDecodeInto),
     ];
 
     /// <summary>
@@ -236,7 +242,7 @@ public static class SimdCodecs
     /// <summary>
     /// The format of <paramref name="data"/> by its leading signature: one the facade decodes (the
     /// codec that would be dispatched to), or one it recognises but does not decode — HEIF, AVIF,
-    /// JPEG XL, JPEG XR, OpenEXR, PSD, QOI — so a caller can name what it cannot open.
+    /// JPEG XL, JPEG XR, OpenEXR, PSD — so a caller can name what it cannot open.
     /// <see cref="ImageFormat.Unknown"/> otherwise. Like <see cref="CanDecode"/>, it reads the
     /// signature only; pass at least the first 64 bytes (an ISO-BMFF <c>ftyp</c> box lists HEIF and
     /// AVIF brands past its start).
@@ -255,7 +261,6 @@ public static class SimdCodecs
         if (data.StartsWith((ReadOnlySpan<byte>)[(byte)'I', (byte)'I', 0xBC, 0x01])) return ImageFormat.JpegXr;
         if (data.StartsWith((ReadOnlySpan<byte>)[0x76, 0x2F, 0x31, 0x01])) return ImageFormat.OpenExr;
         if (data.StartsWith("8BPS"u8)) return ImageFormat.Psd;
-        if (data.StartsWith("qoif"u8)) return ImageFormat.Qoi;
         return DetectIsoBmff(data);
     }
 

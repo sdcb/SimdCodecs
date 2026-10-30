@@ -6,6 +6,7 @@ repository root. Corpora, inputs and competitor binaries live in each project's 
 
 | Project | Measures | Compared against | Docs |
 |---|---|---|---|
+| [`Sdcb.SimdCodecs.QoiPnm.Benchmarks`](Sdcb.SimdCodecs.QoiPnm.Benchmarks/) | QOI and Netpbm decode and encode speed (QOI RGB / RGBA; P1–P7, 16-bit, plain, PFM), sizes, managed allocations, a same-process A/B against the previous commit | ImageSharp | [recorded results](Sdcb.SimdCodecs.QoiPnm.Benchmarks/results/) |
 | [`Sdcb.SimdCodecs.Bmp.Benchmarks`](Sdcb.SimdCodecs.Bmp.Benchmarks/) | BMP and ICO decode and encode speed (every depth, RLE, masks, icons), sizes, managed allocations, peak working set, a same-process A/B against the previous commit | ImageSharp, WIC (Windows) | [README](Sdcb.SimdCodecs.Bmp.Benchmarks/README.md), [recorded results](Sdcb.SimdCodecs.Bmp.Benchmarks/results/) |
 | [`Sdcb.SimdCodecs.Jpeg.Benchmarks`](Sdcb.SimdCodecs.Jpeg.Benchmarks/) | JPEG decode speed, memory and accuracy, a same-process A/B against the previous commit, and encode speed / size / quality | libjpeg-turbo, ImageSharp | [README](Sdcb.SimdCodecs.Jpeg.Benchmarks/README.md), [recorded results](Sdcb.SimdCodecs.Jpeg.Benchmarks/results/) |
 | [`Sdcb.SimdCodecs.Jpeg2000.Benchmarks`](Sdcb.SimdCodecs.Jpeg2000.Benchmarks/) | JPEG 2000 decode speed, memory and PSNR accuracy vs libopenjp2 | libopenjp2 2.5.4 | [README](Sdcb.SimdCodecs.Jpeg2000.Benchmarks/README.md), [recorded results](Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/) |
