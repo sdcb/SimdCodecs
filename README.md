@@ -4,7 +4,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, GIF, JPEG 2000 and JBIG2, plus EXIF and ICC.
+Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, GIF, BMP, ICO / CUR, JPEG 2000 and JBIG2, plus EXIF and ICC.
 No native dependencies, NativeAOT-compatible, and SIMD-accelerated (AVX2, SSE, AdvSimd) with a scalar
 fallback. The JPEG decoder is faster than libjpeg-turbo on the benchmark corpus.
 
@@ -24,7 +24,7 @@ using Sdcb.SimdCodecs;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Jpeg;
 
-byte[] file = File.ReadAllBytes("photo.webp");   // JPEG, PNG, TIFF, WebP, GIF, JPEG 2000 or JBIG2
+byte[] file = File.ReadAllBytes("photo.webp");   // JPEG, PNG, TIFF, WebP, GIF, BMP, ICO, CUR, JPEG 2000 or JBIG2
 
 // The facade sniffs the format from the magic bytes and decodes into a buffer you own (R G B A).
 if (!SimdCodecs.TryReadInfo(file, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
@@ -46,9 +46,9 @@ The rest of the facade:
 - `SimdCodecs.TryReadInfo(file, out info)` — from the headers alone: format, stored bit depth, EXIF
   orientation (reported, never applied), frame or page count.
 - `SimdCodecs.DetectFormat(file)` — also names formats it recognises but does not decode (HEIF, AVIF,
-  JPEG XL, BMP, …); `SimdCodecs.IsDecodable(format)` tells the two apart.
+  JPEG XL, …); `SimdCodecs.IsDecodable(format)` tells the two apart.
 - `SimdCodecs.TryOpenFrames(file, out reader)` — every frame, by index, in any layout: animated WebP / GIF
-  frames with durations, multi-page TIFF pages (any other image is one frame).
+  frames with durations, multi-page TIFF pages, the images of an icon (any other image is one frame).
   `reader.EnumerateFramesInto(buffer, stride, format)` plays them in order through one buffer.
 
 Each format is also its own package with a richer API: scaled JPEG decoding, TIFF segment reads, WebP
@@ -64,6 +64,8 @@ animation seeking by timestamp, Ultra HDR, and more.
 | TIFF | ✅ | ✅ | Multi-page; 8/16/32-bit integer and float; strips or tiles; reads Deflate, LZW, PackBits, CCITT G3/G4 and single tiles; writes Deflate |
 | WebP | ✅ | — | Lossy, lossless, alpha; animation with seeking; byte-exact with libwebp |
 | GIF | ✅ | ✅ | 87a / 89a: interlacing, transparency, every disposal method; animation with seeking; encodes stills and animations (exact palette, or Wu quantization + dithering) |
+| BMP | ✅ | ✅ | Every Windows and OS/2 variant: core to V5 headers, 1–32 bits, any channel masks, RLE4 / RLE8 / RLE24, OS/2 Huffman 1D, embedded PNG, ICC; SIMD rows into your buffer with no allocation; encodes palettes (exact or quantized), RLE, 555 / 565, 24 / 32-bit |
+| ICO / CUR | ✅ | ✅ | Every image of an icon or cursor, PNG or DIB with its AND mask, hotspots; multi-size encoding |
 | JPEG 2000 | ✅ | — | Part 1 (T.800), for PDF `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88, for PDF `/JBIG2Decode` |
 | EXIF | ✅ | ✅ | From JPEG, TIFF, PNG and WebP; `ExifWriter` builds a block for the JPEG encoder |
@@ -91,6 +93,16 @@ Single-threaded, AMD Ryzen 7 5800X, .NET 10. Time relative to the native library
 | libopenjp2 2.5.4 (native) | 1.00× (221 ms) | 1.00× (49 ms) | baseline |
 | **Sdcb.SimdCodecs** | **1.96×** (433 ms) | **2.03×** (99 ms) | Lossless Exact / Lossy 84 dB |
 
+| BMP, 1920×1080, geometric mean | decode (22 layouts) | encode 24/32-bit to a stream (4) |
+|---|---:|---:|
+| WIC (Windows' native codec) | 1.00× | 1.00× |
+| **Sdcb.SimdCodecs** | **0.20×** | **0.08×** from RGBA, **0.05×** from BGR(A) |
+| ImageSharp 3.1.12 | 1.62× | 0.06× |
+
+BMP decoding writes into your buffer in any layout with no allocation and is pixel-for-pixel identical to WIC
+(apart from the documented decisions); every RLE, palette and mask layout decodes faster than both WIC and
+ImageSharp, and 5-6-5 and palette encoding are 2–6× faster than ImageSharp.
+
 The JPEG decoder is also at least as accurate as libjpeg-turbo's default (about 1 dB higher RGB PSNR
 against an exact reference where chroma is upsampled), and its output is bit-identical on AVX2, SSE,
 AdvSimd, scalar and NativeAOT. WebP output is byte-identical to libwebp.
@@ -98,7 +110,8 @@ JPEG 2000 lossless decode is bit-identical to libopenjp2, and lossy decode achie
 Full tables, corpora and methodology:
 [JPEG](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md),
 [WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md), and
-[JPEG 2000](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md)
+[JPEG 2000](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md),
+[BMP / ICO](benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/m1-tuned-2026-10-30-amd-ryzen-7-5800x.md)
 (on photo-like opaque lossy files WebP is on par: 0.87–1.13×; JPEG 2000 pure managed single-threaded decode is currently about 2× of libopenjp2).
 
 ## Packages
@@ -115,6 +128,8 @@ All packages ship in lockstep under one version.
 | `Sdcb.SimdCodecs.Tiff` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Tiff.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Tiff) | TIFF reader and writer |
 | `Sdcb.SimdCodecs.Webp` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Webp.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Webp) | WebP decoder, including animation |
 | `Sdcb.SimdCodecs.Gif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Gif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Gif) | GIF decoder and encoder, including animation |
+| `Sdcb.SimdCodecs.Bmp` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Bmp.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Bmp) | BMP / DIB decoder and encoder |
+| `Sdcb.SimdCodecs.Ico` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Ico.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Ico) | ICO / CUR decoder and encoder |
 | `Sdcb.SimdCodecs.Jpeg2000` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jpeg2000.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jpeg2000) | JPEG 2000 decoder |
 | `Sdcb.SimdCodecs.Jbig2` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jbig2.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jbig2) | JBIG2 decoder |
 | `Sdcb.SimdCodecs.Exif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Exif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Exif) | EXIF reader and writer |
@@ -139,6 +154,13 @@ All packages ship in lockstep under one version.
   count; composited frames with seek. The decisions the spec leaves open are listed in the package README. Encoder:
   stills and animations, exact palettes or Wu quantization with optional Floyd–Steinberg dithering, changed-rectangle
   frames for opaque animations.
+- **Bmp** — the Windows DIB and OS/2 bitmap: core, OS/2 2.x, 40-byte, V2–V5 headers; 1/2/4/8-bit palettes and
+  16/24/32-bit; `BI_BITFIELDS` / `BI_ALPHABITFIELDS`; RLE4 / RLE8 with deltas, OS/2 RLE24 and Huffman 1D; `BI_PNG`;
+  top-down rows; V5 ICC; packed DIBs (clipboard, icon images). Decodes into any `ImagePixelFormat` without
+  allocating; checked pixel for pixel against WIC. The decisions the documentation leaves open are listed in the
+  package README.
+- **Ico** — icons and cursors over Bmp and Png: every image, the largest and deepest by default, hotspots; encodes
+  multi-size icons and cursors, each image PNG or a 1/4/8/24/32-bit DIB.
 - **Exif** — reads JPEG, TIFF, PNG and WebP; `ExifWriter` builds a blob for `JpegEncodeOptions.Exif`.
 
 </details>
@@ -160,14 +182,19 @@ Sdcb.SimdCodecs (facade)
  ├─ Jbig2 ────────── Abstractions
  ├─ Jpeg2000 ─────── Abstractions
  ├─ Webp ─────────── Abstractions
- └─ Gif ──────────── Abstractions
+ ├─ Gif ──────────── Abstractions
+ ├─ Bmp ──────────┬─ Png
+ │                └─ Abstractions
+ └─ Ico ──────────┬─ Bmp
+                  ├─ Png
+                  └─ Abstractions
 
 Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
 ```
 
-The MQ arithmetic decoder (JBIG2, JPEG 2000), the T.4 fax code tables (JBIG2, TIFF) and the EXIF
-orientation reader (JPEG, PNG, WebP) are shared as source (`src/Shared`), compiled into each package that
-uses them: no package uses another's internals.
+The MQ arithmetic decoder (JBIG2, JPEG 2000), the T.4 fax code tables (JBIG2, TIFF, BMP), Wu's palette
+quantizer (GIF, BMP) and the EXIF orientation reader (JPEG, PNG, WebP) are shared as source (`src/Shared`),
+compiled into each package that uses them: no package uses another's internals.
 
 </details>
 
@@ -186,6 +213,8 @@ Each package ships runnable samples in `linqpad-samples/`, which LINQPad lists i
 | `Sdcb.SimdCodecs.Exif` | `read-exif` |
 | `Sdcb.SimdCodecs.Webp` | `decode`, `animation` |
 | `Sdcb.SimdCodecs.Gif` | `decode`, `encode` |
+| `Sdcb.SimdCodecs.Bmp` | `bmp` (every layout written, read back and compared) |
+| `Sdcb.SimdCodecs.Ico` | `icons` (a multi-size icon and a cursor, written and read back) |
 
 They download their images from `https://cv-public.sdcb.ai/simdcodecs/samples/v1/`; how those were
 made and where they come from is in [tools/sample-assets](tools/sample-assets/README.md).

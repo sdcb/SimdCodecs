@@ -19,13 +19,15 @@
 AGENTS.md 的目标是每个编解码器都达到或超过对应的原生参考库。目前**已调优**的有：JPEG 编码和解码、WebP 解码、
 PNG 编码和解码，各有自己的基准项目。
 
+BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.Bmp.Benchmarks`。
+
 **未调优**：TIFF、JBIG2、GIF（解码和编码）、EXIF。JPEG 2000 已建立基准项目并测得初始基线（~2× libopenjp2），算术解码与并发优化尚未开始。它们的门面路径也比较朴素：`TryDecodeInto`
 先完整解码出一张图，再整帧转换成目标像素格式，中间会分配一整帧内存；JPEG、PNG、WebP 则是直接写进调用方的缓冲区。
 
 ### 门面与公共接口
 
 - **没有编码器抽象。** 门面只做解码；编码请直接用各格式包（`JpegEncoder`、`PngWriter`、`TiffWriter`、
-  `GifEncoder`）。这是有意的决定。
+  `GifEncoder`、`BmpEncoder`、`IcoEncoder`）。这是有意的决定。
 - **门面不提供缩放解码。** JPEG 包有 `JpegScale`（1/2、1/4、1/8 的 DCT 缩放），但门面不会走到它；
   JPEG 2000 的分辨率级别缩减（reduce）还没有实现。
 - **输入必须整个在内存里。** 所有入口接收 `ReadOnlySpan<byte>` / `ReadOnlyMemory<byte>`，没有 `Stream`
@@ -113,6 +115,33 @@ PNG 编码和解码，各有自己的基准项目。
 - **带透明的动画每帧都写整帧**，并在下一帧前清除，文件比只写变化区域的方式大；不透明动画才做变化矩形的差分。
 - **编码器不写隔行 GIF。**
 - **帧延时按原值报告**：0 就是 0，不做浏览器那种“当作 100 ms”的改写。
+
+## BMP
+
+文档没有定死、由解码器决定的行为（窄通道怎样扩展到 8 位、超出调色板的索引、RLE 跳过的像素、32 位 `BI_RGB`
+第四个字节算不算 alpha 等），以及它们和 WIC、ImageMagick、ImageSharp 的异同，列在
+[BMP 包的 README](../src/Sdcb.SimdCodecs.Bmp/README.md) 里。
+
+- **不支持**：`BI_JPEG`（BMP 里嵌 JPEG）、64 位像素、Windows Metafile 用的 CMYK 压缩（11–13）、OS/2 的图标和指针
+  格式（`IC`、`CI`、`PT`、`CP`）。
+- **OS/2 位图数组（`BA`）只解码第一张。** 数组里的各张是同一张图为不同显示设备准备的版本。
+- **OS/2 Huffman 1D 和 RLE24 没有外部参照。** WIC 和 ImageMagick 都不读这两种压缩，解码器只用按 T.4 码表构造
+  的流验证过；白色对应调色板索引 0、行之间不填充，这两点是根据规范的推断，没有真实文件核对。
+- **宽于 8 位的通道（10-10-10-2 等）只取高 8 位**，不提供 16 位输出。
+- **V4 / V5 的校准色彩空间被忽略**：`LCS_CALIBRATED_RGB` 的端点和伽马、链接的 profile（`PROFILE_LINKED`）都
+  不读；只返回内嵌的 ICC。
+- **从 RGBA 输入编码 32 位时比 ImageSharp 慢**（1920×1080 写进流：约 0.41 ms 对 0.23 ms），差在 RGBA→BGRA 的
+  重排上；从 BGRA 输入就是直接拷贝（0.23 ms），24 位与 ImageSharp 持平。都比 WIC 快 12 倍以上。
+- **编码器不写** RLE24、Huffman 1D、`BI_PNG`、`BI_ALPHABITFIELDS` 和 2 位调色板。调色板量化用的是 GIF 同一个
+  Wu 量化器，局限也相同（见上一节）。
+
+## ICO / CUR
+
+- **每张图都解码成 8 位 RGBA**，16 位的 PNG 图像会丢掉低 8 位。
+- **不支持压缩的 DIB 图像**（Windows 本身也不接受）。
+- **编码器不缩放**：各尺寸的图像要由调用方准备好；每张最大 256×256（解码不限尺寸，上限 2^28 像素）。
+- **不支持动画光标（`.ani`）。** 它是 RIFF 容器，不是 ICO 目录。
+- **门面的 `TryDecode` 只返回最大、位深最高的一张**；要拿其他尺寸，用 `TryOpenFrames` 或 `IcoDecoder`。
 
 ## JPEG 2000
 
