@@ -30,9 +30,25 @@ public static class QoiEncoder
         QoiColorSpace colorSpace = QoiColorSpace.Srgb, int stride = 0)
     {
         var rowStride = Validate(pixels, width, height, format, colorSpace, stride);
-        var writer = new ArrayBufferWriter<byte>((int)Math.Min((long)width * height + 64, Array.MaxLength));
-        Write(pixels, width, height, format, colorSpace, rowStride, writer);
-        return writer.WrittenSpan.ToArray();
+        // The worst case, 5 bytes a pixel, in a pooled buffer; the file is a copy of what it took.
+        var worst = QoiCodec.HeaderSize + 5L * width * height + ChunkOutput + QoiCodec.PaddingSize + 1;
+        if (worst > Array.MaxLength)
+        {
+            var growing = new ArrayBufferWriter<byte>(1 << 20);
+            Write(pixels, width, height, format, colorSpace, rowStride, growing);
+            return growing.WrittenSpan.ToArray();
+        }
+        var buffer = ArrayPool<byte>.Shared.Rent((int)worst);
+        try
+        {
+            var writer = new ArrayWriter(buffer);
+            Write(pixels, width, height, format, colorSpace, rowStride, writer);
+            return buffer.AsSpan(0, writer.Written).ToArray();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     /// <summary>

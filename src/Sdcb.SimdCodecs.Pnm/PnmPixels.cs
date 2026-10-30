@@ -190,6 +190,9 @@ internal static class PnmPixels
                     if (max > 255)
                         for (var i = 0; i < count; i++)
                             output[i] = (byte)(Scale16(PlainNumber(_data, ref _plain), max) >> 8);
+                    else if (max == 255)
+                        for (var i = 0; i < count; i++)
+                            output[i] = (byte)Math.Min(PlainNumber(_data, ref _plain), 255);
                     else
                         for (var i = 0; i < count; i++)
                             output[i] = Scale8(PlainNumber(_data, ref _plain), max);

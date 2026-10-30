@@ -33,7 +33,7 @@
 
   <ItemGroup>
     <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
-    <Compile Include="..\Shared\StreamBufferWriter.cs" Link="Shared\StreamBufferWriter.cs" />
+    <Compile Include="..\Shared\BufferWriters.cs" Link="Shared\BufferWriters.cs" />
   </ItemGroup>
 
   <ItemGroup>

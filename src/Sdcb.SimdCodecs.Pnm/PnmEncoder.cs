@@ -263,6 +263,13 @@ public static class PnmEncoder
         var size = target.Size(input.Width, input.Height);
         if (!target.Plain && size > Array.MaxLength)
             throw new ArgumentException($"A {input.Width}x{input.Height} {target.Format} does not fit in one array.");
+        if (!target.Plain)
+        {
+            // The size is exact: write into the array that is returned.
+            var exact = new ArrayWriter(GC.AllocateUninitializedArray<byte>((int)size));
+            Write(input, target, exact);
+            return exact.ToArray();
+        }
         var writer = new ArrayBufferWriter<byte>((int)Math.Min(size, Array.MaxLength));
         Write(input, target, writer);
         return writer.WrittenSpan.ToArray();
@@ -270,6 +277,15 @@ public static class PnmEncoder
 
     private static void ToStream(in Input input, Target target, Stream output)
     {
+        if (IsVerbatim(input, target))
+        {
+            // The header, then the input's rows as they are, with no buffer between. Row by row: one copy of
+            // megabytes runs slower than many cache-sized ones.
+            output.Write(target.Header);
+            for (var y = 0; y < input.Height; y++)
+                output.Write(input.Row(y));
+            return;
+        }
         using var writer = new StreamBufferWriter(output);
         Write(input, target, writer);
         writer.Flush();
@@ -279,10 +295,16 @@ public static class PnmEncoder
     {
         output.Write(target.Header);
         int width = input.Width, channels = target.Channels, max = target.MaxValue;
+        if (IsVerbatim(input, target))
+        {
+            // The raster is the input's rows as they are, copied row by row (see ToStream).
+            for (var y = 0; y < input.Height; y++)
+                output.Write(input.Row(y));
+            return;
+        }
         var tier = PnmKernels.BestTier;
         Span<byte> rgb = stackalloc byte[Chunk * 4];
         Span<byte> converted = stackalloc byte[Chunk * 4];
-        Span<char> digits = stackalloc char[8];
         for (var y = 0; y < input.Height; y++)
         {
             var row = input.Row(y);
@@ -326,13 +348,32 @@ public static class PnmEncoder
                         break;
                     }
                     case PnmFormat.PlainBitmap:
+                    {
+                        var span = output.GetSpan(2 * n + 4);
+                        var o = 0;
                         for (var i = 0; i < n; i++)
-                            column = Plain(output, samples[i] < 128 ? 1u : 0u, column, digits);
+                            Plain(span, ref o, ref column, samples[i] < 128 ? 1u : 0u);
+                        output.Advance(o);
                         break;
+                    }
                     case PnmFormat.PlainGraymap or PnmFormat.PlainPixmap:
-                        for (var i = 0; i < count; i++)
-                            column = Plain(output, Sample(samples, i, input.Sixteen, max), column, digits);
+                    {
+                        // At most 5 digits and a separator per sample, and the 4 bytes a table entry writes.
+                        var span = output.GetSpan(6 * count + 4);
+                        var o = 0;
+                        if (!input.Sixteen && max == 255)
+                        {
+                            for (var i = 0; i < count; i++)
+                                Plain(span, ref o, ref column, samples[i]);
+                        }
+                        else
+                        {
+                            for (var i = 0; i < count; i++)
+                                Plain(span, ref o, ref column, Sample(samples, i, input.Sixteen, max));
+                        }
+                        output.Advance(o);
                         break;
+                    }
                     default:
                         WriteRaw(samples, count, input.Sixteen, max, output);
                         break;
@@ -345,6 +386,10 @@ public static class PnmEncoder
             }
         }
     }
+
+    /// <summary>A raw 8-bit raster that is the input's rows as they are.</summary>
+    private static bool IsVerbatim(in Input input, Target target) =>
+        !input.Sixteen && !input.Bgr && target.Channels == input.Channels && target.MaxValue == 255 && !target.Plain && !target.Bitmap;
 
     /// <summary>Sample <paramref name="i"/> scaled to <paramref name="max"/>, rounding to nearest.</summary>
     private static uint Sample(ReadOnlySpan<byte> samples, int i, bool sixteen, int max)
@@ -390,12 +435,11 @@ public static class PnmEncoder
         output.Advance(2 * count);
     }
 
-    /// <summary>Writes a decimal sample, breaking lines before 70 characters.</summary>
-    private static int Plain(IBufferWriter<byte> output, uint value, int column, Span<char> digits)
+    /// <summary>Writes a decimal sample at <paramref name="o"/>, after a space or, past 70 characters, a newline.</summary>
+    private static void Plain(Span<byte> span, ref int o, ref int column, uint value)
     {
-        value.TryFormat(digits, out var length);
-        var span = output.GetSpan(length + 1);
-        var o = 0;
+        var entry = value < 1000 ? Decimal[(int)value] : 0;
+        var length = value < 1000 ? (int)(entry >> 24) : value < 10000 ? 4 : 5;
         if (column > 0)
         {
             if (column + 1 + length > 70)
@@ -409,9 +453,36 @@ public static class PnmEncoder
                 column++;
             }
         }
-        for (var i = 0; i < length; i++)
-            span[o++] = (byte)digits[i];
-        output.Advance(o);
-        return column + length;
+        if (entry != 0)
+        {
+            // The digits, then the length byte, which the next sample overwrites or Advance leaves out.
+            BinaryPrimitives.WriteUInt32LittleEndian(span[o..], entry);
+        }
+        else
+        {
+            for (var i = o + length - 1; i >= o; i--)
+            {
+                span[i] = (byte)('0' + value % 10);
+                value /= 10;
+            }
+        }
+        o += length;
+        column += length;
+    }
+
+    /// <summary>0 to 999 in decimal: the ASCII digits in bytes 0 to 2, the digit count in byte 3.</summary>
+    private static readonly uint[] Decimal = BuildDecimal();
+
+    private static uint[] BuildDecimal()
+    {
+        var table = new uint[1000];
+        for (var v = 0; v < 1000; v++)
+        {
+            var text = v.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            uint entry = (uint)text.Length << 24;
+            for (var i = 0; i < text.Length; i++) entry |= (uint)text[i] << (8 * i);
+            table[v] = entry;
+        }
+        return table;
     }
 }
