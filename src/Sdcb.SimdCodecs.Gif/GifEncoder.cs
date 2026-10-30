@@ -70,7 +70,7 @@ public static class GifEncoder
         return Write(argb, durations, width, height, animated: true, options ?? new GifEncodeOptions());
     }
 
-    internal static bool IsTransparent(int argb) => (uint)argb < 0x80000000u;
+    internal static bool IsTransparent(int argb) => PaletteQuantizer.IsTransparent(argb);
 
     private static void Validate(int length, int width, int height, int channels, string name)
     {
@@ -114,7 +114,7 @@ public static class GifEncoder
 
         var indices = new byte[frames.Length][];
         var exactIndex = exact ? palette.Select((c, i) => (c, i)).ToDictionary(p => p.c, p => (byte)p.i) : null;
-        var mapper = exact ? null : new GifQuantizer.Mapper(palette);
+        var mapper = exact ? null : new PaletteQuantizer.Mapper(palette);
         for (var f = 0; f < frames.Length; f++)
         {
             var map = new byte[width * height];
@@ -190,7 +190,7 @@ public static class GifEncoder
         return (colours.Count == 0 ? [0] : [.. colours.Order()], true);
 
     quantize:
-        var quantizer = new GifQuantizer();
+        var quantizer = new PaletteQuantizer();
         foreach (var frame in frames)
         {
             foreach (var p in frame)

@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsAotCompatible>true</IsAotCompatible>
+    <DefineConstants>$(DefineConstants);SIMDCODECS_GIF</DefineConstants>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 
     <PackageId>Sdcb.SimdCodecs.Gif</PackageId>
@@ -27,6 +28,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\PaletteQuantizer.cs" Link="Shared\PaletteQuantizer.cs" />
   </ItemGroup>
 
   <ItemGroup>

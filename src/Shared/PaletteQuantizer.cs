@@ -1,7 +1,15 @@
+// Compiled into each package that encodes a palette (GIF, and BMP's 1/4/8-bit modes), under that
+// package's namespace so the copies are distinct types: shipped packages never share internals.
+#if SIMDCODECS_GIF
 namespace Sdcb.SimdCodecs.Gif;
+#elif SIMDCODECS_BMP
+namespace Sdcb.SimdCodecs.Bmp;
+#else
+#error PaletteQuantizer.cs is shared source for Sdcb.SimdCodecs.Gif and Sdcb.SimdCodecs.Bmp only.
+#endif
 
 /// <summary>
-/// Reduces colours to a palette, for <see cref="GifEncoder"/>. The palette comes from the variance-minimising
+/// Reduces colours to a palette, for the palette encoders. The palette comes from the variance-minimising
 /// box split of X. Wu, "Efficient Statistical Computations for Optimal Color Quantization" (Graphics Gems
 /// II, 1991): a 32×32×32 histogram of the colours with cumulative moments (count, per-channel sums, sum of
 /// squares) makes the sums over any box eight lookups, so the colour cube can be cut, box by box, at
@@ -13,7 +21,7 @@ namespace Sdcb.SimdCodecs.Gif;
 /// Colours are 0xRRGGBB ints throughout.
 /// </para>
 /// </summary>
-internal sealed class GifQuantizer
+internal sealed class PaletteQuantizer
 {
     private const int Side = 33; // 32 bins per channel, plus the zero plane the cumulative sums start from
 
@@ -22,6 +30,9 @@ internal sealed class GifQuantizer
     private readonly long[] _green = new long[Side * Side * Side];
     private readonly long[] _blue = new long[Side * Side * Side];
     private readonly double[] _squares = new double[Side * Side * Side];
+
+    /// <summary>Whether a 0xAARRGGBB pixel counts as transparent: alpha below 128.</summary>
+    internal static bool IsTransparent(int argb) => (uint)argb < 0x80000000u;
 
     private static int At(int r, int g, int b) => (r * Side + g) * Side + b;
 
@@ -166,7 +177,7 @@ internal sealed class GifQuantizer
 
     /// <summary>
     /// Maps opaque pixels to their nearest palette entries, caching each colour's answer. Pixels are
-    /// 0xAARRGGBB; transparent ones (<see cref="GifEncoder.IsTransparent"/>) take the transparent index
+    /// 0xAARRGGBB; transparent ones (<see cref="IsTransparent"/>) take the transparent index
     /// given to <see cref="Map"/>.
     /// </summary>
     internal sealed class Mapper(int[] palette)
@@ -203,7 +214,7 @@ internal sealed class GifQuantizer
             if (!dither)
             {
                 for (var i = 0; i < argb.Length; i++)
-                    indices[i] = GifEncoder.IsTransparent(argb[i]) ? (byte)transparentIndex : Nearest(argb[i] & 0xFFFFFF);
+                    indices[i] = IsTransparent(argb[i]) ? (byte)transparentIndex : Nearest(argb[i] & 0xFFFFFF);
                 return;
             }
 
@@ -215,7 +226,7 @@ internal sealed class GifQuantizer
                 for (var x = 0; x < width; x++)
                 {
                     var i = y * width + x;
-                    if (GifEncoder.IsTransparent(argb[i]))
+                    if (IsTransparent(argb[i]))
                     {
                         indices[i] = (byte)transparentIndex;
                         continue;
