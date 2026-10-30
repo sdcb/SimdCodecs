@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <PackageId>Sdcb.SimdCodecs.Ico</PackageId>
+    <Product>Sdcb.SimdCodecs.Ico</Product>
+    <Authors>sdcb</Authors>
+    <Description>Pure-managed Windows icon (ICO) and cursor (CUR) decoder and encoder for .NET. Reads every image of the directory, each a PNG stream or a DIB with its AND mask (1/4/8/16/24/32-bit, through Sdcb.SimdCodecs.Bmp), with cursor hotspots; picks the largest, deepest image by default and opens all of them as frames. Writes multi-size icons and cursors, each image PNG or 1/4/8/24/32-bit BMP. AOT-compatible.</Description>
+    <PackageTags>ico cur icon cursor favicon image codec decoder encoder aot</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Bmp.Benchmarks" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- An icon image is a PNG stream or a packed DIB with an AND mask: each through its package's public API. -->
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Bmp\Sdcb.SimdCodecs.Bmp.csproj" />
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Png\Sdcb.SimdCodecs.Png.csproj" />
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

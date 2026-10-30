@@ -33,10 +33,10 @@ public enum ImageFormat
     /// <summary>GIF.</summary>
     Gif,
 
-    /// <summary>Windows bitmap (BMP). Recognised, not decoded.</summary>
+    /// <summary>Windows bitmap (BMP), including OS/2 bitmaps.</summary>
     Bmp,
 
-    /// <summary>Windows icon (ICO). Recognised, not decoded.</summary>
+    /// <summary>Windows icon (ICO).</summary>
     Ico,
 
     /// <summary>HEIF (<c>.heic</c> / <c>.heif</c>), usually HEVC-coded. Recognised, not decoded.</summary>
@@ -59,4 +59,7 @@ public enum ImageFormat
 
     /// <summary>QOI ("Quite OK Image"). Recognised, not decoded.</summary>
     Qoi,
+
+    /// <summary>Windows cursor (CUR): an icon whose images carry a hotspot.</summary>
+    Cur,
 }

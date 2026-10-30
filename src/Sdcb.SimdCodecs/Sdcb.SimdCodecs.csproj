@@ -11,8 +11,8 @@
     <PackageId>Sdcb.SimdCodecs</PackageId>
     <Product>Sdcb.SimdCodecs</Product>
     <Authors>sdcb</Authors>
-    <Description>Image-codec facade over the Sdcb.SimdCodecs family: sniff a byte stream's format by its magic-byte signature and dispatch to the matching decoder (PNG, JPEG, TIFF, JBIG2, JPEG 2000, WebP, GIF), returning a codec-neutral IDecodedImage (fidelity tier: native bit depth + ColorEncoding colour signalling, with a ToFloats() RGBA float32 view) or decoding zero-copy into a caller-provided 8-bit RGBA buffer (display tier, integer-sample formats). AOT-compatible.</Description>
-    <PackageTags>image codec facade decoder sniff dispatch png jpeg tiff jbig2 jpeg2000 jp2 j2k webp hdr aot</PackageTags>
+    <Description>Image-codec facade over the Sdcb.SimdCodecs family: sniff a byte stream's format by its magic-byte signature and dispatch to the matching decoder (PNG, JPEG, TIFF, JBIG2, JPEG 2000, WebP, GIF, BMP, ICO, CUR), returning a codec-neutral IDecodedImage (fidelity tier: native bit depth + ColorEncoding colour signalling, with a ToFloats() RGBA float32 view) or decoding zero-copy into a caller-provided 8-bit RGBA buffer (display tier, integer-sample formats). AOT-compatible.</Description>
+    <PackageTags>image codec facade decoder sniff dispatch png jpeg tiff jbig2 jpeg2000 jp2 j2k webp gif bmp ico cur hdr aot</PackageTags>
     <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
@@ -40,6 +40,7 @@
     <ProjectReference Include="..\Sdcb.SimdCodecs.Webp\Sdcb.SimdCodecs.Webp.csproj" />
     <ProjectReference Include="..\Sdcb.SimdCodecs.Gif\Sdcb.SimdCodecs.Gif.csproj" />
     <ProjectReference Include="..\Sdcb.SimdCodecs.Bmp\Sdcb.SimdCodecs.Bmp.csproj" />
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Ico\Sdcb.SimdCodecs.Ico.csproj" />
   </ItemGroup>
 
 </Project>

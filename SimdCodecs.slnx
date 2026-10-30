@@ -6,6 +6,7 @@
     <Project Path="src/Sdcb.SimdCodecs/Sdcb.SimdCodecs.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Exif/Sdcb.SimdCodecs.Exif.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Gif/Sdcb.SimdCodecs.Gif.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Ico/Sdcb.SimdCodecs.Ico.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Jbig2/Sdcb.SimdCodecs.Jbig2.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Jpeg/Sdcb.SimdCodecs.Jpeg.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Jpeg.GainMap/Sdcb.SimdCodecs.Jpeg.GainMap.csproj" />

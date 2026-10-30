@@ -39,7 +39,7 @@ public readonly record struct ImageInfo(int Width, int Height, int Channels, Sam
         get => (ImageFormat)_format;
         init
         {
-            if (value is < ImageFormat.Unknown or > ImageFormat.Qoi)
+            if (value is < ImageFormat.Unknown or > ImageFormat.Cur)
                 throw new ArgumentOutOfRangeException(nameof(value), value, "Not a defined ImageFormat.");
             _format = (byte)value;
         }

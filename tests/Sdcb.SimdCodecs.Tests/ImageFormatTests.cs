@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Bmp;
 using Sdcb.SimdCodecs.Gif;
+using Sdcb.SimdCodecs.Ico;
 using Sdcb.SimdCodecs.Jpeg;
 using Sdcb.SimdCodecs.Png;
 using Sdcb.SimdCodecs.Tiff;
@@ -36,6 +37,8 @@ public sealed class ImageFormatTests
         { "webp-anim", ImageFormat.Webp },
         { "gif", ImageFormat.Gif },
         { "bmp", ImageFormat.Bmp },
+        { "ico", ImageFormat.Ico },
+        { "cur", ImageFormat.Cur },
     };
 
     private static byte[] Sample(string kind) => kind switch
@@ -51,6 +54,8 @@ public sealed class ImageFormatTests
         "webp-anim" => Fixture("webp", "anim-img2webp-mixed.webp"),
         "gif" => GifEncoder.Encode(Rgb, 8, 6, 3),
         "bmp" => BmpEncoder.Encode(Rgb, 8, 6, 3),
+        "ico" => IcoEncoder.Encode([new IcoFrame(Rgb, 8, 6, ImagePixelFormat.Rgb24), new IcoFrame(Rgb, 4, 4, ImagePixelFormat.Rgb24)]),
+        "cur" => IcoEncoder.EncodeCursor([new IcoFrame(Rgb, 8, 6, ImagePixelFormat.Rgb24, HotspotX: 3, HotspotY: 2)]),
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
@@ -88,7 +93,6 @@ public sealed class ImageFormatTests
 
     public static TheoryData<byte[], ImageFormat> Recognised => new()
     {
-        { [0, 0, 1, 0, 1, 0], ImageFormat.Ico },
         { Ftyp("heic", "mif1", "heic"), ImageFormat.Heif },
         { Ftyp("mif1", "mif1", "miaf"), ImageFormat.Heif },
         { Ftyp("avif", "mif1", "miaf"), ImageFormat.Avif },
@@ -128,7 +132,7 @@ public sealed class ImageFormatTests
     {
         ImageFormat[] decodable =
             [ImageFormat.Png, ImageFormat.Jpeg, ImageFormat.Tiff, ImageFormat.Jbig2, ImageFormat.Jpeg2000, ImageFormat.Webp, ImageFormat.Gif,
-             ImageFormat.Bmp];
+             ImageFormat.Bmp, ImageFormat.Ico, ImageFormat.Cur];
         foreach (var format in Enum.GetValues<ImageFormat>())
             SimdCodecs.IsDecodable(format).ShouldBe(decodable.Contains(format), format.ToString());
     }
