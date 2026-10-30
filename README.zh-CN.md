@@ -227,6 +227,8 @@ MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BM
 | `Sdcb.SimdCodecs.Gif` | `decode`、`encode` |
 | `Sdcb.SimdCodecs.Bmp` | `bmp`（逐一写出各种布局，再读回比对） |
 | `Sdcb.SimdCodecs.Ico` | `icons`（写出并读回一个多尺寸图标和一个光标） |
+| `Sdcb.SimdCodecs.Qoi` | `qoi`（QOI 与 PNG 的体积和速度对比，解码进带行填充的 BGRA 缓冲区） |
+| `Sdcb.SimdCodecs.Pnm` | `netpbm`（P1–P7 的 ASCII 和二进制、手写 PPM、16 位 PGM、PFM） |
 
 样例图片从 `https://cv-public.sdcb.ai/simdcodecs/samples/v1/` 下载，它们的生成方式和来源见
 [tools/sample-assets](tools/sample-assets/README.md)。

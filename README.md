@@ -234,6 +234,8 @@ Each package ships runnable samples in `linqpad-samples/`, which LINQPad lists i
 | `Sdcb.SimdCodecs.Gif` | `decode`, `encode` |
 | `Sdcb.SimdCodecs.Bmp` | `bmp` (every layout written, read back and compared) |
 | `Sdcb.SimdCodecs.Ico` | `icons` (a multi-size icon and a cursor, written and read back) |
+| `Sdcb.SimdCodecs.Qoi` | `qoi` (QOI against PNG on size and speed, decoding into a padded BGRA buffer) |
+| `Sdcb.SimdCodecs.Pnm` | `netpbm` (P1–P7 plain and raw, a hand-written PPM, 16-bit PGM, PFM) |
 
 They download their images from `https://cv-public.sdcb.ai/simdcodecs/samples/v1/`; how those were
 made and where they come from is in [tools/sample-assets](tools/sample-assets/README.md).
