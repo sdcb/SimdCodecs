@@ -9,10 +9,15 @@
     <!-- Not a shipped package: this project exists to measure the ones that are. -->
     <IsPackable>false</IsPackable>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <!-- ImageSharp advisories (NU190x) concern hostile input; this tool only reads the images it
+         generates itself and is never shipped. -->
+    <NoWarn>$(NoWarn);NU1901;NU1902;NU1903;NU1904</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
+    <!-- Black-box encode competitor and input loader only. Never read or decompile its source (see AGENTS.md). -->
+    <PackageReference Include="SixLabors.ImageSharp" />
   </ItemGroup>
 
   <ItemGroup>

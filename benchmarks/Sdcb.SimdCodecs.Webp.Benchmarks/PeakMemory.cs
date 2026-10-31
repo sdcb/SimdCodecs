@@ -113,7 +113,7 @@ internal static class PeakMemory
     private static extern nint GetCurrentProcess();
 
     /// <summary>Current resident set: GetProcessMemoryInfo on Windows, /proc/self/statm elsewhere.</summary>
-    private static long CurrentWorkingSet()
+    internal static long CurrentWorkingSet()
     {
         if (OperatingSystem.IsWindows())
         {
@@ -169,7 +169,7 @@ internal static class PeakMemory
         return 0;
     }
 
-    private static long Measure(Action decode, out (long Baseline, long Peak) result)
+    internal static long Measure(Action decode, out (long Baseline, long Peak) result)
     {
         long baseline = CurrentWorkingSet();
 

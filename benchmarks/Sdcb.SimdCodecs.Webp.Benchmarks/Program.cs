@@ -13,7 +13,7 @@ using Sdcb.SimdCodecs.Webp;
 using Sdcb.SimdCodecs.Webp.Benchmarks;
 
 const string Usage = """
-    Sdcb.SimdCodecs WebP decode benchmark. Run from the repository root with
+    Sdcb.SimdCodecs WebP decode and encode benchmark. Run from the repository root with
     dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- <command>:
 
       --filter <pattern> [BDN args]       BenchmarkDotNet switcher (WebpDecodeBenchmarks, WebpAnimationDecodeBenchmarks)
@@ -25,6 +25,10 @@ const string Usage = """
       peakmem [--inputs RE]               peak working set per decode, one fresh process each (current, baseline, libwebp)
       corpus [path-to-cwebp]              encode the synthetic verification corpus into .cache/corpus
       verify                              decode the corpus and benchmark inputs with this decoder and libwebp; compare bytes
+      encode [--mode lossless|lossy|all] [--reps N] [--max-dim N] [--images TEXT] [--cwebp PATH] [--gate]
+                                          encode speed, size and accuracy vs libwebp (in process), cwebp levels and ImageSharp
+      encode-peakmem [--mode lossless|lossy] [--max-dim N] [--images TEXT]
+                                          peak working set and managed allocations per encode, one fresh process each
     """;
 
 Environment.SetEnvironmentVariable(BenchPaths.RootVariable, BenchPaths.Root);
@@ -64,6 +68,13 @@ switch (command)
         return 0;
     case "verify":
         return Corpus.Verify();
+    case "encode":
+        return EncodeBenchmark.Run(Opt("--mode") ?? "lossless", int.TryParse(Opt("--reps"), out int reps) ? reps : 5,
+            int.TryParse(Opt("--max-dim"), out int maxDim) ? maxDim : 1024, Opt("--images"), Opt("--cwebp"), args.Contains("--gate"));
+    case "encode-peakmem":
+        return EncodePeakMemory.Run(Opt("--mode") ?? "lossless", int.TryParse(Opt("--max-dim"), out int peakDim) ? peakDim : 1024, Opt("--images"));
+    case "encode-peakmem-child":
+        return EncodePeakMemory.Child(args[1], args[2], args[3], int.Parse(args[4], System.Globalization.CultureInfo.InvariantCulture));
     case "help":
         Console.WriteLine(Usage);
         return 0;

@@ -165,6 +165,55 @@ internal static class LibWebp
         }
     }
 
+    /// <summary>The encoder's version as "major.minor.revision" (<c>WebPGetEncoderVersion</c>).</summary>
+    public static string EncoderVersion()
+    {
+        int v = WebPGetEncoderVersionNative();
+        return $"{(v >> 16) & 0xFF}.{(v >> 8) & 0xFF}.{v & 0xFF}";
+    }
+
+    /// <summary>Simple-API lossless encode (<c>WebPEncodeLosslessRGBA</c>, library defaults).</summary>
+    public static unsafe byte[] EncodeLosslessRgba(ReadOnlySpan<byte> rgba, int width, int height)
+    {
+        fixed (byte* source = rgba)
+        {
+            byte* output;
+            nuint size = WebPEncodeLosslessRgbaNative(source, width, height, checked(width * 4), &output);
+            return TakeOutput(output, size);
+        }
+    }
+
+    /// <summary>Simple-API lossy encode (<c>WebPEncodeRGBA</c>, library defaults at <paramref name="quality"/>).</summary>
+    public static unsafe byte[] EncodeRgba(ReadOnlySpan<byte> rgba, int width, int height, float quality)
+    {
+        fixed (byte* source = rgba)
+        {
+            byte* output;
+            nuint size = WebPEncodeRgbaNative(source, width, height, checked(width * 4), quality, &output);
+            return TakeOutput(output, size);
+        }
+    }
+
+    private static unsafe byte[] TakeOutput(byte* output, nuint size)
+    {
+        try
+        {
+            if (size == 0 || output == null)
+            {
+                throw new InvalidOperationException("libwebp failed to encode the benchmark input.");
+            }
+
+            return new ReadOnlySpan<byte>(output, checked((int)size)).ToArray();
+        }
+        finally
+        {
+            if (output != null)
+            {
+                WebPFreeNative(output);
+            }
+        }
+    }
+
     // LIBWEBP_PATH wins; otherwise each platform's usual shared-library names are tried. The official
     // Windows release archive ships only a static library, so on Windows LIBWEBP_PATH normally has to
     // point at a webp DLL (vcpkg's `libwebp.dll`, for example).
@@ -213,6 +262,18 @@ internal static class LibWebp
         nuint dataSize,
         out int width,
         out int height);
+
+    [DllImport(ImportName, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "WebPGetEncoderVersion")]
+    private static extern int WebPGetEncoderVersionNative();
+
+    [DllImport(ImportName, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "WebPEncodeLosslessRGBA")]
+    private static extern unsafe nuint WebPEncodeLosslessRgbaNative(byte* rgba, int width, int height, int stride, byte** output);
+
+    [DllImport(ImportName, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "WebPEncodeRGBA")]
+    private static extern unsafe nuint WebPEncodeRgbaNative(byte* rgba, int width, int height, int stride, float quality, byte** output);
+
+    [DllImport(ImportName, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "WebPFree")]
+    private static extern unsafe void WebPFreeNative(void* pointer);
 
     [DllImport(ImportName, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "WebPDecodeRGBAInto")]
     private static extern unsafe byte* WebPDecodeRgbaIntoNative(

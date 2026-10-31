@@ -1,7 +1,8 @@
-# WebP decode benchmark (`Sdcb.SimdCodecs.Webp.Benchmarks`)
+# WebP benchmark (`Sdcb.SimdCodecs.Webp.Benchmarks`)
 
 Whole-image WebP decode to RGBA with BenchmarkDotNet (`[MemoryDiagnoser]`), against libwebp as a
-black box. Run it by path from the repository root. Recorded results are in [`optimization/`](optimization/).
+black box, and encode speed / size / accuracy / memory (see [Encoder](#encoder-encode)). Run it by
+path from the repository root. Recorded results are in [`optimization/`](optimization/).
 
 | Benchmark | Inputs | How it is called |
 |---|---|---|
@@ -86,6 +87,54 @@ dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- ve
 the official `cwebp` across 20 option sets into `.cache/corpus/`; `verify` decodes every file there plus
 the benchmark inputs with this decoder and with libwebp and compares the bytes.
 
+## Encoder (`encode`)
+
+```bash
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- encode [--mode lossless|lossy|all] [--reps 5] [--max-dim 1024] [--images TEXT] [--cwebp PATH] [--gate]
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- encode-peakmem [--mode lossless|lossy] [--max-dim 1024] [--images TEXT]
+```
+
+**Inputs.** The ten JPEG benchmark corpus masters (CC0 / Public Domain photographs; fetch them with
+that project's `scripts/fetch-corpus.sh` and `prepare`), box-downscaled to `--max-dim` on the long
+side, plus synthetic, deterministic content: `photo-alpha` (the first master with a soft vignette into
+full transparency and a hard cut-out), `screen` / `screen-alpha` (flat UI panels, glyph-like text, one
+gradient) and `palette` (a 12-colour chart). Without the masters only the synthetic three run.
+`--images` keeps the inputs whose name contains the text.
+
+**Contestants**, single-threaded, interleaved image by image:
+
+| name | what | timed as |
+|---|---|---|
+| `libwebp` / `libwebp qQ` | the SIMD libwebp shared library (below), simple API: `WebPEncodeLosslessRGBA` / `WebPEncodeRGBA` with the library defaults; **every ratio is against it** | in process, `Stopwatch` around the call |
+| `cwebp -z N` (0, 3, 6, 9) / `cwebp -q Q -m M` (0, 4, 6) | the official 1.6.0 release binary, for the effort levels the simple API cannot select | cwebp's own `-v` "Time to encode picture" (millisecond resolution; excludes process start and reading the input) |
+| `ImageSharp` | the managed competitor (`WebpEncoder`, defaults) | in process |
+
+The simple API's documented counterpart for choosing effort is the advanced API (`WebPConfig`,
+`WebPPicture`), whose full layout the published documentation does not give, so it is not used:
+interop comes from the documentation only (see [`AGENTS.md`](../../AGENTS.md)).
+
+**Correctness before timing.** Every output is decoded by libwebp (not by our decoder) first.
+Lossless output must reproduce every alpha value and the RGB of every visible pixel; the `lossless`
+column says `exact` when the RGB of fully transparent pixels is kept too and `visible` when it was
+rewritten (libwebp's default, "exact" off). A contestant that gets a pixel wrong is reported as
+`WRONG` and not timed, and `--gate` then exits 1. Lossy output is scored on the opaque inputs against
+the source: PSNR on luma and RGB, and SSIM on luma (8×8 windows, stride 4).
+
+Timing is the median of `--reps` encodes per image, after the in-process contestants have warmed up
+for 1.5 s. Each mode prints a summary (MB, bpp, size and time relative to `libwebp`, MP/s, accuracy)
+and the bytes of every input. Before the modes, a **SIMD check** encodes the first input with the
+in-process library, `cwebp` and `cwebp -noasm` at the same settings: the library must land near
+`cwebp`, not near `-noasm`; for lossy q75 the two also produce the same bytes. The report is written
+to `.cache/work/encode-<mode>.md`.
+
+`encode-peakmem` measures, in one fresh process per encode, the peak working-set rise of the first
+and of a second (steady) full encode after a warm-up on a 64×64 crop, plus the managed bytes allocated
+by the first one, for the in-process contestants; the input is resident before the baseline.
+
+`cwebp` is found through `--cwebp`, `CWEBP`, the official release archive unpacked under
+`.cache/release/` (`libwebp-1.6.0-windows-x64.zip` from the WebP downloads page), or `PATH`. The
+Windows release reads everything but WebP through WIC, so its input is written as an RGBA PNG.
+
 ## libwebp
 
 The comparison needs a libwebp shared library. It is looked up as `libwebp.dll` / `webp.dll` on
@@ -103,7 +152,8 @@ library you benchmark lands near the first number, not the second. A build that 
 (`zig cc` does by default) can also come out faster than the generic x86-64 library a distribution ships,
 so build the reference the way a distribution would.
 
-[`optimization/build-libwebp.sh`](optimization/build-libwebp.sh) does that: it downloads the official 1.6.0
+[`optimization/build-libwebp.sh`](optimization/build-libwebp.sh) does that (the library includes the
+encoder): it downloads the official 1.6.0
 tarball (SHA-256 pinned), compiles it with `zig cc` (or `CC=clang` / `gcc`) as generic x86-64 with
 SSE2/SSE4.1 dispatch, and writes `.cache/libwebp.{dll,so,dylib}`; set `LIBWEBP_PATH` to the path it prints.
 
@@ -114,4 +164,6 @@ SSE2/SSE4.1 dispatch, and writes `.cache/libwebp.{dll,so,dylib}`; set `LIBWEBP_P
 the libwebp build script, and one file per optimisation milestone: tooling (m0), lossy (m1), ALPH and
 more lossy (m2), lossless (m3) and the final state with the opt-in multithreaded decode
 ([`m4-final-2026-10-25-amd-ryzen-7-5800x.md`](optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md)).
+Encoding starts from [`encode-baseline-2026-11-01-amd-ryzen-7-5800x.md`](optimization/encode-baseline-2026-11-01-amd-ryzen-7-5800x.md):
+libwebp, cwebp's effort levels and ImageSharp, before this repository had an encoder.
 Put each new recording there too.

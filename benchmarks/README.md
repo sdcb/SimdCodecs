@@ -11,7 +11,7 @@ repository root. Corpora, inputs and competitor binaries live in each project's 
 | [`Sdcb.SimdCodecs.Jpeg.Benchmarks`](Sdcb.SimdCodecs.Jpeg.Benchmarks/) | JPEG decode speed, memory and accuracy, a same-process A/B against the previous commit, and encode speed / size / quality | libjpeg-turbo, ImageSharp | [README](Sdcb.SimdCodecs.Jpeg.Benchmarks/README.md), [recorded results](Sdcb.SimdCodecs.Jpeg.Benchmarks/results/) |
 | [`Sdcb.SimdCodecs.Jpeg2000.Benchmarks`](Sdcb.SimdCodecs.Jpeg2000.Benchmarks/) | JPEG 2000 decode speed, memory and PSNR accuracy vs libopenjp2 | libopenjp2 2.5.4 | [README](Sdcb.SimdCodecs.Jpeg2000.Benchmarks/README.md), [recorded results](Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/) |
 | [`Sdcb.SimdCodecs.Png.Benchmarks`](Sdcb.SimdCodecs.Png.Benchmarks/) | PNG decode and encode speed (every colour type × bit depth × interlace; every layout × compression level), encoded size, a same-process A/B against the previous commit | ImageSharp, libpng | [README](Sdcb.SimdCodecs.Png.Benchmarks/README.md), [recorded results](Sdcb.SimdCodecs.Png.Benchmarks/results/) |
-| [`Sdcb.SimdCodecs.Webp.Benchmarks`](Sdcb.SimdCodecs.Webp.Benchmarks/) | WebP decode speed and allocations | libwebp | [README](Sdcb.SimdCodecs.Webp.Benchmarks/README.md) |
+| [`Sdcb.SimdCodecs.Webp.Benchmarks`](Sdcb.SimdCodecs.Webp.Benchmarks/) | WebP decode speed, allocations and peak memory; encode speed, size, lossless exactness / lossy PSNR and SSIM, peak memory | libwebp (SIMD build), cwebp levels, ImageSharp (encode) | [README](Sdcb.SimdCodecs.Webp.Benchmarks/README.md) |
 
 ## Rules that apply to every benchmark
 
