@@ -19,6 +19,7 @@ namespace Sdcb.SimdCodecs.Webp.Benchmarks;
 /// levels the simple API cannot select. Its time is the one it reports itself (<c>-v</c>, "Time to
 /// encode picture"), so process start-up and reading the input are not counted.</item>
 /// <item><c>ImageSharp</c>: the managed competitor.</item>
+/// <item><c>ours</c> (lossless): <c>WebpEncoder.EncodeLossless</c> at effort 0, 3, 6 (the default) and 9.</item>
 /// </list>
 /// Every output is decoded by libwebp (a black box, not our decoder) before anything is timed:
 /// lossless output must reproduce every visible pixel and every alpha value (libwebp's default
@@ -44,8 +45,13 @@ internal static class EncodeBenchmark
         public bool Failed;
     }
 
-    public static int Run(string mode, int reps, int maxDim, string? filter, string? cwebpPath, bool gate)
+    public static int Run(string mode, int reps, int maxDim, string? filter, string? cwebpPath, bool gate, int[]? efforts, bool noCwebp)
     {
+        if (efforts is not null)
+        {
+            OurEfforts = efforts;
+        }
+
         var sb = new StringBuilder();
         void Line(string s = "")
         {
@@ -54,7 +60,7 @@ internal static class EncodeBenchmark
         }
 
         Line(MachineInfo.Describe().TrimEnd());
-        string? cwebp = Cwebp.Find(cwebpPath);
+        string? cwebp = noCwebp ? null : Cwebp.Find(cwebpPath);
         Line($"- libwebp encoder version: {LibWebp.EncoderVersion()}; cwebp: {(cwebp is null ? "not found (set CWEBP or --cwebp)" : $"{Cwebp.Version(cwebp)} ({cwebp})")}");
         List<EncodeImage> images = EncodeCorpus.Load(maxDim, filter);
         Line($"- inputs: {images.Count} images, {images.Sum(i => i.Pixels) / 1e6:F2} MP in all, max dimension {maxDim}; median of {reps} encodes");
@@ -68,7 +74,7 @@ internal static class EncodeBenchmark
 
         if (cwebp is not null)
         {
-            Line();
+            Line("");
             Line(SimdCheck(images[0], cwebp, reps));
         }
 
@@ -112,8 +118,22 @@ internal static class EncodeBenchmark
         }
 
         list.Add(new("ImageSharp", img => Time(() => ImageSharpEncode(img, new IsWebpEncoder { FileFormat = IsWebpFileFormat.Lossless })), InProcess: true));
+        foreach (int effort in OurEfforts)
+        {
+            list.Add(new(OursName(effort), img => Time(() => OursLossless(img, effort)), InProcess: true));
+        }
+
         return list;
     }
+
+    /// <summary>Our efforts in the lossless table; the default (6) is the one the gate holds to libwebp.</summary>
+    internal static int[] OurEfforts = [0, 3, 6, 9];
+
+    internal static string OursName(int effort) => effort == 6 ? "ours" : $"ours -e {effort}";
+
+    internal static byte[] OursLossless(EncodeImage img, int effort) =>
+        WebpEncoder.EncodeLossless(img.Rgba, img.Width, img.Height, Sdcb.SimdCodecs.Abstractions.ImagePixelFormat.Rgba32,
+            new WebpLosslessEncodeOptions { Effort = effort });
 
     internal static List<Contestant> LossyContestants(string? cwebp, int quality)
     {
@@ -273,7 +293,18 @@ internal static class EncodeBenchmark
                 perImage.TryGetValue((image.Name, c.Name), out long b) ? b.ToString(CultureInfo.InvariantCulture) : "—")) + " |");
         }
 
-        return tallies.Values.All(t => !t.Failed);
+        bool ok = tallies.Values.All(t => !t.Failed);
+        if (lossless && tallies.TryGetValue("ours", out Tally? ours) && ours.Images > 0)
+        {
+            // The lossless contract: every pixel right (above), and no bigger than libwebp's default.
+            bool sizeOk = ours.Bytes <= reference.Bytes;
+            line("");
+            line(string.Create(CultureInfo.InvariantCulture,
+                $"[gate] ours {ours.Bytes} bytes vs libwebp {reference.Bytes} ({(double)ours.Bytes / reference.Bytes:F4}x): {(sizeOk ? "ok" : "LARGER")}"));
+            ok &= sizeOk;
+        }
+
+        return ok;
     }
 
     private static byte[] DecodeWithLibwebp(byte[] webp, EncodeImage image)
@@ -592,13 +623,14 @@ internal static class EncodePeakMemory
         return 0;
     }
 
-    private static string[] Contestants(string mode) => ["libwebp", "ImageSharp"];
+    private static string[] Contestants(string mode) => mode == "lossless" ? ["libwebp", "ImageSharp", "ours"] : ["libwebp", "ImageSharp"];
 
     private static Func<EncodeImage, byte[]> Encoder(string mode, string contestant) => (mode, contestant) switch
     {
         ("lossless", "libwebp") => img => LibWebp.EncodeLosslessRgba(img.Rgba, img.Width, img.Height),
         ("lossy", "libwebp") => img => LibWebp.EncodeRgba(img.Rgba, img.Width, img.Height, 75),
         ("lossless", "ImageSharp") => img => EncodeBenchmark.ImageSharpEncode(img, new IsWebpEncoder { FileFormat = IsWebpFileFormat.Lossless }),
+        ("lossless", "ours") => img => EncodeBenchmark.OursLossless(img, 6),
         ("lossy", "ImageSharp") => img => EncodeBenchmark.ImageSharpEncode(img, new IsWebpEncoder { FileFormat = IsWebpFileFormat.Lossy, Quality = 75 }),
         _ => throw new ArgumentOutOfRangeException(nameof(contestant), $"{mode} {contestant}"),
     };

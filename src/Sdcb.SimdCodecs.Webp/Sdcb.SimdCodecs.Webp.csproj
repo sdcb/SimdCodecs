@@ -12,8 +12,8 @@
     <PackageId>Sdcb.SimdCodecs.Webp</PackageId>
     <Product>Sdcb.SimdCodecs.Webp</Product>
     <Authors>sdcb</Authors>
-    <Description>Pure-managed WebP decoder for .NET: VP8 lossy, VP8L lossless, ALPH transparency, animation (full-canvas compositing, seek, timing) and ICC/EXIF/XMP metadata. Spec-derived from RFC 6386 / RFC 9649. No encoder. AOT-compatible.</Description>
-    <PackageTags>webp image codec decoder lossy lossless vp8 vp8l alpha animation aot</PackageTags>
+    <Description>Pure-managed WebP decoder and lossless encoder for .NET: VP8 lossy, VP8L lossless, ALPH transparency, animation (full-canvas compositing, seek, timing) and ICC/EXIF/XMP metadata. Spec-derived from RFC 6386 / RFC 9649. Lossless (VP8L) encoder; no lossy encoder. AOT-compatible.</Description>
+    <PackageTags>webp image codec decoder encoder lossy lossless vp8 vp8l alpha animation aot</PackageTags>
     <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>

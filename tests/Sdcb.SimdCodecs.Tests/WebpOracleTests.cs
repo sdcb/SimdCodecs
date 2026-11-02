@@ -277,7 +277,7 @@ public sealed class WebpOracleTests
             $"actual {(difference < actual.Length ? actual[difference] : -1)}.";
     }
 
-    private static byte[] RunDwebp(string dwebp, string input, bool yuv, bool noFancy)
+    internal static byte[] RunDwebp(string dwebp, string input, bool yuv, bool noFancy)
     {
         string output = Path.Combine(
             Path.GetTempPath(),

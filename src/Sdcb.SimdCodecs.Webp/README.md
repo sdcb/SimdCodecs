@@ -1,7 +1,9 @@
 # Sdcb.SimdCodecs.Webp
 
-Pure-managed WebP decoding for .NET 10, derived from RFC 6386 and RFC 9649.
-There is no encoder.
+Pure-managed WebP decoding and lossless encoding for .NET 10, derived from
+RFC 6386 and RFC 9649. `WebpEncoder.EncodeLossless` writes VP8L stills (with
+alpha, effort 0–9); there is no lossy encoder, no animation encoder, and the
+encoder writes no metadata.
 
 Supported input includes VP8 lossy, VP8L lossless, ALPH transparency, and
 animated WebP with full-canvas RGBA frames, random seeking, and frame timing.

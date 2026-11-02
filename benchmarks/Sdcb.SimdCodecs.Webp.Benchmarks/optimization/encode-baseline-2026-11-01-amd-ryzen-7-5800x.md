@@ -23,7 +23,7 @@ libwebp's lossless encoder holds 32 MiB (0.66 MP screen) to 53 MiB (0.59 MP phot
 - Vector128.IsHardwareAccelerated: True, Vector256.IsHardwareAccelerated: True, Vector512.IsHardwareAccelerated: False
 - AVX2: True, AVX-512F: False, BMI2: True
 - libwebp: (default search)
-- libwebp encoder version: 1.6.0; cwebp: 1.6.0 (C:\Users\sdfly\source\repos\SimdCodecs\benchmarks\Sdcb.SimdCodecs.Webp.Benchmarks\.cache\release\libwebp-1.6.0-windows-x64\bin\cwebp.exe)
+- libwebp encoder version: 1.6.0; cwebp: 1.6.0 (.cache\release\libwebp-1.6.0-windows-x64\bin\cwebp.exe)
 - inputs: 14 images, 9.10 MP in all, max dimension 1024; median of 5 encodes
 
 | input | kind | size | MP |

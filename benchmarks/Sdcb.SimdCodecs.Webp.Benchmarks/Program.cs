@@ -25,8 +25,8 @@ const string Usage = """
       peakmem [--inputs RE]               peak working set per decode, one fresh process each (current, baseline, libwebp)
       corpus [path-to-cwebp]              encode the synthetic verification corpus into .cache/corpus
       verify                              decode the corpus and benchmark inputs with this decoder and libwebp; compare bytes
-      encode [--mode lossless|lossy|all] [--reps N] [--max-dim N] [--images TEXT] [--cwebp PATH] [--gate]
-                                          encode speed, size and accuracy vs libwebp (in process), cwebp levels and ImageSharp
+      encode [--mode lossless|lossy|all] [--reps N] [--max-dim N] [--images TEXT] [--cwebp PATH] [--no-cwebp] [--efforts 0,6] [--gate]
+                                          encode speed, size and accuracy: ours vs libwebp (in process), cwebp levels and ImageSharp
       encode-peakmem [--mode lossless|lossy] [--max-dim N] [--images TEXT]
                                           peak working set and managed allocations per encode, one fresh process each
     """;
@@ -70,7 +70,8 @@ switch (command)
         return Corpus.Verify();
     case "encode":
         return EncodeBenchmark.Run(Opt("--mode") ?? "lossless", int.TryParse(Opt("--reps"), out int reps) ? reps : 5,
-            int.TryParse(Opt("--max-dim"), out int maxDim) ? maxDim : 1024, Opt("--images"), Opt("--cwebp"), args.Contains("--gate"));
+            int.TryParse(Opt("--max-dim"), out int maxDim) ? maxDim : 1024, Opt("--images"), Opt("--cwebp"), args.Contains("--gate"),
+            Opt("--efforts") is { } efforts ? efforts.Split(',').Select(int.Parse).ToArray() : null, args.Contains("--no-cwebp"));
     case "encode-peakmem":
         return EncodePeakMemory.Run(Opt("--mode") ?? "lossless", int.TryParse(Opt("--max-dim"), out int peakDim) ? peakDim : 1024, Opt("--images"));
     case "encode-peakmem-child":

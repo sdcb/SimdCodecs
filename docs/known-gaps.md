@@ -17,7 +17,7 @@
 ### 性能调优进度
 
 AGENTS.md 的目标是每个编解码器都达到或超过对应的原生参考库。目前**已调优**的有：JPEG 编码和解码、WebP 解码、
-PNG 编码和解码，各有自己的基准项目。
+PNG 编码和解码，各有自己的基准项目。WebP 无损编码已有基准项目（`encode`），速度快于 libwebp，但体积还没达到 libwebp，见下文 WebP 一节。
 
 BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.Bmp.Benchmarks`；QOI 和 Netpbm（解码和编码）同样已调优，基准项目是 `Sdcb.SimdCodecs.QoiPnm.Benchmarks`。
 
@@ -27,7 +27,7 @@ BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.
 ### 门面与公共接口
 
 - **没有编码器抽象。** 门面只做解码；编码请直接用各格式包（`JpegEncoder`、`PngWriter`、`TiffWriter`、
-  `GifEncoder`、`BmpEncoder`、`IcoEncoder`、`QoiEncoder`、`PnmEncoder`）。这是有意的决定。
+  `GifEncoder`、`BmpEncoder`、`IcoEncoder`、`QoiEncoder`、`PnmEncoder`、`WebpEncoder`）。这是有意的决定。
 - **门面不提供缩放解码。** JPEG 包有 `JpegScale`（1/2、1/4、1/8 的 DCT 缩放），但门面不会走到它；
   JPEG 2000 的分辨率级别缩减（reduce）还没有实现。
 - **输入必须整个在内存里。** 所有入口接收 `ReadOnlySpan<byte>` / `ReadOnlyMemory<byte>`，没有 `Stream`
@@ -97,7 +97,9 @@ BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.
 
 ## WebP
 
-- **没有编码器。**
+- **只有无损（VP8L）编码器**：没有有损（VP8）编码，不编码动画，也不写 ICC / EXIF / XMP（不输出 VP8X 扩展头）。
+- **无损编码体积比 libwebp 大**：AMD Ryzen 7 5800X 上 14 张基准图合计，默认力度比 libwebp 默认大 3.4%，力度 9 大 2.1%；
+  速度为 libwebp 的约 1.55×（4.12 vs 2.65 MP/s），稳态内存峰值增量约 9 MiB（libwebp 约 32 MiB）。
 - **保留的 VP8 色彩空间标志不支持**（规范保留值）。
 - **性能**：在接近照片内容、不带 alpha 的有损文件上与 libwebp 持平（0.87–1.13×），没有全面领先；其他类别更快，
   见 [WebP 基准结果](../benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md)。

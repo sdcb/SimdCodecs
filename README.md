@@ -62,7 +62,7 @@ animation seeking by timestamp, Ultra HDR, and more.
 | Ultra HDR JPEG | ✅ | ✅ | Gain-map read, assemble and HDR reconstruction (Ultra HDR / Adobe) |
 | PNG | ✅ | ✅ | All bit depths (1–16, indexed); text chunks; HDR signalling (cICP, mDCV, cLLI) |
 | TIFF | ✅ | ✅ | Multi-page; 8/16/32-bit integer and float; strips or tiles; reads Deflate, LZW, PackBits, CCITT G3/G4 and single tiles; writes Deflate |
-| WebP | ✅ | — | Lossy, lossless, alpha; animation with seeking; byte-exact with libwebp |
+| WebP | ✅ | ✅ | Lossy, lossless, alpha; animation with seeking; byte-exact with libwebp; encodes lossless (VP8L) stills |
 | GIF | ✅ | ✅ | 87a / 89a: interlacing, transparency, every disposal method; animation with seeking; encodes stills and animations (exact palette, or Wu quantization + dithering) |
 | BMP | ✅ | ✅ | Every Windows and OS/2 variant: core to V5 headers, 1–32 bits, any channel masks, RLE4 / RLE8 / RLE24, OS/2 Huffman 1D, embedded PNG, ICC; SIMD rows into your buffer with no allocation; encodes palettes (exact or quantized), RLE, 555 / 565, 24 / 32-bit |
 | ICO / CUR | ✅ | ✅ | Every image of an icon or cursor, PNG or DIB with its AND mask, hotspots; multi-size encoding |
@@ -136,7 +136,7 @@ All packages ship in lockstep under one version.
 | `Sdcb.SimdCodecs.Jpeg.IccInjector` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jpeg.IccInjector.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jpeg.IccInjector) | Splice an ICC profile into a JPEG |
 | `Sdcb.SimdCodecs.Png` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Png.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Png) | PNG decoder and encoder |
 | `Sdcb.SimdCodecs.Tiff` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Tiff.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Tiff) | TIFF reader and writer |
-| `Sdcb.SimdCodecs.Webp` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Webp.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Webp) | WebP decoder, including animation |
+| `Sdcb.SimdCodecs.Webp` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Webp.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Webp) | WebP decoder, including animation, and lossless encoder |
 | `Sdcb.SimdCodecs.Gif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Gif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Gif) | GIF decoder and encoder, including animation |
 | `Sdcb.SimdCodecs.Bmp` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Bmp.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Bmp) | BMP / DIB decoder and encoder |
 | `Sdcb.SimdCodecs.Ico` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Ico.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Ico) | ICO / CUR decoder and encoder |
@@ -161,7 +161,8 @@ All packages ship in lockstep under one version.
   8-bit), CCITT fax (Group 3 1D/2D, Group 4, Modified Huffman) and the floating-point predictor.
 - **Webp** — RFC 6386 / RFC 9649: VP8 lossy, VP8L lossless, ALPH, animation with seek, ICC / EXIF / XMP.
   The facade's `TryDecode` returns a still or frame 0 of an animation, `TryOpenFrames` every frame;
-  `WebpAnimationDecoder` adds seeking by timestamp and the frame rectangles.
+  `WebpAnimationDecoder` adds seeking by timestamp and the frame rectangles. `WebpEncoder.EncodeLossless`
+  writes VP8L stills with alpha, effort 0–9, to an array or a stream; there is no lossy encoder.
 - **Gif** — GIF89a: global / local colour tables, interlacing, transparency, all disposal methods, NETSCAPE2.0 loop
   count; composited frames with seek. The decisions the spec leaves open are listed in the package README. Encoder:
   stills and animations, exact palettes or Wu quantization with optional Floyd–Steinberg dithering, changed-rectangle
