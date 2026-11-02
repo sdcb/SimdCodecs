@@ -22,6 +22,7 @@ internal static class EncodeAblate
         ("no-cache",          Vp8LAblation.NoCache),
         ("no-backref",        Vp8LAblation.NoBackwardRefs),
         ("no-clustering",     Vp8LAblation.NoClustering),
+        ("no-optimal-parse",  Vp8LAblation.NoOptimalParse),
     ];
 
     public static int Run(string mode, int reps, int maxDim, string? filter)

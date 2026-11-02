@@ -115,8 +115,9 @@ internal static partial class Vp8LEncoder
     // ---------------------------------------------------------------- color transform (Section 4.2)
 
     /// <summary>
-    /// Chooses green-to-red, green-to-blue and red-to-blue multipliers per block, writes the transform
-    /// and applies it in place. Each block starts from the least-squares estimate and keeps the
+    /// Chooses green-to-red, green-to-blue and red-to-blue multipliers per block, and — when the red and
+    /// blue it gives are cheaper than without it, its own multiplier image included — writes the
+    /// transform and applies it in place. Each block starts from the least-squares estimate and keeps the
     /// candidate (estimate, its neighbours, zero, the left and upper blocks' values) whose red and
     /// blue residuals are cheapest.
     /// </summary>
@@ -127,6 +128,8 @@ internal static partial class Vp8LEncoder
         uint[] elements = ArrayPool<uint>.Shared.Rent(bw * bh);
         var red = new ChannelCost();
         var blue = new ChannelCost();
+        var before = new uint[512];
+        var after = new uint[512];
         Span<int> candidates = stackalloc int[8];
         Span<(int G2b, int R2b)> pairs = stackalloc (int, int)[9];
         try
@@ -237,14 +240,54 @@ internal static partial class Vp8LEncoder
                     {
                         for (int x = x0; x < x1; x++)
                         {
+                            uint p = pixels[y * width + x];
+                            int g = (int)(p >> 8), r = (int)(p >> 16);
+                            uint newRed = (uint)(r - Delta(g2r, g)) & 0xFF;
+                            uint newBlue = (uint)((int)p - Delta(g2b, g) - Delta(r2b, r)) & 0xFF;
+                            red.Add((int)newRed);
+                            blue.Add((int)newBlue);
+                            before[(p >> 16) & 0xFF]++;
+                            before[256 + (p & 0xFF)]++;
+                            after[newRed]++;
+                            after[256 + newBlue]++;
+                        }
+                    }
+                }
+            }
+
+            // Keep the transform only if it pays for its multiplier image (priced at a rough 12 bits a
+            // block that is not all zero).
+            int nonZero = 0;
+            for (int t = 0; t < bw * bh; t++)
+            {
+                nonZero += (elements[t] & 0xFFFFFF) != 0 ? 1 : 0;
+            }
+
+            double gain = Entropy.Bits(before.AsSpan(0, 256)) + Entropy.Bits(before.AsSpan(256)) -
+                          Entropy.Bits(after.AsSpan(0, 256)) - Entropy.Bits(after.AsSpan(256));
+            if (gain <= 12.0 * nonZero + 64)
+            {
+                return;
+            }
+
+            for (int by = 0; by < bh; by++)
+            {
+                int y0 = by << bits, y1 = Math.Min(height, y0 + (1 << bits));
+                for (int bx = 0; bx < bw; bx++)
+                {
+                    uint element = elements[by * bw + bx];
+                    int g2r = (sbyte)element, g2b = (sbyte)(element >> 8), r2b = (sbyte)(element >> 16);
+                    int x0 = bx << bits, x1 = Math.Min(width, x0 + (1 << bits));
+                    for (int y = y0; y < y1; y++)
+                    {
+                        for (int x = x0; x < x1; x++)
+                        {
                             int i = y * width + x;
                             uint p = pixels[i];
                             int g = (int)(p >> 8), r = (int)(p >> 16);
                             uint newRed = (uint)(r - Delta(g2r, g)) & 0xFF;
                             uint newBlue = (uint)((int)p - Delta(g2b, g) - Delta(r2b, r)) & 0xFF;
                             pixels[i] = (p & 0xFF00FF00u) | newRed << 16 | newBlue;
-                            red.Add((int)newRed);
-                            blue.Add((int)newBlue);
                         }
                     }
                 }

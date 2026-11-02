@@ -106,23 +106,66 @@ internal static partial class Vp8LEncoder
         var refs = new BackwardRefs(n);
         try
         {
-            refs.Find(pixels, width, config);
-            int cacheBits = ChooseCacheBits(pixels, width, refs, config.MaxCacheBits);
+            bool parse = (config.Ablation & Vp8LAblation.NoBackwardRefs) == 0 && config.ParsePasses > 0 && n > 1;
 
-            int histogramBits = 0;
+            // A cost-based parse follows: its first prices only need the copies' rough statistics, which
+            // runs and copies from above give at a fraction of the hash-chain search.
+            refs.Find(pixels, width, parse ? config with { ChainDepth = 1 } : config);
+            int cacheBits = ChooseCacheBits(pixels, width, refs, 0, config.MaxCacheBits);
+            bool clustered = isMain && config.MaxGroups > 1 && config.HistogramBits > 0;
+            int histogramBits = clustered ? config.HistogramBits : 0;
+            int tileWidth = clustered ? (width + (1 << histogramBits) - 1) >> histogramBits : 1;
             int[]? tileGroups = null;
             int groupCount = 1;
-            if (isMain && config.MaxGroups > 1 && config.HistogramBits > 0)
+            if (clustered)
             {
-                histogramBits = config.HistogramBits;
                 tileGroups = ClusterTiles(pixels, width, height, refs, cacheBits, histogramBits, config.MaxGroups, out groupCount);
-                if (groupCount == 1)
+            }
+
+            if (parse)
+            {
+                // Re-parse under the prices of the previous parse, each pixel priced by the prefix codes
+                // of its own tile group; the cache and the groups are chosen again after.
+                for (int pass = 0; pass < config.ParsePasses; pass++)
                 {
-                    tileGroups = null;
+                    var groupHistograms = new Histogram[groupCount];
+                    for (int g = 0; g < groupCount; g++)
+                    {
+                        groupHistograms[g] = new Histogram(cacheBits);
+                    }
+
+                    Accumulate(pixels, width, refs, cacheBits, histogramBits, tileWidth, tileGroups, groupHistograms);
+                    if (pass == 0)
+                    {
+                        // The greedy parse undercounts literals (its copies took their pixels), which would
+                        // price literals too high; price them as if every pixel were one, and copies by the
+                        // greedy parse's length and distance statistics.
+                        SeedLiterals(pixels, width, cacheBits, histogramBits, tileWidth, tileGroups, groupHistograms);
+                    }
+
+                    var models = new CostModel[groupCount];
+                    for (int g = 0; g < groupCount; g++)
+                    {
+                        models[g] = new CostModel(groupHistograms[g]);
+                    }
+
+                    OptimalParse(pixels, width, cacheBits, models, histogramBits, tileWidth, tileGroups, config, refs);
+                }
+
+                cacheBits = ChooseCacheBits(pixels, width, refs, Math.Max(0, cacheBits - 1), Math.Min(config.MaxCacheBits, cacheBits + 1));
+                if (clustered)
+                {
+                    tileGroups = ClusterTiles(pixels, width, height, refs, cacheBits, histogramBits, config.MaxGroups, out groupCount);
                 }
             }
 
-            int tileWidth = tileGroups is null ? 1 : (width + (1 << histogramBits) - 1) >> histogramBits;
+            if (groupCount == 1)
+            {
+                tileGroups = null;
+                histogramBits = 0;
+                tileWidth = 1;
+            }
+
             var histograms = new Histogram[groupCount];
             for (int g = 0; g < groupCount; g++)
             {
@@ -305,13 +348,51 @@ internal static partial class Vp8LEncoder
         }
     }
 
-    /// <summary>The cache size (0 = none) whose single-histogram entropy is lowest.</summary>
-    private static int ChooseCacheBits(ReadOnlySpan<uint> pixels, int width, BackwardRefs refs, int maxBits)
+    /// <summary>Replaces the literal and cache counts of every group with those of an all-literal parse.</summary>
+    private static void SeedLiterals(ReadOnlySpan<uint> pixels, int width, int cacheBits, int histogramBits, int tileWidth,
+        int[]? tileGroups, Histogram[] histograms)
     {
-        int best = 0;
+        foreach (Histogram g in histograms)
+        {
+            g.Green.AsSpan(0, 256).Clear();
+            g.Green.AsSpan(256 + NumLengthCodes).Clear();
+            g.Red.AsSpan().Clear();
+            g.Blue.AsSpan().Clear();
+            g.Alpha.AsSpan().Clear();
+        }
+
+        uint[]? cache = cacheBits > 0 ? new uint[1 << cacheBits] : null;
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            uint argb = pixels[i];
+            Histogram h = histograms[tileGroups is null ? 0
+                : tileGroups[((i / width) >> histogramBits) * tileWidth + ((i % width) >> histogramBits)]];
+            if (cache is not null)
+            {
+                int key = CacheKey(argb, cacheBits);
+                if (cache[key] == argb)
+                {
+                    h.Green[256 + NumLengthCodes + key]++;
+                    continue;
+                }
+
+                cache[key] = argb;
+            }
+
+            h.Green[(argb >> 8) & 0xFF]++;
+            h.Red[(argb >> 16) & 0xFF]++;
+            h.Blue[argb & 0xFF]++;
+            h.Alpha[argb >> 24]++;
+        }
+    }
+
+    /// <summary>The cache size in [<paramref name="minBits"/>, <paramref name="maxBits"/>] (0 = none) whose single-histogram entropy is lowest.</summary>
+    private static int ChooseCacheBits(ReadOnlySpan<uint> pixels, int width, BackwardRefs refs, int minBits, int maxBits)
+    {
+        int best = minBits;
         double bestBits = double.MaxValue;
         var one = new Histogram[1];
-        for (int bits = 0; bits <= maxBits; bits++)
+        for (int bits = minBits; bits <= maxBits; bits++)
         {
             one[0] = new Histogram(bits);
             Accumulate(pixels, width, refs, bits, 0, 1, null, one);
@@ -691,6 +772,65 @@ internal static partial class Vp8LEncoder
             int h = Hash(i);
             chain[i] = head[h];
             head[h] = i;
+        }
+
+        /// <summary>
+        /// The matches at <paramref name="i"/> for a cost-based parse, in increasing length: distance 1
+        /// and the pixel above first (their distance codes are the cheapest), then the hash chain nearest
+        /// first, each kept only when longer than every one before it. Returns the count.
+        /// </summary>
+        public int Candidates(int i, int max, Span<int> lengths, Span<int> distances)
+        {
+            int count = 0, best = 0;
+            ReadOnlySpan<uint> here = _pixels.Slice(i, max);
+            if (i >= 1)
+            {
+                int run = here.CommonPrefixLength(_pixels.Slice(i - 1, max));
+                if (run > 0)
+                {
+                    lengths[count] = best = run;
+                    distances[count++] = 1;
+                }
+            }
+
+            if (i >= width && best < max)
+            {
+                int up = here.CommonPrefixLength(_pixels.Slice(i - width, max));
+                if (up > best)
+                {
+                    lengths[count] = best = up;
+                    distances[count++] = width;
+                }
+            }
+
+            if (max < 2 || i + 1 >= _pixels.Length)
+            {
+                return count;
+            }
+
+            int candidate = head[Hash(i)];
+            for (int d = 0; d < depth && candidate >= 0 && best < max && count < lengths.Length; d++)
+            {
+                int distance = i - candidate;
+                if (distance > MaxDistance)
+                {
+                    break;
+                }
+
+                if (_pixels[candidate + best] == here[best])
+                {
+                    int length = here.CommonPrefixLength(_pixels.Slice(candidate, max));
+                    if (length > best)
+                    {
+                        lengths[count] = best = length;
+                        distances[count++] = distance;
+                    }
+                }
+
+                candidate = chain[candidate];
+            }
+
+            return count;
         }
 
         /// <summary>The longest match at <paramref name="i"/> (0 if none is worth a copy) and its distance.</summary>

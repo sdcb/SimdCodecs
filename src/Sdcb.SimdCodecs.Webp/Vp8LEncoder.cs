@@ -15,18 +15,30 @@ internal readonly record struct Vp8LEncoderConfig(
     int MaxGroups,
     Vp8LAblation Ablation = Vp8LAblation.None)
 {
-    public static Vp8LEncoderConfig ForEffort(int effort) => effort switch
+    /// <summary>Rounds of cost-based parsing after the greedy match search (0 = greedy only).</summary>
+    public int ParsePasses { get; init; }
+
+    /// <summary>Hash-chain candidates per position in the cost-based parse.</summary>
+    public int ParseChainDepth { get; init; }
+
+    public static Vp8LEncoderConfig ForEffort(int effort) => Base(effort) with
+    {
+        ParsePasses = effort >= 7 ? 2 : effort >= 4 ? 1 : 0,
+        ParseChainDepth = effort switch { <= 4 => 8, 5 => 12, 6 => 16, 7 => 32, 8 => 64, _ => 128 },
+    };
+
+    private static Vp8LEncoderConfig Base(int effort) => effort switch
     {
         <= 0 => new(5, 6, 1, false, 0, 0, 1),
-        1 => new(5, 6, 4, false, 6, 0, 1),
+        1 => new(4, 5, 4, false, 6, 0, 1),
         2 => new(4, 5, 8, true, 10, 6, 16),
-        3 => new(4, 5, 16, true, 10, 5, 32),
-        4 => new(4, 5, 32, true, 10, 5, 64),
-        5 => new(4, 5, 48, true, 10, 4, 96),
-        6 => new(4, 5, 64, true, 10, 4, 128),
-        7 => new(4, 4, 128, true, 10, 4, 160),
-        8 => new(3, 4, 256, true, 10, 3, 200),
-        _ => new(3, 4, 512, true, 10, 3, 256),
+        3 => new(3, 5, 16, true, 10, 5, 32),
+        4 => new(3, 4, 32, true, 10, 5, 64),
+        5 => new(3, 4, 48, true, 10, 4, 96),
+        6 => new(2, 4, 64, true, 10, 4, 128),
+        7 => new(2, 4, 128, true, 10, 4, 160),
+        8 => new(2, 4, 256, true, 10, 3, 200),
+        _ => new(2, 4, 512, true, 10, 3, 256),
     };
 }
 
@@ -42,6 +54,7 @@ internal enum Vp8LAblation
     NoCache = 1 << 4,
     NoBackwardRefs = 1 << 5,
     NoClustering = 1 << 6,
+    NoOptimalParse = 1 << 7,
 }
 
 /// <summary>
@@ -102,20 +115,50 @@ internal static partial class Vp8LEncoder
             config = config with { MaxGroups = 1, HistogramBits = 0 };
         }
 
+        if ((ablation & Vp8LAblation.NoOptimalParse) != 0)
+        {
+            config = config with { ParsePasses = 0 };
+        }
+
         Span<uint> palette = stackalloc uint[256];
         int paletteSize = (ablation & Vp8LAblation.NoPalette) != 0 ? 0 : CollectPalette(argb.AsSpan(0, n), palette);
+        if (paletteSize == 0 || effort < 2)
+        {
+            EncodeBody(argb, width, height, paletteSize > 0 ? palette[..paletteSize] : default, config, writer);
+            return;
+        }
+
+        // Few colours do not make colour indexing the better choice (a dark photo can have fewer than
+        // 256): encode the image both ways and keep the smaller. The palette path leaves argb as it is.
+        using var indexed = new Vp8LBitWriter(n / 4 + 1024);
+        EncodeBody(argb, width, height, palette[..paletteSize], config, indexed);
+        using var direct = new Vp8LBitWriter(n / 2 + 1024);
+        EncodeBody(argb, width, height, default, config, direct);
+        writer.Append(indexed.BitLength <= direct.BitLength ? indexed : direct);
+    }
+
+    /// <summary>
+    /// The transforms and the entropy-coded image, after the header: colour indexing with
+    /// <paramref name="palette"/> when it is not empty, otherwise subtract green, predictor and cross
+    /// colour as they pay. <paramref name="argb"/> may be modified.
+    /// </summary>
+    private static void EncodeBody(uint[] argb, int width, int height, ReadOnlySpan<uint> palette, Vp8LEncoderConfig config,
+        Vp8LBitWriter writer)
+    {
+        int n = width * height;
+        Vp8LAblation ablation = config.Ablation;
         uint[]? owned = null;
         try
         {
             uint[] pixels = argb;
             int codedWidth = width;
-            if (paletteSize > 0)
+            if (!palette.IsEmpty)
             {
-                pixels = owned = ApplyPalette(argb, width, height, palette[..paletteSize], writer, config, out codedWidth);
+                pixels = owned = ApplyPalette(argb, width, height, palette, writer, config, out codedWidth);
             }
             else
             {
-                if ((ablation & Vp8LAblation.NoSubtractGreen) == 0 && SubtractGreenHelps(argb.AsSpan(0, n)))
+                if ((ablation & Vp8LAblation.NoSubtractGreen) == 0 && SubtractGreenHelps(argb.AsSpan(0, n), width))
                 {
                     writer.WriteBits(1, 1);
                     writer.WriteBits(2, 2);
@@ -242,19 +285,32 @@ internal static partial class Vp8LEncoder
 
     // ---------------------------------------------------------------- subtract green
 
-    private static bool SubtractGreenHelps(ReadOnlySpan<uint> argb)
+    /// <summary>
+    /// Whether subtracting green makes the red and blue residuals cheaper. Judged where it matters, after
+    /// prediction: the residuals of the planar predictor L + T − TL, which (being linear) turn the
+    /// green-subtracted residual into the difference of two residuals. Rows are sampled to about 64K
+    /// pixels.
+    /// </summary>
+    private static bool SubtractGreenHelps(ReadOnlySpan<uint> argb, int width)
     {
         Span<uint> red = stackalloc uint[256], blue = stackalloc uint[256], red2 = stackalloc uint[256], blue2 = stackalloc uint[256];
         red.Clear(); blue.Clear(); red2.Clear(); blue2.Clear();
-        int step = Math.Max(1, argb.Length / 65536);
-        for (int i = 0; i < argb.Length; i += step)
+        int height = argb.Length / width;
+        int rowStep = Math.Max(1, argb.Length / 65536 / Math.Max(1, width) + 1);
+        for (int y = 1; y < height; y += rowStep)
         {
-            uint c = argb[i];
-            uint g = (c >> 8) & 0xFF;
-            red[(int)((c >> 16) & 0xFF)]++;
-            blue[(int)(c & 0xFF)]++;
-            red2[(int)(((c >> 16) - g) & 0xFF)]++;
-            blue2[(int)((c - g) & 0xFF)]++;
+            for (int x = 1; x < width; x++)
+            {
+                int i = y * width + x;
+                uint c = argb[i], l = argb[i - 1], t = argb[i - width], tl = argb[i - width - 1];
+                int rr = (int)(((c >> 16) - (l >> 16) - (t >> 16) + (tl >> 16)) & 0xFF);
+                int rg = (int)(((c >> 8) - (l >> 8) - (t >> 8) + (tl >> 8)) & 0xFF);
+                int rb = (int)((c - l - t + tl) & 0xFF);
+                red[rr]++;
+                blue[rb]++;
+                red2[(rr - rg) & 0xFF]++;
+                blue2[(rb - rg) & 0xFF]++;
+            }
         }
 
         return Entropy.Bits(red2) + Entropy.Bits(blue2) < Entropy.Bits(red) + Entropy.Bits(blue);

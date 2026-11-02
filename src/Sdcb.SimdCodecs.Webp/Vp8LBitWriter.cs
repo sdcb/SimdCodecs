@@ -56,6 +56,39 @@ internal sealed class Vp8LBitWriter : IDisposable
         _buffer = larger;
     }
 
+    /// <summary>
+    /// Appends everything <paramref name="other"/> wrote, which started on a byte boundary, at this
+    /// writer's position, which must be on a byte boundary too. Ends <paramref name="other"/>.
+    /// </summary>
+    public void Append(Vp8LBitWriter other)
+    {
+        if ((_count & 7) != 0)
+        {
+            throw new InvalidOperationException("Append needs a byte-aligned position.");
+        }
+
+        while (_count > 0)
+        {
+            if (_length + 1 > _buffer.Length)
+            {
+                Grow(1);
+            }
+
+            _buffer[_length++] = (byte)_bits;
+            _bits >>= 8;
+            _count -= 8;
+        }
+
+        ReadOnlySpan<byte> bytes = other.Finish();
+        if (_length + bytes.Length > _buffer.Length)
+        {
+            Grow(bytes.Length);
+        }
+
+        bytes.CopyTo(_buffer.AsSpan(_length));
+        _length += bytes.Length;
+    }
+
     /// <summary>Pads the last byte with zero bits and returns everything written.</summary>
     public ReadOnlySpan<byte> Finish()
     {

@@ -98,15 +98,18 @@ internal static class EncodeAb
         line("");
 
         var tallies = contestants.ToDictionary(c => c.Name, _ => new AbTally());
+        var perImage = new Dictionary<(string, string), (long Bytes, double Seconds)>();
         foreach (EncodeImage image in images)
         {
-            foreach (var (name, encode, _) in contestants)
+            foreach (EncodeBenchmark.Contestant c in contestants)
             {
+                var (name, encode, _) = (c.Name, c.Encode, c.InProcess);
                 var t = tallies[name];
                 var times = new double[Math.Max(1, reps)];
                 (byte[] webp, times[0]) = encode(image);
                 for (int r = 1; r < times.Length; r++) times[r] = encode(image).Item2;
                 Array.Sort(times);
+                perImage[(image.Name, c.Name)] = (webp.Length, times[times.Length / 2]);
                 t.Bytes += webp.Length;
                 t.Seconds += times[times.Length / 2];
                 t.Pixels += image.Pixels;
@@ -130,6 +133,17 @@ internal static class EncodeAb
             string mbps = string.Create(CultureInfo.InvariantCulture,
                 $"{t.Bytes / 1e6:F3} | {t.Bytes * 8.0 / t.Pixels:F3}");
             line($"| {name} | {mbps} | {vLibSize} | {vLibSpd} | {vBaseSize} | {vBaseSpd} |");
+        }
+
+        line("");
+        line("Bytes (and ms) per input:");
+        line("");
+        line("| input | " + string.Join(" | ", contestants.Select(c => c.Name)) + " |");
+        line("|---|" + string.Concat(contestants.Select(_ => "---:|")));
+        foreach (EncodeImage image in images)
+        {
+            line($"| {image.Name} | " + string.Join(" | ", contestants.Select(c =>
+                string.Create(CultureInfo.InvariantCulture, $"{perImage[(image.Name, c.Name)].Bytes} ({perImage[(image.Name, c.Name)].Seconds * 1000:F0})"))) + " |");
         }
 
         line("");
