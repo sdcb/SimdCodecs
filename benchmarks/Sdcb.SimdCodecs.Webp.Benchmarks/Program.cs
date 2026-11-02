@@ -25,7 +25,7 @@ const string Usage = """
       peakmem [--inputs RE]               peak working set per decode, one fresh process each (current, baseline, libwebp)
       corpus [path-to-cwebp]              encode the synthetic verification corpus into .cache/corpus
       verify                              decode the corpus and benchmark inputs with this decoder and libwebp; compare bytes
-      encode [--mode lossless|lossy|lossy-alpha|anim|all] [--reps N] [--max-dim N] [--images TEXT] [--cwebp PATH] [--no-cwebp] [--efforts 0,6] [--gate]
+      encode [--mode lossless|lossy|all] [--reps N] [--max-dim N] [--images TEXT] [--cwebp PATH] [--no-cwebp] [--efforts 0,6] [--gate]
                                           encode speed, size and accuracy: ours vs libwebp (in process), cwebp levels and ImageSharp
       encode-ab [--mode lossless|lossy|all] [--reps N] [--max-dim N] [--images TEXT] [--cwebp PATH] [--no-cwebp]
                                           encode A/B: current vs baseline (last commit) vs libwebp; ratios to baseline and to libwebp
