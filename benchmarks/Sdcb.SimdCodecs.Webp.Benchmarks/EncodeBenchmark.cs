@@ -732,7 +732,7 @@ internal static class EncodePeakMemory
         return 0;
     }
 
-    private static string[] Contestants(string mode) => mode == "lossless" ? ["libwebp", "ImageSharp", "ours"] : ["libwebp", "ImageSharp"];
+    private static string[] Contestants(string mode) => ["libwebp", "ImageSharp", "ours"];
 
     private static Func<EncodeImage, byte[]> Encoder(string mode, string contestant) => (mode, contestant) switch
     {
@@ -740,6 +740,7 @@ internal static class EncodePeakMemory
         ("lossy", "libwebp") => img => LibWebp.EncodeRgba(img.Rgba, img.Width, img.Height, 75),
         ("lossless", "ImageSharp") => img => EncodeBenchmark.ImageSharpEncode(img, new IsWebpEncoder { FileFormat = IsWebpFileFormat.Lossless }),
         ("lossless", "ours") => img => EncodeBenchmark.OursLossless(img, 6),
+        ("lossy", "ours") => img => EncodeBenchmark.OursLossy(img, 75),
         ("lossy", "ImageSharp") => img => EncodeBenchmark.ImageSharpEncode(img, new IsWebpEncoder { FileFormat = IsWebpFileFormat.Lossy, Quality = 75 }),
         _ => throw new ArgumentOutOfRangeException(nameof(contestant), $"{mode} {contestant}"),
     };
