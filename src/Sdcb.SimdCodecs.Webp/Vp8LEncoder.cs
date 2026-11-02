@@ -55,6 +55,12 @@ internal enum Vp8LAblation
     NoBackwardRefs = 1 << 5,
     NoClustering = 1 << 6,
     NoOptimalParse = 1 << 7,
+
+    /// <summary>Not a stage switch: when the image has a palette, use it without also trying the direct encoding.</summary>
+    PaletteOnly = 1 << 8,
+
+    /// <summary>Not a stage switch: only green varies (an ALPH plane), so searches cost the green channel alone.</summary>
+    GreenOnly = 1 << 9,
 }
 
 /// <summary>
@@ -134,7 +140,7 @@ internal static partial class Vp8LEncoder
 
         Span<uint> palette = stackalloc uint[256];
         int paletteSize = (ablation & Vp8LAblation.NoPalette) != 0 ? 0 : CollectPalette(argb.AsSpan(0, n), palette);
-        if (paletteSize == 0 || effort < 2)
+        if (paletteSize == 0 || effort < 2 || (ablation & Vp8LAblation.PaletteOnly) != 0)
         {
             EncodeBody(argb, width, height, paletteSize > 0 ? palette[..paletteSize] : default, config, writer);
             return;
@@ -396,7 +402,7 @@ internal static partial class Vp8LEncoder
 
     /// <summary>The prediction of mode 0..13 from the neighbours (interior pixels: x &gt; 0 and y &gt; 0).</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint Predict(int mode, uint left, uint top, uint topLeft, uint topRight) => mode switch
+    internal static uint Predict(int mode, uint left, uint top, uint topLeft, uint topRight) => mode switch
     {
         0 => 0xFF000000u,
         1 => left,

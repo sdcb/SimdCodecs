@@ -237,6 +237,8 @@ The high-rate tuning that followed is
 [`encode-m3b-lossy-tuning-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m3b-lossy-tuning-2026-11-02-amd-ryzen-7-5800x.md).
 Lossy with alpha starts at
 [`encode-m4-lossy-alpha-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m4-lossy-alpha-2026-11-02-amd-ryzen-7-5800x.md).
+Its speed-up is
+[`encode-m4b-lossy-alpha-speed-2026-11-03-amd-ryzen-7-5800x.md`](optimization/encode-m4b-lossy-alpha-speed-2026-11-03-amd-ryzen-7-5800x.md).
 Animation starts at
 [`encode-m5-anim-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m5-anim-2026-11-02-amd-ryzen-7-5800x.md).
 Put each new recording there too.

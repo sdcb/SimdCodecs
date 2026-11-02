@@ -71,6 +71,11 @@ internal sealed record Vp8EncoderConfig
     /// <summary>Whether all four alpha filters are tried (otherwise none only); <see cref="AlphaFilter"/> ≥ 0 forces one.</summary>
     public bool AlphaTryFilters { get; init; }
     public int AlphaFilter { get; init; } = -1;
+    /// <summary>Tuning: the alpha plane's lossless stream, 0 the smaller of both, 1 indexed only, 2 direct only.</summary>
+    public int AlphaPath { get; init; }
+
+    /// <summary>Lossless effort (0..9) of the alpha plane's indexed stream (<see cref="AlphaEffort"/> is the direct one's).</summary>
+    public int AlphaPaletteEffort { get; init; } = 3;
 
     /// <summary>Whether the loop filter level is searched by decoding (otherwise taken from the quantizer).</summary>
     public bool FilterSearch { get; init; }

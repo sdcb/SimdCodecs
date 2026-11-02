@@ -19,6 +19,7 @@ internal static partial class Vp8LEncoder
         uint[] modes = ArrayPool<uint>.Shared.Rent(bw * bh);
         var cost = new ResidualCost();
         Span<float> modeCost = stackalloc float[14];
+        bool greenOnly = (config.Ablation & Vp8LAblation.GreenOnly) != 0;
         try
         {
             for (int by = 0; by < bh; by++)
@@ -32,17 +33,24 @@ internal static partial class Vp8LEncoder
                     if (by > 0 || bx > 0)
                     {
                         modeCost.Clear();
-                        for (int y = Math.Max(y0, 1); y < y1; y++)
+                        if (greenOnly)
                         {
-                            int row = y * width;
-                            for (int x = Math.Max(x0, 1); x < x1; x++)
+                            AddGreenModeCosts(argb, width, x0, x1, y0, y1, cost, modeCost);
+                        }
+                        else
+                        {
+                            for (int y = Math.Max(y0, 1); y < y1; y++)
                             {
-                                int i = row + x;
-                                uint c = argb[i], l = argb[i - 1], t = argb[i - width], tl = argb[i - width - 1];
-                                uint tr = x == width - 1 ? argb[row] : argb[i - width + 1];
-                                for (int m = 0; m < 14; m++)
+                                int row = y * width;
+                                for (int x = Math.Max(x0, 1); x < x1; x++)
                                 {
-                                    modeCost[m] += cost.Of(SubPixels(c, Predict(m, l, t, tl, tr)));
+                                    int i = row + x;
+                                    uint c = argb[i], l = argb[i - 1], t = argb[i - width], tl = argb[i - width - 1];
+                                    uint tr = x == width - 1 ? argb[row] : argb[i - width + 1];
+                                    for (int m = 0; m < 14; m++)
+                                    {
+                                        modeCost[m] += cost.Of(SubPixels(c, Predict(m, l, t, tl, tr)));
+                                    }
                                 }
                             }
                         }
@@ -322,8 +330,59 @@ internal static partial class Vp8LEncoder
     /// Bits a residual pixel costs under the residual histograms accumulated so far (one per
     /// channel), refreshed per row of blocks. A prior peaked at zero stands in for the empty start.
     /// </summary>
+    /// <summary>
+    /// The predictor search over one block when only green varies: the other channels are constant, so
+    /// every mode predicts them exactly and their residuals cost the same for all modes; only green is
+    /// predicted and costed. The modes' green values are the format's (Section 4.1) on bytes.
+    /// </summary>
+    private static void AddGreenModeCosts(uint[] argb, int width, int x0, int x1, int y0, int y1, ResidualCost cost, Span<float> modeCost)
+    {
+        ChannelCost green = cost.Green;
+        Span<int> p = stackalloc int[14];
+        for (int y = Math.Max(y0, 1); y < y1; y++)
+        {
+            int row = y * width;
+            for (int x = Math.Max(x0, 1); x < x1; x++)
+            {
+                int i = row + x;
+                int c = (int)(argb[i] >> 8) & 0xFF, l = (int)(argb[i - 1] >> 8) & 0xFF, t = (int)(argb[i - width] >> 8) & 0xFF;
+                int tl = (int)(argb[i - width - 1] >> 8) & 0xFF;
+                int tr = (int)((x == width - 1 ? argb[row] : argb[i - width + 1]) >> 8) & 0xFF;
+                GreenPredictions(l, t, tl, tr, p);
+                for (int m = 0; m < 14; m++)
+                {
+                    modeCost[m] += green.Of((c - p[m]) & 0xFF);
+                }
+            }
+        }
+    }
+
+    /// <summary>The green value each of the 14 modes predicts from these neighbours' green values (Section 4.1).</summary>
+    internal static void GreenPredictions(int l, int t, int tl, int tr, Span<int> p)
+    {
+        int lt = (l + t) >> 1;
+        p[0] = 0;
+        p[1] = l;
+        p[2] = t;
+        p[3] = tr;
+        p[4] = tl;
+        p[5] = (((l + tr) >> 1) + t) >> 1;
+        p[6] = (l + tl) >> 1;
+        p[7] = lt;
+        p[8] = (tl + t) >> 1;
+        p[9] = (t + tr) >> 1;
+        p[10] = (((l + tl) >> 1) + ((t + tr) >> 1)) >> 1;
+        // Select: the neighbour (left or top) nearer to the gradient estimate; with one varying channel
+        // the Manhattan distances reduce to these.
+        p[11] = Math.Abs(t - tl) < Math.Abs(l - tl) ? l : t;
+        p[12] = Math.Clamp(l + t - tl, 0, 255);
+        p[13] = Math.Clamp(lt + (lt - tl) / 2, 0, 255);
+    }
+
     private sealed class ResidualCost
     {
+        public ChannelCost Green => _channels[1];
+
         private readonly ChannelCost[] _channels = [new(), new(), new(), new()];
 
         public void Refresh()

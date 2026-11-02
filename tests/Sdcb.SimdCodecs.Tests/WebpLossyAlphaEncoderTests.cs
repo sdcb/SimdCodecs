@@ -248,6 +248,34 @@ public sealed class WebpLossyAlphaEncoderTests
         }
     }
 
+    /// <summary>
+    /// The alpha plane's predictor search costs green alone: its green predictions must be the green byte of
+    /// the full four-channel predictor for every mode, on planes where only green varies.
+    /// </summary>
+    [Fact]
+    public void Green_only_predictions_are_the_full_predictors_green()
+    {
+        var random = new Random(9);
+        Span<int> green = stackalloc int[14];
+        for (int trial = 0; trial < 200_000; trial++)
+        {
+            int l = random.Next(256), t = random.Next(256), tl = random.Next(256), tr = random.Next(256);
+            if (trial % 4 == 0)
+            {
+                (t, tl) = (l, l); // ties in Select
+            }
+
+            Vp8LEncoder.GreenPredictions(l, t, tl, tr, green);
+            for (int m = 0; m < 14; m++)
+            {
+                uint full = Vp8LEncoder.Predict(m, Word(l), Word(t), Word(tl), Word(tr));
+                ((int)(full >> 8) & 0xFF).ShouldBe(green[m], $"mode {m}: {l} {t} {tl} {tr}");
+            }
+        }
+
+        static uint Word(int g) => 0xFF000000u | (uint)g << 8;
+    }
+
     [Fact]
     public void Reduce_levels_keeps_the_ends_and_the_order()
     {

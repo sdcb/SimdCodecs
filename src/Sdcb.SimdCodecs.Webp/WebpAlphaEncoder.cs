@@ -70,6 +70,7 @@ internal static class WebpAlphaEncoder
         int n = width * height;
         byte[] filtered = ArrayPool<byte>.Shared.Rent(n);
         uint[] words = ArrayPool<uint>.Shared.Rent(n);
+        uint[] scratch = ArrayPool<uint>.Shared.Rent(n); // the lossless encoder may change its input
         try
         {
             byte[]? best = null; // raw (n bytes) unless a compressed stream is smaller
@@ -87,16 +88,20 @@ internal static class WebpAlphaEncoder
                     words[i] = 0xFF000000u | ((uint)filtered[i] << 8);
                 }
 
-                // Only green varies: subtract green and cross colour cannot pay, so they are not searched.
-                using var writer = new Vp8LBitWriter(n / 8 + 1024);
-                Vp8LEncoder.EncodeImageStream(words, width, height, config.AlphaEffort, writer,
-                    Vp8LAblation.NoSubtractGreen | Vp8LAblation.NoCrossColor);
-                ReadOnlySpan<byte> stream = writer.Finish();
-                if (stream.Length < (best?.Length - 1 ?? n))
+                // The plane's values always form a palette, so the lossless stream can be indexed (no
+                // predictor: copies and the colour cache carry it) or direct (predicted); each is encoded
+                // at its own effort and the smaller kept. With 16 values or fewer, indexing packs several
+                // pixels per code and the direct stream is not tried.
+                bool tryIndexed = config.AlphaPath != 2;
+                bool tryDirect = config.AlphaPath != 1 && (config.AlphaPath == 2 || DistinctAtLeast(filtered.AsSpan(0, n), 17));
+                if (tryIndexed)
                 {
-                    best = new byte[1 + stream.Length];
-                    best[0] = (byte)((preprocessing << 4) | (filter << 2) | 1);
-                    stream.CopyTo(best.AsSpan(1));
+                    Keep(Stream(words, scratch, width, height, config.AlphaPaletteEffort, Vp8LAblation.PaletteOnly), filter);
+                }
+
+                if (tryDirect)
+                {
+                    Keep(Stream(words, scratch, width, height, config.AlphaEffort, Vp8LAblation.NoPalette), filter);
                 }
             }
 
@@ -108,12 +113,55 @@ internal static class WebpAlphaEncoder
             }
 
             return best;
+
+            void Keep(byte[] stream, int filter)
+            {
+                if (stream.Length < (best?.Length - 1 ?? n))
+                {
+                    best = new byte[1 + stream.Length];
+                    best[0] = (byte)((preprocessing << 4) | (filter << 2) | 1);
+                    stream.CopyTo(best.AsSpan(1));
+                }
+            }
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(filtered);
             ArrayPool<uint>.Shared.Return(words);
+            ArrayPool<uint>.Shared.Return(scratch);
         }
+    }
+
+    /// <summary>One lossless image stream of the plane in <paramref name="words"/> (left as it is).</summary>
+    private static byte[] Stream(uint[] words, uint[] scratch, int width, int height, int effort, Vp8LAblation path)
+    {
+        int n = width * height;
+        words.AsSpan(0, n).CopyTo(scratch); // the lossless encoder may change its input
+        using var writer = new Vp8LBitWriter(n / 8 + 1024);
+
+        // Only green varies: subtract green and cross colour cannot pay, and searches cost green alone.
+        Vp8LEncoder.EncodeImageStream(scratch, width, height, effort, writer,
+            Vp8LAblation.NoSubtractGreen | Vp8LAblation.NoCrossColor | Vp8LAblation.GreenOnly | path);
+        return writer.Finish().ToArray();
+    }
+
+    private static bool DistinctAtLeast(ReadOnlySpan<byte> values, int count)
+    {
+        Span<bool> seen = stackalloc bool[256];
+        int distinct = 0;
+        foreach (byte v in values)
+        {
+            if (!seen[v])
+            {
+                seen[v] = true;
+                if (++distinct >= count)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>The lossless effort for the alpha plane at a lossy effort.</summary>

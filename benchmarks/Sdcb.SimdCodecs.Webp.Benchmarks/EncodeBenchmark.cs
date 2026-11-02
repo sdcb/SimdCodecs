@@ -126,7 +126,7 @@ internal static class EncodeBenchmark
             {
                 "lossless" => RunMode("lossless", images, LosslessContestants(cwebp), reps, Line),
                 "lossy" => RunLossy(images, cwebp, reps, Line),
-                "lossy-alpha" => RunLossyAlpha(EncodeCorpus.WithAlpha(images), Line),
+                "lossy-alpha" => RunLossyAlpha(EncodeCorpus.WithAlpha(images), reps, Line),
                 "anim" => EncodeAnim.Run(cwebp, reps, filter: null, Line, AnimContestants),
                 _ => throw new ArgumentException($"unknown mode '{m}' (lossless, lossy, lossy-alpha, anim or all)"),
             };
@@ -281,8 +281,14 @@ internal static class EncodeBenchmark
         return ok;
     }
 
-    private static bool RunLossyAlpha(List<EncodeImage> images, Action<string> line)
+    private static bool RunLossyAlpha(List<EncodeImage> images, int reps, Action<string> line)
     {
+        // Speed at q75, for the record (not gated): libwebp's default against ours.
+        RunMode("lossy-alpha q75", images,
+        [
+            new("libwebp q75", img => Time(() => LibWebp.EncodeRgba(img.Rgba, img.Width, img.Height, 75)), InProcess: true),
+            new("ours q75", img => Time(() => OursLossy(img, 75)), InProcess: true),
+        ], reps, line);
         var bd = EncodeRd.Run("lossy-alpha", images, RdContestants(cwebp: null, alpha: true), alpha: true, line);
         bool ok = true;
         if (bd.TryGetValue("ours", out var ours))
