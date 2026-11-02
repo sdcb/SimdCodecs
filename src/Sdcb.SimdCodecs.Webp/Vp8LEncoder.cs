@@ -12,7 +12,8 @@ internal readonly record struct Vp8LEncoderConfig(
     bool Lazy,
     int MaxCacheBits,
     int HistogramBits,
-    int MaxGroups)
+    int MaxGroups,
+    Vp8LAblation Ablation = Vp8LAblation.None)
 {
     public static Vp8LEncoderConfig ForEffort(int effort) => effort switch
     {
@@ -27,6 +28,20 @@ internal readonly record struct Vp8LEncoderConfig(
         8 => new(3, 4, 256, true, 10, 3, 200),
         _ => new(3, 4, 512, true, 10, 3, 256),
     };
+}
+
+/// <summary>Encoder stages the benchmark can switch off, to attribute size and time (never set by the public API).</summary>
+[Flags]
+internal enum Vp8LAblation
+{
+    None = 0,
+    NoPalette = 1 << 0,
+    NoSubtractGreen = 1 << 1,
+    NoPredictor = 1 << 2,
+    NoCrossColor = 1 << 3,
+    NoCache = 1 << 4,
+    NoBackwardRefs = 1 << 5,
+    NoClustering = 1 << 6,
 }
 
 /// <summary>
@@ -44,7 +59,8 @@ internal static partial class Vp8LEncoder
     private const int MaxDistance = (3 << 18) + (1 << 18) - 120; // the largest distance code value is 2^20
 
     /// <summary>Writes the VP8L header (signature, size, alpha hint, version) and the image.</summary>
-    public static void Encode(uint[] argb, int width, int height, bool exact, int effort, Vp8LBitWriter writer)
+    public static void Encode(uint[] argb, int width, int height, bool exact, int effort, Vp8LBitWriter writer,
+        Vp8LAblation ablation = Vp8LAblation.None)
     {
         int n = width * height;
         bool hasAlpha = false;
@@ -75,9 +91,19 @@ internal static partial class Vp8LEncoder
         writer.WriteBits(hasAlpha ? 1u : 0u, 1);
         writer.WriteBits(0, 3);
 
-        Vp8LEncoderConfig config = Vp8LEncoderConfig.ForEffort(effort);
+        Vp8LEncoderConfig config = Vp8LEncoderConfig.ForEffort(effort) with { Ablation = ablation };
+        if ((ablation & Vp8LAblation.NoCache) != 0)
+        {
+            config = config with { MaxCacheBits = 0 };
+        }
+
+        if ((ablation & Vp8LAblation.NoClustering) != 0)
+        {
+            config = config with { MaxGroups = 1, HistogramBits = 0 };
+        }
+
         Span<uint> palette = stackalloc uint[256];
-        int paletteSize = CollectPalette(argb.AsSpan(0, n), palette);
+        int paletteSize = (ablation & Vp8LAblation.NoPalette) != 0 ? 0 : CollectPalette(argb.AsSpan(0, n), palette);
         uint[]? owned = null;
         try
         {
@@ -89,16 +115,23 @@ internal static partial class Vp8LEncoder
             }
             else
             {
-                if (SubtractGreenHelps(argb.AsSpan(0, n)))
+                if ((ablation & Vp8LAblation.NoSubtractGreen) == 0 && SubtractGreenHelps(argb.AsSpan(0, n)))
                 {
                     writer.WriteBits(1, 1);
                     writer.WriteBits(2, 2);
                     SubtractGreen(argb.AsSpan(0, n));
                 }
 
-                owned = ApplyPredictor(argb, width, height, config, writer);
-                pixels = owned;
-                ApplyCrossColor(pixels, width, height, config, writer);
+                if ((ablation & Vp8LAblation.NoPredictor) == 0)
+                {
+                    owned = ApplyPredictor(argb, width, height, config, writer);
+                    pixels = owned;
+                }
+
+                if ((ablation & Vp8LAblation.NoCrossColor) == 0)
+                {
+                    ApplyCrossColor(pixels, width, height, config, writer);
+                }
             }
 
             writer.WriteBits(0, 1); // no more transforms

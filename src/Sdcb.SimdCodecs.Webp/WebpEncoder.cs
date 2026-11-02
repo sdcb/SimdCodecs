@@ -39,9 +39,14 @@ public static class WebpEncoder
     /// <param name="stride">Bytes from one input row to the next; 0 means tightly packed.</param>
     /// <exception cref="ArgumentException">The size or buffer does not fit.</exception>
     public static byte[] EncodeLossless(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
-        WebpLosslessEncodeOptions? options = null, int stride = 0)
+        WebpLosslessEncodeOptions? options = null, int stride = 0) =>
+        EncodeLossless(pixels, width, height, format, options, stride, Vp8LAblation.None);
+
+    /// <summary>The benchmark's entry: <see cref="EncodeLossless(ReadOnlySpan{byte}, int, int, ImagePixelFormat, WebpLosslessEncodeOptions?, int)"/> with stages switched off.</summary>
+    internal static byte[] EncodeLossless(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+        WebpLosslessEncodeOptions? options, int stride, Vp8LAblation ablation)
     {
-        using var writer = EncodeVp8L(pixels, width, height, format, options, stride);
+        using var writer = EncodeVp8L(pixels, width, height, format, options, stride, ablation);
         ReadOnlySpan<byte> vp8l = writer.Finish();
         byte[] file = new byte[ContainerSize(vp8l.Length)];
         WriteContainer(vp8l, file);
@@ -54,7 +59,7 @@ public static class WebpEncoder
         WebpLosslessEncodeOptions? options = null, int stride = 0)
     {
         ArgumentNullException.ThrowIfNull(output);
-        using var writer = EncodeVp8L(pixels, width, height, format, options, stride);
+        using var writer = EncodeVp8L(pixels, width, height, format, options, stride, Vp8LAblation.None);
         ReadOnlySpan<byte> vp8l = writer.Finish();
         byte[] file = ArrayPool<byte>.Shared.Rent(ContainerSize(vp8l.Length));
         try
@@ -70,7 +75,7 @@ public static class WebpEncoder
     }
 
     private static Vp8LBitWriter EncodeVp8L(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
-        WebpLosslessEncodeOptions? options, int stride)
+        WebpLosslessEncodeOptions? options, int stride, Vp8LAblation ablation)
     {
         options ??= new WebpLosslessEncodeOptions();
         if (width is < 1 or > MaximumDimension || height is < 1 or > MaximumDimension)
@@ -96,7 +101,7 @@ public static class WebpEncoder
             var writer = new Vp8LBitWriter(n / 2 + 1024);
             try
             {
-                Vp8LEncoder.Encode(argb, width, height, options.Exact, options.Effort, writer);
+                Vp8LEncoder.Encode(argb, width, height, options.Exact, options.Effort, writer, ablation);
                 return writer;
             }
             catch

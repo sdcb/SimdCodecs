@@ -555,6 +555,16 @@ internal static partial class Vp8LEncoder
         {
             int n = pixels.Length;
             Count = 0;
+            if ((config.Ablation & Vp8LAblation.NoBackwardRefs) != 0)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    AddLiteral(pixels[i]);
+                }
+
+                return;
+            }
+
             if (n < 2 || config.ChainDepth <= 1)
             {
                 FindRuns(pixels, width);

@@ -25,8 +25,12 @@ const string Usage = """
       peakmem [--inputs RE]               peak working set per decode, one fresh process each (current, baseline, libwebp)
       corpus [path-to-cwebp]              encode the synthetic verification corpus into .cache/corpus
       verify                              decode the corpus and benchmark inputs with this decoder and libwebp; compare bytes
-      encode [--mode lossless|lossy|all] [--reps N] [--max-dim N] [--images TEXT] [--cwebp PATH] [--no-cwebp] [--efforts 0,6] [--gate]
+      encode [--mode lossless|lossy|lossy-alpha|anim|all] [--reps N] [--max-dim N] [--images TEXT] [--cwebp PATH] [--no-cwebp] [--efforts 0,6] [--gate]
                                           encode speed, size and accuracy: ours vs libwebp (in process), cwebp levels and ImageSharp
+      encode-ab [--mode lossless|lossy|all] [--reps N] [--max-dim N] [--images TEXT] [--cwebp PATH] [--no-cwebp]
+                                          encode A/B: current vs baseline (last commit) vs libwebp; ratios to baseline and to libwebp
+      ablate [--mode lossless] [--reps N] [--max-dim N] [--images TEXT]
+                                          encode with each stage disabled in turn to attribute size and time
       encode-peakmem [--mode lossless|lossy] [--max-dim N] [--images TEXT]
                                           peak working set and managed allocations per encode, one fresh process each
     """;
@@ -72,6 +76,12 @@ switch (command)
         return EncodeBenchmark.Run(Opt("--mode") ?? "lossless", int.TryParse(Opt("--reps"), out int reps) ? reps : 5,
             int.TryParse(Opt("--max-dim"), out int maxDim) ? maxDim : 1024, Opt("--images"), Opt("--cwebp"), args.Contains("--gate"),
             Opt("--efforts") is { } efforts ? efforts.Split(',').Select(int.Parse).ToArray() : null, args.Contains("--no-cwebp"));
+    case "encode-ab":
+        return EncodeAb.Run(Opt("--mode") ?? "lossless", int.TryParse(Opt("--reps"), out int abReps) ? abReps : 5,
+            int.TryParse(Opt("--max-dim"), out int abDim) ? abDim : 1024, Opt("--images"), Opt("--cwebp"), args.Contains("--no-cwebp"));
+    case "ablate":
+        return EncodeAblate.Run(Opt("--mode") ?? "lossless", int.TryParse(Opt("--reps"), out int aReps) ? aReps : 3,
+            int.TryParse(Opt("--max-dim"), out int aDim) ? aDim : 1024, Opt("--images"));
     case "encode-peakmem":
         return EncodePeakMemory.Run(Opt("--mode") ?? "lossless", int.TryParse(Opt("--max-dim"), out int peakDim) ? peakDim : 1024, Opt("--images"));
     case "encode-peakmem-child":

@@ -68,16 +68,22 @@ internal static unsafe class BaselineDecoder
 
     private static (IntPtr, string) Load()
     {
+        (Assembly asm, string label) = Assembly.Value;
+        Type type = asm.GetType("Sdcb.SimdCodecs.Webp.WebpDecoder", throwOnError: true)!;
+        MethodInfo method = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Single(m => m.Name == "DecodeTo" && m.GetParameters().Length == 3);
+        return (method.MethodHandle.GetFunctionPointer(), label);
+    }
+
+    /// <summary>The built baseline's <c>Sdcb.SimdCodecs.Webp</c>, loaded once into its own context.</summary>
+    internal static readonly Lazy<(Assembly Assembly, string Label)> Assembly = new(() =>
+    {
         string description = Description
             ?? throw new InvalidOperationException("No baseline built. Run the 'baseline [git-ref]' command first.");
         string dir = Path.Combine(Dir, description.Split(' ')[0]);
         var alc = new DirectoryLoadContext(dir);
-        Assembly asm = alc.LoadFromAssemblyName(new AssemblyName("Sdcb.SimdCodecs.Webp"));
-        Type type = asm.GetType("Sdcb.SimdCodecs.Webp.WebpDecoder", throwOnError: true)!;
-        MethodInfo method = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Single(m => m.Name == "DecodeTo" && m.GetParameters().Length == 3);
-        return (method.MethodHandle.GetFunctionPointer(), "baseline " + description);
-    }
+        return (alc.LoadFromAssemblyName(new AssemblyName("Sdcb.SimdCodecs.Webp")), "baseline " + description);
+    });
 
     /// <summary>Builds <paramref name="gitRef"/>'s WebP package into the cache via a temporary git worktree.</summary>
     public static void Build(string gitRef)
@@ -142,5 +148,53 @@ internal static unsafe class BaselineDecoder
             string path = Path.Combine(dir, name.Name + ".dll");
             return File.Exists(path) ? LoadFromAssemblyPath(path) : null;
         }
+    }
+}
+
+/// <summary>
+/// The baseline's public <c>WebpEncoder</c> entry points, found by name, so an encode A/B runs the
+/// last commit's encoder beside the current one in the same process. An entry point the baseline
+/// does not have yet (a feature added since) is reported as missing, not faked.
+/// </summary>
+internal static unsafe class BaselineEncoder
+{
+    /// <summary>
+    /// <c>WebpEncoder.&lt;method&gt;(ReadOnlySpan&lt;byte&gt;, int, int, ImagePixelFormat, &lt;options&gt;?, int stride)</c>
+    /// with an options object whose init properties are set from <paramref name="properties"/>; null when
+    /// the baseline has no such method or option.
+    /// </summary>
+    public static Func<EncodeImage, byte[]>? Find(string method, string optionsType, params (string Name, object Value)[] properties)
+    {
+        if (BaselineDecoder.Description is null)
+        {
+            return null;
+        }
+
+        Assembly asm = BaselineDecoder.Assembly.Value.Assembly;
+        Type? encoder = asm.GetType("Sdcb.SimdCodecs.Webp.WebpEncoder");
+        Type? options = asm.GetType("Sdcb.SimdCodecs.Webp." + optionsType);
+        MethodInfo? m = encoder?.GetMethods(BindingFlags.Public | BindingFlags.Static).FirstOrDefault(x =>
+            x.Name == method && x.ReturnType == typeof(byte[]) && x.GetParameters() is { Length: 6 } p &&
+            p[0].ParameterType == typeof(ReadOnlySpan<byte>) && p[4].ParameterType == options);
+        if (m is null || options is null)
+        {
+            return null;
+        }
+
+        object opts = Activator.CreateInstance(options)!;
+        foreach ((string name, object value) in properties)
+        {
+            PropertyInfo? prop = options.GetProperty(name);
+            if (prop is null)
+            {
+                return null;
+            }
+
+            prop.SetValue(opts, value);
+        }
+
+        // ImagePixelFormat is an int enum in the baseline's own Abstractions; Rgba32 is 0.
+        var fn = (delegate*<ReadOnlySpan<byte>, int, int, int, object, int, byte[]>)m.MethodHandle.GetFunctionPointer();
+        return img => fn(img.Rgba, img.Width, img.Height, 0, opts, 0);
     }
 }
