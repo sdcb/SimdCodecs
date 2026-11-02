@@ -31,11 +31,11 @@ internal static class Vp8Decoder
     private const int CacheLeft = 16;
 
     // Layout of the per-macroblock "above" scratch: each run is preceded by its top-left pixel.
-    private const int AboveY = 4;          // 16 + 4 above-right
-    private const int AboveSubblock = 28;  // 4 + 4, assembled for right-hand 4×4 blocks
-    private const int AboveU = 40;
-    private const int AboveV = 52;
-    private const int AboveLength = 64;
+    internal const int AboveY = 4;          // 16 + 4 above-right
+    internal const int AboveSubblock = 28;  // 4 + 4, assembled for right-hand 4×4 blocks
+    internal const int AboveU = 40;
+    internal const int AboveV = 52;
+    internal const int AboveLength = 64;
 
     public static Vp8Yuv Decode(ReadOnlySpan<byte> frame, int width, int height, bool applyLoopFilter = true)
         => DecodeToPlanes(frame, width, height,
@@ -426,10 +426,11 @@ internal static class Vp8Decoder
 
     /// <summary>
     /// The unfiltered row above macroblock (mbX, mbY) and its top-left pixel: luma with the four
-    /// above-right pixels (taken from the last image column where they fall outside the image),
-    /// chroma without. Frame edges read 127 above and 129 to the left (RFC 6386 §12.2).
+    /// above-right pixels, chroma without. The above-right pixels come from the reconstructed row,
+    /// macroblock padding included, as libwebp reads them; only past the last macroblock does the
+    /// last padded pixel repeat. Frame edges read 127 above and 129 to the left (RFC 6386 §12.2).
     /// </summary>
-    private static void PrepareAbove(ref byte aboveY, ref byte aboveU, ref byte aboveV, ref byte topY, ref byte topU,
+    internal static void PrepareAbove(ref byte aboveY, ref byte aboveU, ref byte aboveV, ref byte topY, ref byte topU,
         ref byte topV, int mbX, int mbY, int width)
     {
         if (mbY == 0)
@@ -447,7 +448,7 @@ internal static class Vp8Decoder
         Unsafe.CopyBlockUnaligned(ref aboveU, ref Unsafe.Add(ref topU, mbX * 8), 8);
         Unsafe.CopyBlockUnaligned(ref aboveV, ref Unsafe.Add(ref topV, mbX * 8), 8);
         int right = mbX * 16 + 16;
-        if (right + 4 <= width)
+        if (right + 4 <= ((width + 15) & ~15))
         {
             Unsafe.CopyBlockUnaligned(ref Unsafe.Add(ref aboveY, 16), ref Unsafe.Add(ref topY, right), 4);
         }
@@ -455,7 +456,7 @@ internal static class Vp8Decoder
         {
             for (int i = 0; i < 4; i++)
             {
-                Unsafe.Add(ref aboveY, 16 + i) = Unsafe.Add(ref topY, Math.Min(right + i, width - 1));
+                Unsafe.Add(ref aboveY, 16 + i) = Unsafe.Add(ref topY, Math.Min(right + i, ((width + 15) & ~15) - 1));
             }
         }
     }
@@ -468,7 +469,7 @@ internal static class Vp8Decoder
     /// <paramref name="aboveRows"/> at <see cref="AboveSubblock"/>.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ref byte SubblockAbove(ref byte destination, int stride, int blockX, int blockY, ref byte aboveY,
+    internal static ref byte SubblockAbove(ref byte destination, int stride, int blockX, int blockY, ref byte aboveY,
         Span<byte> aboveRows)
     {
         if (blockY == 0)
@@ -758,7 +759,7 @@ internal static class Vp8Decoder
     /// Inverse Walsh–Hadamard transform of the dequantised Y2 block (RFC 6386 §14.3): each output
     /// becomes the DC coefficient (index 0) of the corresponding luma block.
     /// </summary>
-    private static void InverseWalshToBlocks(ref short input, ref short blocks, bool hasAc)
+    internal static void InverseWalshToBlocks(ref short input, ref short blocks, bool hasAc)
     {
         if (!hasAc)
         {
@@ -1190,7 +1191,7 @@ internal static class Vp8Decoder
     }
 
     /// <summary>Inverse-transforms a dequantised block and adds it to the 4×4 pixels at <paramref name="destination"/>.</summary>
-    private static void InverseDctAdd(ref short coefficients, ref byte destination, int stride, Span<short> residual, bool hasAc)
+    internal static void InverseDctAdd(ref short coefficients, ref byte destination, int stride, Span<short> residual, bool hasAc)
     {
         if (hasAc && Vector128.IsHardwareAccelerated && (Sse2.IsSupported || AdvSimd.Arm64.IsSupported))
         {
@@ -1253,7 +1254,7 @@ internal static class Vp8Decoder
     private static Vector128<int> Wrap16(Vector128<int> value) => (value << 16) >> 16;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void Transpose4x4(Vector128<int> r0, Vector128<int> r1, Vector128<int> r2, Vector128<int> r3,
+    internal static void Transpose4x4(Vector128<int> r0, Vector128<int> r1, Vector128<int> r2, Vector128<int> r3,
         out Vector128<int> c0, out Vector128<int> c1, out Vector128<int> c2, out Vector128<int> c3)
     {
         Vector128<int> low01, high01, low23, high23;
@@ -1342,7 +1343,7 @@ internal static class Vp8Decoder
     /// and the column to the left (frame edges already filled with 127 / 129) are read from around
     /// it. DC averages only the edges inside the frame.
     /// </summary>
-    private static void PredictLarge(ref byte destination, int stride, int size, int mode, bool hasTop, bool hasLeft,
+    internal static void PredictLarge(ref byte destination, int stride, int size, int mode, bool hasTop, bool hasLeft,
         ref byte above)
     {
         if (Vector128.IsHardwareAccelerated)
@@ -1615,6 +1616,83 @@ internal static class Vp8Decoder
         Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, stride), rows.GetElement(1));
         Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, 2 * stride), rows.GetElement(2));
         Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, 3 * stride), rows.GetElement(3));
+    }
+
+    /// <summary>
+    /// All ten 4×4 predictions of the block at <paramref name="destination"/> (its left column and
+    /// top-left read from around it, as <see cref="PredictSubblock"/> does) into <paramref name="output"/>,
+    /// mode m at bytes 16m..16m+15 in raster order; the frame is not written. The same values as ten
+    /// <see cref="PredictSubblock"/> calls (the encoder tries every mode).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    internal static void PredictSubblockAll(ref byte destination, int stride, ref byte aboveRow, Span<byte> output)
+    {
+        if (!(Ssse3.IsSupported || AdvSimd.Arm64.IsSupported))
+        {
+            // Predict in place and copy out, restoring what the block held.
+            Span<byte> saved = stackalloc byte[16];
+            for (int r = 0; r < 4; r++)
+            {
+                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref destination, r * stride), 4).CopyTo(saved[(r * 4)..]);
+            }
+
+            for (int m = 0; m < 10; m++)
+            {
+                PredictSubblockScalar(ref destination, stride, m, ref aboveRow);
+                for (int r = 0; r < 4; r++)
+                {
+                    MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref destination, r * stride), 4).CopyTo(output[(m * 16 + r * 4)..]);
+                }
+            }
+
+            for (int r = 0; r < 4; r++)
+            {
+                saved.Slice(r * 4, 4).CopyTo(MemoryMarshal.CreateSpan(ref Unsafe.Add(ref destination, r * stride), 4));
+            }
+
+            return;
+        }
+
+        ref byte o = ref MemoryMarshal.GetReference(output);
+        ulong left3 = Unsafe.Add(ref destination, 3 * stride - 1);
+        ulong left2 = Unsafe.Add(ref destination, 2 * stride - 1);
+        ulong left1 = Unsafe.Add(ref destination, stride - 1);
+        ulong left0 = Unsafe.Subtract(ref destination, 1);
+        ulong above8 = Unsafe.ReadUnaligned<ulong>(ref Unsafe.Subtract(ref aboveRow, 1));
+        ulong a7 = Unsafe.Add(ref aboveRow, 7);
+
+        uint sum = 4 + (uint)(left0 + left1 + left2 + left3);
+        uint top = (uint)(above8 >> 8);
+        sum += (top & 0xFF) + ((top >> 8) & 0xFF) + ((top >> 16) & 0xFF) + (top >> 24);
+        Vector128.Create((byte)(sum >> 3)).StoreUnsafe(ref o);
+
+        ulong lo = left3 | (left3 << 8) | (left2 << 16) | (left1 << 24) | (left0 << 32) | ((above8 & 0xFFFFFF) << 40);
+        ulong hi = (above8 >> 24) | (a7 << 40) | (a7 << 48) | (a7 << 56);
+        Vector128<byte> edge = Vector128.Create(lo, hi).AsByte();
+
+        Vector128<byte> aboveRep = TableLookup(edge, Vector128.Create((byte)6, 7, 8, 9, 6, 7, 8, 9, 6, 7, 8, 9, 6, 7, 8, 9));
+        Vector128<byte> leftRep = TableLookup(edge, Vector128.Create((byte)4, 4, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1));
+        Vector128<short> topLeft = Vector128.Create((short)(byte)(above8 & 0xFF));
+        Vector128<short> zero = Vector128<short>.Zero;
+        Vector128<short> max = Vector128.Create((short)255);
+        Vector128<short> sumLo = Vector128.WidenLower(aboveRep).AsInt16() + Vector128.WidenLower(leftRep).AsInt16() - topLeft;
+        Vector128<short> sumHi = Vector128.WidenUpper(aboveRep).AsInt16() + Vector128.WidenUpper(leftRep).AsInt16() - topLeft;
+        sumLo = Vector128.Min(Vector128.Max(sumLo, zero), max);
+        sumHi = Vector128.Min(Vector128.Max(sumHi, zero), max);
+        Vector128.Narrow(sumLo.AsUInt16(), sumHi.AsUInt16()).StoreUnsafe(ref o, 16);
+
+        Vector128<byte> next = TableLookup(edge, Vector128.Create((byte)1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 15));
+        Vector128<byte> next2 = TableLookup(edge, Vector128.Create((byte)2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 15, 15));
+        Vector128<byte> avg2 = RoundingAverage(edge, next);
+        Vector128<byte> outer = RoundingAverage(edge, next2) - ((edge ^ next2) & Vector128.Create((byte)1));
+        Vector128<byte> avg3 = RoundingAverage(next, outer);
+        ref byte table = ref MemoryMarshal.GetReference(SubblockShuffles);
+        for (int m = 2; m < 10; m++)
+        {
+            ref byte t = ref Unsafe.Add(ref table, (m - 2) * 32);
+            (TableLookup(avg3, Vector128.LoadUnsafe(ref t)) | TableLookup(avg2, Vector128.LoadUnsafe(ref Unsafe.Add(ref t, 16))))
+                .StoreUnsafe(ref o, (nuint)(m * 16));
+        }
     }
 
     // Per mode 2-9: 16 indices into a3 then 16 into a2 (see PredictSubblockVector); 0xFF = not this one.

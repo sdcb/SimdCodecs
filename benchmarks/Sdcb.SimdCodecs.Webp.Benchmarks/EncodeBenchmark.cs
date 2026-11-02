@@ -31,6 +31,9 @@ internal static class EncodeBenchmark
 {
     public static readonly string[] Modes = ["lossless", "lossy", "lossy-alpha", "anim"];
 
+    /// <summary>Summed median seconds of each (table, contestant) of the last runs, for the speed gates.</summary>
+    private static readonly Dictionary<(string Table, string Contestant), double> LastSeconds = [];
+
     /// <summary>Our animation encoders for the anim table (lossless "ours"), once they exist.</summary>
     internal static readonly List<AnimContestant> AnimContestants = [];
     private static readonly int[] LossyQualities = [50, 75, 90];
@@ -156,7 +159,32 @@ internal static class EncodeBenchmark
         }
 
         list.Add(new($"ImageSharp q{q}", img => Time(() => ImageSharpEncode(img, new IsWebpEncoder { FileFormat = IsWebpFileFormat.Lossy, Quality = quality })), InProcess: true));
+        list.Add(new($"ours q{q}", img => Time(() => OursLossy(img, quality)), InProcess: true));
         return list;
+    }
+
+    /// <summary>
+    /// Our lossy encoder at the default effort. <c>VP8CFG</c> (e.g. <c>Effort=6,LambdaI4=12</c>) overrides
+    /// fields of the internal configuration, for tuning runs; the gate is run without it.
+    /// </summary>
+    internal static byte[] OursLossy(EncodeImage img, int quality)
+    {
+        string? overrides = Environment.GetEnvironmentVariable("VP8CFG");
+        if (string.IsNullOrEmpty(overrides))
+        {
+            return WebpEncoder.EncodeLossy(img.Rgba, img.Width, img.Height, Sdcb.SimdCodecs.Abstractions.ImagePixelFormat.Rgba32,
+                new WebpLossyEncodeOptions { Quality = quality });
+        }
+
+        var config = Vp8EncoderConfig.For(quality, 4);
+        foreach (string pair in overrides.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] kv = pair.Split('=');
+            System.Reflection.PropertyInfo property = typeof(Vp8EncoderConfig).GetProperty(kv[0])!;
+            property.SetValue(config, property.PropertyType == typeof(bool) ? kv[1] != "0" : int.Parse(kv[1], CultureInfo.InvariantCulture));
+        }
+
+        return WebpEncoder.EncodeLossy(img.Rgba, img.Width, img.Height, Sdcb.SimdCodecs.Abstractions.ImagePixelFormat.Rgba32, config);
     }
 
     internal static (byte[], double) Time(Func<byte[]> encode)
@@ -188,6 +216,16 @@ internal static class EncodeBenchmark
         }
 
         var bd = EncodeRd.Run("lossy", opaque, RdContestants(cwebp, alpha: false), alpha: false, line);
+        if (LastSeconds.TryGetValue(("lossy q75", "ours q75"), out double mine) && LastSeconds.TryGetValue(("lossy q75", "libwebp q75"), out double theirs))
+        {
+            // The lossy speed contract: the default effort at q75 no slower than libwebp's default at q75.
+            bool speedOk = mine <= theirs;
+            line("");
+            line(string.Create(CultureInfo.InvariantCulture,
+                $"[gate] lossy q75 ours {mine:F3} s vs libwebp {theirs:F3} s ({mine / theirs:F2}x): {(speedOk ? "ok" : "SLOWER")}"));
+            ok &= speedOk;
+        }
+
         if (bd.TryGetValue("ours", out var ours))
         {
             // The lossy contract: no more bytes than libwebp's default at equal PSNR-Y and SSIM-Y.
@@ -233,6 +271,7 @@ internal static class EncodeBenchmark
         if (!alpha)
         {
             list.Add(new("ImageSharp", (img, q) => ImageSharpEncode(img, new IsWebpEncoder { FileFormat = IsWebpFileFormat.Lossy, Quality = q }), qs));
+            list.Add(new("ours", OursLossy, qs));
         }
 
         return list;
@@ -312,6 +351,11 @@ internal static class EncodeBenchmark
         }
 
         Tally reference = tallies[contestants[0].Name];
+        foreach ((string name, Tally t) in tallies)
+        {
+            LastSeconds[(title, name)] = t.Seconds;
+        }
+
         line(lossless
             ? "| encoder | MB | bpp | size vs libwebp | MP/s | time vs libwebp | lossless |"
             : "| encoder | MB | bpp | size vs libwebp | PSNR-Y | PSNR-RGB | SSIM-Y | MP/s | time vs libwebp |");

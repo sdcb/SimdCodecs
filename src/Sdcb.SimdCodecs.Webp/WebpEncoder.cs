@@ -34,7 +34,7 @@ public sealed record WebpLosslessEncodeOptions
 /// Pure-managed WebP encoder. Lossless output is VP8L (RFC 9649) in a simple RIFF container, built
 /// from the format specification alone; any WebP decoder reads it.
 /// </summary>
-public static class WebpEncoder
+public static partial class WebpEncoder
 {
     /// <summary>The largest width or height VP8L can describe (14 bits).</summary>
     public const int MaximumDimension = 16384;

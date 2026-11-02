@@ -93,8 +93,15 @@ the benchmark inputs with this decoder and with libwebp and compares the bytes.
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- encode [--mode lossless|lossy|lossy-alpha|anim|all] [--reps 5] [--max-dim 1024] [--images TEXT] [--cwebp PATH] [--no-cwebp] [--efforts 0,3,6,9] [--gate]
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- encode-ab [--mode lossless|lossy|all] [--reps 5] [--images TEXT]
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- ablate [--reps 3] [--images TEXT]
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- calibrate [--images TEXT]
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- encode-peakmem [--mode lossless|lossy] [--max-dim 1024] [--images TEXT]
 ```
+
+`ours` (lossy) is `WebpEncoder.EncodeLossy` at the default effort. For tuning runs, `VP8CFG` overrides fields
+of the internal `Vp8EncoderConfig` (`VP8CFG=Effort=6,LambdaI4=12 … encode --mode lossy`); the gate is run without
+it. `calibrate` bisects, for every fifth libwebp quality, the base quantizer index at which our encoder writes the
+same total bytes on the photos (only sizes are observed) and prints the table `Vp8EncoderConfig.For` maps quality
+through, so our quality numbers mean about the sizes libwebp's do.
 
 The commit gate is `encode --mode all --efforts 0,1,2,3,4,5,6,7,8,9 --gate` with `cwebp` (and the
 other release tools) found; it exits 1 when any check below fails:
@@ -102,7 +109,7 @@ other release tools) found; it exits 1 when any check below fails:
 | mode | the gate holds ours to |
 |---|---|
 | `lossless` | every alpha and visible pixel exact; default effort (6) no more bytes than `libwebp` **and** no slower; bytes never grow with effort across the efforts run |
-| `lossy` | the default's BD-rate against `libwebp` (method 4) ≤ 0 on both PSNR-Y and SSIM-Y |
+| `lossy` | the default's BD-rate against `libwebp` (method 4) ≤ 0 on both PSNR-Y and SSIM-Y, and at q75 no slower than `libwebp q75` |
 | `lossy-alpha` | BD-rate on visible PSNR-RGB ≤ 0, and every alpha value exact |
 | `anim` | lossless: no more bytes than `img2webp -lossless`, every frame exact; lossy: BD-rate ≤ 0 against `img2webp -lossy` |
 
@@ -213,4 +220,6 @@ more lossy (m2), lossless (m3) and the final state with the opt-in multithreaded
 ([`m4-final-2026-10-25-amd-ryzen-7-5800x.md`](optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md)).
 Encoding starts from [`encode-baseline-2026-11-01-amd-ryzen-7-5800x.md`](optimization/encode-baseline-2026-11-01-amd-ryzen-7-5800x.md):
 libwebp, cwebp's effort levels and ImageSharp, before this repository had an encoder.
+The lossy encoder's first recording is
+[`encode-m3-lossy-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m3-lossy-2026-11-02-amd-ryzen-7-5800x.md).
 Put each new recording there too.

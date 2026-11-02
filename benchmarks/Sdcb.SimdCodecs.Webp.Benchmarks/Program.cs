@@ -31,6 +31,8 @@ const string Usage = """
                                           encode A/B: current vs baseline (last commit) vs libwebp; ratios to baseline and to libwebp
       ablate [--mode lossless] [--reps N] [--max-dim N] [--images TEXT]
                                           encode with each stage disabled in turn to attribute size and time
+      calibrate [--max-dim N] [--images TEXT]
+                                          lossy quality scale: the quantizer index matching libwebp's bytes at each quality
       encode-peakmem [--mode lossless|lossy] [--max-dim N] [--images TEXT]
                                           peak working set and managed allocations per encode, one fresh process each
     """;
@@ -82,6 +84,8 @@ switch (command)
     case "ablate":
         return EncodeAblate.Run(Opt("--mode") ?? "lossless", int.TryParse(Opt("--reps"), out int aReps) ? aReps : 3,
             int.TryParse(Opt("--max-dim"), out int aDim) ? aDim : 1024, Opt("--images"));
+    case "calibrate":
+        return EncodeCalibrate.Run(int.TryParse(Opt("--max-dim"), out int calDim) ? calDim : 1024, Opt("--images"));
     case "encode-peakmem":
         return EncodePeakMemory.Run(Opt("--mode") ?? "lossless", int.TryParse(Opt("--max-dim"), out int peakDim) ? peakDim : 1024, Opt("--images"));
     case "encode-peakmem-child":
