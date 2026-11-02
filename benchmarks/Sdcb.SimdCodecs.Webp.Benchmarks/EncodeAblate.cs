@@ -90,7 +90,7 @@ internal static class EncodeAblate
             : string.Create(CultureInfo.InvariantCulture,
                 $"{(delta > 0 ? "+" : "")}{delta / 1e3:F1} KB ({(delta > 0 ? "+" : "")}{(sizeRatio - 1) * 100:F2}%)");
         return string.Create(CultureInfo.InvariantCulture,
-            $"| {label} | {bytes / 1e6:F3} | {bytes * 8.0 / totalPixels * 1e6:F3} | {sizeRatio:F4}x | {mpps:F2} | {speedRatio:F3}x | {change} |");
+            $"| {label} | {bytes / 1e6:F3} | {bytes * 8.0 / totalPixels:F3} | {sizeRatio:F4}x | {mpps:F2} | {speedRatio:F3}x | {change} |");
     }
 
     private static (long Bytes, double Seconds) Measure(List<EncodeImage> images, int reps, Vp8LAblation ablation)

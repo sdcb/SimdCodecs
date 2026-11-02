@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
-using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Webp;
 
 namespace Sdcb.SimdCodecs.Webp.Benchmarks;
@@ -80,9 +79,8 @@ internal static class EncodeAb
         }
         else
         {
-            contestants.Add(new EncodeBenchmark.Contestant("ours q75",
-                img => Time(() => WebpEncoder.EncodeLossless(img.Rgba, img.Width, img.Height, ImagePixelFormat.Rgba32)),
-                InProcess: true));
+            // The lossy encoder lands in a later commit; until then only libwebp and the baseline run.
+            Console.WriteLine("[encode-ab] lossy: no lossy encoder in this build yet");
         }
 
         // Warm up in-process contestants.
