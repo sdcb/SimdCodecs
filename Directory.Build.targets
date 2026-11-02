@@ -1,0 +1,64 @@
+<Project>
+
+  <!-- nuget.org renders a stricter Markdown than GitHub: raw HTML (<img>, <sub>, <details>) is
+       shown as escaped text, images load only from an allow-listed set of hosts, and relative
+       links resolve against nuget.org. A project that packs the root README names it as a
+       <NuGetReadme> item; this target writes a nuget.org-safe copy to obj/ and packs that as
+       README.md. The README on GitHub stays as it is. -->
+
+  <PropertyGroup>
+    <NuGetReadmeLinkBase>https://github.com/sdcb/SimdCodecs/blob/main/</NuGetReadmeLinkBase>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Images on hosts nuget.org blocks, mapped to a copy on an allow-listed host. -->
+    <NuGetReadmeImage Include="https://cv-public.sdcb.ai/simdcodecs/readme/showcase-v1.jpg"
+                      Replacement="https://github.com/user-attachments/assets/b304be96-391e-49b5-ae4d-e02bfc470d23" />
+  </ItemGroup>
+
+  <UsingTask TaskName="WriteNuGetReadme" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Source ParameterType="System.String" Required="true" />
+      <Destination ParameterType="System.String" Required="true" />
+      <LinkBase ParameterType="System.String" Required="true" />
+      <Images ParameterType="Microsoft.Build.Framework.ITaskItem[]" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+string md = File.ReadAllText(Source);
+// The right-floated <img> icon: nuget.org shows the package icon already.
+md = Regex.Replace(md, @"^<img [^>]*>[ \t]*\r?\n(\r?\n)?", "", RegexOptions.Multiline);
+// <sub>caption</sub> -> *caption*
+md = Regex.Replace(md, @"<sub>(.*?)</sub>", "*$1*", RegexOptions.Singleline);
+// <details><summary>Title</summary> ... </details> -> a ### heading over the expanded body.
+md = Regex.Replace(md, @"<details>\s*<summary>(.*?)</summary>", "### $1", RegexOptions.Singleline);
+md = Regex.Replace(md, @"^</details>[ \t]*\r?\n", "", RegexOptions.Multiline);
+// Relative links -> absolute GitHub links (absolute URLs and #anchors are left alone).
+md = Regex.Replace(md, @"\]\((?![a-zA-Z][a-zA-Z0-9+.-]*:|#)([^)\s]+)\)", "](" + LinkBase + "$1)");
+if (Images != null)
+    foreach (var image in Images)
+        md = md.Replace(image.ItemSpec, image.GetMetadata("Replacement"));
+if (Regex.IsMatch(md, @"</?(img|sub|sup|details|summary|br|p|div)\b", RegexOptions.IgnoreCase))
+    Log.LogWarning("{0}: HTML left in the nuget.org README; extend WriteNuGetReadme.", Source);
+Directory.CreateDirectory(Path.GetDirectoryName(Destination));
+if (!File.Exists(Destination) || File.ReadAllText(Destination) != md)
+    File.WriteAllText(Destination, md);
+]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="WriteNuGetReadme" BeforeTargets="_GetPackageFiles" Condition="'@(NuGetReadme)' != ''">
+    <PropertyGroup>
+      <_NuGetReadmeOut>$(IntermediateOutputPath)nuget-readme/README.md</_NuGetReadmeOut>
+    </PropertyGroup>
+    <WriteNuGetReadme Source="@(NuGetReadme->'%(FullPath)')" Destination="$(_NuGetReadmeOut)"
+                      LinkBase="$(NuGetReadmeLinkBase)" Images="@(NuGetReadmeImage)" />
+    <ItemGroup>
+      <None Include="$(_NuGetReadmeOut)" Pack="true" PackagePath="/README.md" Visible="false" />
+    </ItemGroup>
+  </Target>
+
+</Project>

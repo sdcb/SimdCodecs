@@ -34,7 +34,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <NuGetReadme Include="../../README.md" />
   </ItemGroup>
 
   <ItemGroup>
