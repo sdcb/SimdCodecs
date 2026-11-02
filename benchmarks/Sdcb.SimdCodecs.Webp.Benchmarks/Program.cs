@@ -35,6 +35,8 @@ const string Usage = """
                                           lossy quality scale: the quantizer index matching libwebp's bytes at each quality
       tune [--max-dim N] [--images TEXT] <overrides|-> ...
                                           lossy BD-rate vs libwebp for each configuration override (all, q<=60, q>=70)
+      blendprobe [--trials N] [--cwebp PATH]
+                                          black-box probe of anim_dump's alpha blending against our animation decoder
       encode-peakmem [--mode lossless|lossy] [--max-dim N] [--images TEXT]
                                           peak working set and managed allocations per encode, one fresh process each
     """;
@@ -88,6 +90,8 @@ switch (command)
             int.TryParse(Opt("--max-dim"), out int aDim) ? aDim : 1024, Opt("--images"));
     case "calibrate":
         return EncodeCalibrate.Run(int.TryParse(Opt("--max-dim"), out int calDim) ? calDim : 1024, Opt("--images"));
+    case "blendprobe":
+        return BlendProbe.Run(Opt("--cwebp"), int.TryParse(Opt("--trials"), out int trials) ? trials : 24);
     case "tune":
         // Each argument after the options is one set of overrides; "-" is the default configuration.
         if (args.Contains("--anim"))

@@ -500,9 +500,9 @@ public sealed class WebpAnimationEncoder
 
     /// <summary>
     /// Whether blending can draw the rectangle exactly with its unchanged pixels transparent: every changed
-    /// pixel is opaque. (A transparent source pixel keeps the canvas and an opaque one replaces it, in every
-    /// decoder; a partly transparent one is mixed with the canvas with rounding that libwebp's anim_dump does
-    /// not share with this package's decoder, so it is never relied on.)
+    /// pixel is opaque. (A transparent source pixel keeps the canvas and an opaque one replaces it; a partly
+    /// transparent one is mixed with the canvas with libwebp's rounding, which does not give the source back
+    /// even over a transparent canvas: its colour can come out one lower.)
     /// </summary>
     private bool BlendValid(ReadOnlySpan<uint> target, ReadOnlySpan<uint> intent, int x0, int y0, int w, int h)
     {

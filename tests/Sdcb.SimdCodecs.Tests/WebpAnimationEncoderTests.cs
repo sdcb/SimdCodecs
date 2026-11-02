@@ -368,6 +368,54 @@ public sealed class WebpAnimationEncoderTests
         }
     }
 
+    /// <summary>
+    /// Blending partly transparent pixels: every source alpha against 64 canvas alphas, hashed colours.
+    /// Our decoder's canvas must be anim_dump's byte for byte (it once rounded differently, off by one).
+    /// </summary>
+    [Fact]
+    public void Blending_partly_transparent_pixels_decodes_like_anim_dump()
+    {
+        const int w = 256, h = 64;
+        var canvas = new byte[w * h * 4];
+        var source = new byte[w * h * 4];
+        var random = new Random(5);
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                int i = 4 * (y * w + x);
+                int canvasAlpha = y == h - 1 ? 255 : y * 4 + (x & 3);
+                for (int c = 0; c < 3; c++)
+                {
+                    canvas[i + c] = canvasAlpha == 0 ? (byte)0 : (byte)random.Next(256);
+                    source[i + c] = x == 0 ? (byte)0 : (byte)random.Next(256);
+                }
+
+                canvas[i + 3] = (byte)canvasAlpha;
+                source[i + 3] = (byte)x;
+            }
+        }
+
+        var encoder = new WebpAnimationEncoder(w, h, new WebpAnimationEncodeOptions { Mode = WebpAnimationMode.Lossless, LosslessEffort = 1 });
+        encoder.AddFrame(new WebpAnimationFrame { Pixels = canvas, Width = w, Height = h, Duration = TimeSpan.FromMilliseconds(Duration) });
+        encoder.AddFrame(new WebpAnimationFrame { Pixels = source, Width = w, Height = h, Duration = TimeSpan.FromMilliseconds(Duration), Blend = true });
+        byte[] webp = encoder.Encode();
+        byte[][] dumped = DecodeAnimDump(webp, w, h);
+        List<(int Timestamp, byte[] Canvas)> ours = DecodeOurs(webp);
+        for (int k = 0; k < 2; k++)
+        {
+            for (int i = 0; i < dumped[k].Length; i++)
+            {
+                if (dumped[k][i] != ours[k].Canvas[i])
+                {
+                    int p = i / 4;
+                    throw new ShouldAssertException($"frame {k} pixel {p % w},{p / w} byte {i & 3}: anim_dump {dumped[k][i]}, ours {ours[k].Canvas[i]} " +
+                        $"(source {Convert.ToHexString(source, 4 * p, 4)}, canvas {Convert.ToHexString(canvas, 4 * p, 4)})");
+                }
+            }
+        }
+    }
+
     [Fact]
     public void Whole_frames_after_frames_as_given_still_diff_correctly()
     {

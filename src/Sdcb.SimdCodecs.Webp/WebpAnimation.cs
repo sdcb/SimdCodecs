@@ -309,33 +309,47 @@ public sealed class WebpAnimationDecoder
         }
     }
 
+    /// <summary>
+    /// Alpha-blends a row of a frame over the canvas (non-premultiplied, alpha at byte 3, the colour bytes
+    /// treated alike). RFC 9649 gives the blend in real numbers; the integer rounding here is libwebp
+    /// 1.6.0's anim_dump's, found black-box (benchmark <c>blendprobe</c>: every source / canvas alpha pair,
+    /// 4.7 million colour samples, no difference): the canvas keeps the weight w = ⌊canvasA·(256 − srcA) / 256⌋,
+    /// the result's alpha is srcA + w, and each colour is ⌊(src·srcA + canvas·w) · ⌊2^24 / alpha⌋ / 2^24⌋;
+    /// a transparent source leaves the canvas as it is, an opaque one replaces it.
+    /// </summary>
     internal static void BlendRow(ReadOnlySpan<byte> source, Span<byte> destination)
     {
         for (int offset = 0; offset < source.Length; offset += 4)
         {
             int sourceAlpha = source[offset + 3];
-            int destinationAlpha = destination[offset + 3];
-            int alphaNumerator = sourceAlpha * 255 + destinationAlpha * (255 - sourceAlpha);
-            if (alphaNumerator == 0)
+            if (sourceAlpha == 0)
             {
-                destination.Slice(offset, 4).Clear();
+                // The canvas stays; a canvas pixel that is transparent too is cleared, as before.
+                if (destination[offset + 3] == 0)
+                {
+                    destination.Slice(offset, 4).Clear();
+                }
+
                 continue;
             }
 
-            destination[offset] = BlendChannel(source[offset], destination[offset], sourceAlpha,
-                destinationAlpha, alphaNumerator);
-            destination[offset + 1] = BlendChannel(source[offset + 1], destination[offset + 1], sourceAlpha,
-                destinationAlpha, alphaNumerator);
-            destination[offset + 2] = BlendChannel(source[offset + 2], destination[offset + 2], sourceAlpha,
-                destinationAlpha, alphaNumerator);
-            destination[offset + 3] = (byte)((alphaNumerator + 127) / 255);
+            if (sourceAlpha == 255)
+            {
+                source.Slice(offset, 4).CopyTo(destination[offset..]);
+                continue;
+            }
+
+            int weight = (destination[offset + 3] * (256 - sourceAlpha)) >> 8;
+            int alpha = sourceAlpha + weight; // 1..255
+            // ⌊2^24 / alpha⌋ · (src·srcA + canvas·w) ≤ 2^24 · 255: fits in 32 unsigned bits.
+            uint scale = (1u << 24) / (uint)alpha;
+            destination[offset] = BlendChannel(source[offset], destination[offset], sourceAlpha, weight, scale);
+            destination[offset + 1] = BlendChannel(source[offset + 1], destination[offset + 1], sourceAlpha, weight, scale);
+            destination[offset + 2] = BlendChannel(source[offset + 2], destination[offset + 2], sourceAlpha, weight, scale);
+            destination[offset + 3] = (byte)alpha;
         }
     }
 
-    private static byte BlendChannel(int source, int destination, int sourceAlpha, int destinationAlpha, int alphaNumerator)
-    {
-        int numerator = source * sourceAlpha * 255 +
-            destination * destinationAlpha * (255 - sourceAlpha);
-        return (byte)Math.Clamp((numerator + alphaNumerator / 2) / alphaNumerator, 0, 255);
-    }
+    private static byte BlendChannel(int source, int destination, int sourceAlpha, int weight, uint scale) =>
+        (byte)(((uint)(source * sourceAlpha + destination * weight) * scale) >> 24);
 }
