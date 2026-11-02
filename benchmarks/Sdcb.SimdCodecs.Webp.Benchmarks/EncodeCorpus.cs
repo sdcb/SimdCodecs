@@ -75,6 +75,57 @@ internal static class EncodeCorpus
         return list;
     }
 
+    /// <summary>
+    /// The inputs with alpha, for the lossy-alpha run, plus <c>sticker</c>: an anti-aliased disc
+    /// (filled from the first photo, or a gradient without one), a flat tab and a soft drop shadow on a
+    /// transparent background, the typical lossy-with-alpha asset.
+    /// </summary>
+    public static List<EncodeImage> WithAlpha(List<EncodeImage> images)
+    {
+        List<EncodeImage> list = images.Where(i => i.HasAlpha).ToList();
+        list.Add(Sticker(images.FirstOrDefault(i => i.Kind == "photo")));
+        return list;
+    }
+
+    private static EncodeImage Sticker(EncodeImage? photo)
+    {
+        int width = photo?.Width ?? 800, height = photo?.Height ?? 600;
+        var rgba = new byte[width * height * 4];
+        double cx = width * 0.45, cy = height * 0.5, r = Math.Min(width, height) * 0.36;
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                int o = 4 * (y * width + x);
+                double d = Math.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+                double disc = Math.Clamp((r - d) / 2 + 0.5, 0, 1);
+                double tx = Math.Max(Math.Abs(x - (cx + r * 1.05)) - r * 0.25, 0), ty = Math.Max(Math.Abs(y - cy) - r * 0.12, 0);
+                double tab = Math.Clamp((r * 0.08 - Math.Sqrt(tx * tx + ty * ty)) / 2 + 0.5, 0, 1);
+                double shape = Math.Max(disc, tab);
+                double sx = x - cx - r * 0.08, sy = y - cy - r * 0.1;
+                double shadow = 0.45 * Math.Clamp((r * 1.04 - Math.Sqrt(sx * sx + sy * sy)) / (r * 0.12), 0, 1);
+                double a = shape + shadow * (1 - shape);
+                if (a <= 0)
+                {
+                    continue;
+                }
+
+                (byte cr, byte cg, byte cb) = tab > disc ? ((byte)230, (byte)70, (byte)40)
+                    : photo is not null ? (photo.Rgba[o], photo.Rgba[o + 1], photo.Rgba[o + 2])
+                    : ((byte)(x * 255 / width), (byte)(y * 255 / height), (byte)128);
+
+                // The shape over its black shadow, not premultiplied.
+                double k = shape / a;
+                rgba[o] = (byte)Math.Round(cr * k);
+                rgba[o + 1] = (byte)Math.Round(cg * k);
+                rgba[o + 2] = (byte)Math.Round(cb * k);
+                rgba[o + 3] = (byte)Math.Round(a * 255);
+            }
+        }
+
+        return new EncodeImage("sticker", rgba, width, height, HasAlpha: true, "sticker+alpha");
+    }
+
     private static EncodeImage LoadMaster(string file, string name, int maxDim)
     {
         using Image<Rgba32> image = Image.Load<Rgba32>(file);

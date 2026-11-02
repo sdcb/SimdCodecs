@@ -90,9 +90,23 @@ the benchmark inputs with this decoder and with libwebp and compares the bytes.
 ## Encoder (`encode`)
 
 ```bash
-dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- encode [--mode lossless|lossy|all] [--reps 5] [--max-dim 1024] [--images TEXT] [--cwebp PATH] [--gate]
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- encode [--mode lossless|lossy|lossy-alpha|anim|all] [--reps 5] [--max-dim 1024] [--images TEXT] [--cwebp PATH] [--no-cwebp] [--efforts 0,3,6,9] [--gate]
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- encode-ab [--mode lossless|lossy|all] [--reps 5] [--images TEXT]
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- ablate [--reps 3] [--images TEXT]
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- encode-peakmem [--mode lossless|lossy] [--max-dim 1024] [--images TEXT]
 ```
+
+The commit gate is `encode --mode all --efforts 0,1,2,3,4,5,6,7,8,9 --gate` with `cwebp` (and the
+other release tools) found; it exits 1 when any check below fails:
+
+| mode | the gate holds ours to |
+|---|---|
+| `lossless` | every alpha and visible pixel exact; default effort (6) no more bytes than `libwebp` **and** no slower; bytes never grow with effort across the efforts run |
+| `lossy` | the default's BD-rate against `libwebp` (method 4) ≤ 0 on both PSNR-Y and SSIM-Y |
+| `lossy-alpha` | BD-rate on visible PSNR-RGB ≤ 0, and every alpha value exact |
+| `anim` | lossless: no more bytes than `img2webp -lossless`, every frame exact; lossy: BD-rate ≤ 0 against `img2webp -lossy` |
+
+A mode whose "ours" does not exist yet prints only the competitors and holds nothing.
 
 **Inputs.** The ten JPEG benchmark corpus masters (CC0 / Public Domain photographs; fetch them with
 that project's `scripts/fetch-corpus.sh` and `prepare`), box-downscaled to `--max-dim` on the long
@@ -126,6 +140,39 @@ and the bytes of every input. Before the modes, a **SIMD check** encodes the fir
 in-process library, `cwebp` and `cwebp -noasm` at the same settings: the library must land near
 `cwebp`, not near `-noasm`; for lossy q75 the two also produce the same bytes. The report is written
 to `.cache/work/encode-<mode>.md`.
+
+**Rate-distortion (`lossy`, `lossy-alpha`).** A fixed quality number means different things to
+different encoders, so the lossy verdict is not taken at q75. After the fixed-q tables, every lossy
+contestant is swept over q = 20, 25, …, 95; each output is decoded by libwebp and scored, and each
+contestant's curve is compared with libwebp's by the **Bjøntegaard delta rate** (VCEG-M33): the mean
+difference in log bytes at equal quality over the quality range both curves cover, interpolated with
+a monotone piecewise cubic (Fritsch–Carlson). −3% means 3% fewer bytes for the same quality. Opaque
+inputs are scored on PSNR-Y and on SSIM-Y in dB (−10·log10(1 − SSIM)); the summary is the mean of
+the per-image BD-rates, followed by a per-image table. `lossy-alpha` runs the inputs with alpha plus
+`sticker` (an anti-aliased disc filled from the first photo, a flat tab and a soft shadow on
+transparency) and scores the PSNR of the RGB of visible pixels; the `alpha exact` column says whether
+every alpha value came back.
+
+**Animation (`anim`).** Five synthetic 480×320, 24-frame sequences, each built for one decision an
+animation encoder makes: `scroll` (everything moves), `sprite` (a small object over a still photo: the
+changed rectangle), `fade` (every pixel changes a little), `alpha-sprite` (an anti-aliased object and
+a fixed translucent bar on transparency: blending and disposal) and `slides` (held frames, which an
+encoder may merge). The reference is libwebp's animation encoder as the release ships it,
+`img2webp` (`-lossless`, `-mixed`, and `-lossy -q Q` swept over 30, 50, 70, 80, 90), fed PAM frames;
+its time is the process wall clock and so includes reading the frames. Every output is decoded by
+`anim_dump` into composited canvases, matched to the source on the timeline (merged frames carry the
+sum of the durations, read from the ANMF chunks), and must reproduce every alpha and visible pixel
+when lossless; lossy output is scored by visible PSNR-RGB over all frames, for a BD-rate. `img2webp`
+and `anim_dump` are found next to `cwebp` or on `PATH`; without them the mode is skipped.
+
+**A/B and ablation.** `encode-ab` runs the current encoder beside the baseline built by
+`baseline [git-ref]` (the last commit's `WebpEncoder`, loaded side by side and found by reflection; a
+baseline without the entry point is left out) and `libwebp`, interleaved, and prints size and speed
+against both; it is the number that decides an encoder change. `ablate` encodes at the default effort
+with one VP8L stage switched off at a time (palette, subtract green, predictor, cross colour, colour
+cache, backward references, entropy-image clustering; the internal `Vp8LAblation` flags, never set by
+the public API) and prints the size and time change and the bytes of every input, to attribute where
+the bits go before changing anything.
 
 `encode-peakmem` measures, in one fresh process per encode, the peak working-set rise of the first
 and of a second (steady) full encode after a warm-up on a 64×64 crop, plus the managed bytes allocated

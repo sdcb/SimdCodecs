@@ -29,7 +29,10 @@ namespace Sdcb.SimdCodecs.Webp.Benchmarks;
 /// </summary>
 internal static class EncodeBenchmark
 {
-    public static readonly string[] Modes = ["lossless", "lossy"];
+    public static readonly string[] Modes = ["lossless", "lossy", "lossy-alpha", "anim"];
+
+    /// <summary>Our animation encoders for the anim table (lossless "ours"), once they exist.</summary>
+    internal static readonly List<AnimContestant> AnimContestants = [];
     private static readonly int[] LossyQualities = [50, 75, 90];
     private static readonly int[] LosslessLevels = [0, 3, 6, 9];
 
@@ -85,7 +88,9 @@ internal static class EncodeBenchmark
             {
                 "lossless" => RunMode("lossless", images, LosslessContestants(cwebp), reps, Line),
                 "lossy" => RunLossy(images, cwebp, reps, Line),
-                _ => throw new ArgumentException($"unknown mode '{m}' (lossless, lossy or all)"),
+                "lossy-alpha" => RunLossyAlpha(EncodeCorpus.WithAlpha(images), Line),
+                "anim" => EncodeAnim.Run(cwebp, reps, filter: null, Line, AnimContestants),
+                _ => throw new ArgumentException($"unknown mode '{m}' (lossless, lossy, lossy-alpha, anim or all)"),
             };
         }
 
@@ -154,7 +159,7 @@ internal static class EncodeBenchmark
         return list;
     }
 
-    private static (byte[], double) Time(Func<byte[]> encode)
+    internal static (byte[], double) Time(Func<byte[]> encode)
     {
         long start = Stopwatch.GetTimestamp();
         byte[] webp = encode();
@@ -182,7 +187,55 @@ internal static class EncodeBenchmark
             ok &= RunMode($"lossy q{quality}", opaque, LossyContestants(cwebp, quality), reps, line);
         }
 
+        var bd = EncodeRd.Run("lossy", opaque, RdContestants(cwebp, alpha: false), alpha: false, line);
+        if (bd.TryGetValue("ours", out var ours))
+        {
+            // The lossy contract: no more bytes than libwebp's default at equal PSNR-Y and SSIM-Y.
+            bool rdOk = ours.PsnrY <= 0 && ours.SsimY <= 0;
+            line("");
+            line(string.Create(CultureInfo.InvariantCulture,
+                $"[gate] lossy BD-rate vs libwebp: PSNR-Y {ours.PsnrY * 100:+0.00;-0.00}%, SSIM-Y {ours.SsimY * 100:+0.00;-0.00}%: {(rdOk ? "ok" : "LARGER")}"));
+            ok &= rdOk;
+        }
+
         return ok;
+    }
+
+    private static bool RunLossyAlpha(List<EncodeImage> images, Action<string> line)
+    {
+        var bd = EncodeRd.Run("lossy-alpha", images, RdContestants(cwebp: null, alpha: true), alpha: true, line);
+        bool ok = true;
+        if (bd.TryGetValue("ours", out var ours))
+        {
+            bool rdOk = ours.Visible <= 0 && ours.AlphaExact;
+            line("");
+            line(string.Create(CultureInfo.InvariantCulture,
+                $"[gate] lossy-alpha BD-rate vs libwebp: {ours.Visible * 100:+0.00;-0.00}%, alpha exact: {ours.AlphaExact}: {(rdOk ? "ok" : "FAILED")}"));
+            ok &= rdOk;
+        }
+
+        return ok;
+    }
+
+    /// <summary>The lossy contestants of the rate-distortion sweep; libwebp's default (method 4) first.</summary>
+    internal static List<RdContestant> RdContestants(string? cwebp, bool alpha)
+    {
+        int[] qs = EncodeRd.DefaultQualities;
+        var list = new List<RdContestant>
+        {
+            new("libwebp", (img, q) => LibWebp.EncodeRgba(img.Rgba, img.Width, img.Height, q), qs),
+        };
+        if (cwebp is not null)
+        {
+            list.Add(new("cwebp -m 6", (img, q) => Cwebp.Encode(cwebp, img, "-q", q.ToString(CultureInfo.InvariantCulture), "-m", "6").Webp, qs));
+        }
+
+        if (!alpha)
+        {
+            list.Add(new("ImageSharp", (img, q) => ImageSharpEncode(img, new IsWebpEncoder { FileFormat = IsWebpFileFormat.Lossy, Quality = q }), qs));
+        }
+
+        return list;
     }
 
     private static bool RunMode(string title, List<EncodeImage> images, List<Contestant> contestants, int reps, Action<string> line)
@@ -296,18 +349,30 @@ internal static class EncodeBenchmark
         bool ok = tallies.Values.All(t => !t.Failed);
         if (lossless && tallies.TryGetValue("ours", out Tally? ours) && ours.Images > 0)
         {
-            // The lossless contract: every pixel right (above), and no bigger than libwebp's default.
+            // The lossless contract: every pixel right (above), no bigger and no slower than libwebp's
+            // default, and more effort never gives a bigger file.
             bool sizeOk = ours.Bytes <= reference.Bytes;
+            bool speedOk = ours.Seconds <= reference.Seconds;
             line("");
             line(string.Create(CultureInfo.InvariantCulture,
                 $"[gate] ours {ours.Bytes} bytes vs libwebp {reference.Bytes} ({(double)ours.Bytes / reference.Bytes:F4}x): {(sizeOk ? "ok" : "LARGER")}"));
-            ok &= sizeOk;
+            line(string.Create(CultureInfo.InvariantCulture,
+                $"[gate] ours {ours.Seconds:F3} s vs libwebp {reference.Seconds:F3} s ({ours.Seconds / reference.Seconds:F2}x): {(speedOk ? "ok" : "SLOWER")}"));
+            int[] efforts = OurEfforts.Order().Where(e => tallies.TryGetValue(OursName(e), out Tally? t) && t.Images > 0).ToArray();
+            bool monotonic = true;
+            for (int k = 1; k < efforts.Length; k++)
+            {
+                monotonic &= tallies[OursName(efforts[k])].Bytes <= tallies[OursName(efforts[k - 1])].Bytes;
+            }
+
+            line($"[gate] effort {string.Join(", ", efforts)}: bytes never grow with effort: {(monotonic ? "ok" : "NOT MONOTONIC")}");
+            ok &= sizeOk && speedOk && monotonic;
         }
 
         return ok;
     }
 
-    private static byte[] DecodeWithLibwebp(byte[] webp, EncodeImage image)
+    internal static byte[] DecodeWithLibwebp(byte[] webp, EncodeImage image)
     {
         (int w, int h) = LibWebp.GetInfo(webp);
         if (w != image.Width || h != image.Height)
