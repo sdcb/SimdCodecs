@@ -83,7 +83,7 @@ public static partial class WebpEncoder
     }
 
     /// <summary>The VP8 frame, and the ALPH payload when the image has transparency.</summary>
-    private static (byte[] Vp8, byte[]? Alph) EncodeVp8(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    internal static (byte[] Vp8, byte[]? Alph) EncodeVp8(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
         WebpLossyEncodeOptions options, int stride, Vp8EncoderConfig? config)
     {
         if (width is < 1 or > MaximumLossyDimension || height is < 1 or > MaximumLossyDimension)

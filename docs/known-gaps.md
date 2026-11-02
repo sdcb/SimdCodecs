@@ -97,8 +97,14 @@ BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.
 
 ## WebP
 
-- **编码器**：无损（VP8L）和有损（VP8）静态图，有损图带透明时写 ALPH 平面，ICC / EXIF / XMP 可以写入（此时输出
-  VP8X 扩展格式）。不编码动画。
+- **编码器**：无损（VP8L）和有损（VP8）静态图及动画，有损图带透明时写 ALPH 平面，ICC / EXIF / XMP 可以写入（此时输出
+  VP8X 扩展格式）。
+- **动画编码**：5 个合成序列上，无损总字节是 `img2webp -lossless` 的 0.931×，有损对 `img2webp -lossy` 的 BD-rate 为
+  −10.9%。但 sprite 和 alpha-sprite 两个序列的无损输出比 img2webp 大 3% 和 9%。fade 序列算不出 BD-rate：我们的有损
+  曲线整体比 img2webp 的质量高（q90 时字节数相近，PSNR 高 6.5 dB），两条曲线没有重叠区间，所以这一项不计入均值。
+- **动画解码的半透明 blend 与 anim_dump 不一致**：当一帧需要 blend、源像素半透明（alpha 在 1–254 之间）时，
+  `WebpAnimationDecoder` 的取整与 libwebp 1.6.0 的 anim_dump 不同，同一像素的 RGB 会差 1。现有的动画样例碰不到这种
+  情况，所以 golden 都能通过；我们的编码器写动画时也避开了这种 blend。
 - **有损编码**：AMD Ryzen 7 5800X 上 12 张不透明基准图，默认力度（4）对 libwebp 默认（method 4）的 BD-rate 为
   PSNR-Y −6.2%、SSIM-Y −4.8%，每张图两项都为负；q75 速度约为它的 1.07×（18.6 vs 17.4 MP/s）。高码率一端
   （q ≥ 70）也是 −5.4% / −5.5%。还没有 trellis 量化。

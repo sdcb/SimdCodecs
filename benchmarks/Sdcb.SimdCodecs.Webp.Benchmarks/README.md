@@ -176,7 +176,12 @@ its time is the process wall clock and so includes reading the frames. Every out
 `anim_dump` into composited canvases, matched to the source on the timeline (merged frames carry the
 sum of the durations, read from the ANMF chunks), and must reproduce every alpha and visible pixel
 when lossless; lossy output is scored by visible PSNR-RGB over all frames, for a BD-rate. `img2webp`
-and `anim_dump` are found next to `cwebp` or on `PATH`; without them the mode is skipped.
+and `anim_dump` are found next to `cwebp` or on `PATH`; without them the mode is skipped. Our contestants are
+`ours` (`WebpAnimationEncoder`, lossless; gated), `ours mixed` (reference only) and `ours lossy` (the quality
+sweep; gated). A sequence whose curves do not overlap in quality has no BD-rate (`NaN`) and is left out of the
+mean. `ANIMCFG` (`LossyEffort=6,Search=2,…`, the option fields and the internal `Search` / `BlendThreshold`)
+overrides our options for tuning runs. `tune --anim [sets…]` prints, per sequence, img2webp's and our lossless
+bytes and time and lossy bytes / PSNR at each quality, for each override set.
 
 **A/B and ablation.** `encode-ab` runs the current encoder beside the baseline built by
 `baseline [git-ref]` (the last commit's `WebpEncoder`, loaded side by side and found by reflection; a
@@ -232,4 +237,6 @@ The high-rate tuning that followed is
 [`encode-m3b-lossy-tuning-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m3b-lossy-tuning-2026-11-02-amd-ryzen-7-5800x.md).
 Lossy with alpha starts at
 [`encode-m4-lossy-alpha-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m4-lossy-alpha-2026-11-02-amd-ryzen-7-5800x.md).
+Animation starts at
+[`encode-m5-anim-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m5-anim-2026-11-02-amd-ryzen-7-5800x.md).
 Put each new recording there too.

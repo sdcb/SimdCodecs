@@ -157,6 +157,91 @@ internal static class EncodeAnim
         return ok;
     }
 
+    /// <summary>
+    /// Tuning aid (<c>tune --anim</c>): per sequence, img2webp's and our files under each <c>ANIMCFG</c>-style
+    /// override set: lossless bytes and seconds, and lossy bytes / visible PSNR-RGB at each quality, with
+    /// the lossy BD-rate. Not a gate.
+    /// </summary>
+    public static int Tune(string? cwebp, IReadOnlyList<string> variants)
+    {
+        string bin = Path.GetDirectoryName(cwebp ?? Cwebp.Find(null) ?? throw new InvalidOperationException("cwebp not found"))!;
+        string img2webp = Tool(bin, "img2webp")!, animDump = Tool(bin, "anim_dump")!;
+        int[] qs = [30, 50, 70, 80, 90];
+        foreach (AnimSequence s in Sequences(null))
+        {
+            (long, double) Point(byte[] webp) => (webp.Length, Psnr(s, AnimDump(animDump, webp, s)));
+            Console.WriteLine($"## {s.Name}");
+            Console.WriteLine("| encoder | lossless bytes | s | " + string.Join(" | ", qs.Select(q => $"q{q} bytes / PSNR")) + " | BD-rate |");
+            Console.WriteLine("|---|---:|---:|" + string.Concat(qs.Select(_ => "---:|")) + "---:|");
+            (byte[] refLossless, double refSeconds) = Img2Webp(img2webp, s, "-lossless");
+            var reference = qs.Select(q => Point(Img2Webp(img2webp, s, "-lossy", "-q", q.ToString(CultureInfo.InvariantCulture)).Webp)).ToList();
+            Print("img2webp", refLossless.Length, refSeconds, reference);
+            foreach (string variant in variants)
+            {
+                string? saved = Environment.GetEnvironmentVariable("ANIMCFG");
+                Environment.SetEnvironmentVariable("ANIMCFG", variant);
+                try
+                {
+                    long start = Stopwatch.GetTimestamp();
+                    byte[] lossless = EncodeBenchmark.OursAnimation(s, new WebpAnimationEncodeOptions { Mode = WebpAnimationMode.Lossless });
+                    double seconds = Stopwatch.GetElapsedTime(start).TotalSeconds;
+                    List<byte[]> dumped = AnimDump(animDump, lossless, s);
+                    if (!VisibleEqual(s, dumped))
+                    {
+                        Console.WriteLine($"[anim] {variant}: lossless output WRONG");
+                        var decoder = new WebpAnimationDecoder(lossless);
+                        var canvas = new byte[s.Width * s.Height * 4];
+                        int frameIndex = 0, mismatches = 0;
+                        while (decoder.TryDecodeNextFrame(canvas, out WebpFrameInfo info))
+                        {
+                            // anim_dump writes one image per source frame on the timeline; compare the frame starting at this timestamp.
+                            int sourceFrame = info.TimestampMs / s.DurationMs;
+                            if (!VisibleEqual(s with { Frames = [canvas] }, [dumped[sourceFrame]]))
+                            {
+                                mismatches++;
+                            }
+
+                            frameIndex++;
+                        }
+
+                        Console.WriteLine($"  our decoder vs anim_dump: {mismatches} of {frameIndex} frames differ");
+                        File.WriteAllBytes(Path.Combine(BenchPaths.Work, $"anim-wrong-{s.Name}.webp"), lossless);
+                        Console.WriteLine("  frames: " + string.Join("; ", decoder.Frames.Select(f =>
+                            $"#{f.Index} {f.X},{f.Y} {f.Width}x{f.Height} t{f.TimestampMs}+{f.DurationMs}{(f.Blend ? " blend" : "")}{(f.DisposeToBackground ? " dispose" : "")}")));
+                        for (int f = 0; f < s.Frames.Count; f++)
+                        {
+                            byte[] a = s.Frames[f], b = dumped[f];
+                            for (int i = 0; i < a.Length; i += 4)
+                            {
+                                if (a[i + 3] != b[i + 3] || (a[i + 3] != 0 && !a.AsSpan(i, 3).SequenceEqual(b.AsSpan(i, 3))))
+                                {
+                                    int p = i / 4;
+                                    Console.WriteLine($"  first difference: source frame {f} pixel {p % s.Width},{p / s.Width}: " +
+                                        $"want {Convert.ToHexString(a, i, 4)} got {Convert.ToHexString(b, i, 4)}");
+                                    f = s.Frames.Count;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    var ours = qs.Select(q => Point(EncodeBenchmark.OursAnimation(s, new WebpAnimationEncodeOptions { Quality = q }))).ToList();
+                    Print(variant.Length == 0 ? "ours" : variant, lossless.Length, seconds, ours);
+                }
+                finally
+                {
+                    Environment.SetEnvironmentVariable("ANIMCFG", saved);
+                }
+            }
+
+            void Print(string name, long losslessBytes, double seconds, List<(long Bytes, double Psnr)> points) =>
+                Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                    $"| {name} | {losslessBytes} | {seconds:F2} | {string.Join(" | ", points.Select(p => $"{p.Bytes} / {p.Psnr:F2}"))} | {EncodeRd.BdRate(reference, points) * 100:+0.00;-0.00}% |"));
+        }
+
+        return 0;
+    }
+
     /// <summary>Our lossy animation encoder as a quality curve, once it exists.</summary>
     internal static readonly List<(string Name, Func<AnimSequence, int, byte[]> Encode)> OursLossyCurves = [];
 

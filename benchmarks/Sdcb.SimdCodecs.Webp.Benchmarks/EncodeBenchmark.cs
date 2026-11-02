@@ -34,8 +34,43 @@ internal static class EncodeBenchmark
     /// <summary>Summed median seconds of each (table, contestant) of the last runs, for the speed gates.</summary>
     private static readonly Dictionary<(string Table, string Contestant), double> LastSeconds = [];
 
-    /// <summary>Our animation encoders for the anim table (lossless "ours"), once they exist.</summary>
-    internal static readonly List<AnimContestant> AnimContestants = [];
+    /// <summary>Our animation encoders for the anim table: "ours" (lossless, gated) and "ours mixed" (for reference).</summary>
+    internal static readonly List<AnimContestant> AnimContestants =
+    [
+        new("ours", s => Time(() => OursAnimation(s, new WebpAnimationEncodeOptions { Mode = WebpAnimationMode.Lossless }))),
+        new("ours mixed", s => Time(() => OursAnimation(s, new WebpAnimationEncodeOptions { Mode = WebpAnimationMode.Mixed }))),
+    ];
+
+    static EncodeBenchmark()
+    {
+        EncodeAnim.OursLossyCurves.Add(("ours lossy", (s, q) => OursAnimation(s, new WebpAnimationEncodeOptions { Quality = q })));
+    }
+
+    /// <summary>Our animation encoder on a sequence; <c>ANIMCFG</c> (<c>LossyEffort=6,…</c>) overrides option fields for tuning runs.</summary>
+    internal static byte[] OursAnimation(AnimSequence s, WebpAnimationEncodeOptions options)
+    {
+        if (Environment.GetEnvironmentVariable("ANIMCFG") is { Length: > 0 } overrides)
+        {
+            foreach (string pair in overrides.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                string[] kv = pair.Split('=');
+                System.Reflection.PropertyInfo property = typeof(WebpAnimationEncodeOptions).GetProperty(kv[0],
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                    ?? throw new ArgumentException($"no option {kv[0]}");
+                object value = int.Parse(kv[1], CultureInfo.InvariantCulture);
+                options = options with { };
+                property.SetValue(options, value);
+            }
+        }
+
+        var encoder = new WebpAnimationEncoder(s.Width, s.Height, options);
+        foreach (byte[] frame in s.Frames)
+        {
+            encoder.AddFrame(frame, Sdcb.SimdCodecs.Abstractions.ImagePixelFormat.Rgba32, TimeSpan.FromMilliseconds(s.DurationMs));
+        }
+
+        return encoder.Encode();
+    }
     private static readonly int[] LossyQualities = [50, 75, 90];
     private static readonly int[] LosslessLevels = [0, 3, 6, 9];
 

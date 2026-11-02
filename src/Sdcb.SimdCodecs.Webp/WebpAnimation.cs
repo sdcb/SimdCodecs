@@ -309,7 +309,7 @@ public sealed class WebpAnimationDecoder
         }
     }
 
-    private static void BlendRow(ReadOnlySpan<byte> source, Span<byte> destination)
+    internal static void BlendRow(ReadOnlySpan<byte> source, Span<byte> destination)
     {
         for (int offset = 0; offset < source.Length; offset += 4)
         {

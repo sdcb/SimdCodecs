@@ -62,7 +62,7 @@ animation seeking by timestamp, Ultra HDR, and more.
 | Ultra HDR JPEG | ✅ | ✅ | Gain-map read, assemble and HDR reconstruction (Ultra HDR / Adobe) |
 | PNG | ✅ | ✅ | All bit depths (1–16, indexed); text chunks; HDR signalling (cICP, mDCV, cLLI) |
 | TIFF | ✅ | ✅ | Multi-page; 8/16/32-bit integer and float; strips or tiles; reads Deflate, LZW, PackBits, CCITT G3/G4 and single tiles; writes Deflate |
-| WebP | ✅ | ✅ | Lossy, lossless, alpha; animation with seeking; byte-exact with libwebp; encodes lossless (VP8L) and lossy (VP8, with an ALPH plane when transparent) stills, with ICC / Exif / XMP |
+| WebP | ✅ | ✅ | Lossy, lossless, alpha; animation with seeking; byte-exact with libwebp; encodes lossless (VP8L) and lossy (VP8, with an ALPH plane when transparent) stills and animations, with ICC / Exif / XMP |
 | GIF | ✅ | ✅ | 87a / 89a: interlacing, transparency, every disposal method; animation with seeking; encodes stills and animations (exact palette, or Wu quantization + dithering) |
 | BMP | ✅ | ✅ | Every Windows and OS/2 variant: core to V5 headers, 1–32 bits, any channel masks, RLE4 / RLE8 / RLE24, OS/2 Huffman 1D, embedded PNG, ICC; SIMD rows into your buffer with no allocation; encodes palettes (exact or quantized), RLE, 555 / 565, 24 / 32-bit |
 | ICO / CUR | ✅ | ✅ | Every image of an icon or cursor, PNG or DIB with its AND mask, hotspots; multi-size encoding |
@@ -164,7 +164,10 @@ All packages ship in lockstep under one version.
   `WebpAnimationDecoder` adds seeking by timestamp and the frame rectangles. `WebpEncoder.EncodeLossless`
   writes VP8L stills with alpha, effort 0–9; `WebpEncoder.EncodeLossy` writes VP8 stills, quality 0–100 and
   effort 0–6, with transparency in an ALPH plane (lossless by default, `AlphaQuality` below 100 reduces its levels);
-  both write to an array or a stream and can embed ICC / Exif / XMP. No animation encoder yet.
+  both write to an array or a stream and can embed ICC / Exif / XMP. `WebpAnimationEncoder` (frame by frame) and
+  `WebpEncoder.EncodeAnimation` write animations, lossy (default), lossless or the smaller per frame, from whole
+  canvases (reduced to the changed rectangle, blended or drawn over, unchanged frames merged) or from ANMF frames
+  as given; `MaxKeyframeDistance` bounds seeking.
 - **Gif** — GIF89a: global / local colour tables, interlacing, transparency, all disposal methods, NETSCAPE2.0 loop
   count; composited frames with seek. The decisions the spec leaves open are listed in the package README. Encoder:
   stills and animations, exact palettes or Wu quantization with optional Floyd–Steinberg dithering, changed-rectangle

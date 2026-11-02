@@ -60,7 +60,7 @@ File.WriteAllBytes("photo.jpg", jpeg);
 | Ultra HDR JPEG | ✅ | ✅ | 增益图（gain map）读取、组装和 HDR 重建（Ultra HDR / Adobe） |
 | PNG | ✅ | ✅ | 全部位深（1–16 位、调色板）；文本块；HDR 标记（cICP、mDCV、cLLI） |
 | TIFF | ✅ | ✅ | 多页；8/16/32 位整数和浮点；条带或分块；读取 Deflate、LZW、PackBits、CCITT G3/G4，可只读单个分块；写入 Deflate |
-| WebP | ✅ | ✅ | 有损、无损、alpha；动画及跳转；输出与 libwebp 逐字节一致；可编码无损（VP8L）和有损（VP8，带透明时附 ALPH 平面）静态图，可写入 ICC / Exif / XMP |
+| WebP | ✅ | ✅ | 有损、无损、alpha；动画及跳转；输出与 libwebp 逐字节一致；可编码无损（VP8L）和有损（VP8，带透明时附 ALPH 平面）静态图及动画，可写入 ICC / Exif / XMP |
 | GIF | ✅ | ✅ | 87a / 89a：隔行、透明、全部 dispose 方式；动画及跳转；编码静态图和动画（精确调色板，或 Wu 量化 + 抖动） |
 | BMP | ✅ | ✅ | Windows 和 OS/2 的全部变体：core 到 V5 各版头部、1–32 位、任意通道掩码、RLE4 / RLE8 / RLE24、OS/2 Huffman 1D、内嵌 PNG、ICC；SIMD 按行直接写进调用方缓冲区、零分配；编码调色板（精确或量化）、RLE、555 / 565、24 / 32 位 |
 | ICO / CUR | ✅ | ✅ | 图标和光标里的每张图（PNG，或带 AND 掩码的 DIB）、热点坐标；多尺寸编码 |
@@ -159,7 +159,9 @@ JPEG 2000 无损解码与 libopenjp2 逐位一致，有损解码 PSNR 超过 84 
   `TryDecode` 返回静态图或动画的第 0 帧，`TryOpenFrames` 返回所有帧；`WebpAnimationDecoder` 另外提供
   按时间戳定位和每帧的矩形。`WebpEncoder.EncodeLossless` 编码 VP8L 静态图（含 alpha），压缩力度 0–9；
   `WebpEncoder.EncodeLossy` 编码 VP8 静态图，质量 0–100、力度 0–6，透明度写进 ALPH 平面（默认无损，`AlphaQuality`
-  低于 100 时减少 alpha 级数）；两者都输出到数组或流，并可写入 ICC / Exif / XMP。还没有动画编码。
+  低于 100 时减少 alpha 级数）；两者都输出到数组或流，并可写入 ICC / Exif / XMP。`WebpAnimationEncoder`（逐帧添加）和
+  `WebpEncoder.EncodeAnimation` 编码动画：有损（默认）、无损，或每帧取两者中较小的；输入可以是整帧画布（编码器只写变化的
+  矩形，选择 blend 或直接覆盖，合并不变的帧），也可以是调用方给定的 ANMF 帧；`MaxKeyframeDistance` 限制跳转时要解码的帧数。
 - **Gif**：GIF89a：全局 / 局部调色板、隔行、透明、全部 dispose 方式、NETSCAPE2.0 循环次数；合成好的帧，
   可跳转。规范没有定死的行为，按浏览器的做法处理，列在包的 README 里。编码器：静态图和动画，精确调色板或
   Wu 量化（可选 Floyd–Steinberg 抖动），不透明动画只写变化的矩形。

@@ -78,7 +78,7 @@ public static partial class WebpEncoder
             new WebpMetadata(options?.IccProfile, options?.Exif, options?.Xmp));
     }
 
-    private static Vp8LBitWriter EncodeVp8L(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    internal static Vp8LBitWriter EncodeVp8L(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
         WebpLosslessEncodeOptions? options, int stride, Vp8LAblation ablation)
     {
         options ??= new WebpLosslessEncodeOptions();
@@ -125,7 +125,7 @@ public static partial class WebpEncoder
     /// input converts to <see cref="ImagePixelFormat.Bgra32"/> and BGR-order input, read as if it were
     /// RGB, to <see cref="ImagePixelFormat.Rgba32"/>.
     /// </summary>
-    private static void ToArgb(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, int rowStride, uint[] argb)
+    internal static void ToArgb(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, int rowStride, uint[] argb)
     {
         (int channels, ImagePixelFormat target) = format switch
         {

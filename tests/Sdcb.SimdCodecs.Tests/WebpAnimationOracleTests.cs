@@ -362,7 +362,7 @@ public sealed class WebpAnimationOracleTests
         Assert.Throws<ArgumentOutOfRangeException>(() => decoder.Seek(decoder.FrameCount));
     }
 
-    private static byte[][] RunAnimDump(string animDump, string input, int width, int height)
+    internal static byte[][] RunAnimDump(string animDump, string input, int width, int height)
     {
         string outputDirectory = Directory.CreateTempSubdirectory("anim_dump_").FullName;
         try
