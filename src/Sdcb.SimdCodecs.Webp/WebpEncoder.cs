@@ -19,6 +19,15 @@ public sealed record WebpLosslessEncodeOptions
     /// alpha value is kept exactly either way.
     /// </summary>
     public bool Exact { get; init; }
+
+    /// <summary>An ICC profile to embed (<c>ICCP</c> chunk), or null.</summary>
+    public byte[]? IccProfile { get; init; }
+
+    /// <summary>Exif metadata to embed (<c>EXIF</c> chunk, the TIFF-structured payload without the Exif header), or null.</summary>
+    public byte[]? Exif { get; init; }
+
+    /// <summary>XMP metadata to embed (<c>XMP </c> chunk), or null.</summary>
+    public byte[]? Xmp { get; init; }
 }
 
 /// <summary>
@@ -47,10 +56,7 @@ public static class WebpEncoder
         WebpLosslessEncodeOptions? options, int stride, Vp8LAblation ablation)
     {
         using var writer = EncodeVp8L(pixels, width, height, format, options, stride, ablation);
-        ReadOnlySpan<byte> vp8l = writer.Finish();
-        byte[] file = new byte[ContainerSize(vp8l.Length)];
-        WriteContainer(vp8l, file);
-        return file;
+        return Container(writer.Finish(), width, height, options);
     }
 
     /// <summary>Encodes a lossless WebP file into <paramref name="output"/>, from its current position.</summary>
@@ -60,18 +66,16 @@ public static class WebpEncoder
     {
         ArgumentNullException.ThrowIfNull(output);
         using var writer = EncodeVp8L(pixels, width, height, format, options, stride, Vp8LAblation.None);
-        ReadOnlySpan<byte> vp8l = writer.Finish();
-        byte[] file = ArrayPool<byte>.Shared.Rent(ContainerSize(vp8l.Length));
-        try
-        {
-            int size = ContainerSize(vp8l.Length);
-            WriteContainer(vp8l, file.AsSpan(0, size));
-            output.Write(file, 0, size);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(file);
-        }
+        output.Write(Container(writer.Finish(), width, height, options));
+    }
+
+    /// <summary>The VP8L bitstream in its container: the simple format, or VP8X when there is metadata.</summary>
+    private static byte[] Container(ReadOnlySpan<byte> vp8l, int width, int height, WebpLosslessEncodeOptions? options)
+    {
+        // The VP8L header's alpha_is_used bit: bit 28 after the signature byte, i.e. bit 4 of byte 4.
+        bool hasAlpha = (vp8l[4] & 0x10) != 0;
+        return WebpContainerWriter.Still(width, height, hasAlpha, "VP8L"u8, vp8l, default,
+            new WebpMetadata(options?.IccProfile, options?.Exif, options?.Xmp));
     }
 
     private static Vp8LBitWriter EncodeVp8L(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
@@ -151,21 +155,6 @@ public static class WebpEncoder
         if (!BitConverter.IsLittleEndian)
         {
             BinaryPrimitives.ReverseEndianness(argb.AsSpan(0, width * height), argb.AsSpan(0, width * height));
-        }
-    }
-
-    private static int ContainerSize(int vp8lLength) => checked(20 + vp8lLength + (vp8lLength & 1));
-
-    private static void WriteContainer(ReadOnlySpan<byte> vp8l, Span<byte> file)
-    {
-        "RIFF"u8.CopyTo(file);
-        BinaryPrimitives.WriteUInt32LittleEndian(file[4..], (uint)(file.Length - 8));
-        "WEBPVP8L"u8.CopyTo(file[8..]);
-        BinaryPrimitives.WriteUInt32LittleEndian(file[16..], (uint)vp8l.Length);
-        vp8l.CopyTo(file[20..]);
-        if ((vp8l.Length & 1) != 0)
-        {
-            file[^1] = 0;
         }
     }
 }

@@ -20,11 +20,12 @@ internal static class WebpOracle
 {
     private const string HowToGet =
         "Install the `webp` package (apt-get install webp), put the libwebp release binaries on PATH, " +
-        "or set DWEBP / ANIM_DUMP; anim_dump can also be built with " +
+        "or set DWEBP / ANIM_DUMP / WEBPINFO; anim_dump can also be built with " +
         "`bash tests/Sdcb.SimdCodecs.Tests/Oracle/webp/build.sh`.";
 
     private static readonly Lazy<(string? Path, string Reason)> DwebpTool = new(() => Resolve("DWEBP", "dwebp"));
     private static readonly Lazy<(string? Path, string Reason)> AnimDumpTool = new(() => Resolve("ANIM_DUMP", "anim_dump"));
+    private static readonly Lazy<(string? Path, string Reason)> WebpinfoTool = new(() => Resolve("WEBPINFO", "webpinfo"));
 
     /// <summary>The resolved <c>dwebp</c>, or null.</summary>
     public static string? Dwebp => DwebpTool.Value.Path;
@@ -37,6 +38,16 @@ internal static class WebpOracle
     {
         OracleGate.RequireOrSkip(Dwebp is not null, "dwebp", DwebpTool.Value.Reason);
         return Dwebp!;
+    }
+
+    /// <summary>The resolved <c>webpinfo</c> (container and bitstream checker), or null.</summary>
+    public static string? Webpinfo => WebpinfoTool.Value.Path;
+
+    /// <summary>Returns <c>webpinfo</c>; skips, or fails under <c>REQUIRE_ORACLES</c>, when it is missing.</summary>
+    public static string RequireWebpinfo()
+    {
+        OracleGate.RequireOrSkip(Webpinfo is not null, "webpinfo", WebpinfoTool.Value.Reason);
+        return Webpinfo!;
     }
 
     /// <summary>Returns <c>anim_dump</c>; skips, or fails under <c>REQUIRE_ORACLES</c>, when it is missing.</summary>
