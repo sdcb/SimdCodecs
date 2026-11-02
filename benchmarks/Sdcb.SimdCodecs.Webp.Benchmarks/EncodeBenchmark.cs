@@ -278,8 +278,9 @@ internal static class EncodeBenchmark
         if (!alpha)
         {
             list.Add(new("ImageSharp", (img, q) => ImageSharpEncode(img, new IsWebpEncoder { FileFormat = IsWebpFileFormat.Lossy, Quality = q }), qs));
-            list.Add(new("ours", OursLossy, qs));
         }
+
+        list.Add(new("ours", OursLossy, qs));
 
         return list;
     }

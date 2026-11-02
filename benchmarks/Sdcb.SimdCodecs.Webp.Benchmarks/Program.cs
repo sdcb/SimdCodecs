@@ -90,7 +90,7 @@ switch (command)
         return EncodeCalibrate.Run(int.TryParse(Opt("--max-dim"), out int calDim) ? calDim : 1024, Opt("--images"));
     case "tune":
         // Each argument after the options is one set of overrides; "-" is the default configuration.
-        return EncodeTune.Run(int.TryParse(Opt("--max-dim"), out int tuneDim) ? tuneDim : 1024, Opt("--images"),
+        return (args.Contains("--alpha") ? (Func<int, string?, IReadOnlyList<string>, int>)EncodeTune.RunAlpha : EncodeTune.Run)(int.TryParse(Opt("--max-dim"), out int tuneDim) ? tuneDim : 1024, Opt("--images"),
             args.Skip(1).Where((a, i) => !a.StartsWith("--", StringComparison.Ordinal) && (i == 0 || !args[i].StartsWith("--", StringComparison.Ordinal)))
                 .Select(a => a == "-" ? "" : a).ToList());
     case "encode-peakmem":

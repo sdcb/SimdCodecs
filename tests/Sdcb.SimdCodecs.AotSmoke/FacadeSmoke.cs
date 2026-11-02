@@ -82,6 +82,7 @@ internal static class FacadeSmoke
             ("webp-anim", Fixture("anim-img2webp-mixed.webp")),
             ("webp-enc-lossless", WebpEncoder.EncodeLossless(rgba, w, h, ImagePixelFormat.Rgba32)),
             ("webp-enc-lossy", WebpEncoder.EncodeLossy(rgb, w, h, ImagePixelFormat.Rgb24, new WebpLossyEncodeOptions { Quality = 60, Effort = 6 })),
+            ("webp-enc-lossy-alpha", WebpEncoder.EncodeLossy(rgba, w, h, ImagePixelFormat.Rgba32, new WebpLossyEncodeOptions { Quality = 60, Effort = 6 })),
             ("gif", GifEncoder.Encode(rgb, w, h, 3)),
             ("gif-anim", GifEncoder.EncodeAnimation(
                 [new GifAnimationFrame(rgb, TimeSpan.FromMilliseconds(50)), new GifAnimationFrame(rgb.Reverse().ToArray(), TimeSpan.FromMilliseconds(50))],

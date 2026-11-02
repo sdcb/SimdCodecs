@@ -2,10 +2,11 @@
 
 Pure-managed WebP decoding and encoding for .NET 10, derived from RFC 6386 and
 RFC 9649. `WebpEncoder.EncodeLossless` writes VP8L stills (with alpha, effort
-0–9); `WebpEncoder.EncodeLossy` writes opaque VP8 stills (quality 0–100, on
-about libwebp's size scale, and effort 0–6). Both can embed ICC, Exif and XMP
-(the VP8X extended format). There is no animation encoder, and lossy encoding
-of images with transparency is not supported yet.
+0–9); `WebpEncoder.EncodeLossy` writes VP8 stills (quality 0–100, on
+about libwebp's size scale, and effort 0–6), with transparency in an ALPH
+plane: lossless by default, with fewer levels at `AlphaQuality` below 100.
+Both can embed ICC, Exif and XMP (the VP8X extended format). There is no
+animation encoder yet.
 
 Supported input includes VP8 lossy, VP8L lossless, ALPH transparency, and
 animated WebP with full-canvas RGBA frames, random seeking, and frame timing.

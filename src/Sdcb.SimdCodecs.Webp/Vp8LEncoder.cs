@@ -104,6 +104,18 @@ internal static partial class Vp8LEncoder
         writer.WriteBits(hasAlpha ? 1u : 0u, 1);
         writer.WriteBits(0, 3);
 
+        EncodeImageStream(argb, width, height, effort, writer, ablation);
+    }
+
+    /// <summary>
+    /// The image stream of Section 7 without the header: transforms and entropy-coded pixels. On its
+    /// own (implicit size, green channel) it is the ALPH chunk's lossless alpha. <paramref name="argb"/>
+    /// may be modified.
+    /// </summary>
+    public static void EncodeImageStream(uint[] argb, int width, int height, int effort, Vp8LBitWriter writer,
+        Vp8LAblation ablation = Vp8LAblation.None)
+    {
+        int n = width * height;
         Vp8LEncoderConfig config = Vp8LEncoderConfig.ForEffort(effort) with { Ablation = ablation };
         if ((ablation & Vp8LAblation.NoCache) != 0)
         {

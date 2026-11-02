@@ -15,6 +15,20 @@ public sealed record WebpLossyEncodeOptions
     /// <summary>Compression effort, 0 (fastest) to 6 (slowest, smallest at a given quality). Default 4.</summary>
     public int Effort { get; init; } = 4;
 
+    /// <summary>
+    /// Quality of the alpha plane of an image with transparency, 0 to 100. At 100 (the default) every
+    /// alpha value is kept exactly; below it the values are reduced to fewer levels (0 and 255 always
+    /// kept) before the plane is compressed losslessly. Opaque images have no alpha plane.
+    /// </summary>
+    public int AlphaQuality { get; init; } = 100;
+
+    /// <summary>
+    /// Keep the colour of fully transparent pixels as closely as the colour of visible ones. Off by
+    /// default, as in libwebp: the RGB under alpha 0 is invisible, and the encoder replaces it with
+    /// colours that cost few bits. Visible pixels and the alpha plane are coded the same way either way.
+    /// </summary>
+    public bool Exact { get; init; }
+
     /// <summary>An ICC profile to embed (<c>ICCP</c> chunk), or null.</summary>
     public byte[]? IccProfile { get; init; }
 
@@ -30,7 +44,11 @@ public static partial class WebpEncoder
     /// <summary>The largest width or height a VP8 key frame can describe (14 bits).</summary>
     public const int MaximumLossyDimension = 16383;
 
-    /// <summary>Encodes a lossy WebP file (VP8, RFC 6386).</summary>
+    /// <summary>
+    /// Encodes a lossy WebP file: the colour as VP8 (RFC 6386) and, when the image has transparency,
+    /// the alpha plane in an <c>ALPH</c> chunk (losslessly at the default
+    /// <see cref="WebpLossyEncodeOptions.AlphaQuality"/>), which needs the extended (VP8X) format.
+    /// </summary>
     /// <param name="pixels">The image, top row first.</param>
     /// <param name="width">Width in pixels, 1..16383.</param>
     /// <param name="height">Height in pixels, 1..16383.</param>
@@ -38,13 +56,12 @@ public static partial class WebpEncoder
     /// <param name="options">Quality, effort and metadata; null for the defaults.</param>
     /// <param name="stride">Bytes from one input row to the next; 0 means tightly packed.</param>
     /// <exception cref="ArgumentException">The size or buffer does not fit.</exception>
-    /// <exception cref="NotSupportedException">The image has transparency (lossy alpha is not written yet).</exception>
     public static byte[] EncodeLossy(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
         WebpLossyEncodeOptions? options = null, int stride = 0)
     {
         options ??= new WebpLossyEncodeOptions();
-        byte[] vp8 = EncodeVp8(pixels, width, height, format, options, stride, null);
-        return WebpContainerWriter.Still(width, height, hasAlpha: false, "VP8 "u8, vp8, default,
+        (byte[] vp8, byte[]? alph) = EncodeVp8(pixels, width, height, format, options, stride, null);
+        return WebpContainerWriter.Still(width, height, alph is not null, "VP8 "u8, vp8, alph,
             new WebpMetadata(options.IccProfile, options.Exif, options.Xmp));
     }
 
@@ -61,11 +78,12 @@ public static partial class WebpEncoder
     internal static byte[] EncodeLossy(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
         Vp8EncoderConfig config)
     {
-        byte[] vp8 = EncodeVp8(pixels, width, height, format, new WebpLossyEncodeOptions(), 0, config);
-        return WebpContainerWriter.Still(width, height, hasAlpha: false, "VP8 "u8, vp8, default, default);
+        (byte[] vp8, byte[]? alph) = EncodeVp8(pixels, width, height, format, new WebpLossyEncodeOptions { Effort = config.Effort }, 0, config);
+        return WebpContainerWriter.Still(width, height, alph is not null, "VP8 "u8, vp8, alph, default);
     }
 
-    private static byte[] EncodeVp8(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    /// <summary>The VP8 frame, and the ALPH payload when the image has transparency.</summary>
+    private static (byte[] Vp8, byte[]? Alph) EncodeVp8(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
         WebpLossyEncodeOptions options, int stride, Vp8EncoderConfig? config)
     {
         if (width is < 1 or > MaximumLossyDimension || height is < 1 or > MaximumLossyDimension)
@@ -83,6 +101,11 @@ public static partial class WebpEncoder
             throw new ArgumentOutOfRangeException(nameof(options), options.Effort, "Effort must be 0..6.");
         }
 
+        if (options.AlphaQuality is < 0 or > 100)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options), options.AlphaQuality, "AlphaQuality must be 0..100.");
+        }
+
         if (!PixelConverter.TryGetLayout(width, height, format, stride, pixels.Length, out int rowStride))
         {
             throw new ArgumentException($"The pixels do not hold a {width}x{height} {format} image with stride {stride}.", nameof(pixels));
@@ -94,17 +117,19 @@ public static partial class WebpEncoder
         try
         {
             ToArgb(pixels, width, height, format, rowStride, argb);
-            for (int i = 0; i < n; i++)
+            byte[]? alph = null;
+            if (WebpAlphaEncoder.HasAlpha(argb.AsSpan(0, n)))
             {
-                if (argb[i] < 0xFF000000u)
+                alph = WebpAlphaEncoder.Encode(argb.AsSpan(0, n), width, height, config, options.AlphaQuality);
+                if (!options.Exact)
                 {
-                    throw new NotSupportedException("Lossy WebP with transparency is not written yet; use EncodeLossless.");
+                    WebpAlphaEncoder.FlattenInvisible(argb.AsSpan(0, n), width, height);
                 }
             }
 
             using var encoder = new Vp8Encoder(width, height, config);
             encoder.SetArgb(argb.AsSpan(0, n));
-            return encoder.Encode();
+            return (encoder.Encode(), alph);
         }
         finally
         {

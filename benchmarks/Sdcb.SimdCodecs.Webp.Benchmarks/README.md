@@ -105,7 +105,9 @@ same total bytes on the photos (only sizes are observed) and prints the table `V
 through, so our quality numbers mean about the sizes libwebp's do. `tune` takes several override sets (`-` for
 the default) and prints, for each, the mean BD-rate against libwebp over the whole sweep, over q ≤ 60 and over
 q ≥ 70, and the q90 byte ratio and PSNR-Y difference; libwebp's curves are computed once and images are encoded
-in parallel, so one set takes seconds. Confirm a choice with the gate afterwards.
+in parallel, so one set takes seconds. Confirm a choice with the gate afterwards. With `--alpha` (after the
+override sets) it lists instead, for the inputs with alpha at q50 / 75 / 90, the ALPH and VP8 chunk sizes and the
+encode time of libwebp and of ours under each set, and the visible PSNR-RGB.
 
 The commit gate is `encode --mode all --efforts 0,1,2,3,4,5,6,7,8,9 --gate` with `cwebp` (and the
 other release tools) found; it exits 1 when any check below fails:
@@ -228,4 +230,6 @@ The lossy encoder's first recording is
 [`encode-m3-lossy-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m3-lossy-2026-11-02-amd-ryzen-7-5800x.md).
 The high-rate tuning that followed is
 [`encode-m3b-lossy-tuning-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m3b-lossy-tuning-2026-11-02-amd-ryzen-7-5800x.md).
+Lossy with alpha starts at
+[`encode-m4-lossy-alpha-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m4-lossy-alpha-2026-11-02-amd-ryzen-7-5800x.md).
 Put each new recording there too.

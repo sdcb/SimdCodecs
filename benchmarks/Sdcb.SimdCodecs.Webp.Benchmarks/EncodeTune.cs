@@ -54,6 +54,61 @@ internal static class EncodeTune
         return 0;
     }
 
+    /// <summary>
+    /// Inputs with alpha: per input and quality, the ALPH and VP8 chunk sizes of libwebp's file and of
+    /// ours under each override set, and the visible PSNR-RGB, to tell the alpha plane's cost from the colour's.
+    /// </summary>
+    public static int RunAlpha(int maxDim, string? filter, IReadOnlyList<string> variants)
+    {
+        List<EncodeImage> images = EncodeCorpus.WithAlpha(EncodeCorpus.Load(maxDim, filter));
+        Console.WriteLine("| input | q | encoder | ALPH | VP8 | visible PSNR-RGB |");
+        Console.WriteLine("|---|---:|---|---:|---:|---:|");
+        foreach (EncodeImage image in images)
+        {
+            foreach (int q in new[] { 50, 75, 90 })
+            {
+                LibWebp.EncodeRgba(image.Rgba, image.Width, image.Height, q); // warm
+                long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                byte[] theirs = LibWebp.EncodeRgba(image.Rgba, image.Width, image.Height, q);
+                double t = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+                Row(image, q, string.Create(CultureInfo.InvariantCulture, $"libwebp ({t:F0} ms)"), theirs);
+                foreach (string variant in variants)
+                {
+                    EncodeBenchmark.OursLossy(image, q, variant); // warm
+                    long start = System.Diagnostics.Stopwatch.GetTimestamp();
+                    byte[] webp = EncodeBenchmark.OursLossy(image, q, variant);
+                    double ms = System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+                    Row(image, q, string.Create(CultureInfo.InvariantCulture, $"{(variant.Length == 0 ? "ours" : variant)} ({ms:F0} ms)"), webp);
+                }
+            }
+        }
+
+        return 0;
+
+        static void Row(EncodeImage image, int q, string name, byte[] webp)
+        {
+            (double psnr, bool exact) = EncodeRd.ScoreVisible(image, EncodeBenchmark.DecodeWithLibwebp(webp, image));
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                $"| {image.Name} | {q} | {name} | {ChunkSize(webp, "ALPH")} | {ChunkSize(webp, "VP8 ")} | {psnr:F2}{(exact ? "" : " (alpha differs)")} |"));
+        }
+    }
+
+    private static int ChunkSize(byte[] webp, string fourCc)
+    {
+        for (int at = 12; at + 8 <= webp.Length;)
+        {
+            int size = BitConverter.ToInt32(webp, at + 4);
+            if (System.Text.Encoding.ASCII.GetString(webp, at, 4) == fourCc)
+            {
+                return size;
+            }
+
+            at += 8 + size + (size & 1);
+        }
+
+        return 0;
+    }
+
     private static double Bd(List<Point> a, List<Point> b, Func<int, bool> band, Func<Point, double> metric) =>
         EncodeRd.BdRate(a.Where(p => band(p.Q)).Select(p => (p.Bytes, metric(p))), b.Where(p => band(p.Q)).Select(p => (p.Bytes, metric(p))));
 

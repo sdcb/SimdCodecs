@@ -65,6 +65,13 @@ internal sealed record Vp8EncoderConfig
     public int I16Candidates { get; init; } = 2;
     public int UvCandidates { get; init; } = 2;
 
+    /// <summary>Lossless effort (0..9) of the alpha plane's VP8L stream.</summary>
+    public int AlphaEffort { get; init; } = 4;
+
+    /// <summary>Whether all four alpha filters are tried (otherwise none only); <see cref="AlphaFilter"/> ≥ 0 forces one.</summary>
+    public bool AlphaTryFilters { get; init; }
+    public int AlphaFilter { get; init; } = -1;
+
     /// <summary>Whether the loop filter level is searched by decoding (otherwise taken from the quantizer).</summary>
     public bool FilterSearch { get; init; }
 
@@ -77,6 +84,8 @@ internal sealed record Vp8EncoderConfig
         I16Candidates = effort switch { <= 1 => 1, <= 4 => 2, _ => 4 },
         UvCandidates = effort switch { <= 3 => 1, 4 => 2, _ => 4 },
         FilterSearch = effort >= 6,
+        AlphaEffort = WebpAlphaEncoder.LosslessEffort(effort),
+        AlphaTryFilters = effort >= 6,
     };
 }
 
