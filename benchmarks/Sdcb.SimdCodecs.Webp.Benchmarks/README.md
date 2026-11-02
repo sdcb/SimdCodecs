@@ -94,6 +94,7 @@ dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- en
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- encode-ab [--mode lossless|lossy|all] [--reps 5] [--images TEXT]
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- ablate [--reps 3] [--images TEXT]
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- calibrate [--images TEXT]
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- tune [--max-dim 1024] [--images TEXT] <overrides|-> ...
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- encode-peakmem [--mode lossless|lossy] [--max-dim 1024] [--images TEXT]
 ```
 
@@ -101,7 +102,10 @@ dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- en
 of the internal `Vp8EncoderConfig` (`VP8CFG=Effort=6,LambdaI4=12 … encode --mode lossy`); the gate is run without
 it. `calibrate` bisects, for every fifth libwebp quality, the base quantizer index at which our encoder writes the
 same total bytes on the photos (only sizes are observed) and prints the table `Vp8EncoderConfig.For` maps quality
-through, so our quality numbers mean about the sizes libwebp's do.
+through, so our quality numbers mean about the sizes libwebp's do. `tune` takes several override sets (`-` for
+the default) and prints, for each, the mean BD-rate against libwebp over the whole sweep, over q ≤ 60 and over
+q ≥ 70, and the q90 byte ratio and PSNR-Y difference; libwebp's curves are computed once and images are encoded
+in parallel, so one set takes seconds. Confirm a choice with the gate afterwards.
 
 The commit gate is `encode --mode all --efforts 0,1,2,3,4,5,6,7,8,9 --gate` with `cwebp` (and the
 other release tools) found; it exits 1 when any check below fails:
@@ -222,4 +226,6 @@ Encoding starts from [`encode-baseline-2026-11-01-amd-ryzen-7-5800x.md`](optimiz
 libwebp, cwebp's effort levels and ImageSharp, before this repository had an encoder.
 The lossy encoder's first recording is
 [`encode-m3-lossy-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m3-lossy-2026-11-02-amd-ryzen-7-5800x.md).
+The high-rate tuning that followed is
+[`encode-m3b-lossy-tuning-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m3b-lossy-tuning-2026-11-02-amd-ryzen-7-5800x.md).
 Put each new recording there too.

@@ -90,7 +90,8 @@ internal sealed partial class Vp8Encoder
         _segmentCount = wanted;
         for (int k = 0; k < wanted; k++)
         {
-            int offset = (int)Math.Round(_config.SegmentSpread * (centre[k] - mean) / spread);
+            double scale = (_config.QuantIndex + 8) / 48.0; // SegmentSpread is in steps at index 40
+            int offset = (int)Math.Round(_config.SegmentSpread * scale * (centre[k] - mean) / spread);
             SetQuant(k, _config.QuantIndex + offset);
         }
 

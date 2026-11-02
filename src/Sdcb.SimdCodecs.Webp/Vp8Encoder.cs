@@ -23,13 +23,13 @@ internal sealed record Vp8EncoderConfig
     public int Segments { get; init; } = 4;
 
     /// <summary>Rate-distortion trade-off: λ = scale/256 · q², separately for the luma modes and chroma.</summary>
-    public int LambdaI16 { get; init; } = 10;
-    public int LambdaI4 { get; init; } = 10;
-    public int LambdaUv { get; init; } = 10;
+    public int LambdaI16 { get; init; } = 4;
+    public int LambdaI4 { get; init; } = 4;
+    public int LambdaUv { get; init; } = 4;
 
     /// <summary>Quantizer rounding (1/256 of a step) for DC and AC levels; lower is a larger dead zone.</summary>
-    public int RoundingDc { get; init; } = 110;
-    public int RoundingAc { get; init; } = 85;
+    public int RoundingDc { get; init; } = 100;
+    public int RoundingAc { get; init; } = 95;
 
     /// <summary>
     /// Base quantizer index of each quality, from the benchmark's <c>calibrate</c> command: the index at
@@ -38,21 +38,25 @@ internal sealed record Vp8EncoderConfig
     /// </summary>
     private static ReadOnlySpan<byte> QualityToIndex =>
     [
-        110, 104, 97, 91, 84, 78, 76, 74, 72, 70,
-        68, 67, 65, 64, 62, 61, 60, 59, 58, 57,
-        56, 55, 54, 54, 53, 52, 51, 50, 49, 48,
-        47, 46, 45, 44, 43, 42, 41, 40, 40, 39,
-        38, 37, 36, 36, 35, 34, 33, 33, 32, 32,
-        31, 31, 30, 30, 29, 29, 29, 28, 28, 27,
-        27, 27, 26, 26, 25, 25, 24, 24, 23, 23,
-        22, 22, 21, 21, 20, 20, 19, 18, 17, 16,
-        15, 14, 13, 12, 11, 10, 9, 8, 8, 7,
-        6, 5, 4, 3, 2, 1, 1, 1, 0, 0,
+        105, 99, 93, 88, 82, 76, 74, 72, 71, 69,
+        67, 66, 65, 63, 62, 61, 60, 59, 58, 57,
+        56, 55, 54, 54, 53, 52, 51, 50, 50, 49,
+        48, 47, 47, 46, 46, 45, 44, 43, 43, 42,
+        41, 40, 39, 39, 38, 37, 36, 36, 35, 35,
+        34, 34, 33, 33, 32, 32, 31, 31, 30, 30,
+        29, 29, 28, 28, 27, 27, 27, 26, 26, 25,
+        25, 25, 24, 24, 23, 23, 22, 21, 19, 18,
+        17, 16, 15, 14, 13, 12, 11, 10, 9, 8,
+        7, 6, 5, 4, 3, 2, 2, 1, 1, 0,
         0,
     ];
 
-    /// <summary>Spread of the segment quantizers around the base (index steps from the flattest to the busiest).</summary>
-    public int SegmentSpread { get; init; } = 12;
+    /// <summary>
+    /// Spread of the segment quantizers around the base: index steps from the flattest to the busiest
+    /// segment at base index 40, in proportion to (index + 8) elsewhere. A fixed number of steps is a
+    /// far larger change of step size at fine quantizers, where it cost PSNR for no gain in SSIM.
+    /// </summary>
+    public int SegmentSpread { get; init; } = 18;
 
     /// <summary>4×4 modes given a full rate-distortion trial per block, the best by SATD (10 = all).</summary>
     public int I4Candidates { get; init; } = 4;

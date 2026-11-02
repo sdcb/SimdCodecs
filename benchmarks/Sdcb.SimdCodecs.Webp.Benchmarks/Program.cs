@@ -33,6 +33,8 @@ const string Usage = """
                                           encode with each stage disabled in turn to attribute size and time
       calibrate [--max-dim N] [--images TEXT]
                                           lossy quality scale: the quantizer index matching libwebp's bytes at each quality
+      tune [--max-dim N] [--images TEXT] <overrides|-> ...
+                                          lossy BD-rate vs libwebp for each configuration override (all, q<=60, q>=70)
       encode-peakmem [--mode lossless|lossy] [--max-dim N] [--images TEXT]
                                           peak working set and managed allocations per encode, one fresh process each
     """;
@@ -86,6 +88,11 @@ switch (command)
             int.TryParse(Opt("--max-dim"), out int aDim) ? aDim : 1024, Opt("--images"));
     case "calibrate":
         return EncodeCalibrate.Run(int.TryParse(Opt("--max-dim"), out int calDim) ? calDim : 1024, Opt("--images"));
+    case "tune":
+        // Each argument after the options is one set of overrides; "-" is the default configuration.
+        return EncodeTune.Run(int.TryParse(Opt("--max-dim"), out int tuneDim) ? tuneDim : 1024, Opt("--images"),
+            args.Skip(1).Where((a, i) => !a.StartsWith("--", StringComparison.Ordinal) && (i == 0 || !args[i].StartsWith("--", StringComparison.Ordinal)))
+                .Select(a => a == "-" ? "" : a).ToList());
     case "encode-peakmem":
         return EncodePeakMemory.Run(Opt("--mode") ?? "lossless", int.TryParse(Opt("--max-dim"), out int peakDim) ? peakDim : 1024, Opt("--images"));
     case "encode-peakmem-child":

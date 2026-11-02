@@ -176,11 +176,18 @@ internal static class EncodeBenchmark
                 new WebpLossyEncodeOptions { Quality = quality });
         }
 
+        return OursLossy(img, quality, overrides);
+    }
+
+    /// <summary>Our lossy encoder at the default effort with <paramref name="overrides"/> (<c>Name=value,…</c>) applied.</summary>
+    internal static byte[] OursLossy(EncodeImage img, int quality, string overrides)
+    {
         var config = Vp8EncoderConfig.For(quality, 4);
         foreach (string pair in overrides.Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
             string[] kv = pair.Split('=');
-            System.Reflection.PropertyInfo property = typeof(Vp8EncoderConfig).GetProperty(kv[0])!;
+            System.Reflection.PropertyInfo property = typeof(Vp8EncoderConfig).GetProperty(kv[0])
+                ?? throw new ArgumentException($"no configuration field {kv[0]}");
             property.SetValue(config, property.PropertyType == typeof(bool) ? kv[1] != "0" : int.Parse(kv[1], CultureInfo.InvariantCulture));
         }
 
