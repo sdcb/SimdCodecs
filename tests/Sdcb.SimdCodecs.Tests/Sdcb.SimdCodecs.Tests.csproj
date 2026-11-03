@@ -23,6 +23,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Sdcb.SimdCodecs\Sdcb.SimdCodecs.csproj" />
+    <!-- Tested directly, never through the facade: the HEIF/HEVC package is patent-isolated and not in the meta-package. -->
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Heif\Sdcb.SimdCodecs.Heif.csproj" />
     <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Tiff\Sdcb.SimdCodecs.Tiff.csproj" />
     <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Exif\Sdcb.SimdCodecs.Exif.csproj" />
     <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Png\Sdcb.SimdCodecs.Png.csproj" />

@@ -120,6 +120,20 @@ internal ref struct BoxReader
 
     // ── FourCC helpers ────────────────────────────────────────────────────────────
 
+    internal const uint BoxFtyp = 0x66747970; // 'ftyp'
+    internal const uint BoxMeta = 0x6D657461; // 'meta'
+    internal const uint BoxHdlr = 0x68646C72; // 'hdlr'
+    internal const uint BoxPict = 0x70696374; // 'pict' (handler type)
+    internal const uint BoxPitm = 0x7069746D; // 'pitm'
+    internal const uint BoxIinf = 0x69696E66; // 'iinf'
+    internal const uint BoxInfe = 0x696E6665; // 'infe'
+    internal const uint BoxIloc = 0x696C6F63; // 'iloc'
+    internal const uint BoxIprp = 0x69707270; // 'iprp'
+    internal const uint BoxIpco = 0x6970636F; // 'ipco'
+    internal const uint BoxIpma = 0x69706D61; // 'ipma'
+    internal const uint BoxIref = 0x69726566; // 'iref'
+    internal const uint BoxIdat = 0x69646174; // 'idat'
+
     internal static uint MakeFourCC(byte a, byte b, byte c, byte d) =>
         ((uint)a << 24) | ((uint)b << 16) | ((uint)c << 8) | d;
 

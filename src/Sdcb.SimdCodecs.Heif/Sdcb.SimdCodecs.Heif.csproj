@@ -45,6 +45,7 @@ responsible for evaluating HEVC patent obligations in their jurisdiction.</Descr
          The same files are shared with Sdcb.SimdCodecs.Avif when that package is added. -->
     <Compile Include="..\Shared\ExifOrientation.cs" Link="Shared\ExifOrientation.cs" />
     <Compile Include="..\Shared\Isobmff\BoxReader.cs" Link="Shared\Isobmff\BoxReader.cs" />
+    <Compile Include="..\Shared\Isobmff\ItemContainer.cs" Link="Shared\Isobmff\ItemContainer.cs" />
   </ItemGroup>
 
 </Project>

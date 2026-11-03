@@ -1,34 +1,47 @@
 # HEIF / HEIC Oracle
 
-## Oracle binary: `heif-convert` / `heif-info`
+## Oracle: ffmpeg (HEVC sample decoder)
 
-Used for byte-exact YUV comparison against our HEVC decoder in `HeifOracleTests`
-(M1 and later). The oracle binary is **libheif** (`heif-convert`), black-box only —
-never read its source (see AGENTS.md).
+M1 compares **decoded samples**, not pixels: the Y / Cb / Cr planes of every coded image (every grid
+tile) and of the composed primary image must equal a reference decoder's, bit for bit (AGENTS.md,
+"HEVC decode is byte-exact"). The reference is **ffmpeg 8.1.2**, run as a black box — its HEVC decoder
+`HeifOracle.DecodeToYuv` drives through the documented CLI only. ffmpeg's and libde265's sources are on
+the clean-room list; they are never read (AGENTS.md).
 
-**Version contract:** pin the version in `fetch-oracle.sh`. Bumping requires
-re-recording every TSV golden in `Fixtures/heif/`.
+**Version contract:** `HeifOracle.PinnedVersion` is `8.1.2`, and `HeifOracle` checks `ffmpeg -version`
+before comparing anything: a different build is treated as unavailable (skipped, or failed under
+`REQUIRE_ORACLES=1`). Bumping the pin means re-recording every digest in `Fixtures/heif/heif-golden.tsv`
+and re-reviewing the change.
 
 ### Getting the oracle
 
-**Windows (Git Bash):**
+This machine has ffmpeg 8.1.2 at `C:/_/3rd/ffmpeg-bin/ffmpeg.exe`; `HeifOracle` finds it through the
+`FFMPEG` variable, `PATH`, or that directory. Elsewhere:
+
 ```bash
-# Install via vcpkg (library + examples; heif-enc and heif-convert come from
-# the examples sub-build — build from source):
-C:\_\3rd\vcpkg\vcpkg.exe install libheif[hevc] --triplet x64-windows
-# Or install the pre-built Windows binary from the libheif GitHub releases.
-bash tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch-oracle.sh
+# Linux: distro packages are usually fine, but only the pinned version runs the tests
+sudo apt-get install ffmpeg && ffmpeg -version | head -1
+# Windows: the gyan.dev "full" build (ffmpeg -version reports 8.1.2-full_build-...)
 ```
 
-**Linux:**
-```bash
-sudo apt-get install libheif-examples   # provides heif-convert and heif-info
-# OR:
-bash tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch-oracle.sh
-```
+Set `FFMPEG` to the executable when it is not on `PATH`.
 
-Set `HEIF_CONVERT` and `HEIF_INFO` environment variables to point at the
-binaries if they are not on `PATH`.
+### Why not `heif-convert`
+
+`heif-convert` (libheif's example program) was the original plan, but vcpkg's `libheif` port installs
+the library only, and building the examples against it did not produce a working binary here. ffmpeg
+decodes the HEVC payload directly, needs no extra install, and — importantly — can be pinned and
+version-checked. The committed digests run without any oracle; the live comparison is the stricter
+check and runs whenever the pinned tool is present.
+
+### Goldens
+
+`Fixtures/heif/heif-golden.tsv` holds, per fixture, the size, bit depth and SHA-256 of the three planes
+(length-prefixed, little-endian samples; see `HeifTests.Digest`). Record or refresh with
+`REGEN_HEIF_ORACLE=1`, which only rewrites the manifest — review the diff. The RGBA cross-check against
+Magick.NET (libheif) samples every ~200 000th pixel and allows ±2 per channel, because the colour
+conversion is defined in-repo (`HeifColor`) while libheif uses its own; they must agree that closely,
+and that comparison is what catches a systematically wrong conversion in either direction.
 
 ## Test images (fixtures)
 
@@ -41,9 +54,9 @@ bash tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh
 
 | File | Resolution | Profile | Tiles | Notes |
 |---|---|---|---|---|
-| `hevc-main-3072x4096-grid.heic` | 3072×4096 | Main 8-bit | 50 (6×8) | |
+| `hevc-main-3072x4096-grid.heic` | 3072×4096 | Main 8-bit | 48 (6×8) | 50 items: 48 tiles, the grid, Exif |
 | `hevc-main10-3072x4096-grid.heic` | 3072×4096 | Main 10 10-bit | 48 (6×8) | |
-| `hevc-main-8192x6144-grid.heic` | 8192×6144 | Main 8-bit | 192 (16×12) | 50 MP mode |
+| `hevc-main-8192x6144-grid.heic` | 8192×6144 | Main 8-bit | 192 (16×12) | 50 MP mode; 194 items |
 
 ### Synthetic fixtures
 
@@ -59,7 +72,7 @@ did the RGB → YCbCr conversion and wrote its own `colr` signalling.
 | File | Size | HEVC profile (ffprobe) | Recipe | M1? |
 |---|---|---|---|---|
 | `synth-photo-fuji-1600x900-main8.heic` | 1600×900 | Main Still Picture | fuji, q50, 4:2:0 | ✅ |
-| `synth-photo-mangrove-1599x1199-main8.heic` | 1599×1199 | Main Still Picture | mangrove, q50, 4:2:0; odd size (coded 1600×1200 + conformance window) | ✅ |
+| `synth-photo-mangrove-1599x1199-main8.heic` | 1599×1199 | Main Still Picture | mangrove, q50, 4:2:0; odd size: coded 1600×1200, a `clap` clean aperture of 1599×1199 at a half-sample horizontal offset (no SPS conformance window) | ✅ |
 | `synth-screen-testsrc2-1280x720-main8.heic` | 1280×720 | Main Still Picture | testsrc2, q75, 4:2:0 | ✅ |
 | `synth-photo-fuji-1600x900-main10intra.heic` | 1600×900 | RExt (Main 10 Intra) | fuji, q50, 4:2:0 10-bit | ❌ |
 | `synth-photo-fuji-1600x900-main12.heic` | 1600×900 | RExt (Main 12 Intra) | fuji, q50, 4:2:0 12-bit | ❌ |

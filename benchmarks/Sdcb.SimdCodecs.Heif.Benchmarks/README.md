@@ -28,7 +28,7 @@ Or point `HEIF_INPUTS` at any directory that contains the three files.
 
 | File | Resolution | Profile | Tiles |
 |---|---|---|---|
-| `hevc-main-3072x4096-grid.heic` | 3072×4096 | Main 8-bit | 50 (6×8) |
+| `hevc-main-3072x4096-grid.heic` | 3072×4096 | Main 8-bit | 48 (6×8) |
 | `hevc-main10-3072x4096-grid.heic` | 3072×4096 | Main 10 10-bit | 48 (6×8) |
 | `hevc-main-8192x6144-grid.heic` | 8192×6144 | Main 8-bit | 192 (16×12) |
 

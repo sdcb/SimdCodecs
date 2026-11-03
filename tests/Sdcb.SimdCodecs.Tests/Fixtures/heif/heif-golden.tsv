@@ -1,0 +1,8 @@
+# HEIF decode golden: SHA-256 of the Y, Cb, Cr planes (each plane length-prefixed, samples little-endian).
+# Recorded from a passing ffmpeg 8.1.2 oracle run; see HeifTests.Digest.
+hevc-main-3072x4096-grid.heic	3072	4096	8	22522a29330f5c23d09baede038b7d0b5b9c3ceb754c3302623039ea342bf32a
+hevc-main10-3072x4096-grid.heic	3072	4096	10	d8a1c8d520cfffcc95127ca795d2816757aba5d08766848b529422339147a747
+hevc-main-8192x6144-grid.heic	8192	6144	8	db6f0e32c86174ee6232c05ac603854a42ae1f2fcdf2a4710dfb13bd2b7e1330
+synth-photo-fuji-1600x900-main8.heic	1600	900	8	5579f4eda0f82d591ad9a72969aa15ba6671d6ef768d0539aa9c61c4dd06ac5b
+synth-photo-mangrove-1599x1199-main8.heic	1600	1200	8	cf0729be51b02383a8d2bdf72812f5a1a5b4702efc46c328e9c90773cef875f7
+synth-screen-testsrc2-1280x720-main8.heic	1280	720	8	28741caed32b692936d20ffdf669fc3b6fa2d8b79fd72ca5faac40f7859da8a1
