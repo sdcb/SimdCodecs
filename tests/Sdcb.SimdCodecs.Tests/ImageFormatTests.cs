@@ -19,6 +19,7 @@ namespace Sdcb.SimdCodecs.Tests;
 /// <see cref="ImageInfo.Format"/> from every codec, and <see cref="SimdCodecs.DetectFormat"/> on the
 /// decodable formats and on the signatures it only recognises.
 /// </summary>
+[Collection(FacadeRegistryCollection.Name)]
 public sealed class ImageFormatTests
 {
     private static byte[] Fixture(string directory, string name) =>

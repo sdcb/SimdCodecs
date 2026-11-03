@@ -116,6 +116,21 @@ public static class SimdCodecs
     /// <summary>Codecs in the registry, built-in ones included (for tests).</summary>
     internal static int RegisteredCount => Registry.Length;
 
+    /// <summary>The registry as it stands (for tests, to put it back with <see cref="ExchangeRegistry"/>).</summary>
+    internal static ImageDecoderRegistration[] RegistrySnapshot => Registry;
+
+    /// <summary>Replaces the registry and returns the one it replaced: lets a test register a codec and put the
+    /// process back as it found it. Not part of the API — registration is permanent for a consumer.</summary>
+    internal static ImageDecoderRegistration[] ExchangeRegistry(ImageDecoderRegistration[] registry)
+    {
+        lock (s_registerLock)
+        {
+            var previous = s_registry;
+            Volatile.Write(ref s_registry, registry);
+            return previous;
+        }
+    }
+
     /// <summary>
     /// Enables a codec this package does not reference — today <c>Sdcb.SimdCodecs.Heif</c>, kept out of the
     /// meta-package because HEVC is patent-encumbered: install it, then call
