@@ -10,8 +10,10 @@ in [`benchmarks/README.md`](../../benchmarks/README.md).
 | `Magick.NET` | libheif (via Magick.NET, black-box only) | `Directory.Packages.props` |
 | `SimdCodecs` | `Sdcb.SimdCodecs.Heif` (this repo) | same build |
 
-Magick.NET is the only competitor in M0; `SimdCodecs` is added in M2 once
-the decoder can produce correct output for all three benchmark inputs.
+Magick.NET was the only competitor in M0. Since the M1 baseline the harness also
+times libde265 (HEVC stage) and libheif (full pipeline) in-process through P/Invoke; see
+[`results/2026-11-03-amd-ryzen-7-5800x-m1-baseline.md`](results/2026-11-03-amd-ryzen-7-5800x-m1-baseline.md).
+Performance work is milestone M3 (M2 is release readiness: facade adapter, fuzz soak, docs).
 
 ## Inputs
 

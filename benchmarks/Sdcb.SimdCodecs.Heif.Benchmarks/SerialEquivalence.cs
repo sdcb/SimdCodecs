@@ -5,7 +5,7 @@ namespace Sdcb.SimdCodecs.Heif.Benchmarks;
 /// <summary>
 /// Proves the serial tile path and the parallel tile path produce the identical buffer, sample for
 /// sample. The <c>single</c> command only compares the first pixel of each; this compares the whole
-/// image, which is what M2's parallelism work (CTU-row, wavefront) will have to preserve.
+/// image, which is what M3's parallelism work (CTU-row, wavefront) will have to preserve.
 /// </summary>
 internal static class SerialEquivalence
 {

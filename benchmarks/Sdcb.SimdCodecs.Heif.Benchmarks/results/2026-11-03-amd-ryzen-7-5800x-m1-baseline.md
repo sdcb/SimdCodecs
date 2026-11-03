@@ -1,6 +1,6 @@
 # HEIF decode baseline — 2026-11-03 — AMD Ryzen 7 5800X (M1 baseline, re-recorded)
 
-**Purpose:** Replace the m0 scratch-harness numbers with a correct in-process baseline so M2 has a
+**Purpose:** Replace the m0 scratch-harness numbers with a correct in-process baseline so M3 has a
 meaningful A/B starting point. The m0 record used `ffmpeg -benchmark` as a single-core reference,
 which counts all threads' CPU time and includes process start-up; that number was not comparable to
 our per-core wall time. This record fixes the measurement methodology.
@@ -17,7 +17,7 @@ our per-core wall time. This record fixes the measurement methodology.
 
 | Competitor | Version | Role |
 |---|---|---|
-| **Sdcb.SimdCodecs.Heif** | M1 (commit `480280e`) | our decoder — what M2 optimises |
+| **Sdcb.SimdCodecs.Heif** | M1 (commit `480280e`) | our decoder — what M3 optimises |
 | **libde265** | 1.1.1 (vcpkg, `libde265.dll`) | peer at the HEVC stage: same NAL units, no container, no colour |
 | **libheif** | 1.23.1 (vcpkg, `heif.dll`) | peer at the full pipeline (YCbCr + RGBA) |
 | **Magick.NET** | 14.13.1 (libheif + Q16 HDRI) | ecosystem reference |
@@ -86,7 +86,7 @@ Single-core `ours ÷ libde265` at the HEVC stage: 1.52–1.85× slower per core.
 
 Memory rise on the 12.6 MP grid: ours 132–135 MB vs libheif 78–98 MB for a 48 MB output.
 At 50 MP: ours 516 MB vs libheif 380 MB for a 192 MB output. The gap is the 16-bit tile planes
-kept in memory until the canvas is assembled — the main memory target for M2.
+kept in memory until the canvas is assembled — the main memory target for M3.
 
 ## What this says
 
@@ -97,10 +97,10 @@ kept in memory until the canvas is assembled — the main memory target for M2.
   is nothing to parallelise; single-core 1.52–1.85× slower than libde265 per core at the HEVC
   stage alone.
 - **Single-core HEVC stage:** ours is 1.52–1.85× slower than libde265 (which uses no SIMD for
-  an intra-only path here). This is the correctible gap M2 must close with IDCT/intra/colour SIMD.
+  an intra-only path here). This is the correctible gap M3 must close with IDCT/intra/colour SIMD.
 - **Memory:** working-set rise is 2.7–2.8× the output on the grid images. Root cause: 16-bit
   tile planes are all held until the canvas is assembled. The fix (tile-immediate RGBA, keep only
-  the canvas) is M2's memory target.
+  the canvas) is M3's memory target.
 - **The m0 ffmpeg reference (89–101 MP/s single-core) was not comparable** to our per-core wall
   time: ffmpeg's `utime` summed all threads' CPU time across a multi-threaded process, and the
   pinned-CPU experiment showed rtime ≫ utime/nthreads. That reference is retired; libde265
