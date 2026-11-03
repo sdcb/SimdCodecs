@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);SIMDCODECS_HEIF</DefineConstants>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+
+    <PackageId>Sdcb.SimdCodecs.Heif</PackageId>
+    <Product>Sdcb.SimdCodecs.Heif</Product>
+    <Authors>sdcb</Authors>
+    <Description>Pure-managed HEIF / HEIC decoder for .NET: ISOBMFF container (ISO/IEC 14496-12),
+HEIF item model (ISO/IEC 23008-12), and HEVC intra decode (ITU-T H.265 Main and Main 10 profiles).
+Decodes tiled still images (grid), 8-bit and 10-bit, with ICC colour profiles and Exif orientation.
+NOT included in the Sdcb.SimdCodecs meta-package; consumers must install and register explicitly.
+NOTE: HEVC (H.265) is patent-encumbered. This package conveys no patent licence. Users are
+responsible for evaluating HEVC patent obligations in their jurisdiction.</Description>
+    <PackageTags>heif heic hevc h265 image codec decoder isobmff grid aot</PackageTags>
+    <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/sdcb/SimdCodecs</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Heif.Benchmarks" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared ISOBMFF box layer, compiled into this assembly under its own namespace.
+         The same files are shared with Sdcb.SimdCodecs.Avif when that package is added. -->
+    <Compile Include="..\Shared\ExifOrientation.cs" Link="Shared\ExifOrientation.cs" />
+    <Compile Include="..\Shared\Isobmff\BoxReader.cs" Link="Shared\Isobmff\BoxReader.cs" />
+  </ItemGroup>
+
+</Project>

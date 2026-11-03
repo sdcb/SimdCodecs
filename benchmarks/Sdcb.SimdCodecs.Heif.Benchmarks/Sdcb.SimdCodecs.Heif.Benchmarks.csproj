@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <!-- ImageSharp advisories (NU190x) concern hostile input; this tool only reads the images it
+         generates itself and is never shipped. -->
+    <NoWarn>$(NoWarn);NU1901;NU1902;NU1903;NU1904</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+    <!-- Black-box decode competitor only. Never read or decompile its source (see AGENTS.md). -->
+    <PackageReference Include="Magick.NET-Q16-HDRI-AnyCPU" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Heif\Sdcb.SimdCodecs.Heif.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="heif-inputs\*.heic" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

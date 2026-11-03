@@ -10,8 +10,10 @@ namespace Sdcb.SimdCodecs.Jpeg;
 namespace Sdcb.SimdCodecs.Png;
 #elif SIMDCODECS_WEBP
 namespace Sdcb.SimdCodecs.Webp;
+#elif SIMDCODECS_HEIF
+namespace Sdcb.SimdCodecs.Heif;
 #else
-#error ExifOrientation.cs is shared source for Sdcb.SimdCodecs.Jpeg, Sdcb.SimdCodecs.Png and Sdcb.SimdCodecs.Webp only.
+#error ExifOrientation.cs is shared source for Sdcb.SimdCodecs.Jpeg, Sdcb.SimdCodecs.Png, Sdcb.SimdCodecs.Webp and Sdcb.SimdCodecs.Heif only.
 #endif
 
 /// <summary>

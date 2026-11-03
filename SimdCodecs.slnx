@@ -6,6 +6,7 @@
     <Project Path="src/Sdcb.SimdCodecs/Sdcb.SimdCodecs.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Exif/Sdcb.SimdCodecs.Exif.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Gif/Sdcb.SimdCodecs.Gif.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Heif/Sdcb.SimdCodecs.Heif.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Ico/Sdcb.SimdCodecs.Ico.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Jbig2/Sdcb.SimdCodecs.Jbig2.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Jpeg/Sdcb.SimdCodecs.Jpeg.csproj" />
@@ -20,6 +21,7 @@
   </Folder>
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks.csproj" />
+    <Project Path="benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks.csproj" />
     <Project Path="benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks.csproj" />
     <Project Path="benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks.csproj" />
     <Project Path="benchmarks/Sdcb.SimdCodecs.Png.Benchmarks/Sdcb.SimdCodecs.Png.Benchmarks.csproj" />

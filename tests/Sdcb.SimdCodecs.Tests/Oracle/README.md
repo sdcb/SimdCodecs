@@ -22,7 +22,9 @@ interfaces only.
 | ImageSharp 3.1.12 (NuGet, binary only) | JPEG, PNG and BMP benchmarks | benchmark projects only; 3.2.0 / 4.x need a Six Labors license key to build |
 | libpng (binary only, optional) | PNG benchmark | any libpng16 shared library via `LIBPNG_PATH` (see the PNG benchmark README) |
 
-Per-codec details: [`jbig2/`](jbig2/README.md), [`jpeg2000/`](jpeg2000/README.md), [`webp/`](webp/README.md).
+| libheif `heif-convert` / `heif-info` (LGPL, binary only) | HEIF / HEIC decode oracle: byte-exact YUV comparison against our HEVC decoder (`HeifOracleTests`); the decoded-YUV digests in `Fixtures/heif/*-golden.tsv` run without the oracle | Windows: `vcpkg install libheif` then `bash tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch-oracle.sh`; Linux: `apt-get install libheif-examples`; or set `HEIF_CONVERT` + `HEIF_INFO` env vars to the full binary paths |
+
+Per-codec details: [`jbig2/`](jbig2/README.md), [`jpeg2000/`](jpeg2000/README.md), [`webp/`](webp/README.md), [`heif/`](heif/README.md).
 
 ## Goldens
 
