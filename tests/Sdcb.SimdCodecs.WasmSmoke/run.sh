@@ -11,6 +11,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 work="${1:-$here/bin/wasm-smoke}"
 mkdir -p "$work"
 
+# The HEIF fixtures FacadeSmoke embeds are downloaded, never committed.
+bash "$here/../Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh" > "$work/heif-fetch.log" || { cat "$work/heif-fetch.log"; exit 1; }
+
 # The JIT reference runs while the (much longer) AOT publish does. It is built first: two
 # concurrent builds of the shared codec projects race on their obj folders. Line endings are
 # normalised: the JIT writes CRLF on Windows, Node LF.

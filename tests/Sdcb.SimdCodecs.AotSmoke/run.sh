@@ -13,6 +13,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 work="${1:-$here/bin/aot-smoke}"
 mkdir -p "$work"
 
+# The HEIF fixtures FacadeSmoke embeds are downloaded, never committed.
+bash "$here/../Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh" > "$work/heif-fetch.log" || { cat "$work/heif-fetch.log"; exit 1; }
+
 dotnet run --project "$here" -c Release > "$work/jit.txt"
 lines="$(wc -l < "$work/jit.txt" | tr -d ' ')"
 [ "$lines" -gt 0 ] || { echo "no decodes ran" >&2; exit 1; }

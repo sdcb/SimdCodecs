@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Sdcb.SimdCodecs\Sdcb.SimdCodecs.csproj" />
+    <!-- Not in the meta-package (HEVC patents): referenced and registered explicitly, as a consumer would. -->
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Heif\Sdcb.SimdCodecs.Heif.csproj" />
   </ItemGroup>
 
   <Import Project="Fixtures.props" />

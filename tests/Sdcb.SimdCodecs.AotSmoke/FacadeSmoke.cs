@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Bmp;
 using Sdcb.SimdCodecs.Gif;
+using Sdcb.SimdCodecs.Heif;
 using Sdcb.SimdCodecs.Ico;
 using Sdcb.SimdCodecs.Jpeg;
 using Sdcb.SimdCodecs.Png;
@@ -27,27 +28,74 @@ internal static class FacadeSmoke
         var count = 0;
         foreach (var (label, data) in await SamplesAsync())
         {
-            Check(SimdCodecs.CanDecode(data), label, "CanDecode");
-            Check(SimdCodecs.TryReadInfo(data, out var info), label, "TryReadInfo");
-            Check(SimdCodecs.TryDecode(data, out var image), label, "TryDecode");
-            var rgba = new byte[info.Width * info.Height * 4];
-            // Float samples (PFM) have no 8-bit layout without a tone policy: TryDecodeInto says no.
-            Check(SimdCodecs.TryDecodeIntoRgba8(data, rgba) == (info.SampleFormat != SampleFormat.Float32), label, "TryDecodeIntoRgba8");
-            Check(SimdCodecs.TryOpenFrames(data, out var reader), label, "TryOpenFrames");
-            using (reader)
-            {
-                var last = reader.FrameCount - 1;
-                Check(reader.TryDecodeFrame(last, out var frame), label, "TryDecodeFrame");
-                Console.WriteLine(
-                    $"facade {label} {SimdCodecs.DetectFormat(data)}/{info.Format} {info.Width}x{info.Height}x{info.Channels} {info.SampleFormat} frames={reader.FrameCount}" +
-                    $"\t{Hash(Pixels(image))} {Hash(rgba)} {Hash(Pixels(frame))}");
-            }
-
+            Exercise(label, data);
             count++;
         }
 
         Check(!SimdCodecs.CanDecode("not an image"u8), "garbage", "CanDecode");
-        return count;
+        return count + Heif();
+    }
+
+    private static void Exercise(string label, byte[] data)
+    {
+        Check(SimdCodecs.CanDecode(data), label, "CanDecode");
+        Check(SimdCodecs.TryReadInfo(data, out var info), label, "TryReadInfo");
+        Check(SimdCodecs.TryDecode(data, out var image), label, "TryDecode");
+        var rgba = new byte[info.Width * info.Height * 4];
+        // Float samples (PFM) have no 8-bit layout without a tone policy: TryDecodeInto says no.
+        Check(SimdCodecs.TryDecodeIntoRgba8(data, rgba) == (info.SampleFormat != SampleFormat.Float32), label, "TryDecodeIntoRgba8");
+        Check(SimdCodecs.TryOpenFrames(data, out var reader), label, "TryOpenFrames");
+        using (reader)
+        {
+            var last = reader.FrameCount - 1;
+            Check(reader.TryDecodeFrame(last, out var frame), label, "TryDecodeFrame");
+            Console.WriteLine(
+                $"facade {label} {SimdCodecs.DetectFormat(data)}/{info.Format} {info.Width}x{info.Height}x{info.Channels} {info.SampleFormat} frames={reader.FrameCount}" +
+                $"\t{Hash(Pixels(image))} {Hash(rgba)} {Hash(Pixels(frame))}");
+        }
+    }
+
+    /// <summary>
+    /// HEIF is not built in (HEVC patents): the facade recognises it, decodes none of it until
+    /// <c>SimdCodecs.Register(HeifImageDecoder.Registration)</c>, then serves every entry point. The
+    /// registration's delegates are bound by method group in the HEIF package, which is what Mono AOT
+    /// must compile correctly. The fixtures are downloaded by Oracle/heif/fetch.sh (run.sh calls it).
+    /// </summary>
+    private static int Heif()
+    {
+        var heic = Fixture("synth-screen-testsrc2-1280x720-main8.heic");
+        var pq = Fixture("synth-screen-testsrc2-640x360-pq-vui.heic");
+
+        Check(SimdCodecs.DetectFormat(heic) == ImageFormat.Heif, "heif", "DetectFormat (unregistered)");
+        Check(!SimdCodecs.IsDecodable(ImageFormat.Heif), "heif", "IsDecodable (unregistered)");
+        Check(!SimdCodecs.CanDecode(heic), "heif", "CanDecode (unregistered)");
+        Check(!SimdCodecs.TryReadInfo(heic, out _), "heif", "TryReadInfo (unregistered)");
+        Check(!SimdCodecs.TryDecode(heic, out _), "heif", "TryDecode (unregistered)");
+        Check(!SimdCodecs.TryOpenFrames(heic, out _), "heif", "TryOpenFrames (unregistered)");
+
+        SimdCodecs.Register(HeifImageDecoder.Registration);
+        SimdCodecs.Register(HeifImageDecoder.Registration); // idempotent
+        Check(SimdCodecs.IsDecodable(ImageFormat.Heif), "heif", "IsDecodable");
+        Exercise("heif", heic);
+
+        Check(SimdCodecs.TryReadInfo(heic, out var info), "heif", "TryReadInfo");
+        var formats = new List<string>();
+        foreach (var format in new[] { ImagePixelFormat.Rgba32, ImagePixelFormat.Bgra32, ImagePixelFormat.Rgb24, ImagePixelFormat.Bgr24, ImagePixelFormat.Gray8 })
+        {
+            var bpp = PixelConverter.BytesPerPixel(format);
+            var stride = info.Width * bpp + 3; // padded rows: the stride path
+            var pixels = new byte[stride * info.Height];
+            Check(SimdCodecs.TryDecodeInto(heic, pixels, stride, format), "heif", $"TryDecodeInto {format}");
+            formats.Add($"{format}={Hash(pixels)}");
+        }
+
+        Console.WriteLine($"facade heif-layouts\t{string.Join(' ', formats)}");
+
+        Check(SimdCodecs.TryDecode(pq, out var hdr), "heif-pq", "TryDecode");
+        Check(hdr.ColorEncoding.Transfer == TransferFunction.Pq, "heif-pq", "ColorEncoding");
+        Check(!SimdCodecs.TryDecodeIntoRgba8(pq, new byte[640 * 360 * 4]), "heif-pq", "TryDecodeIntoRgba8 refuses PQ");
+        Console.WriteLine($"facade heif-pq {hdr.Width}x{hdr.Height} {hdr.ColorEncoding.Primaries}/{hdr.ColorEncoding.Transfer}\t{Hash(hdr.ToRgba8())}");
+        return 2;
     }
 
     private static async Task<List<(string, byte[])>> SamplesAsync()
