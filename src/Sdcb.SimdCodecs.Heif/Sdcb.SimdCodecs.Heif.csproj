@@ -14,8 +14,9 @@
     <Authors>sdcb</Authors>
     <Description>Pure-managed HEIF / HEIC decoder for .NET: ISOBMFF container (ISO/IEC 14496-12),
 HEIF item model (ISO/IEC 23008-12), and HEVC intra decode (ITU-T H.265 Main and Main 10 profiles).
-Decodes tiled still images (grid), 8-bit and 10-bit, with ICC colour profiles and Exif orientation.
-NOT included in the Sdcb.SimdCodecs meta-package; consumers must install and register explicitly.
+Decodes tiled still images (grid), 8-bit and 10-bit, with ICC colour profiles, nclx colour signalling and the
+clap / irot / imir transforms. NOT included in the Sdcb.SimdCodecs meta-package; consumers install it and
+register it with the facade explicitly: SimdCodecs.Register(HeifImageDecoder.Registration).
 NOTE: HEVC (H.265) is patent-encumbered. This package conveys no patent licence. Users are
 responsible for evaluating HEVC patent obligations in their jurisdiction.</Description>
     <PackageTags>heif heic hevc h265 image codec decoder isobmff grid aot</PackageTags>

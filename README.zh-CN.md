@@ -4,7 +4,7 @@
 
 [English](README.md) | **简体中文**
 
-纯托管的 .NET 10 图像编解码库：JPEG、PNG、TIFF、WebP、GIF、BMP、ICO / CUR、QOI、Netpbm（PBM / PGM / PPM / PAM / PFM）、JPEG 2000、JBIG2，外加 EXIF 和 ICC。
+纯托管的 .NET 10 图像编解码库：JPEG、PNG、TIFF、WebP、GIF、BMP、ICO / CUR、QOI、Netpbm（PBM / PGM / PPM / PAM / PFM）、JPEG 2000、JBIG2，外加 EXIF 和 ICC；HEIF / HEIC 解码是需要自行启用的独立包。
 没有任何原生依赖，兼容 NativeAOT，用 SIMD（AVX2、SSE、AdvSimd）加速，并带标量回退。
 在基准测试语料上，JPEG 解码比 libjpeg-turbo 更快。
 
@@ -44,8 +44,10 @@ File.WriteAllBytes("photo.jpg", jpeg);
   8/16 位或浮点采样、ICC 配置文件。
 - `SimdCodecs.TryReadInfo(file, out info)`：只读文件头：格式、存储位深、EXIF 方向（只报告，不旋转像素）、
   帧数或页数。
-- `SimdCodecs.DetectFormat(file)`：还能认出不支持解码的格式（HEIF、AVIF、JPEG XL 等）；
-  `SimdCodecs.IsDecodable(format)` 判断某个格式能否解码。
+- `SimdCodecs.DetectFormat(file)`：还能认出不支持解码的格式（AVIF、JPEG XL 等）；
+  `SimdCodecs.IsDecodable(format)` 判断某个格式能否解码。HEIF 在注册它的包之后即可解码。
+- `SimdCodecs.Register(HeifImageDecoder.Registration)`：让上面所有入口都能处理 HEIF / HEIC。HEVC 有专利负担，
+  `Sdcb.SimdCodecs.Heif` 不在门面包里，需要显式安装并注册（本包不授予任何专利许可）。
 - `SimdCodecs.TryOpenFrames(file, out reader)`：按索引、以任意布局逐帧解码：动画 WebP / GIF 是合成好的帧
   及其时长，多页 TIFF 是各页，图标是其中的每张图（其他图片就是一帧）；`reader.EnumerateFramesInto(buffer, stride, format)`
   用同一块缓冲区按顺序播放。
@@ -68,6 +70,7 @@ File.WriteAllBytes("photo.jpg", jpeg);
 | Netpbm | ✅ | ✅ | PBM、PGM、PPM 的 ASCII 和二进制格式，maxval 最高 65535；1–4 通道的 PAM；PFM 浮点；可得到原生的 8/16 位或浮点样本，也可零分配地以任意布局解码进调用方缓冲区；所有变体都能编码 |
 | JPEG 2000 | ✅ | — | Part 1（T.800），用于 PDF 的 `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88，用于 PDF 的 `/JBIG2Decode` |
+| HEIF / HEIC | ✅ | — | 独立包，需显式注册（HEVC 专利；不授予专利许可）。HEVC Main / Main 10 / Main Still Picture 静态图及手机拍照的网格拼图，与 ffmpeg 逐字节一致；ICC、nclx、`clap` / `irot` / `imir`；输出 8 位 |
 | EXIF | ✅ | ✅ | 读取 JPEG、TIFF、PNG、WebP 中的 EXIF；`ExifWriter` 生成可交给 JPEG 编码器的数据块 |
 | ICC 配置文件 | ✅ | ✅ | 解码器返回内嵌的配置文件；`IccProfiles.Describe` 读出其名称；内置 sRGB v4；可把配置文件写入现有 JPEG |
 
@@ -140,6 +143,7 @@ JPEG 2000 无损解码与 libopenjp2 逐位一致，有损解码 PSNR 超过 84 
 | `Sdcb.SimdCodecs.Pnm` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Pnm.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Pnm) | Netpbm（PBM、PGM、PPM、PAM、PFM）解码器和编码器 |
 | `Sdcb.SimdCodecs.Jpeg2000` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jpeg2000.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jpeg2000) | JPEG 2000 解码器 |
 | `Sdcb.SimdCodecs.Jbig2` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jbig2.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jbig2) | JBIG2 解码器 |
+| `Sdcb.SimdCodecs.Heif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Heif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Heif) | HEIF / HEIC 解码器（HEVC）。`Sdcb.SimdCodecs` 不引用它：安装后调用 `SimdCodecs.Register(HeifImageDecoder.Registration)`。不授予 HEVC 专利许可 |
 | `Sdcb.SimdCodecs.Exif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Exif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Exif) | EXIF 读写 |
 | `Sdcb.SimdCodecs.Color.Icc` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Color.Icc.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Color.Icc) | sRGB v4 ICC 配置文件、`cicp` 标签注入 |
 | `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | 公共类型：`IImageDecoder`、`RasterImage`、`ImagePixelFormat` / `PixelConverter`、`IImageFrameReader`（帧与页）、H.273 色彩描述 |
@@ -177,6 +181,9 @@ JPEG 2000 无损解码与 libopenjp2 逐位一致，有损解码 PSNR 超过 84 
   PFM（`Pf` / `PF`）读出浮点样本；文件里只读第一张图。所有格式都能编码，ASCII 输出每行不超过 70 个字符。
   格式说明没有定死的行为列在包的 README 里。
 - **Exif**：读取 JPEG、TIFF、PNG 和 WebP；`ExifWriter` 生成可赋给 `JpegEncodeOptions.Exif` 的数据块。
+- **Heif**：基于 ISOBMFF item 模型的 ISO/IEC 23008-12 静态图：HEVC 帧内解码（H.265 Main、Main 10、
+  Main Still Picture，4:2:0），`grid` 分块并行解码，应用 `clap` / `irot` / `imir`，ICC 原样传出，报告 nclx / VUI
+  色彩；PQ / HLG 不给 8 位投影。1.x 输出 8 位样本；不解码 alpha、增益图、图像序列和范围扩展 profile。详见包的 README。
 
 </details>
 
@@ -207,6 +214,7 @@ Sdcb.SimdCodecs (facade)
  └─ Pnm ──────────── Abstractions
 
 Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
+Heif ─ Abstractions   (not referenced by the facade: registered by the application)
 ```
 
 MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BMP）、Wu 调色板量化器（GIF、BMP）、流和数组写入器（QOI、Netpbm）和 EXIF 方向读取

@@ -4,7 +4,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, GIF, BMP, ICO / CUR, QOI, Netpbm (PBM / PGM / PPM / PAM / PFM), JPEG 2000 and JBIG2, plus EXIF and ICC.
+Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, GIF, BMP, ICO / CUR, QOI, Netpbm (PBM / PGM / PPM / PAM / PFM), JPEG 2000 and JBIG2, plus EXIF and ICC — and HEIF / HEIC decoding as an opt-in package.
 No native dependencies, NativeAOT-compatible, and SIMD-accelerated (AVX2, SSE, AdvSimd) with a scalar
 fallback. The JPEG decoder is faster than libjpeg-turbo on the benchmark corpus.
 
@@ -45,8 +45,11 @@ The rest of the facade:
   8/16-bit or float samples, ICC profile.
 - `SimdCodecs.TryReadInfo(file, out info)` — from the headers alone: format, stored bit depth, EXIF
   orientation (reported, never applied), frame or page count.
-- `SimdCodecs.DetectFormat(file)` — also names formats it recognises but does not decode (HEIF, AVIF,
-  JPEG XL, …); `SimdCodecs.IsDecodable(format)` tells the two apart.
+- `SimdCodecs.DetectFormat(file)` — also names formats it recognises but does not decode (AVIF, JPEG XL,
+  …); `SimdCodecs.IsDecodable(format)` tells the two apart. HEIF is decodable once its package is registered.
+- `SimdCodecs.Register(HeifImageDecoder.Registration)` — enables HEIF / HEIC in every entry point above. HEVC is
+  patent-encumbered, so `Sdcb.SimdCodecs.Heif` is not part of the facade package: install and register it
+  explicitly (it conveys no patent licence).
 - `SimdCodecs.TryOpenFrames(file, out reader)` — every frame, by index, in any layout: animated WebP / GIF
   frames with durations, multi-page TIFF pages, the images of an icon (any other image is one frame).
   `reader.EnumerateFramesInto(buffer, stride, format)` plays them in order through one buffer.
@@ -70,6 +73,7 @@ animation seeking by timestamp, Ultra HDR, and more.
 | Netpbm | ✅ | ✅ | PBM, PGM, PPM plain and raw at any maximum up to 65535, PAM with 1–4 channels, PFM float; native 8/16-bit or float samples, or any layout into your buffer with no allocation; encodes every variant |
 | JPEG 2000 | ✅ | — | Part 1 (T.800), for PDF `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88, for PDF `/JBIG2Decode` |
+| HEIF / HEIC | ✅ | — | Separate opt-in package, registered explicitly (HEVC patents; no patent licence conveyed). HEVC Main / Main 10 / Main Still Picture stills and phone-camera grids, byte-exact with ffmpeg; ICC, nclx, `clap` / `irot` / `imir`; 8-bit output |
 | EXIF | ✅ | ✅ | From JPEG, TIFF, PNG and WebP; `ExifWriter` builds a block for the JPEG encoder |
 | ICC profiles | ✅ | ✅ | Decoders return embedded profiles; `IccProfiles.Describe` names one; bundled sRGB v4 profile; splice a profile into an existing JPEG |
 
@@ -144,6 +148,7 @@ All packages ship in lockstep under one version.
 | `Sdcb.SimdCodecs.Pnm` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Pnm.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Pnm) | Netpbm (PBM, PGM, PPM, PAM, PFM) decoder and encoder |
 | `Sdcb.SimdCodecs.Jpeg2000` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jpeg2000.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jpeg2000) | JPEG 2000 decoder |
 | `Sdcb.SimdCodecs.Jbig2` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jbig2.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jbig2) | JBIG2 decoder |
+| `Sdcb.SimdCodecs.Heif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Heif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Heif) | HEIF / HEIC decoder (HEVC). Not referenced by `Sdcb.SimdCodecs`: install it and call `SimdCodecs.Register(HeifImageDecoder.Registration)`. Conveys no HEVC patent licence |
 | `Sdcb.SimdCodecs.Exif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Exif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Exif) | EXIF reader and writer |
 | `Sdcb.SimdCodecs.Color.Icc` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Color.Icc.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Color.Icc) | sRGB v4 ICC profile, `cicp` tag injector |
 | `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | Shared types: `IImageDecoder`, `RasterImage`, `ImagePixelFormat` / `PixelConverter`, `IImageFrameReader` (frames and pages), H.273 colour vocabulary |
@@ -185,6 +190,10 @@ All packages ship in lockstep under one version.
   channels, PFM (`Pf` / `PF`) as float samples; only a file's first image. Encodes every format; plain output keeps
   lines within 70 characters. The decisions the format pages leave open are listed in the package README.
 - **Exif** — reads JPEG, TIFF, PNG and WebP; `ExifWriter` builds a blob for `JpegEncodeOptions.Exif`.
+- **Heif** — ISO/IEC 23008-12 still images over the ISOBMFF item model: HEVC intra decoding (H.265 Main, Main 10,
+  Main Still Picture, 4:2:0), `grid` tiles decoded in parallel, `clap` / `irot` / `imir` applied, ICC passed
+  through, nclx / VUI colour reported; PQ / HLG refuse the 8-bit projection. 1.x outputs 8-bit samples; alpha,
+  gain maps, sequences and range-extension profiles are not decoded. See the package README.
 
 </details>
 
@@ -215,6 +224,7 @@ Sdcb.SimdCodecs (facade)
  └─ Pnm ──────────── Abstractions
 
 Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
+Heif ─ Abstractions   (not referenced by the facade: registered by the application)
 ```
 
 The MQ arithmetic decoder (JBIG2, JPEG 2000), the T.4 fax code tables (JBIG2, TIFF, BMP), Wu's palette

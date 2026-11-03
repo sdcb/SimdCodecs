@@ -21,11 +21,15 @@ PNG 编码和解码，各有自己的基准项目。WebP 无损编码也已调�
 
 BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.Bmp.Benchmarks`；QOI 和 Netpbm（解码和编码）同样已调优，基准项目是 `Sdcb.SimdCodecs.QoiPnm.Benchmarks`。
 
-**未调优**：TIFF、JBIG2、GIF（解码和编码）、EXIF。JPEG 2000 已建立基准项目并测得初始基线（~2× libopenjp2），算术解码与并发优化尚未开始。它们的门面路径也比较朴素：`TryDecodeInto`
+**未调优**：TIFF、JBIG2、GIF（解码和编码）、HEIF、EXIF。HEIF 已有基准项目和 M1 基线，优化是下一个里程碑（M3）。JPEG 2000 已建立基准项目并测得初始基线（~2× libopenjp2），算术解码与并发优化尚未开始。它们的门面路径也比较朴素：`TryDecodeInto`
 先完整解码出一张图，再整帧转换成目标像素格式，中间会分配一整帧内存；JPEG、PNG、WebP 则是直接写进调用方的缓冲区。
 
 ### 门面与公共接口
 
+- **HEIF 要显式注册。** HEVC 有专利负担，`Sdcb.SimdCodecs.Heif` 不在元包里，门面也不引用它；安装后调用一次
+  `SimdCodecs.Register(HeifImageDecoder.Registration)`，门面的全部入口才会处理 HEIF。注册前 `DetectFormat`
+  仍报 `ImageFormat.Heif`，但 `IsDecodable` 为 `false`、`Try*` 返回 `false`。注册是进程级的：幂等、线程安全、
+  不能撤销；注册的编解码器排在内置的之后嗅探。没有反注册、优先级、按名字查找，这是有意保持最小。
 - **没有编码器抽象。** 门面只做解码；编码请直接用各格式包（`JpegEncoder`、`PngWriter`、`TiffWriter`、
   `GifEncoder`、`BmpEncoder`、`IcoEncoder`、`QoiEncoder`、`PnmEncoder`、`WebpEncoder`）。这是有意的决定。
 - **门面不提供缩放解码。** JPEG 包有 `JpegScale`（1/2、1/4、1/8 的 DCT 缩放），但门面不会走到它；
@@ -33,8 +37,8 @@ BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.
 - **输入必须整个在内存里。** 所有入口接收 `ReadOnlySpan<byte>` / `ReadOnlyMemory<byte>`，没有 `Stream`
   入口（TIFF 包的 `ReadLayout` / `ReadSegment` 除外，它们可以从可寻址的流里按块读取）。多帧读取器也会持有
   整个文件。
-- **`ColorEncoding` 不反映 ICC。** 只有格式自己的色彩标记（PNG 的 cICP，以及表示线性的 gAMA 1.0）会写进
-  `IDecodedImage.ColorEncoding`；只带 ICC 的图片（例如 Display P3 照片）仍报默认的 sRGB。要知道 ICC 声明的
+- **`ColorEncoding` 不反映 ICC。** 只有格式自己的色彩标记（PNG 的 cICP，表示线性的 gAMA 1.0，HEIF 的 nclx
+  `colr` 盒或 HEVC VUI）会写进 `IDecodedImage.ColorEncoding`；只带 ICC 的图片（例如 Display P3 照片）仍报默认的 sRGB。要知道 ICC 声明的
   色彩空间，请读 `IccProfile`。
 - **EXIF 方向只报告、不应用。** `ImageInfo.Orientation` 告诉你该怎样旋转或翻转，像素本身始终是存储时的
   方向。
@@ -193,6 +197,28 @@ BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.
   - 使用 HENABLESKIP 的半色调区域；
   - MMR 编码的半色调区域和图案字典。
 - 未调优。
+
+## HEIF / HEIC
+
+- **只解码 HEVC 静态图**（Main、Main 10、Main Still Picture，4:2:0），含网格（`grid`）拼图和 `clap` / `irot` /
+  `imir`。**不支持**：图像序列（`.heics`，主品牌 `msf1` 等，`CanDecode` 认得但不解码）、HEVC 范围扩展
+  profile（Main 10 Intra、Main 12、4:4:4 等）、AVIF。
+- **不解码辅助图像**：alpha（彩色主图照常解码，按不透明输出，`Channels` 为 3）、HDR 增益图、深度图。
+- **10 位源输出 8 位样本。** `IDecodedImage` 的文档说保真层“保留源位深”，Main 10 的 `TryDecode` 却给出 8 位
+  RGB——这是 1.x 里有意的偏差：1.x 不新增 16 位颜色转换和 `ImagePixelFormat` 成员，16 位输出推迟到 2.0。
+  `ImageInfo.BitDepth` 报 8（交出的样本的精度）；编码位深见 `HeifDecoder.ReadInfo().BitDepth`。
+- **`Gray8` 是存储的亮度。** `TryDecodeInto(Gray8)` 取 Y 平面，按与 RGB 路径相同的系数做范围映射（limited →
+  full、10 → 8 位），不是 RGB 的 BT.601 亮度，可能差一两个码值；identity 矩阵（GBR）的图退回 RGB 求亮度。
+- **PQ / HLG 不给 8 位投影。** nclx（或 VUI）的传递函数是 PQ（16）或 HLG（18）时，`TryDecodeInto` 返回
+  `false`，`TryDecode` 照常解码并在 `ColorEncoding` 里如实报告，与 PNG 的 cICP 处理一致。
+- **只有 ICC、没有 nclx 时 `ColorEncoding` 报默认的 sRGB**：`colr` 盒优先于 VUI（手机照片常是 Display P3 ICC
+  配 BT.601 的 VUI），而 `ColorEncoding` 不从 ICC 推导。
+- **非 RGBA32 的门面路径多一次整帧分配。** `TryDecodeInto` 只有紧密排列的 `Rgba32` 直接写进调用方缓冲区；其他
+  像素格式和带 stride 的调用先解出整帧 RGBA（`Gray8` 是整帧灰度）再逐行转换，`TryDecode` 也先解出 RGBA 再转成
+  RGB。
+- **未调优。** 网格手机照片（8 核）比 libheif 快（0.55–0.71× 的耗时），单 item 图没有分块可并行，是 libheif 的
+  1.4–1.8×；见 [HEIF 基线](../benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-03-amd-ryzen-7-5800x-m1-baseline.md)。
+- **专利**：HEVC 有专利负担，本包是 MIT，不授予任何专利许可。
 
 ## EXIF
 
