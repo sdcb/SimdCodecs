@@ -35,4 +35,33 @@ fetch "$BASE/hevc-main-8192x6144-grid.heic" \
     "ab1a3135b09206a1935d778577ad288b9f901dca9c071e260f390092e6c2cc7c" \
     "$DEST/hevc-main-8192x6144-grid.heic"
 
+# ── Synthetic fixtures: libheif 1.23.1 + x265 4.2 (black boxes), recipes in README.md ──
+# Within M1 scope (HEVC Main / Main Still Picture, 4:2:0 8-bit).
+fetch "$BASE/synth-photo-fuji-1600x900-main8.heic" \
+    "fbfaae1cf1f92fdafc6b12126ab1207f6f7679dee9fa1ccf06eda8ff2452d529" \
+    "$DEST/synth-photo-fuji-1600x900-main8.heic"
+fetch "$BASE/synth-photo-mangrove-1599x1199-main8.heic" \
+    "a13514e1c1f52e839ec66a51118cbd119bb0bc1851ebebd225f51bad0ea94ab8" \
+    "$DEST/synth-photo-mangrove-1599x1199-main8.heic"
+fetch "$BASE/synth-screen-testsrc2-1280x720-main8.heic" \
+    "d40c9a68e0d899c375d8334a6cc932f72aa91eb0ddbfc7284173733929705455" \
+    "$DEST/synth-screen-testsrc2-1280x720-main8.heic"
+
+# Beyond M1: the decoder must reject these with InvalidDataException (or decode them in a later milestone).
+fetch "$BASE/synth-photo-fuji-1600x900-main10intra.heic" \
+    "f9aef637bce363f9704d640c95c00297cf4f789c892700050043222af039a855" \
+    "$DEST/synth-photo-fuji-1600x900-main10intra.heic"
+fetch "$BASE/synth-photo-fuji-1600x900-main12.heic" \
+    "92772e02547ebba2624efffa1e0f98386ecd9a7a7b86f56cc8e695b4430bd676" \
+    "$DEST/synth-photo-fuji-1600x900-main12.heic"
+fetch "$BASE/synth-screen-testsrc2-1280x720-444.heic" \
+    "593518622cd0042c88a4821a5bcd096c2fcc00e49500baa513ddc96b652e56b7" \
+    "$DEST/synth-screen-testsrc2-1280x720-444.heic"
+fetch "$BASE/synth-photo-fuji-1600x900-alpha.heic" \
+    "66e6cede940964f37b1b6915a641bf3a9189c9b3ce228872236a374a42ba3b1f" \
+    "$DEST/synth-photo-fuji-1600x900-alpha.heic"
+fetch "$BASE/synth-anim-testsrc2-640x360-8frames.heics" \
+    "821fa68ee3786cbef1276689e179a405244934cf3bb1e2324e0ca87578acc4c0" \
+    "$DEST/synth-anim-testsrc2-640x360-8frames.heics"
+
 echo "[heif] all fixtures ready in $DEST"
