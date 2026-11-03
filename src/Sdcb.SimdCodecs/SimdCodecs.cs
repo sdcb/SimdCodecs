@@ -24,7 +24,14 @@ namespace Sdcb.SimdCodecs;
 /// <para>
 /// Registers PNG, JPEG, TIFF, JBIG2, JPEG 2000, WebP, GIF, BMP, ICO, CUR, QOI, Netpbm (PBM, PGM, PPM, PAM) and PFM. To add a
 /// format, implement <see cref="IImageDecoder"/> in its codec package and add a
-/// line binding its members to <see cref="_registry"/> - the order is the sniff order.
+/// line binding its members to the built-in registry - the order is the sniff order.
+/// </para>
+/// <para>
+/// HEIF / HEIC is not built in: HEVC is patent-encumbered, so <c>Sdcb.SimdCodecs.Heif</c> is a separate
+/// package that this one does not reference, and it conveys no patent licence. A consumer that installs it
+/// enables it explicitly with <see cref="Register"/>(<c>HeifImageDecoder.Registration</c>); until then
+/// <see cref="DetectFormat"/> recognises HEIF but <see cref="IsDecodable"/> is false for it. Registered codecs
+/// are sniffed after the built-in ones.
 /// </para>
 /// <para>
 /// JBIG2 is registered for standalone <c>.jb2</c> files only. Its real use -
@@ -66,23 +73,6 @@ namespace Sdcb.SimdCodecs;
 /// </summary>
 public static class SimdCodecs
 {
-    // ReadOnlySpan<byte> is a ref struct, so it cannot be a Func<> type argument -
-    // hence the bespoke delegate types matching IImageDecoder's static members.
-    private delegate bool CanDecodeFn(ReadOnlySpan<byte> header);
-    private delegate bool TryReadInfoFn(ReadOnlySpan<byte> data, out ImageInfo info);
-    private delegate bool TryDecodeFn(ReadOnlySpan<byte> data, out IDecodedImage? image);
-    private delegate bool TryDecodeIntoFn(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format);
-    private delegate bool TryOpenFramesFn(ReadOnlyMemory<byte> data, out IImageFrameReader? reader);
-
-    // TryOpenFrames is null for a still-only codec: the facade presents its image as one frame.
-    private readonly record struct Entry(
-        ImageFormat Format,
-        CanDecodeFn CanDecode,
-        TryReadInfoFn TryReadInfo,
-        TryDecodeFn TryDecode,
-        TryDecodeIntoFn TryDecodeInto,
-        TryOpenFramesFn? TryOpenFrames = null);
-
     // Explicit registry: IImageDecoder's static-abstract members are not enumerable
     // and reflection-scanning for implementors is not AOT-safe, so each codec is
     // registered by hand. Each delegate is bound to the concrete type's method group,
@@ -90,7 +80,11 @@ public static class SimdCodecs
     // (browser-wasm, iOS, Android) compiles a delegate over a static abstract member
     // of a type parameter into a call that traps with "function signature mismatch".
     // tests/Sdcb.SimdCodecs.WasmSmoke runs every entry point under Mono AOT.
-    private static readonly Entry[] _registry =
+    // A null TryOpenFrames marks a still-only codec: the facade presents its image as one frame.
+    //
+    // Register appends copy-on-write: a published array is never mutated, so a reader
+    // iterates whichever snapshot it read, without a lock.
+    private static ImageDecoderRegistration[] s_registry =
     [
         new(ImageFormat.Png, PngImageDecoder.CanDecode, PngImageDecoder.TryReadInfo, PngImageDecoder.TryDecode, PngImageDecoder.TryDecodeInto),
         // GainMap must precede the plain JPEG decoder: both answer the FF D8 FF
@@ -114,6 +108,53 @@ public static class SimdCodecs
         new(ImageFormat.Pfm, PfmImageDecoder.CanDecode, PfmImageDecoder.TryReadInfo, PfmImageDecoder.TryDecode, PfmImageDecoder.TryDecodeInto),
     ];
 
+    private static readonly Lock s_registerLock = new();
+
+    /// <summary>The registry as it stands: the built-in codecs, then registered ones in registration order.</summary>
+    private static ImageDecoderRegistration[] Registry => Volatile.Read(ref s_registry);
+
+    /// <summary>Codecs in the registry, built-in ones included (for tests).</summary>
+    internal static int RegisteredCount => Registry.Length;
+
+    /// <summary>
+    /// Enables a codec this package does not reference — today <c>Sdcb.SimdCodecs.Heif</c>, kept out of the
+    /// meta-package because HEVC is patent-encumbered: install it, then call
+    /// <c>SimdCodecs.Register(HeifImageDecoder.Registration)</c> once at start-up. Every entry point —
+    /// <see cref="CanDecode"/>, <see cref="DetectFormat"/>, <see cref="IsDecodable"/>, <see cref="TryReadInfo"/>,
+    /// <see cref="TryDecode"/>, <see cref="TryDecodeInto"/>, <see cref="TryOpenFrames"/> — then dispatches to it.
+    /// <para>
+    /// A registered codec is sniffed after every built-in one, in registration order, so it never takes a
+    /// stream a built-in codec claims. Registering the same codec again (the same format, and delegates over
+    /// the same methods) does nothing. Safe to call while other threads decode: each call sees the registry
+    /// from before or after the codec was added. A registration cannot be removed.
+    /// </para>
+    /// </summary>
+    /// <param name="registration">The codec's entry, e.g. <c>HeifImageDecoder.Registration</c>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="registration"/> is null.</exception>
+    public static void Register(ImageDecoderRegistration registration)
+    {
+        ArgumentNullException.ThrowIfNull(registration);
+        lock (s_registerLock)
+        {
+            var current = s_registry;
+            foreach (var entry in current)
+            {
+                if (IsSameCodec(entry, registration))
+                    return;
+            }
+
+            Volatile.Write(ref s_registry, [.. current, registration]);
+        }
+    }
+
+    // Delegates over the same method compare equal, so two registrations built from one codec's
+    // method groups are the same codec even when they are different objects.
+    private static bool IsSameCodec(ImageDecoderRegistration a, ImageDecoderRegistration b) =>
+        ReferenceEquals(a, b)
+        || (a.Format == b.Format && a.CanDecode.Equals(b.CanDecode) && a.TryReadInfo.Equals(b.TryReadInfo)
+            && a.TryDecode.Equals(b.TryDecode) && a.TryDecodeInto.Equals(b.TryDecodeInto)
+            && Equals(a.TryOpenFrames, b.TryOpenFrames));
+
     /// <summary>
     /// Opens a reader over every frame of <paramref name="data"/> — an animated WebP's frames, a multi-page
     /// TIFF's pages — to decode them one at a time by index (see <see cref="IImageFrameReader"/>). Any
@@ -123,7 +164,7 @@ public static class SimdCodecs
     /// </summary>
     public static bool TryOpenFrames(ReadOnlyMemory<byte> data, [NotNullWhen(true)] out IImageFrameReader? reader)
     {
-        foreach (var entry in _registry)
+        foreach (var entry in Registry)
         {
             if (!entry.CanDecode(data.Span))
                 continue;
@@ -140,7 +181,7 @@ public static class SimdCodecs
     }
 
     /// <summary>A still image as a reader of one frame, decoded through its codec's entry.</summary>
-    private sealed class StillFrameReader(ReadOnlyMemory<byte> data, ImageInfo info, Entry entry) : IImageFrameReader
+    private sealed class StillFrameReader(ReadOnlyMemory<byte> data, ImageInfo info, ImageDecoderRegistration entry) : IImageFrameReader
     {
         private bool _disposed;
 
@@ -184,7 +225,7 @@ public static class SimdCodecs
     /// </summary>
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image)
     {
-        foreach (var entry in _registry)
+        foreach (var entry in Registry)
         {
             if (entry.CanDecode(data))
                 return entry.TryDecode(data, out image);
@@ -201,7 +242,7 @@ public static class SimdCodecs
     /// </summary>
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
     {
-        foreach (var entry in _registry)
+        foreach (var entry in Registry)
         {
             if (entry.CanDecode(data))
                 return entry.TryReadInfo(data, out info);
@@ -222,7 +263,7 @@ public static class SimdCodecs
     /// </summary>
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format)
     {
-        foreach (var entry in _registry)
+        foreach (var entry in Registry)
         {
             if (entry.CanDecode(data))
                 return entry.TryDecodeInto(data, destination, stride, format);
@@ -241,15 +282,16 @@ public static class SimdCodecs
 
     /// <summary>
     /// The format of <paramref name="data"/> by its leading signature: one the facade decodes (the
-    /// codec that would be dispatched to), or one it recognises but does not decode — HEIF, AVIF,
-    /// JPEG XL, JPEG XR, OpenEXR, PSD — so a caller can name what it cannot open.
+    /// codec that would be dispatched to), or one it recognises but does not decode — AVIF, JPEG XL,
+    /// JPEG XR, OpenEXR, PSD, and HEIF until its package is registered (<see cref="Register"/>) — so a
+    /// caller can name what it cannot open.
     /// <see cref="ImageFormat.Unknown"/> otherwise. Like <see cref="CanDecode"/>, it reads the
     /// signature only; pass at least the first 64 bytes (an ISO-BMFF <c>ftyp</c> box lists HEIF and
     /// AVIF brands past its start).
     /// </summary>
     public static ImageFormat DetectFormat(ReadOnlySpan<byte> data)
     {
-        foreach (var entry in _registry)
+        foreach (var entry in Registry)
         {
             if (entry.CanDecode(data))
                 return entry.Format;
@@ -271,7 +313,7 @@ public static class SimdCodecs
     /// </summary>
     public static bool IsDecodable(ImageFormat format)
     {
-        foreach (var entry in _registry)
+        foreach (var entry in Registry)
         {
             if (entry.Format == format)
                 return true;
@@ -308,7 +350,7 @@ public static class SimdCodecs
     /// </summary>
     public static bool CanDecode(ReadOnlySpan<byte> data)
     {
-        foreach (var entry in _registry)
+        foreach (var entry in Registry)
         {
             if (entry.CanDecode(data))
                 return true;

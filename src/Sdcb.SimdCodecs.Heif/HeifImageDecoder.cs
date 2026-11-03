@@ -37,6 +37,14 @@ namespace Sdcb.SimdCodecs.Heif;
 /// </summary>
 public sealed class HeifImageDecoder : IImageDecoder
 {
+    /// <summary>
+    /// This codec's entry for <c>SimdCodecs.Register</c> — its members bound by method group, as the facade's
+    /// registry requires (see <see cref="ImageDecoderRegistration"/>). Still images only: the facade presents one
+    /// as a single frame.
+    /// </summary>
+    public static ImageDecoderRegistration Registration { get; } =
+        new(ImageFormat.Heif, CanDecode, TryReadInfo, TryDecode, TryDecodeInto);
+
     /// <summary>The <c>ftyp</c> box with its compatible brands; an AVIF brand can sit anywhere in the list.</summary>
     public static int SignatureLength => 64;
 
