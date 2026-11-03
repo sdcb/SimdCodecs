@@ -26,8 +26,12 @@ changes that it proves.
   x265, openHEVC, FFmpeg / libavcodec / libavformat, GPAC, the Nokia HEIF library and Android's media
   codecs; and, for the shared ISOBMFF layer, libavif, libaom, dav1d, rav1e and SVT-AV1.
 - They **may** be used as black-box binaries — to benchmark, compare outputs, generate test data —
-  through their documented APIs. Interop comes from the published docs and is self-checked against
-  the binary (`TurboJpeg.SelfCheck`, `LibPng.SelfCheck`), never from headers.
+  through their documented APIs, and built from their release archives for that purpose (building
+  is not reading). Interop in shipped or benchmark code comes from the published docs and is
+  self-checked against the binary (`TurboJpeg.SelfCheck`, `LibPng.SelfCheck`). Test and oracle
+  tooling may also take the shape of the API from the library's **public headers** (signatures,
+  enum values, struct layouts); implementation sources stay forbidden, and no codec behaviour —
+  defaults, rounding, conversions — is taken from header comments, only from the specs.
 - Algorithms come only from: ITU-T / ISO specs (T.81, T.83, T.88, T.800, H.265, ISO/IEC 14496-12
   ISOBMFF, 23008-12 HEIF, 23000-22 MIAF, …), the PNG specification,
   the prose and tables of RFC 6386 / RFC 9649, academic papers, CPU vendor manuals, and public-domain

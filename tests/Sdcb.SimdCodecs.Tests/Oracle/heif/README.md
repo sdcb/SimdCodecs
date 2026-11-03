@@ -72,6 +72,8 @@ mis-decode silently. With x265's all-intra settings a 10-bit still comes out as 
 *Main 10 Intra* profile, not Main 10; the 10-bit **Main 10** case is covered by the phone photo
 `hevc-main10-3072x4096-grid.heic`.
 
-The 10- and 12-bit files used x265 4.2 built from source with `HIGH_BIT_DEPTH=ON` (and `MAIN12=ON`),
-assembly off; vcpkg's x265 is 8-bit only. The generator was a throwaway tool and is not in the
-repository; to regenerate, re-run the same recipe and re-pin the SHA-256s in `fetch.sh`.
+vcpkg's x265 is 8-bit only; the 10- and 12-bit files used the libraries that
+[`tools/heif-fixtures/build-x265.sh`](../../../../tools/heif-fixtures/build-x265.sh) builds from the
+pinned x265 4.2 archive (`HIGH_BIT_DEPTH=ON`, plus `MAIN12=ON` for 12-bit; assembly off), loaded by
+libheif in place of vcpkg's `libx265.dll`. Regenerating means re-running the recipes above and
+re-pinning the SHA-256s in `fetch.sh`.
