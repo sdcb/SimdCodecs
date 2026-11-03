@@ -138,21 +138,42 @@ public static class HeifDecoder
         return (tileW, tileH);
     }
 
-    /// <summary>Decodes, converts and transforms the primary image into <paramref name="destination"/>; returns the bit depth.</summary>
-    private static int DecodeRgba(ReadOnlySpan<byte> data, HeifContainer container, Span<byte> destination)
+    /// <summary>
+    /// The <c>matrix_coefficients</c> the colour conversion uses: the <c>colr</c> / nclx box's, else the SPS VUI's
+    /// (2, unspecified, when neither signals one).
+    /// </summary>
+    internal static int MatrixCoefficients(HeifContainer container) =>
+        container.NclxColour is { } nclx ? nclx.MatrixCoefficients : container.TileConfigs[0].ParseSps().MatrixCoefficients;
+
+    /// <summary>Decodes, converts and transforms the primary image into <paramref name="destination"/> (tightly packed
+    /// RGBA8, display size); returns the bit depth.</summary>
+    internal static int DecodeRgba(ReadOnlySpan<byte> data, HeifContainer container, Span<byte> destination) =>
+        DecodeCanvas(data, container, destination, gray: false);
+
+    /// <summary>
+    /// Decodes the primary image's luma into <paramref name="destination"/> (tightly packed, one byte per pixel,
+    /// display size) with <see cref="HeifColor.ToGray"/>; returns the bit depth. Not for an identity matrix
+    /// (<see cref="MatrixCoefficients"/> 0), whose Y plane carries G, not luma.
+    /// </summary>
+    internal static int DecodeGray(ReadOnlySpan<byte> data, HeifContainer container, Span<byte> destination) =>
+        DecodeCanvas(data, container, destination, gray: true);
+
+    private static int DecodeCanvas(ReadOnlySpan<byte> data, HeifContainer container, Span<byte> destination, bool gray)
     {
         var pictures = DecodeCodedImages(data, container);
         var (tileW, tileH) = ValidateTiles(container, pictures);
         var first = pictures[0];
         int canvasW = container.CanvasWidth, canvasH = container.CanvasHeight;
+        var bytesPerPixel = gray ? 1 : 4;
 
         var sps = container.TileConfigs[0].ParseSps();
         var coefficients = container.NclxColour is { } nclx
             ? HeifColor.For(nclx.MatrixCoefficients, nclx.FullRange, first.BitDepthY)
             : HeifColor.For(sps.MatrixCoefficients, sps.VideoFullRange, first.BitDepthY);
+        if (gray && coefficients.Identity) throw new InvalidOperationException("An identity-matrix image has no luma plane.");
 
         var direct = container.Transforms.Count == 0;
-        var canvas = direct ? destination : new byte[(long)canvasW * canvasH * 4];
+        var canvas = direct ? destination : new byte[(long)canvasW * canvasH * bytesPerPixel];
         for (var i = 0; i < pictures.Length; i++)
         {
             var p = pictures[i];
@@ -162,18 +183,28 @@ public static class HeifDecoder
             var w = Math.Min(tileW, canvasW - x0);
             var h = Math.Min(tileH, canvasH - y0);
             var lumaOffset = p.CropTop * p.Width + p.CropLeft;
-            var chromaOffset = (p.CropTop / p.SubHeightC) * p.ChromaWidth + p.CropLeft / p.SubWidthC;
-            HeifColor.ToRgba420(p.Planes[0].AsSpan(lumaOffset), p.Width, p.Planes[1].AsSpan(chromaOffset), p.Planes[2].AsSpan(chromaOffset),
-                p.ChromaWidth, w, h, coefficients, canvas[(((long)y0 * canvasW + x0) * 4 is var o ? (int)o : 0)..], canvasW * 4);
+            var target = canvas[(int)(((long)y0 * canvasW + x0) * bytesPerPixel)..];
+            if (gray)
+            {
+                HeifColor.ToGray(p.Planes[0].AsSpan(lumaOffset), p.Width, w, h, coefficients, target, canvasW);
+            }
+            else
+            {
+                var chromaOffset = (p.CropTop / p.SubHeightC) * p.ChromaWidth + p.CropLeft / p.SubWidthC;
+                HeifColor.ToRgba420(p.Planes[0].AsSpan(lumaOffset), p.Width, p.Planes[1].AsSpan(chromaOffset), p.Planes[2].AsSpan(chromaOffset),
+                    p.ChromaWidth, w, h, coefficients, target, canvasW * 4);
+            }
         }
 
-        if (!direct) ApplyTransforms(container, canvas, canvasW, canvasH, destination);
+        if (!direct) ApplyTransforms(container, canvas, canvasW, canvasH, destination, bytesPerPixel);
         return first.BitDepthY;
     }
 
-    /// <summary>Applies clap / irot / imir in association order (23008-12 §6.5.1).</summary>
-    private static void ApplyTransforms(HeifContainer container, Span<byte> source, int width, int height, Span<byte> destination)
+    /// <summary>Applies clap / irot / imir in association order (23008-12 §6.5.1) to pixels of
+    /// <paramref name="bytesPerPixel"/> bytes.</summary>
+    private static void ApplyTransforms(HeifContainer container, Span<byte> source, int width, int height, Span<byte> destination, int bytesPerPixel)
     {
+        var bpp = bytesPerPixel;
         var current = source.ToArray();
         foreach (var t in container.Transforms)
         {
@@ -184,10 +215,10 @@ public static class HeifDecoder
                 case HeifContainer.PropClap:
                 {
                     var (x0, y0, w, h) = HeifContainer.ClapRectangle(t.Clap!, width, height);
-                    next = new byte[(long)w * h * 4];
+                    next = new byte[(long)w * h * bpp];
                     for (var y = 0; y < h; y++)
                     {
-                        current.AsSpan(((y0 + y) * width + x0) * 4, w * 4).CopyTo(next.AsSpan(y * w * 4));
+                        current.AsSpan(((y0 + y) * width + x0) * bpp, w * bpp).CopyTo(next.AsSpan(y * w * bpp));
                     }
                     nextW = w;
                     nextH = h;
@@ -198,7 +229,7 @@ public static class HeifDecoder
                     var quarterTurns = t.A; // anti-clockwise
                     if (quarterTurns == 0) continue;
                     if ((quarterTurns & 1) != 0) (nextW, nextH) = (height, width);
-                    next = new byte[(long)nextW * nextH * 4];
+                    next = new byte[(long)nextW * nextH * bpp];
                     for (var y = 0; y < height; y++)
                     {
                         for (var x = 0; x < width; x++)
@@ -209,20 +240,20 @@ public static class HeifDecoder
                                 2 => (width - 1 - x, height - 1 - y),
                                 _ => (height - 1 - y, x),         // 270° anti-clockwise
                             };
-                            current.AsSpan((y * width + x) * 4, 4).CopyTo(next.AsSpan((dy * nextW + dx) * 4));
+                            current.AsSpan((y * width + x) * bpp, bpp).CopyTo(next.AsSpan((dy * nextW + dx) * bpp));
                         }
                     }
                     break;
                 }
                 default: // imir: axis 0 = vertical axis (left ↔ right), 1 = horizontal axis (top ↔ bottom)
                 {
-                    next = new byte[(long)width * height * 4];
+                    next = new byte[(long)width * height * bpp];
                     for (var y = 0; y < height; y++)
                     {
                         for (var x = 0; x < width; x++)
                         {
                             var (dx, dy) = t.A == 0 ? (width - 1 - x, y) : (x, height - 1 - y);
-                            current.AsSpan((y * width + x) * 4, 4).CopyTo(next.AsSpan((dy * width + dx) * 4));
+                            current.AsSpan((y * width + x) * bpp, bpp).CopyTo(next.AsSpan((dy * width + dx) * bpp));
                         }
                     }
                     break;

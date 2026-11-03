@@ -27,6 +27,13 @@ namespace Sdcb.SimdCodecs.Heif;
 /// <b>Chroma.</b> 4:2:0 chroma is replicated (nearest neighbour): chroma sample (x / 2, y / 2) serves
 /// luma sample (x, y). It needs no samples outside a grid tile, so tiles convert independently.
 /// </para>
+/// <para>
+/// <b>Grey (<see cref="ToGray"/>).</b> The 8-bit grey output is the stored luma, range-mapped like the RGB
+/// path's Y term: gray = clamp((Y·(Y′ − YOffset) + 2^15) &gt;&gt; 16, 0, 255), with the same Y coefficient and
+/// offset as above (limited → full range and b → 8 bits in one step). It is therefore exactly the R, G and B
+/// a pixel with neutral chroma (Cb = Cr = 2^(b−1)) converts to. Chroma takes no part. For the identity matrix
+/// (0) the Y plane holds G, not luma, so this step does not apply.
+/// </para>
 /// </remarks>
 internal static class HeifColor
 {
@@ -115,6 +122,25 @@ internal static class HeifColor
                 outRow[x * 4 + 1] = (byte)Math.Clamp(g, 0, 255);
                 outRow[x * 4 + 2] = (byte)Math.Clamp(b, 0, 255);
                 outRow[x * 4 + 3] = 255;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Converts a block of <paramref name="width"/> × <paramref name="height"/> luma samples to 8-bit grey
+    /// (see the remarks on the class). Not for an identity-matrix image.
+    /// <paramref name="gray"/> starts at the block's first pixel and advances <paramref name="grayStride"/> bytes per row.
+    /// </summary>
+    internal static void ToGray(ReadOnlySpan<ushort> y, int yStride, int width, int height, in Coefficients k, Span<byte> gray, int grayStride)
+    {
+        for (var row = 0; row < height; row++)
+        {
+            var yRow = y.Slice(row * yStride, width);
+            var outRow = gray.Slice(row * grayStride, width);
+            for (var x = 0; x < width; x++)
+            {
+                var value = (k.Y * (yRow[x] - k.YOffset) + 32768) >> 16;
+                outRow[x] = (byte)Math.Clamp(value, 0, 255);
             }
         }
     }

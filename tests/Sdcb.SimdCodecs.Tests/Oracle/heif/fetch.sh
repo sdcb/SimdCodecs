@@ -47,6 +47,11 @@ fetch "$BASE/synth-screen-testsrc2-1280x720-main8.heic" \
     "d40c9a68e0d899c375d8334a6cc932f72aa91eb0ddbfc7284173733929705455" \
     "$DEST/synth-screen-testsrc2-1280x720-main8.heic"
 
+# HDR transfer functions (8-bit Main Still Picture, BT.2020): TryDecodeInto must refuse them, TryDecode report them.
+# PQ is signalled in the HEVC VUI only (no 'colr' box); HLG in an nclx 'colr' box as well.
+fetch "$BASE/synth-screen-testsrc2-640x360-pq-vui.heic"     "190dd4830fe9d21c0bf0e51f82f15df977c4647e66ba89a5552c0e89b488ee5a"     "$DEST/synth-screen-testsrc2-640x360-pq-vui.heic"
+fetch "$BASE/synth-screen-testsrc2-640x360-hlg-nclx.heic"     "ee7088a10607bf4d63d0e769400cf79fddd7df0630f563440c9a00b01cc973db"     "$DEST/synth-screen-testsrc2-640x360-hlg-nclx.heic"
+
 # Beyond M1: the decoder must reject these with InvalidDataException (or decode them in a later milestone).
 fetch "$BASE/synth-photo-fuji-1600x900-main10intra.heic" \
     "f9aef637bce363f9704d640c95c00297cf4f789c892700050043222af039a855" \

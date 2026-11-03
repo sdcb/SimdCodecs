@@ -322,7 +322,7 @@ public sealed class HeifTests
     }
 
     /// <summary>tests/Sdcb.SimdCodecs.Tests/Fixtures/heif in the source tree, located from the test binary.</summary>
-    private static string RepoFixtureDirectory()
+    internal static string RepoFixtureDirectory()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {

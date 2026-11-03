@@ -110,6 +110,7 @@ internal sealed class HeifContainer
             var sps = container.TileConfigs[0].ParseSps();
             container.CanvasWidth = sps.Width - sps.ConfLeft - sps.ConfRight;
             container.CanvasHeight = sps.Height - sps.ConfTop - sps.ConfBottom;
+            if ((long)container.CanvasWidth * container.CanvasHeight > MaxPixels) throw new InvalidDataException("The image is too large.");
         }
         return container;
     }

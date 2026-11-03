@@ -43,6 +43,13 @@ Magick.NET (libheif) samples every ~200 000th pixel and allows ±2 per channel, 
 conversion is defined in-repo (`HeifColor`) while libheif uses its own; they must agree that closely,
 and that comparison is what catches a systematically wrong conversion in either direction.
 
+`Fixtures/heif/heif-output-golden.tsv` pins the 8-bit outputs of every decodable fixture (SHA-256 of width,
+height and pixels; see `HeifImageDecoderTests`): `rgba` is `HeifDecoder.Decode` — the frozen `HeifColor`
+conversion plus the clap / irot / imir transforms — and `gray8` is `HeifImageDecoder.TryDecodeInto` to
+`Gray8`, the stored luma range-mapped by `HeifColor.ToGray`. The `rgba` rows were recorded from the M1 code,
+before M2 generalised the composition step for one-byte pixels, so they prove that step unchanged. A missing
+row is recorded with `REGEN_HEIF_OUTPUT=1`; an existing row never is — it moves by hand, with the reviewed diff.
+
 ## Test images (fixtures)
 
 Download with:
@@ -80,6 +87,9 @@ did the RGB → YCbCr conversion and wrote its own `colr` signalling.
 | `synth-photo-fuji-1600x900-alpha.heic` | 1600×900 | Main Still Picture + RExt monochrome alpha | fuji, q50, radial alpha → `auxl` alpha item | ❌ (colour item ✅, alpha ❌) |
 | `synth-anim-testsrc2-640x360-8frames.heics` | 640×360 | Main | testsrc2, 8 frames × 100 ms, q50, HEIF image sequence (`pict` track) | ❌ |
 
+| `synth-screen-testsrc2-640x360-pq-vui.heic` | 640×360 | Main Still Picture | testsrc2, q50, 4:2:0 8-bit, BT.2020 / **PQ** (16) / BT.2020 NCL, limited range, signalled in the VUI only (no `colr` box) | ✅ (`TryDecodeInto` refuses: HDR) |
+| `synth-screen-testsrc2-640x360-hlg-nclx.heic` | 640×360 | Main Still Picture | as above with **HLG** (18), and an nclx `colr` box as well as the VUI | ✅ (`TryDecodeInto` refuses: HDR) |
+
 ❌ files must fail cleanly in M1 (`InvalidDataException` / `false` from `Try*`), never hang or
 mis-decode silently. With x265's all-intra settings a 10-bit still comes out as the RExt
 *Main 10 Intra* profile, not Main 10; the 10-bit **Main 10** case is covered by the phone photo
@@ -90,3 +100,14 @@ vcpkg's x265 is 8-bit only; the 10- and 12-bit files used the libraries that
 pinned x265 4.2 archive (`HIGH_BIT_DEPTH=ON`, plus `MAIN12=ON` for 12-bit; assembly off), loaded by
 libheif in place of vcpkg's `libx265.dll`. Regenerating means re-running the recipes above and
 re-pinning the SHA-256s in `fetch.sh`.
+
+The two HDR files are 8-bit on purpose (a 10-bit all-intra x265 stream is RExt, which M1 rejects); their job is
+the transfer-function signalling, not the bit depth. ffmpeg wrote one frame of `testsrc2` as raw `yuv420p`, and
+[`tools/heif-fixtures/nclx-encode`](../../../../tools/heif-fixtures/nclx-encode/Program.cs) handed those planes
+to libheif 1.23.1 + x265 4.2 (vcpkg, black boxes) with an nclx profile, so no RGB → Y′CbCr conversion is involved:
+
+```bash
+ffmpeg -f lavfi -i testsrc2=size=640x360:rate=1 -frames:v 1 -pix_fmt yuv420p -f rawvideo t.yuv
+nclx-encode t.yuv 640 360 9 16 9 50 synth-screen-testsrc2-640x360-pq-vui.heic
+nclx-encode t.yuv 640 360 9 18 9 50 synth-screen-testsrc2-640x360-hlg-nclx.heic nclxbox
+```

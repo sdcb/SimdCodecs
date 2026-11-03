@@ -1,0 +1,14 @@
+# HEIF 8-bit output golden: fixture, output, width, height, SHA-256 of (width, height as int32 LE, pixels).
+# rgba: HeifDecoder.Decode (frozen HeifColor + clap/irot/imir). gray8: HeifImageDecoder.TryDecodeInto Gray8 (HeifColor.ToGray).
+hevc-main-3072x4096-grid.heic	gray8	3072	4096	de26a0bf6cc7c1e6dd78653a6da8ea922fa28b6bc5bc9eba8ab3a46c5fd9116d
+hevc-main-3072x4096-grid.heic	rgba	3072	4096	891989ecb3adc8f269b2d10ec207d705f8379bb7081e21ec6dfbefd2d2ee4be5
+hevc-main-8192x6144-grid.heic	gray8	8192	6144	b955486e67c023b14392c8ea5be37056bf5d2a153053212e08da88b4ce34c715
+hevc-main-8192x6144-grid.heic	rgba	8192	6144	77308ec746bc36a3c809ec4e73504b484ed553f736c778e100bd7364c2db0cbb
+hevc-main10-3072x4096-grid.heic	gray8	3072	4096	809a12485e87a995f295654466921e0b04efc2f92a5383c017fd12dff2d17bf7
+hevc-main10-3072x4096-grid.heic	rgba	3072	4096	133eac9aeb362cceac1c11309e4f934f9a4dd6025e1280cc4d2e6ff0d42deafe
+synth-photo-fuji-1600x900-main8.heic	gray8	1600	900	fdab23f3bc9da24205890b978b79a2a185b34dad0d9862d0b2336def964b7015
+synth-photo-fuji-1600x900-main8.heic	rgba	1600	900	06477ee2153daea56c3661e2d280154ca0070b2d0e3d829dc6320153af12e835
+synth-photo-mangrove-1599x1199-main8.heic	gray8	1599	1199	ee347979de81962cbab0a59be06b4a13ed4c485a9609ae812f10f9d74e1fc7ad
+synth-photo-mangrove-1599x1199-main8.heic	rgba	1599	1199	8454afd78f194fb4b9d19a0fd816eb1866ef502805ec011ac23570822b89cc14
+synth-screen-testsrc2-1280x720-main8.heic	gray8	1280	720	ffc50cb9561e29811b063131f6245be3976f3171bf8ecefc5eabaacd88f09290
+synth-screen-testsrc2-1280x720-main8.heic	rgba	1280	720	8a29caab1e4dec932d94e67729615a96416244f7deb3cecaf1de3fe7abbabd72
