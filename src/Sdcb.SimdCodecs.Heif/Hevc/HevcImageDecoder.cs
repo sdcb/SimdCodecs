@@ -106,6 +106,14 @@ internal static class HevcImageDecoder
         if (pps is null) throw new InvalidDataException("The image item has no PPS.");
         if (pps.SpsId != sps.Id) throw new InvalidDataException("The PPS refers to an SPS that is not present.");
         if (slices.Count == 0) throw new InvalidDataException("The image item has no coded slices.");
+        // The container checked its geometry (and bounded the allocation) against the hvcC SPS; an in-band SPS
+        // may not change the picture size.
+        var declared = config.ParseSps();
+        if (sps.Width != declared.Width || sps.Height != declared.Height || sps.ConfLeft != declared.ConfLeft ||
+            sps.ConfRight != declared.ConfRight || sps.ConfTop != declared.ConfTop || sps.ConfBottom != declared.ConfBottom)
+        {
+            throw new InvalidDataException("An in-band SPS changes the picture size declared in 'hvcC'.");
+        }
         return new HevcFrameDecoder(sps, pps).Decode(slices);
     }
 }

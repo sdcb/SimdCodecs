@@ -311,6 +311,11 @@ internal sealed class HevcSps
         {
             throw new InvalidDataException("The HEVC coding / transform block sizes are out of range.");
         }
+        // 7.4.3.2.1: the picture size is a multiple of MinCbSizeY, so every coding block lies inside the planes.
+        if (sps.Width % (1 << sps.MinCbLog2SizeY) != 0 || sps.Height % (1 << sps.MinCbLog2SizeY) != 0)
+        {
+            throw new InvalidDataException("The HEVC picture size is not a multiple of the minimum coding block size.");
+        }
         r.ReadUe(); // max_transform_hierarchy_depth_inter
         sps.MaxTransformHierarchyDepthIntra = r.ReadUe(sps.CtbLog2SizeY - sps.MinTbLog2SizeY, "max_transform_hierarchy_depth_intra");
 

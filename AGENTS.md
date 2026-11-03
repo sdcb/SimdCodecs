@@ -92,6 +92,9 @@ bash tests/Sdcb.SimdCodecs.WasmSmoke/run.sh                         # Mono AOT (
   `JPEG_FUZZ_ITERATIONS=300000 … --filter "FullyQualifiedName~JpegFuzz"`. The BMP decoder's soak is
   `BMP_FUZZ_ITERATIONS=300000 … --filter "FullyQualifiedName~BmpRobustness"`; QOI and Netpbm share one:
   `QOI_FUZZ_ITERATIONS=300000 PNM_FUZZ_ITERATIONS=300000 … --filter "FullyQualifiedName~QoiPnmRobustness"`.
+- After touching the HEVC decoder (entropy decoding above all) or the HEIF / ISOBMFF container parsers, soak
+  the HEIF fuzzer: `HEIF_FUZZ_ITERATIONS=300000 … --filter "FullyQualifiedName~HeifFuzz"` (needs the
+  fixtures from `Oracle/heif/fetch.sh`).
 
 ## Output contracts
 

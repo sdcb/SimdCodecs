@@ -394,7 +394,7 @@ internal sealed class ItemContainer
                 throw new InvalidDataException("Item data stored outside the file ('dref') is not supported.");
             }
 
-            var baseOffset = ReadVariable(reader, ref cursor, baseOffsetSize);
+            var baseOffset = ReadVariable(reader, ref cursor, baseOffsetSize, boxEnd);
             Require(cursor, 2);
             var extentCount = reader.ReadU16BE(cursor);
             cursor += 2;
@@ -415,10 +415,10 @@ internal sealed class ItemContainer
             {
                 if ((version is 1 or 2) && indexSize != 0)
                 {
-                    _ = ReadVariable(reader, ref cursor, indexSize);
+                    _ = ReadVariable(reader, ref cursor, indexSize, boxEnd);
                 }
-                var extentOffset = ReadVariable(reader, ref cursor, offsetSize);
-                var extentLength = ReadVariable(reader, ref cursor, lengthSize);
+                var extentOffset = ReadVariable(reader, ref cursor, offsetSize, boxEnd);
+                var extentLength = ReadVariable(reader, ref cursor, lengthSize, boxEnd);
                 if (item.Id != 0)
                 {
                     long offset = baseOffset + extentOffset;
@@ -437,8 +437,9 @@ internal sealed class ItemContainer
         }
     }
 
-    private static long ReadVariable(BoxReader reader, ref int cursor, int size)
+    private static long ReadVariable(BoxReader reader, ref int cursor, int size, int boxEnd)
     {
+        if (cursor > boxEnd - size) throw new InvalidDataException("Truncated 'iloc' box.");
         long value = size switch
         {
             0 => 0,

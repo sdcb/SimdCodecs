@@ -112,7 +112,41 @@ internal sealed class HeifContainer
             container.CanvasHeight = sps.Height - sps.ConfTop - sps.ConfBottom;
             if ((long)container.CanvasWidth * container.CanvasHeight > MaxPixels) throw new InvalidDataException("The image is too large.");
         }
+        container.ValidateGeometry();
         return container;
+    }
+
+    /// <summary>
+    /// Checks, from the <c>hvcC</c> parameter sets and before anything is decoded or allocated, that the coded
+    /// images agree in size, cover the canvas, and are not so large in total that a small file could demand an
+    /// unbounded allocation (each tile's SPS may declare up to 16 888² samples). <see cref="HevcImageDecoder"/>
+    /// holds an in-band SPS to the size declared here.
+    /// </summary>
+    private void ValidateGeometry()
+    {
+        long codedSamples = 0;
+        int tileW = -1, tileH = -1;
+        HevcDecoderConfiguration? parsed = null;
+        HevcSps sps = null!;
+        foreach (var config in TileConfigs)
+        {
+            if (!ReferenceEquals(config, parsed))
+            {
+                sps = config.ParseSps();
+                parsed = config;
+            }
+
+            int w = sps.Width - sps.ConfLeft - sps.ConfRight, h = sps.Height - sps.ConfTop - sps.ConfBottom;
+            if (tileW < 0) (tileW, tileH) = (w, h);
+            else if (w != tileW || h != tileH) throw new InvalidDataException("The grid tiles differ in size.");
+            codedSamples += (long)sps.Width * sps.Height;
+        }
+
+        if (codedSamples > 2 * MaxPixels) throw new InvalidDataException("The coded images are too large.");
+        if ((long)tileW * GridColumns < CanvasWidth || (long)tileH * GridRows < CanvasHeight)
+        {
+            throw new InvalidDataException("The grid tiles do not cover the output image.");
+        }
     }
 
     private void ParseGrid(ReadOnlySpan<byte> data, ItemContainer.Item grid)
