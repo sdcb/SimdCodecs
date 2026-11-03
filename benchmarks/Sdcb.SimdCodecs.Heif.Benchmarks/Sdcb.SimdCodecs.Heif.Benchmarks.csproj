@@ -23,8 +23,19 @@
     <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Heif\Sdcb.SimdCodecs.Heif.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Update="heif-inputs\*.heic" CopyToOutputDirectory="PreserveNewest" />
+  <!--
+    Native competitors, copied from the pinned vcpkg build so every run (including BenchmarkDotNet's
+    child processes) loads the same bytes. Override HEIF_NATIVE_SOURCE to use another build; the
+    version is checked at start-up (libheif 1.23.1, libde265 1.1.1).
+    Fixtures are not copied: HeifInputs reads them from the test fixtures directory, or HEIF_INPUTS.
+  -->
+  <PropertyGroup>
+    <HeifNativeSource Condition="'$(HeifNativeSource)' == ''">C:\_\3rd\vcpkg\installed\x64-windows\bin</HeifNativeSource>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(HeifNativeSource)\heif.dll')">
+    <None Include="$(HeifNativeSource)\heif.dll" CopyToOutputDirectory="PreserveNewest" Link="heif.dll" />
+    <None Include="$(HeifNativeSource)\libde265.dll" CopyToOutputDirectory="PreserveNewest" Link="libde265.dll" />
   </ItemGroup>
 
 </Project>

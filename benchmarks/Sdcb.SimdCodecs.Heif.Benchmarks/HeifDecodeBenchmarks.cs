@@ -1,71 +1,114 @@
 using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Reports;
 using ImageMagick;
+using Sdcb.SimdCodecs.Heif;
 
 namespace Sdcb.SimdCodecs.Heif.Benchmarks;
 
 /// <summary>
-/// M0 baseline: measures Magick.NET (libheif) decode only.
-/// Sdcb.SimdCodecs.Heif is added as a competitor in M2 once it can decode these images.
+/// HEIF / HEIC decode, all contestants <b>in this process</b> on the same <c>byte[]</c>.
+/// <para>
+/// Three tiers, each a like-for-like pair:
+/// </para>
+/// <list type="bullet">
+/// <item><b>HEVC stage</b> — our per-tile <see cref="Tiles.Decode"/> against libde265's per-tile
+/// decode, both from the same NAL units, no container and no colour.</item>
+/// <item><b>Composed planes</b> — <see cref="HeifDecoder.DecodeYuv"/> against libheif's YCbCr output
+/// with transformations ignored.</item>
+/// <item><b>Full pipeline</b> — <see cref="HeifDecoder.Decode"/> to RGBA8 against libheif's
+/// interleaved-RGBA output and against Magick.NET (libheif through ImageMagick's Q16 HDRI pipeline).</item>
+/// </list>
+/// <para>
+/// The native libraries are black boxes reached by P/Invoke (<see cref="NativeHeif"/>,
+/// <see cref="NativeDe265"/>); running them as child processes would fold process start-up and I/O
+/// into the number, which is exactly the mistake this project's m0 record made with <c>ffmpeg</c>.
+/// Every case decodes the same bytes the managed decoder gets.
+/// </para>
 /// </summary>
 [Config(typeof(HeifBenchmarkConfig))]
 [MemoryDiagnoser]
 public class HeifDecodeBenchmarks
 {
-    // Inputs are copied to the output directory by the .csproj CopyToOutputDirectory rule.
-    // Run fetch.sh first to download them into Oracle/heif/, then copy or symlink them into
-    // heif-inputs/ here, or set HEIF_INPUTS to the directory that contains them.
-    private static readonly string InputDir =
-        Environment.GetEnvironmentVariable("HEIF_INPUTS")
-        ?? Path.Combine(AppContext.BaseDirectory, "heif-inputs");
+    private byte[] _data = null!;
+    private Tile[] _tiles = null!;
 
-    private byte[] _main8_3k = null!;
-    private byte[] _main10_3k = null!;
-    private byte[] _main8_8k = null!;
+    /// <summary>One fixture per case; <c>[Params]</c> keeps every contestant on the same input.</summary>
+    [ParamsSource(nameof(Fixtures))]
+    public string Fixture { get; set; } = null!;
+
+    public static IEnumerable<string> Fixtures => HeifInputs.Fixtures;
 
     [GlobalSetup]
     public void Setup()
     {
-        _main8_3k  = LoadInput("hevc-main-3072x4096-grid.heic");
-        _main10_3k = LoadInput("hevc-main10-3072x4096-grid.heic");
-        _main8_8k  = LoadInput("hevc-main-8192x6144-grid.heic");
+        _data = HeifInputs.Load(Fixture);
+        _tiles = Tiles.Extract(_data);
+        // Correctness is verified by the standalone `verify` command before benchmarking;
+        // repeating it in every child process would cost more time than the measurements themselves.
     }
 
-    // ── Magick.NET baseline (libheif black-box oracle) ────────────────────────
+    // ── Tier A: HEVC stage ───────────────────────────────────────────────────
 
-    [Benchmark(Description = "Magick.NET  hevc-main-3072x4096")]
-    public int MagickNet_Main8_3k() => DecodeViaMagick(_main8_3k);
-
-    [Benchmark(Description = "Magick.NET  hevc-main10-3072x4096")]
-    public int MagickNet_Main10_3k() => DecodeViaMagick(_main10_3k);
-
-    [Benchmark(Description = "Magick.NET  hevc-main-8192x6144")]
-    public int MagickNet_Main8_8k() => DecodeViaMagick(_main8_8k);
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static int DecodeViaMagick(byte[] data)
+    [Benchmark(Description = "HEVC stage, ours")]
+    public int HevcStage_Ours()
     {
-        using var image = new MagickImage(data);
-        // Force a full pixel read so the decode is not deferred.
-        return (int)(image.Width * image.Height);
+        var sum = 0;
+        foreach (var tile in _tiles) sum += Tiles.Decode(tile).Planes[0][0];
+        return sum;
     }
 
-    private static byte[] LoadInput(string name)
+    [Benchmark(Description = "HEVC stage, libde265")]
+    public int HevcStage_Libde265()
     {
-        string path = Path.Combine(InputDir, name);
-        if (!File.Exists(path))
-            throw new FileNotFoundException(
-                $"Benchmark input not found: {path}. " +
-                $"Run tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh to download it, " +
-                $"then copy it into benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/heif-inputs/.", path);
-        return File.ReadAllBytes(path);
+        var sum = 0;
+        foreach (var tile in _tiles) sum += NativeContestants.DecodeTile(tile).Y[0];
+        return sum;
+    }
+
+    // ── Tier C: composed planes ──────────────────────────────────────────────
+
+    [Benchmark(Description = "planes, ours (DecodeYuv)")]
+    public int Planes_Ours()
+    {
+        var (y, _, _, _, _, _) = HeifDecoder.DecodeYuv(_data);
+        return y[0];
+    }
+
+    [Benchmark(Description = "planes, libheif (YCbCr 420)")]
+    public int Planes_Libheif()
+    {
+        return NativeContestants.DecodeYuv(_data, int.MaxValue).Y[0];
+    }
+
+    // ── Tier B: full pipeline to RGBA ────────────────────────────────────────
+
+    [Benchmark(Description = "RGBA, ours (Decode)")]
+    public int Full_Ours()
+    {
+        using var image = HeifDecoder.Decode(_data);
+        return image.Rgba[0];
+    }
+
+    [Benchmark(Description = "RGBA, libheif")]
+    public int Full_Libheif()
+    {
+        return NativeContestants.DecodeRgba(_data, int.MaxValue)[0];
+    }
+
+    [Benchmark(Description = "RGBA, Magick.NET (libheif+Q16)")]
+    public int Full_Magick()
+    {
+        using var image = new MagickImage(_data);
+        using var pixels = image.GetPixels();
+        var rgba = pixels.ToByteArray(PixelMapping.RGBA)!;
+        return rgba[0];
     }
 }
 
+/// <summary>Shared BenchmarkDotNet settings: enough iterations for a stable median, P95 reported.</summary>
 internal sealed class HeifBenchmarkConfig : ManualConfig
 {
     public HeifBenchmarkConfig()
