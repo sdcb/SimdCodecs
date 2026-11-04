@@ -9,7 +9,7 @@
 - **不支持**：遇到这种输入时抛出 `NotSupportedException` / `InvalidDataException`，`Try*` 方法返回 `false`，
   不会静默输出错误的像素。
 - **门面不提供**：格式包本身有对应 API，但 `Sdcb.SimdCodecs` 门面（`TryDecode` / `TryDecodeInto` /
-  `TryOpenFrames`）不会走到它。
+  `TryOpenFrames` / `ImageDecoder` / `Encode`）不会走到它。
 - **未调优**：功能正确、有测试，但还没有基准项目，也没有按“不慢于原生参考库”的标准优化过。
 
 ## 总体
@@ -32,19 +32,22 @@ HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmar
   `SimdCodecs.Register(HeifImageDecoder.Registration)`，门面的全部入口才会处理 HEIF。注册前 `DetectFormat`
   仍报 `ImageFormat.Heif`，但 `IsDecodable` 为 `false`、`Try*` 返回 `false`。注册是进程级的：幂等、线程安全、
   不能撤销；注册的编解码器排在内置的之后嗅探。没有反注册、优先级、按名字查找，这是有意保持最小。
-- **没有编码器抽象。** 门面只做解码；编码请直接用各格式包（`JpegEncoder`、`PngWriter`、`TiffWriter`、
-  `GifEncoder`、`BmpEncoder`、`IcoEncoder`、`QoiEncoder`、`PnmEncoder`、`WebpEncoder`）。这是有意的决定。
-- **门面不提供缩放解码。** JPEG 包有 `JpegScale`（1/2、1/4、1/8 的 DCT 缩放），但门面不会走到它；
-  JPEG 2000 的分辨率级别缩减（reduce）还没有实现。
-- **输入必须整个在内存里。** 所有入口接收 `ReadOnlySpan<byte>` / `ReadOnlyMemory<byte>`，没有 `Stream`
-  入口（TIFF 包的 `ReadLayout` / `ReadSegment` 除外，它们可以从可寻址的流里按块读取）。多帧读取器也会持有
-  整个文件。
+- **编码器抽象（2.0 起）的流式程度不一。** `IImageEncoder` 的会话可以逐行推送像素，但目前每个编码器都在会话里
+  缓冲整幅图，`Commit` 时一次编码（`BufferedEncoderSession`）：契约不变，只是没有内存收益。PNG、BMP、QOI、PNM
+  天然逐行，以后可以改成真正流式。
+- **缩放解码只有 JPEG 是原生的。** `DecodeOptions.ScaleDenominator` 2、4、8 只有 JPEG 支持（DCT 域缩放），其他
+  codec 抛出 `NotSupportedException`，`TryGetClosestSize` 报告原尺寸。JPEG 2000 的分辨率级别缩减（reduce）还没有实现。
+- **区域解码大多是“整幅解码再裁剪”。** `DecodeOptions.Region` 对所有 codec 都可用，但除了 HEIF（只写与区域相交
+  的部分）以外都是整幅解码后裁剪，语义一致，没有性能收益。JPEG 按 MCU 行跳过、TIFF 按 strip/tile 跳过留给 2.x。
+- **`Stream` 输入会先读进内存。** `ImageDecoder.Open(Stream)` 对可寻址的流按需读取的 `IByteSource` 已经就位，但
+  2.0 里所有 codec 仍在整份文件上解码：可寻址的流一次读入，不可寻址的流先缓冲，文件路径用内存映射（不复制）。
+  逐 codec 换成真正的增量输入是 2.x 的性能项。
 - **`ColorEncoding` 不反映 ICC。** 只有格式自己的色彩标记（PNG 的 cICP，表示线性的 gAMA 1.0，HEIF 的 nclx
   `colr` 盒或 HEVC VUI）会写进 `IDecodedImage.ColorEncoding`；只带 ICC 的图片（例如 Display P3 照片）仍报默认的 sRGB。要知道 ICC 声明的
   色彩空间，请读 `IccProfile`。
 - **EXIF 方向只报告、不应用。** `ImageInfo.Orientation` 告诉你该怎样旋转或翻转，像素本身始终是存储时的
   方向。
-- **浮点图像没有自动的 8 位投影。** 浮点 TIFF、增益图 JPEG 重建出的 HDR 等，`TryDecodeInto` 返回 `false`
+- **浮点图像没有自动的整数投影。** 浮点 TIFF、增益图 JPEG 重建出的 HDR 等，`TryDecodeInto` 返回 `false`
   （增益图返回的是 SDR 基础图），`EnumerateFramesInto` 抛出 `NotSupportedException`。HDR 到 8 位需要色调映射，
   这是调用方的决定，不是编解码器的。只为查看的话，`PixelConverter.StretchToRgba8` 把颜色范围线性拉伸到
   0..255（线性光数据如增益图 HDR 再加 `srgbEncode: true`），但不做色调映射。
@@ -53,7 +56,10 @@ HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmar
   - JBIG2：独立 `.jb2` 文件只解码第 1 页，读取器只有 1 帧。
 - **接口里没有“时间戳 → 帧号”的辅助方法。** WebP 包的 `WebpAnimationDecoder.FrameIndexAt` 有，接口层没有；
   需要时可以按各帧的 `Duration` 自己累加。
-- **`IImageFrameReader` 不是线程安全的**（动画需要在调用之间保留画布状态），每个线程各开一个。
+- **`IImageFrameReader` 和 `ImageDecoder` 会话都不是线程安全的**（动画需要在调用之间保留画布状态），每个线程各开一个。
+- **元数据只透传、不解析。** `ImageMetadata` 是原始的 Exif / XMP / ICC 块；解析 Exif 用 `Sdcb.SimdCodecs.Exif`。TIFF
+  的 Exif 字段留空（整个文件就是 TIFF 结构）；JPEG 的扩展 XMP（跨多个 APP1 段）没有拼接。HEIF 转码到别的格式时，
+  像素已按 `irot` / `imir` 转正，Exif 方向标签原样透传，调用方需要自己改写为 1。
 - **一次性解码所有帧不在接口里**，是有意的：全部帧的内存是帧数 × 画布大小。需要时对索引循环即可；WebP 包的
   `WebpDecoder.DecodeAnimation` 带总像素上限。
 
