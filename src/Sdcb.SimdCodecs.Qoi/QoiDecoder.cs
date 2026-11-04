@@ -35,7 +35,7 @@ public static class QoiDecoder
     {
         var info = QoiCodec.ReadHeader(data);
         var pixels = new byte[(long)info.Width * info.Height * info.Channels];
-        Decode(data, info, pixels, info.Width * info.Channels, info.Channels == 4 ? ImagePixelFormat.Rgba32 : ImagePixelFormat.Rgb24);
+        Decode(data, info, pixels, info.Width * info.Channels, info.Channels == 4 ? PixelFormat.Rgba32 : PixelFormat.Rgb24);
         return new QoiImage(info.Width, info.Height, info.Channels, info.ColorSpace, pixels);
     }
 
@@ -44,50 +44,60 @@ public static class QoiDecoder
     /// <paramref name="stride"/> bytes apart (0: tightly packed). Size it with <see cref="ReadInfo"/>. Bytes
     /// between rows are left untouched; nothing is allocated.
     /// </summary>
+    /// <param name="data">The QOI file.</param>
+    /// <param name="destination">The pixels.</param>
+    /// <param name="format">The layout to write; any <see cref="PixelFormat"/> (null: <see cref="PixelFormat.Rgba32"/>).</param>
+    /// <param name="stride">Bytes from one row to the next; 0 means tightly packed.</param>
     /// <exception cref="InvalidDataException">The data is not a decodable QOI image.</exception>
     /// <exception cref="ArgumentException">The destination is too small, or the stride shorter than a row.</exception>
-    public static void DecodeTo(ReadOnlySpan<byte> data, Span<byte> destination, ImagePixelFormat format = ImagePixelFormat.Rgba32, int stride = 0)
+    public static void DecodeTo(ReadOnlySpan<byte> data, Span<byte> destination, PixelFormat? format = null, int stride = 0)
     {
+        var target = format ?? PixelFormat.Rgba32;
         var info = QoiCodec.ReadHeader(data);
-        if (!PixelConverter.TryGetLayout(info.Width, info.Height, format, stride, destination.Length, out var rowStride))
-            throw new ArgumentException($"The destination does not hold a {info.Width}x{info.Height} {format} image with stride {stride}.", nameof(destination));
-        Decode(data, info, destination, rowStride, format);
+        if (!PixelConverter.TryGetLayout(info.Width, info.Height, target, stride, destination.Length, out var rowStride))
+            throw new ArgumentException($"The destination does not hold a {info.Width}x{info.Height} {target} image with stride {stride}.", nameof(destination));
+        Decode(data, info, destination, rowStride, target);
     }
 
-    internal static void Decode(ReadOnlySpan<byte> data, QoiInfo info, Span<byte> destination, int rowStride, ImagePixelFormat format)
+    internal static void Decode(ReadOnlySpan<byte> data, QoiInfo info, Span<byte> destination, int rowStride, PixelFormat format,
+        CancellationToken cancellationToken = default)
     {
         var reader = new QoiCodec.Reader(info.Channels == 3);
         int width = info.Width, height = info.Height;
-        if (format is ImagePixelFormat.Rgba32 or ImagePixelFormat.Bgra32)
+        if (format == PixelFormat.Rgba32 || format == PixelFormat.Bgra32)
         {
             // RGBA pixels land in place; BGRA swaps them where they are.
             var rowBytes = width * 4;
-            if (rowStride == rowBytes && format == ImagePixelFormat.Rgba32)
+            if (rowStride == rowBytes && format == PixelFormat.Rgba32 && !cancellationToken.CanBeCanceled)
             {
                 reader.Read(data, MemoryMarshal.Cast<byte, uint>(destination[..(rowBytes * height)]));
                 return;
             }
             for (var y = 0; y < height; y++)
             {
+                if ((y & 63) == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
                 var row = destination.Slice(y * rowStride, rowBytes);
                 reader.Read(data, MemoryMarshal.Cast<byte, uint>(row));
-                if (format == ImagePixelFormat.Bgra32)
-                    PixelConverter.ConvertRow(row, 4, SampleFormat.UInt8, row, ImagePixelFormat.Bgra32, width);
+                if (format == PixelFormat.Bgra32)
+                    PixelConverter.ConvertRow(row, PixelFormat.Rgba32, row, PixelFormat.Bgra32, width);
             }
             return;
         }
 
         const int Chunk = 512;
         Span<uint> chunk = stackalloc uint[Chunk];
-        var bpp = PixelConverter.BytesPerPixel(format);
+        var bpp = format.BytesPerPixel;
         for (var y = 0; y < height; y++)
         {
+            if ((y & 63) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
             var row = destination.Slice(y * rowStride, width * bpp);
             for (var x = 0; x < width; x += Chunk)
             {
                 var n = Math.Min(Chunk, width - x);
                 reader.Read(data, chunk[..n]);
-                PixelConverter.ConvertRow(MemoryMarshal.AsBytes(chunk[..n]), 4, SampleFormat.UInt8, row[(x * bpp)..], format, n);
+                PixelConverter.ConvertRow(MemoryMarshal.AsBytes(chunk[..n]), PixelFormat.Rgba32, row[(x * bpp)..], format, n);
             }
         }
     }
