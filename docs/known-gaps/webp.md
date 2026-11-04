@@ -1,0 +1,20 @@
+# WebP：已知缺口与局限
+
+条目约定（“不支持”“门面不提供”“未调优”）和跨格式的门面限制见 [总览](../known-gaps.md)。
+
+- **编码器**：无损（VP8L）和有损（VP8）静态图及动画，有损图带透明时写 ALPH 平面，ICC / EXIF / XMP 可以写入（此时输出
+  VP8X 扩展格式）。
+- **动画编码**：5 个合成序列上，无损总字节是 `img2webp -lossless` 的 0.931×，有损对 `img2webp -lossy` 的 BD-rate 为
+  −10.1%。但 sprite 和 alpha-sprite 两个序列的无损输出比 img2webp 大 3% 和 9%。fade 序列算不出 BD-rate：我们的有损
+  曲线整体比 img2webp 的质量高（q90 时字节数相近，PSNR 高 6.5 dB），两条曲线没有重叠区间，所以这一项不计入均值。
+- **有损编码**：AMD Ryzen 7 5800X 上 12 张不透明基准图，默认力度（4）对 libwebp 默认（method 4）的 BD-rate 为
+  PSNR-Y −6.2%、SSIM-Y −4.8%，每张图两项都为负；q75 速度约为它的 1.07×（18.6 vs 17.4 MP/s）。高码率一端
+  （q ≥ 70）也是 −5.4% / −5.5%。还没有 trellis 量化。
+- **有损 + 透明**：3 张带透明的基准图，可见像素 PSNR-RGB 的 BD-rate 为 −4.5%（alpha 逐字节一致），但 sticker 一张
+  是 +0.8%（ALPH 比 libwebp 大约 3%）。q75 时三张合计耗时约为 libwebp 的 0.96×；photo-alpha 和 screen-alpha 更快，
+  sticker 仍慢约 10%（它的 alpha 平面要靠预测器，直接编码那一路的代价解析最贵）。
+- **无损编码**：AMD Ryzen 7 5800X 上 14 张基准图合计，默认力度（6）比 libwebp 默认小 1.4%，速度约为它的 1.14×
+  （2.92 vs 2.56 MP/s）；力度 9 小 1.7%，但只有它速度的 0.37×。`cwebp -z 9` 仍比我们的力度 9 小 1.1%（它慢约 7 倍）。
+- **保留的 VP8 色彩空间标志不支持**（规范保留值）。
+- **性能**：在接近照片内容、不带 alpha 的有损文件上与 libwebp 持平（0.87–1.13×），没有全面领先；其他类别更快，
+  见 [WebP 基准结果](../../benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md)。

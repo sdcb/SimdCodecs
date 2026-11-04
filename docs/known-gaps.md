@@ -1,7 +1,7 @@
 # 已知缺口与局限
 
 这里记录各编解码器目前**做不到**、**有意不做**和**还没调优**的地方，方便使用前判断是否合适，也作为后续工作的
-清单。每一条都对应代码里实际的行为（拒绝时抛出的异常、门面返回 `false` 的情况等）。功能补上、性能调优完成后，
+清单。本页只写跨格式的内容，各格式的条目在 [`known-gaps/`](known-gaps/) 目录里。每一条都对应代码里实际的行为（拒绝时抛出的异常、门面返回 `false` 的情况等）。功能补上、性能调优完成后，
 相应条目从这里删掉。
 
 约定：
@@ -17,11 +17,11 @@
 ### 性能调优进度
 
 AGENTS.md 的目标是每个编解码器都达到或超过对应的原生参考库。目前**已调优**的有：JPEG 编码和解码、WebP 解码、
-PNG 编码和解码，各有自己的基准项目。WebP 无损编码也已调优（基准项目的 `encode` 命令），默认力度下体积和速度都不输 libwebp，见下文 WebP 一节。
+PNG 编码和解码，各有自己的基准项目。WebP 无损编码也已调优（基准项目的 `encode` 命令），默认力度下体积和速度都不输 libwebp，见 [WebP](known-gaps/webp.md)。
 
 BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.Bmp.Benchmarks`；QOI 和 Netpbm（解码和编码）同样已调优，基准项目是 `Sdcb.SimdCodecs.QoiPnm.Benchmarks`。
 
-HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmarks`：单核 HEVC 阶段快于 libde265，端到端快于 libheif，每个 tile 解完直接写进调用方缓冲区，见下文 HEIF 一节。
+HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmarks`：单核 HEVC 阶段快于 libde265，端到端快于 libheif，每个 tile 解完直接写进调用方缓冲区，见 [HEIF](known-gaps/heif.md)。
 
 **未调优**：TIFF、JBIG2、GIF（解码和编码）、EXIF。JPEG 2000 已建立基准项目并测得初始基线（~2× libopenjp2），算术解码与并发优化尚未开始。它们的门面路径也比较朴素：`TryDecodeInto`
 先完整解码出一张图，再整帧转换成目标像素格式，中间会分配一整帧内存；JPEG、PNG、WebP 则是直接写进调用方的缓冲区。
@@ -57,173 +57,19 @@ HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmar
 - **一次性解码所有帧不在接口里**，是有意的：全部帧的内存是帧数 × 画布大小。需要时对索引循环即可；WebP 包的
   `WebpDecoder.DecodeAnimation` 带总像素上限。
 
-## JPEG
+## 各格式
 
-- **只支持 8 位精度。** 12 位 JPEG（SOF 精度为 12）会被拒绝。
-- **只支持 Huffman 编码的 SOF0 / SOF1 / SOF2**（baseline、extended、progressive）。算术编码（SOF9–SOF11）和
-  分层（hierarchical）JPEG 不支持。
-- **无损 JPEG（SOF3）不走门面。** 它由单独的 `LosslessJpeg.FromMemory` API 解码，`JpegDecoder` 和门面会拒绝
-  这类文件。
-- **EXIF 方向只从 APP1 的 Exif 段读取**，不看 XMP 里的 `tiff:Orientation`。
-- **编码器**：只写 8 位；色度采样只有 4:4:4、4:2:0 和灰度（没有 4:2:2）；不写 restart interval；不支持算术
-  编码和无损编码。
-
-## Ultra HDR / 增益图 JPEG
-
-- **重建出的 HDR 不带 ICC。** `IDecodedImage.IccProfile` 有意留空：浮点结果是线性光，底图的 ICC 描述的是
-  非线性的显示曲线，套上去会误导色彩管理。需要底图的配置文件时，用 `JpegDecoder.TryReadIccProfile(file)` 读取，
-  并注明它属于 SDR 底图。原色仍会报告：`ColorEncoding.Primaries` 取自底图的 ICC（`IccProfiles.TryGetPrimaries`
-  能识别 BT.709、Display P3、BT.2020），没有 ICC 时按 sRGB 报 BT.709，识别不了时报 `Unspecified`。
-- **只支持 SDR 基础图的形式。** 基础图本身是 HDR 的文件（`BaseRenditionIsHDR=true`）不支持 HDR 重建，门面会
-  退回去解码它的主图。
-
-## PNG
-
-- **APNG 不解码**：`acTL` 的帧数会报告，但只能解出默认图；**也不能编码 APNG**。
-- **编码器不能写 Adam7 隔行图**（解码支持）。
-- **不读取 `bKGD`、`sBIT`、`tIME` 等辅助块。** 目前读取的有：`PLTE`、`tRNS`、`gAMA`、`cHRM`、`sRGB`、`iCCP`、
-  `cICP`、`mDCV`、`cLLI`、`pHYs`、`eXIf`、`tEXt`、`zTXt`、`iTXt`。
-- **cICP 标为 PQ / HLG 的 HDR 图像，`TryDecodeInto` 返回 `false`**：它们没有正确的 8 位投影，请用 `TryDecode`
-  拿 16 位原始数据。
-- 性能数据和与 libpng / ImageSharp 的逐项对比见
-  [PNG 基准结果](../benchmarks/Sdcb.SimdCodecs.Png.Benchmarks/results/)。
-
-## TIFF
-
-- **读取不支持**：
-  - JPEG 压缩；
-  - BigTIFF；
-  - CCITT 2D 的扩展码（uncompressed mode）。
-- **1/2/4 位采样只支持每像素一个无符号采样**（二值图和低位深灰度）；多通道的低位深页面不支持。
-- **门面不呈现的页面**：调色板、CMYK、YCbCr、CIELab 这几种 photometric，以及有符号整数和 32 位无符号整数采样，
-  门面返回 `false`（`TiffReader` 本身仍能读出原始采样）。
-- **写入器只写未压缩和 Deflate（含 ZlibPkzip）**，不写 LZW、PackBits 或 CCITT。
-- **按页访问每次都从文件开头沿 IFD 链走到该页**（只跳指针、不解码），页数很多时随机访问有线性开销。
-- 未调优。
-
-## WebP
-
-- **编码器**：无损（VP8L）和有损（VP8）静态图及动画，有损图带透明时写 ALPH 平面，ICC / EXIF / XMP 可以写入（此时输出
-  VP8X 扩展格式）。
-- **动画编码**：5 个合成序列上，无损总字节是 `img2webp -lossless` 的 0.931×，有损对 `img2webp -lossy` 的 BD-rate 为
-  −10.1%。但 sprite 和 alpha-sprite 两个序列的无损输出比 img2webp 大 3% 和 9%。fade 序列算不出 BD-rate：我们的有损
-  曲线整体比 img2webp 的质量高（q90 时字节数相近，PSNR 高 6.5 dB），两条曲线没有重叠区间，所以这一项不计入均值。
-- **有损编码**：AMD Ryzen 7 5800X 上 12 张不透明基准图，默认力度（4）对 libwebp 默认（method 4）的 BD-rate 为
-  PSNR-Y −6.2%、SSIM-Y −4.8%，每张图两项都为负；q75 速度约为它的 1.07×（18.6 vs 17.4 MP/s）。高码率一端
-  （q ≥ 70）也是 −5.4% / −5.5%。还没有 trellis 量化。
-- **有损 + 透明**：3 张带透明的基准图，可见像素 PSNR-RGB 的 BD-rate 为 −4.5%（alpha 逐字节一致），但 sticker 一张
-  是 +0.8%（ALPH 比 libwebp 大约 3%）。q75 时三张合计耗时约为 libwebp 的 0.96×；photo-alpha 和 screen-alpha 更快，
-  sticker 仍慢约 10%（它的 alpha 平面要靠预测器，直接编码那一路的代价解析最贵）。
-- **无损编码**：AMD Ryzen 7 5800X 上 14 张基准图合计，默认力度（6）比 libwebp 默认小 1.4%，速度约为它的 1.14×
-  （2.92 vs 2.56 MP/s）；力度 9 小 1.7%，但只有它速度的 0.37×。`cwebp -z 9` 仍比我们的力度 9 小 1.1%（它慢约 7 倍）。
-- **保留的 VP8 色彩空间标志不支持**（规范保留值）。
-- **性能**：在接近照片内容、不带 alpha 的有损文件上与 libwebp 持平（0.87–1.13×），没有全面领先；其他类别更快，
-  见 [WebP 基准结果](../benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md)。
-
-## GIF
-
-规范没有定死、由解码器决定的行为（初始画布、超出调色板的索引、截断数据、循环次数的含义等）不算缺口，它们的
-处理方式列在 [GIF 包的 README](../src/Sdcb.SimdCodecs.Gif/README.md) 里。
-
-- **没有基准项目，也没有质量门槛**，解码和编码都未调优。LZW 解码是逐码查表的朴素实现。
-- **编码器只用一个全局调色板**，整个动画共用；不写每帧的局部调色板。颜色变化大的长动画，画质会受限。
-- **量化器的直方图每通道只有 32 级。** 落进同一格的颜色无法再分开。实测例子：一张恰好有 256 种相近颜色、外加
-  透明像素的图，只量化出 224 色，而上限是 255 色。
-- **最近色查找是逐色遍历调色板**（带缓存），颜色很多的大图编码会比较慢。
-- **带透明的动画每帧都写整帧**，并在下一帧前清除，文件比只写变化区域的方式大；不透明动画才做变化矩形的差分。
-- **编码器不写隔行 GIF。**
-- **帧延时按原值报告**：0 就是 0，不做浏览器那种“当作 100 ms”的改写。
-
-## BMP
-
-文档没有定死、由解码器决定的行为（窄通道怎样扩展到 8 位、超出调色板的索引、RLE 跳过的像素、32 位 `BI_RGB`
-第四个字节算不算 alpha 等），以及它们和 WIC、ImageMagick、ImageSharp 的异同，列在
-[BMP 包的 README](../src/Sdcb.SimdCodecs.Bmp/README.md) 里。
-
-- **不支持**：`BI_JPEG`（BMP 里嵌 JPEG）、64 位像素、Windows Metafile 用的 CMYK 压缩（11–13）、OS/2 的图标和指针
-  格式（`IC`、`CI`、`PT`、`CP`）。
-- **OS/2 位图数组（`BA`）只解码第一张。** 数组里的各张是同一张图为不同显示设备准备的版本。
-- **OS/2 Huffman 1D 和 RLE24 没有外部参照。** WIC 和 ImageMagick 都不读这两种压缩，解码器只用按 T.4 码表构造
-  的流验证过；白色对应调色板索引 0、行之间不填充，这两点是根据规范的推断，没有真实文件核对。
-- **宽于 8 位的通道（10-10-10-2 等）只取高 8 位**，不提供 16 位输出。
-- **V4 / V5 的校准色彩空间被忽略**：`LCS_CALIBRATED_RGB` 的端点和伽马、链接的 profile（`PROFILE_LINKED`）都
-  不读；只返回内嵌的 ICC。
-- **从 RGBA 输入编码 32 位时比 ImageSharp 慢**（1920×1080 写进流：约 0.41 ms 对 0.23 ms），差在 RGBA→BGRA 的
-  重排上；从 BGRA 输入就是直接拷贝（0.23 ms），24 位与 ImageSharp 持平。都比 WIC 快 12 倍以上。
-- **编码器不写** RLE24、Huffman 1D、`BI_PNG`、`BI_ALPHABITFIELDS` 和 2 位调色板。调色板量化用的是 GIF 同一个
-  Wu 量化器，局限也相同（见上一节）。
-
-## ICO / CUR
-
-- **每张图都解码成 8 位 RGBA**，16 位的 PNG 图像会丢掉低 8 位。
-- **不支持压缩的 DIB 图像**（Windows 本身也不接受）。
-- **编码器不缩放**：各尺寸的图像要由调用方准备好；每张最大 256×256（解码不限尺寸，上限 2^28 像素）。
-- **不支持动画光标（`.ani`）。** 它是 RIFF 容器，不是 ICO 目录。
-- **门面的 `TryDecode` 只返回最大、位深最高的一张**；要拿其他尺寸，用 `TryOpenFrames` 或 `IcoDecoder`。
-
-## QOI
-
-- **没有原生竞品参照。** 基准只和 ImageSharp 3.1.12 比（解码约 0.29×、编码到流约 0.49×）；QOI 没有现成的原生库二进制，
-  没有和参考实现 qoi.h 比过速度。解码受规范本身的串行性限制（索引哈希和游程逐像素依赖前一个像素），没有 SIMD 内核。
-- 规范没有定死的几处（3 通道图像里的 alpha、超出图像的游程、结尾标记）列在包的 README 里。
-
-## Netpbm（PBM / PGM / PPM / PAM / PFM）
-
-- **只读文件里的第一张图**；后续的图被忽略，门面也不把它们当作多帧。
-- **PFM 不能解码成 8 位布局**：浮点样本需要色调策略，`TryDecodeInto` 返回 false，`DecodeTo` 抛 `NotSupportedException`；
-  用 `PixelConverter.StretchToRgba8` 得到可看的图。PFM 头里 scale 的绝对值只报告，不应用。
-- **PAM 的 DEPTH 只支持 1–4**；更多通道的 PAM 会被拒绝。
-- **原始 8 位格式编码到流**基本是内存拷贝，耗时在 0.03–0.2 ms 量级，与 ImageSharp 的相对比值在不同轮次间波动较大（0.5×–1.8×）。
-- ImageSharp 3.1.12 读写 16 位 PPM 时按小端（低字节在前），而 Netpbm 规范和 ImageMagick 都是大端；所以 16 位用例不和它计时比较。
-
-## JPEG 2000
-
-- **只支持 Part 1（T.800），定位是 PDF 里的 `/JPXDecode`。**
-- **不支持**：
-  - 进度顺序变更（POC）；
-  - 打包的包头（PPM、PPT）；
-  - 感兴趣区域（RGN / MAXSHIFT）；
-  - 在 tile-part 头里覆盖主头参数的标记。
-- **分量位深最多 16 位，且所有分量位深必须相同。**
-- **门面只呈现 1 或 3 个分量、且不是 sYCC 的图像**；带 alpha、CMYK、sYCC 的图门面返回 `false`，
-  `Jpeg2000Decoder.Decode` 仍会返回全部分量。
-- **没有分辨率缩减（reduce）解码。**
-- **已有基准测试，性能待调优**：基准项目 `Sdcb.SimdCodecs.Jpeg2000.Benchmarks` 已建立并在 `results/` 记录初始基线；目前纯托管单核解码耗时约为 libopenjp2 纯 C 核心的 1.9×~2.2×；EBCOT 条带位掩码快速跳过、Code-block 级多线程并发与系数重构缓冲区复用尚未实现。
-
-## JBIG2
-
-- **独立 `.jb2` 文件只解码第 1 页。** PDF 内嵌的 JBIG2 流没有文件头可供识别，需要直接调用
-  `Jbig2Decoder.Decode(embedded, globals, width, height)`，门面不处理。
-- **不支持**：
-  - EXTTEMPLATE 通用区域；
-  - 使用 HENABLESKIP 的半色调区域；
-  - MMR 编码的半色调区域和图案字典。
-- 未调优。
-
-## HEIF / HEIC
-
-- **只解码 HEVC 静态图**（Main、Main 10、Main Still Picture，4:2:0），含网格（`grid`）拼图和 `clap` / `irot` /
-  `imir`。**不支持**：图像序列（`.heics`，主品牌 `msf1` 等，`CanDecode` 认得但不解码）、HEVC 范围扩展
-  profile（Main 10 Intra、Main 12、4:4:4 等）、AVIF。
-- **不解码辅助图像**：alpha（彩色主图照常解码，按不透明输出，`Channels` 为 3）、HDR 增益图、深度图。
-- **10 位源输出 8 位样本。** `IDecodedImage` 的文档说保真层“保留源位深”，Main 10 的 `TryDecode` 却给出 8 位
-  RGB——这是 1.x 里有意的偏差：1.x 不新增 16 位颜色转换和 `ImagePixelFormat` 成员，16 位输出推迟到 2.0。
-  `ImageInfo.BitDepth` 报 8（交出的样本的精度）；编码位深见 `HeifDecoder.ReadInfo().BitDepth`。
-- **`Gray8` 是存储的亮度。** `TryDecodeInto(Gray8)` 取 Y 平面，按与 RGB 路径相同的系数做范围映射（limited →
-  full、10 → 8 位），不是 RGB 的 BT.601 亮度，可能差一两个码值；identity 矩阵（GBR）的图退回 RGB 求亮度。
-- **PQ / HLG 不给 8 位投影。** nclx（或 VUI）的传递函数是 PQ（16）或 HLG（18）时，`TryDecodeInto` 返回
-  `false`，`TryDecode` 照常解码并在 `ColorEncoding` 里如实报告，与 PNG 的 cICP 处理一致。
-- **只有 ICC、没有 nclx 时 `ColorEncoding` 报默认的 sRGB**：`colr` 盒优先于 VUI（手机照片常是 Display P3 ICC
-  配 BT.601 的 VUI），而 `ColorEncoding` 不从 ICC 推导。
-- **已调优（M3）。** 单核 HEVC 阶段是 libde265 的 0.68–0.87×；8 核端到端到 RGBA 是 libheif 的 0.20–0.32×（网格
-  手机照片和单 item 图都是：单 item 的 WPP 图按 CTB 行做 wavefront 并行），Magick.NET 的 0.09–0.14×。每个 tile
-  解完立即按目标像素格式和 stride 写进调用方缓冲区（所有 `ImagePixelFormat`，含 `clap` / `irot` / `imir`），没有
-  整帧中间缓冲。冷进程首次解码的峰值工作集增量：12.6 MP 网格 75 MB（输出 48 MB，libheif 80 MB），未达 ≤ 64 MB
-  的目标，余量是 JIT 和 16 个并行 tile 各自的工作集；50 MP 网格 230 MB（libheif 373 MB）。见
-  [HEIF M3 记录](../benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md)。
-- **专利**：HEVC 有专利负担，本包是 MIT，不授予任何专利许可。
-
-## EXIF
-
-- **只读取 JPEG、TIFF、PNG 和 WebP 里的 EXIF**（`ExifReader`）；HEIF、AVIF 等容器不读。
-- **门面不返回 EXIF。** `ImageInfo` 只带方向；其他字段请把同一份文件交给 `ExifReader.FromBytes`。
+- [JPEG](known-gaps/jpeg.md)
+- [Ultra HDR / 增益图 JPEG](known-gaps/jpeg-gainmap.md)
+- [PNG](known-gaps/png.md)
+- [TIFF](known-gaps/tiff.md)
+- [WebP](known-gaps/webp.md)
+- [GIF](known-gaps/gif.md)
+- [BMP](known-gaps/bmp.md)
+- [ICO / CUR](known-gaps/ico.md)
+- [QOI](known-gaps/qoi.md)
+- [Netpbm（PBM / PGM / PPM / PAM / PFM）](known-gaps/netpbm.md)
+- [JPEG 2000](known-gaps/jpeg2000.md)
+- [JBIG2](known-gaps/jbig2.md)
+- [HEIF / HEIC](known-gaps/heif.md)
+- [EXIF](known-gaps/exif.md)
