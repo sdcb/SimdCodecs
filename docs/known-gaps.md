@@ -21,7 +21,9 @@ PNG 编码和解码，各有自己的基准项目。WebP 无损编码也已调�
 
 BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.Bmp.Benchmarks`；QOI 和 Netpbm（解码和编码）同样已调优，基准项目是 `Sdcb.SimdCodecs.QoiPnm.Benchmarks`。
 
-**未调优**：TIFF、JBIG2、GIF（解码和编码）、HEIF、EXIF。HEIF 已有基准项目和 M1 基线，优化是下一个里程碑（M3）。JPEG 2000 已建立基准项目并测得初始基线（~2× libopenjp2），算术解码与并发优化尚未开始。它们的门面路径也比较朴素：`TryDecodeInto`
+HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmarks`：单核 HEVC 阶段快于 libde265，端到端快于 libheif，每个 tile 解完直接写进调用方缓冲区，见下文 HEIF 一节。
+
+**未调优**：TIFF、JBIG2、GIF（解码和编码）、EXIF。JPEG 2000 已建立基准项目并测得初始基线（~2× libopenjp2），算术解码与并发优化尚未开始。它们的门面路径也比较朴素：`TryDecodeInto`
 先完整解码出一张图，再整帧转换成目标像素格式，中间会分配一整帧内存；JPEG、PNG、WebP 则是直接写进调用方的缓冲区。
 
 ### 门面与公共接口
@@ -213,11 +215,12 @@ BMP 和 ICO（解码和编码）也已调优，基准项目是 `Sdcb.SimdCodecs.
   `false`，`TryDecode` 照常解码并在 `ColorEncoding` 里如实报告，与 PNG 的 cICP 处理一致。
 - **只有 ICC、没有 nclx 时 `ColorEncoding` 报默认的 sRGB**：`colr` 盒优先于 VUI（手机照片常是 Display P3 ICC
   配 BT.601 的 VUI），而 `ColorEncoding` 不从 ICC 推导。
-- **非 RGBA32 的门面路径多一次整帧分配。** `TryDecodeInto` 只有紧密排列的 `Rgba32` 直接写进调用方缓冲区；其他
-  像素格式和带 stride 的调用先解出整帧 RGBA（`Gray8` 是整帧灰度）再逐行转换，`TryDecode` 也先解出 RGBA 再转成
-  RGB。
-- **未调优。** 网格手机照片（8 核）比 libheif 快（0.55–0.71× 的耗时），单 item 图没有分块可并行，是 libheif 的
-  1.4–1.8×；见 [HEIF 基线](../benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-03-amd-ryzen-7-5800x-m1-baseline.md)。
+- **已调优（M3）。** 单核 HEVC 阶段是 libde265 的 0.68–0.87×；8 核端到端到 RGBA 是 libheif 的 0.20–0.32×（网格
+  手机照片和单 item 图都是：单 item 的 WPP 图按 CTB 行做 wavefront 并行），Magick.NET 的 0.09–0.14×。每个 tile
+  解完立即按目标像素格式和 stride 写进调用方缓冲区（所有 `ImagePixelFormat`，含 `clap` / `irot` / `imir`），没有
+  整帧中间缓冲。冷进程首次解码的峰值工作集增量：12.6 MP 网格 75 MB（输出 48 MB，libheif 80 MB），未达 ≤ 64 MB
+  的目标，余量是 JIT 和 16 个并行 tile 各自的工作集；50 MP 网格 230 MB（libheif 373 MB）。见
+  [HEIF M3 记录](../benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md)。
 - **专利**：HEVC 有专利负担，本包是 MIT，不授予任何专利许可。
 
 ## EXIF

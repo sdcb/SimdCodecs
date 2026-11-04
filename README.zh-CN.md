@@ -96,6 +96,12 @@ File.WriteAllBytes("photo.jpg", jpeg);
 | libopenjp2 2.5.4（原生） | 1.00× (221 ms) | 1.00× (49 ms) | 基准 |
 | **Sdcb.SimdCodecs** | **1.96×** (433 ms) | **2.03×** (99 ms) | 无损 Exact / 有损 84 dB |
 
+| HEIF / HEIC 解码 | HEVC 阶段，单核 | 到 RGBA，8 核 | 峰值内存，12.6 MP 照片 |
+|---|---:|---:|---:|
+| libde265 1.1.1 / libheif 1.23.1（原生） | 1.00× | 1.00× | 80 MB |
+| **Sdcb.SimdCodecs.Heif** | **0.68–0.87×** | **0.20–0.32×** | **75 MB** |
+| Magick.NET 14.13.1 | — | 1.9–2.3× | 220 MB |
+
 | BMP，1920×1080，几何平均 | 解码（22 种布局） | 编码 24/32 位到流（4 种） |
 |---|---:|---:|
 | WIC（Windows 原生编解码器） | 1.00× | 1.00× |
@@ -115,12 +121,15 @@ QOI 和 Netpbm 都零分配地解码进调用方缓冲区；两者在解码和�
 JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插值时，相对精确参考值的 RGB PSNR 高约
 1 dB），并且在 AVX2、SSE、AdvSimd、标量和 NativeAOT 下输出逐位一致。WebP 输出与 libwebp 逐字节一致。
 JPEG 2000 无损解码与 libopenjp2 逐位一致，有损解码 PSNR 超过 84 dB。
+HEIF 的 HEVC 平面与 ffmpeg 逐字节一致；HEIF 是这里唯一用满所有核的表（网格的 tile、单张图的 WPP 行都并行解码），
+第一列是单核。
 完整数据、语料和测量方法见
 [JPEG](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md)、
 [WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md) 和
 [JPEG 2000](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md)、
 [BMP / ICO](benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/m1-tuned-2026-10-30-amd-ryzen-7-5800x.md)、
-[QOI / Netpbm](benchmarks/Sdcb.SimdCodecs.QoiPnm.Benchmarks/results/tuned-2026-10-30-amd-ryzen-7-5800x.md)
+[QOI / Netpbm](benchmarks/Sdcb.SimdCodecs.QoiPnm.Benchmarks/results/tuned-2026-10-30-amd-ryzen-7-5800x.md)、
+[HEIF](benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md)
 （在接近照片内容、不带 alpha 的有损文件上，WebP 与 libwebp 持平：0.87–1.13×；JPEG 2000 目前单核纯托管解码耗时约为 libopenjp2 的 2× 左右）。
 
 ## 包列表

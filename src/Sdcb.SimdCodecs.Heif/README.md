@@ -64,10 +64,21 @@ HeifInfo header = HeifDecoder.ReadInfo(data);       // size, coded bit depth, ti
   other auxiliary items; Exif is not read.
 - **Not supported:** image sequences (`.heics`, `msf1`) and the HEVC range-extension profiles (Main 10 Intra,
   Main 12, 4:4:4, …) — `InvalidDataException`, or false from the `Try*` methods.
-- **Speed:** tiled phone photos decode faster than libheif (0.55–0.71× its time on 8 cores), but a single-item
-  image, which has no tiles to decode in parallel, takes 1.4–1.8× libheif's time. Not tuned yet.
-- **Memory:** `TryDecodeInto` writes tightly packed `Rgba32` straight into the caller's buffer; every other
-  layout and stride decodes a full RGBA frame first, and `TryDecode` converts a full RGBA frame to RGB.
+
+## Performance
+
+AVX2 / Vector128 (SSE, AdvSimd) / scalar kernels for the inverse transform, intra prediction, SAO and the colour
+conversion, a CABAC engine with a 64-bit look-ahead window, grid tiles decoded in parallel and, for an image
+without tiles, a WPP wavefront (CTB rows in parallel) with parallel deblocking, SAO and colour passes. Measured on
+a Ryzen 7 5800X against libde265 1.1.1 and libheif 1.23.1 in the same process
+([M3 record](https://github.com/sdcb/SimdCodecs/blob/main/benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md)):
+
+- one core, HEVC decoding alone: 0.68–0.87× libde265's time;
+- 8 cores, to RGBA: 0.20–0.32× libheif's time (tiled phone photos and single-item images alike), 0.09–0.14×
+  Magick.NET's;
+- memory: each tile is converted straight into the output as soon as it is decoded, in every pixel layout and
+  stride, so the only image-sized buffer is the output. Peak working-set rise for a 12.6 MP phone photo (48 MB
+  of RGBA): 75 MB, libheif 80 MB; for 50 MP (192 MB): 230 MB, libheif 373 MB.
 
 ## What is supported
 
@@ -89,5 +100,6 @@ HEVC decoding is integer-arithmetic and deterministic: the Y / Cb / Cr planes of
 every coded image equal a pinned reference decoder's samples bit-for-bit
 (ffmpeg 8.1.2; see `tests/Sdcb.SimdCodecs.Tests/Oracle/heif/README.md`). The
 YCbCr → RGB conversion (`HeifColor`) is defined in-repo from the `colr` / `nclx`
-parameters and frozen like `JpegColor`, and so is the grey projection (`HeifColor.ToGray`); no SIMD path
-exists yet, and when one is added every tier must produce identical output.
+parameters and frozen like `JpegColor`, and so is the grey projection (`HeifColor.ToGrayRow`). Every vector
+kernel has a scalar twin and every tier (Vector256, Vector128, scalar; x64 and arm64) produces identical output;
+CI runs the HEIF tests on each.
