@@ -250,9 +250,10 @@ MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BM
 | `Sdcb.SimdCodecs.Ico` | `icons`（写出并读回一个多尺寸图标和一个光标） |
 | `Sdcb.SimdCodecs.Qoi` | `qoi`（QOI 与 PNG 的体积和速度对比，解码进带行填充的 BGRA 缓冲区） |
 | `Sdcb.SimdCodecs.Pnm` | `netpbm`（P1–P7 的 ASCII 和二进制、手写 PPM、16 位 PGM、PFM） |
+| `Sdcb.SimdCodecs.Heif` | `decode`（手机拍照的网格图、Main 10、`clap` 裁剪；`ReadInfo` / `Decode` / `DecodeTo`）、`facade`（向门面注册；带行填充的 BGRA、Gray8） |
 
 样例图片从 `https://cv-public.sdcb.ai/simdcodecs/samples/v1/` 下载，它们的生成方式和来源见
-[tools/sample-assets](tools/sample-assets/README.md)。
+[tools/sample-assets](tools/sample-assets/README.md)。HEIF 样例使用 HEIF 测试图片（`…/test-images/heif/`，CC0，见 `tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh`）。
 
 ## 构建和测试
 

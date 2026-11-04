@@ -261,9 +261,11 @@ Each package ships runnable samples in `linqpad-samples/`, which LINQPad lists i
 | `Sdcb.SimdCodecs.Ico` | `icons` (a multi-size icon and a cursor, written and read back) |
 | `Sdcb.SimdCodecs.Qoi` | `qoi` (QOI against PNG on size and speed, decoding into a padded BGRA buffer) |
 | `Sdcb.SimdCodecs.Pnm` | `netpbm` (P1–P7 plain and raw, a hand-written PPM, 16-bit PGM, PFM) |
+| `Sdcb.SimdCodecs.Heif` | `decode` (phone-camera grids, Main 10, a `clap` crop; `ReadInfo` / `Decode` / `DecodeTo`), `facade` (registering with the facade; BGRA with a padded stride, Gray8) |
 
 They download their images from `https://cv-public.sdcb.ai/simdcodecs/samples/v1/`; how those were
-made and where they come from is in [tools/sample-assets](tools/sample-assets/README.md).
+made and where they come from is in [tools/sample-assets](tools/sample-assets/README.md). The HEIF samples use
+the HEIF test images (`…/test-images/heif/`, CC0; see `tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh`).
 
 ## Build and test
 

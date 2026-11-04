@@ -80,6 +80,15 @@ a Ryzen 7 5800X against libde265 1.1.1 and libheif 1.23.1 in the same process
   stride, so the only image-sized buffer is the output. Peak working-set rise for a 12.6 MP phone photo (48 MB
   of RGBA): 75 MB, libheif 80 MB; for 50 MP (192 MB): 230 MB, libheif 373 MB.
 
+## LINQPad samples
+
+The package ships two runnable samples in `linqpad-samples/`:
+
+- `decode`: the codec's own API on real phone photos (a 12.6 MP 48-tile grid, the same in Main 10) and a
+  single item with a `clap` crop — `ReadInfo`, `Decode`, `DecodeTo` into a reused buffer, timing and thumbnails.
+- `facade`: what `SimdCodecs.Register(HeifImageDecoder.Registration)` changes, then `TryDecodeInto` as BGRA with a
+  padded stride and as Gray8, and `TryDecode`'s ICC and colour encoding.
+
 ## What is supported
 
 - HEIC still images (`ftyp` major brand `heic` / `heix`, compatible brand `mif1`)
