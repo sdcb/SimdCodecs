@@ -31,11 +31,11 @@ void Main()
 	byte[]? plainPixmap = null;
 	foreach (var (format, expected) in formats)
 	{
-		byte[] file = PnmEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32, new PnmEncodeOptions { Format = format });
+		byte[] file = PnmEncoder.Encode(rgba, width, height, PixelFormat.Rgba32, new PnmEncodeOptions { Format = format });
 		if (format == PnmFormat.PlainPixmap) plainPixmap = file;
 		PnmInfo info = PnmDecoder.ReadInfo(file);
 		var decoded = new byte[width * height * 4];
-		PnmDecoder.DecodeTo(file, decoded, ImagePixelFormat.Rgba32);
+		PnmDecoder.DecodeTo(file, decoded, PixelFormat.Rgba32);
 		rows.Add(new
 		{
 			Format = format,

@@ -22,7 +22,7 @@ if (SimdCodecs.TryOpenFrames(data, out IImageFrameReader? reader))
 using (reader)
 {
     var buffer = new byte[info.Width * info.Height * 4];
-    foreach (FrameTiming frame in reader.EnumerateFramesInto(buffer, 0, ImagePixelFormat.Bgra32))
+    foreach (FrameTiming frame in reader.EnumerateFramesInto(buffer, 0, PixelFormat.Bgra32))
         Show(buffer, frame.Duration);
 }
 ```

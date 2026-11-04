@@ -60,7 +60,7 @@ internal sealed class GifCanvas
     /// from), replaying from an independent frame unless it is the next one.
     /// </summary>
     /// <exception cref="InvalidDataException">The frame's LZW minimum code size is invalid.</exception>
-    public void DecodeFrame(ReadOnlySpan<byte> data, int index)
+    public void DecodeFrame(ReadOnlySpan<byte> data, int index, CancellationToken cancellationToken = default)
     {
         if (index != _next)
         {
@@ -68,8 +68,13 @@ internal sealed class GifCanvas
             while (!_independent[start]) start--;
             Fill(0, 0, Width, Height);
             _pending = -1;
-            for (_next = start; _next < index;) Draw(data, _next);
+            for (_next = start; _next < index;)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Draw(data, _next);
+            }
         }
+        cancellationToken.ThrowIfCancellationRequested();
         Draw(data, index);
     }
 

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
 
@@ -35,32 +36,41 @@ internal sealed class GifFrameReader(ReadOnlyMemory<byte> data, GifCanvas canvas
         return true;
     }
 
-    public bool TryDecodeFrame(int index, [NotNullWhen(true)] out IDecodedImage? image)
+    public bool TryDecodeFrame(int index, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         Check(index);
+        cancellationToken.ThrowIfCancellationRequested();
         image = null;
-        if (!TryComposite(index)) return false;
-        image = ToImage(canvas, frameInfo.Channels);
+        options?.Validate(canvas.Width, canvas.Height, supportsScale: false);
+        if (!TryComposite(index, cancellationToken)) return false;
+        var raster = ToImage(canvas, frameInfo.Channels, options?.Pool);
+        image = DecodeOptions.Apply(raster, options);
         return true;
     }
 
-    public bool TryDecodeFrameInto(int index, Span<byte> destination, int stride, ImagePixelFormat format)
+    public bool TryDecodeFrameInto(int index, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         Check(index);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (options is { IsFullImage: false })
+            return ImageDecoderFallback.TryDecodeFrameInto(this, index, destination, stride, format, options, cancellationToken);
         if (!PixelConverter.TryGetLayout(canvas.Width, canvas.Height, format, stride, destination.Length, out var rowStride))
             return false;
-        if (!TryComposite(index)) return false;
-        Convert(canvas, destination, rowStride, format);
+        if (!TryComposite(index, cancellationToken)) return false;
+        Convert(canvas, destination, rowStride, format, cancellationToken);
         return true;
     }
 
     public void Dispose() => _disposed = true;
 
     /// <summary>The canvas as a raster of <paramref name="channels"/> (3: opaque, alpha dropped; 4: RGBA).</summary>
-    internal static RasterImage ToImage(GifCanvas canvas, int channels)
+    internal static RasterImage ToImage(GifCanvas canvas, int channels, ArrayPool<byte>? pool = null)
     {
         int width = canvas.Width, height = canvas.Height;
-        var pixels = new byte[width * height * channels];
+        var raster = RasterImage.Create(width, height, channels, SampleFormat.UInt8, pool, bitDepth: 8);
+        var pixels = raster.WritablePixels;
         if (channels == 4)
         {
             canvas.Pixels.CopyTo(pixels);
@@ -70,20 +80,23 @@ internal sealed class GifFrameReader(ReadOnlyMemory<byte> data, GifCanvas canvas
             for (var y = 0; y < height; y++)
             {
                 PixelConverter.ConvertRow(canvas.Pixels.Slice(y * width * 4, width * 4), 4, SampleFormat.UInt8,
-                    pixels.AsSpan(y * width * 3, width * 3), ImagePixelFormat.Rgb24, width);
+                    pixels.Slice(y * width * 3, width * 3), PixelFormat.Rgb24, width);
             }
         }
-        return new RasterImage(width, height, channels, SampleFormat.UInt8, pixels);
+        return raster;
     }
 
     /// <summary>The canvas into <paramref name="destination"/>, laid out by <see cref="PixelConverter.TryGetLayout"/>.</summary>
-    internal static void Convert(GifCanvas canvas, Span<byte> destination, int rowStride, ImagePixelFormat format)
+    internal static void Convert(GifCanvas canvas, Span<byte> destination, int rowStride, PixelFormat format,
+        CancellationToken cancellationToken = default)
     {
         // The canvas is RGBA either way; for an opaque GIF its alpha is 255 everywhere (see GifCanvas), as
         // ToRgba8 of the RGB frame gives.
         int width = canvas.Width, height = canvas.Height;
         for (var y = 0; y < height; y++)
         {
+            if ((y & 63) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
             PixelConverter.ConvertRow(canvas.Pixels.Slice(y * width * 4, width * 4), 4, SampleFormat.UInt8,
                 destination.Slice(y * rowStride), format, width);
         }
@@ -96,11 +109,11 @@ internal sealed class GifFrameReader(ReadOnlyMemory<byte> data, GifCanvas canvas
         ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
-    private bool TryComposite(int index)
+    private bool TryComposite(int index, CancellationToken cancellationToken)
     {
         try
         {
-            canvas.DecodeFrame(data.Span, index);
+            canvas.DecodeFrame(data.Span, index, cancellationToken);
             return true;
         }
         catch (InvalidDataException)

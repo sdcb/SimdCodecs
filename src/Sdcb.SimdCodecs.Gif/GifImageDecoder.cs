@@ -12,6 +12,10 @@ namespace Sdcb.SimdCodecs.Gif;
 /// </summary>
 public sealed class GifImageDecoder : IMultiFrameImageDecoder
 {
+    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Gif, CanDecode, TryReadInfo,
+        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail, TryOpenFrames);
+
     /// <inheritdoc />
     public static int SignatureLength => 6;
 
@@ -34,22 +38,35 @@ public sealed class GifImageDecoder : IMultiFrameImageDecoder
     }
 
     /// <inheritdoc />
-    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image)
+    public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
+        out int width, out int height, out int scaleDenominator) =>
+        ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
+
+    /// <inheritdoc />
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         image = null;
-        if (!TryFirstFrame(data, out var canvas, out var info)) return false;
-        image = GifFrameReader.ToImage(canvas, info.Channels);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!TryFirstFrame(data, out var canvas, out var info, cancellationToken)) return false;
+        options?.Validate(info.Width, info.Height, supportsScale: false);
+        var raster = GifFrameReader.ToImage(canvas, info.Channels, options?.Pool);
+        image = DecodeOptions.Apply(raster, options);
         return true;
     }
 
     /// <inheritdoc />
-    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format)
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (options is { IsFullImage: false })
+            return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
         if (!TryReadInfo(data, out var info)
             || !PixelConverter.TryGetLayout(info.Width, info.Height, format, stride, destination.Length, out var rowStride)
-            || !TryFirstFrame(data, out var canvas, out _))
+            || !TryFirstFrame(data, out var canvas, out _, cancellationToken))
             return false;
-        GifFrameReader.Convert(canvas, destination, rowStride, format);
+        GifFrameReader.Convert(canvas, destination, rowStride, format, cancellationToken);
         return true;
     }
 
@@ -58,7 +75,7 @@ public sealed class GifImageDecoder : IMultiFrameImageDecoder
     /// at least <c>Width * Height * 4</c> bytes.
     /// </summary>
     public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
-        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
+        TryDecodeInto(data, rgbaDestination, 0, PixelFormat.Rgba32);
 
     /// <inheritdoc />
     /// <remarks>Frames are the composited canvas. Decoding them in order draws each once; any other order
@@ -78,8 +95,19 @@ public sealed class GifImageDecoder : IMultiFrameImageDecoder
         }
     }
 
+    /// <inheritdoc />
+    /// <remarks>GIF has no metadata blocks: a readable file gives <see cref="ImageMetadata.Empty"/>.</remarks>
+    public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata) =>
+        ImageDecoderFallback.TryReadNoMetadata(TryReadInfo, data, out metadata);
+
+    /// <inheritdoc />
+    /// <remarks>GIF has no embedded previews: always false.</remarks>
+    public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail) =>
+        ImageDecoderFallback.NoThumbnail(out thumbnail);
+
     // The first frame, composited from the span itself: a still decode keeps nothing, so nothing is copied.
-    private static bool TryFirstFrame(ReadOnlySpan<byte> data, [NotNullWhen(true)] out GifCanvas? canvas, out ImageInfo info)
+    private static bool TryFirstFrame(ReadOnlySpan<byte> data, [NotNullWhen(true)] out GifCanvas? canvas, out ImageInfo info,
+        CancellationToken cancellationToken = default)
     {
         canvas = null;
         info = default;
@@ -88,7 +116,7 @@ public sealed class GifImageDecoder : IMultiFrameImageDecoder
             var container = GifContainer.Read(data);
             info = ToImageInfo(container);
             canvas = new GifCanvas(container);
-            canvas.DecodeFrame(data, 0);
+            canvas.DecodeFrame(data, 0, cancellationToken);
             return true;
         }
         catch (InvalidDataException)
@@ -104,5 +132,6 @@ public sealed class GifImageDecoder : IMultiFrameImageDecoder
             Format = ImageFormat.Gif,
             BitDepth = 8,
             FrameCount = container.Frames.Length,
+            ColorEncoding = ColorEncoding.AssumedSrgb,
         };
 }

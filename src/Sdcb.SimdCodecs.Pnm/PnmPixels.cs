@@ -8,7 +8,7 @@ namespace Sdcb.SimdCodecs.Pnm;
 /// Netpbm rasters to samples. Integer samples scale from the file's maximum <c>m</c> to the output range:
 /// <c>(v · 255 + m / 2) / m</c> for 8 bits, <c>(v · 65535 + m / 2) / m</c> for 16, a value above <c>m</c>
 /// counting as <c>m</c>. An 8-bit layout from a 16-bit file takes the 16-bit value's high byte, as
-/// <see cref="ImagePixelFormat"/> defines. A plain raster's samples are decimal numbers (single <c>0</c> /
+/// <see cref="PixelFormat"/> defines. A plain raster's samples are decimal numbers (single <c>0</c> /
 /// <c>1</c> characters for P1) separated by whitespace and comments; a raw one is binary, big-endian for 16
 /// bits, a PBM row padded to a whole byte, a PFM row bottom-up.
 /// </summary>
@@ -33,14 +33,16 @@ internal static class PnmPixels
         return data.Slice(offset, (int)size);
     }
 
-    /// <summary>Decodes into an 8-bit layout. PFM has none: it is refused by the callers.</summary>
-    public static void DecodeTo(ReadOnlySpan<byte> data, in PnmInfo info, int offset, Span<byte> destination, int rowStride, ImagePixelFormat format)
+    /// <summary>Decodes into an integer layout. PFM has none: it is refused by the callers.</summary>
+    public static void DecodeTo(ReadOnlySpan<byte> data, in PnmInfo info, int offset, Span<byte> destination, int rowStride, PixelFormat format, CancellationToken cancellationToken = default)
     {
-        int width = info.Width, channels = info.Channels, bpp = PixelConverter.BytesPerPixel(format);
+        int width = info.Width, channels = info.Channels, bpp = format.BytesPerPixel;
         scoped var source = new Source8(data, info, offset);
         Span<byte> samples = stackalloc byte[Chunk * 4];
         for (var y = 0; y < info.Height; y++)
         {
+            if ((y & 63) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
             var row = destination.Slice(y * rowStride, width * bpp);
             for (var x = 0; x < width; x += Chunk)
             {
@@ -59,8 +61,20 @@ internal static class PnmPixels
         var size = (long)width * channels * sampleBytes * height;
         if (size > Array.MaxLength)
             throw new InvalidDataException($"Netpbm image {width}x{height} does not fit in one array.");
-        var rowBytes = (int)(size / height);
         var pixels = GC.AllocateUninitializedArray<byte>((int)size);
+        Decode(data, info, offset, pixels);
+        return pixels;
+    }
+
+    /// <summary>Decodes to the native samples: <see cref="PnmInfo.SampleFormat"/>, tightly packed into <paramref name="destination"/>.</summary>
+    public static void Decode(ReadOnlySpan<byte> data, in PnmInfo info, int offset, Span<byte> destination, CancellationToken cancellationToken = default)
+    {
+        int width = info.Width, height = info.Height, channels = info.Channels;
+        var sampleBytes = RasterImage.BytesPerSample(info.SampleFormat);
+        var size = (long)width * channels * sampleBytes * height;
+        if (destination.Length < size)
+            throw new ArgumentException("Destination too small.", nameof(destination));
+        var rowBytes = (int)(size / height);
         switch (info.SampleFormat)
         {
             case SampleFormat.UInt8:
@@ -68,7 +82,9 @@ internal static class PnmPixels
                 scoped var source = new Source8(data, info, offset);
                 for (var y = 0; y < height; y++)
                 {
-                    var row = pixels.AsSpan(y * rowBytes, rowBytes);
+                    if ((y & 63) == 0)
+                        cancellationToken.ThrowIfCancellationRequested();
+                    var row = destination.Slice(y * rowBytes, rowBytes);
                     for (var x = 0; x < width; x += Chunk)
                     {
                         var n = Math.Min(Chunk, width - x);
@@ -81,13 +97,17 @@ internal static class PnmPixels
             }
             case SampleFormat.UInt16:
             {
-                var samples = MemoryMarshal.Cast<byte, ushort>(pixels.AsSpan());
+                var samples = MemoryMarshal.Cast<byte, ushort>(destination[..(int)size]);
                 var max = (uint)info.MaxValue;
                 if (info.IsPlain)
                 {
                     var p = offset;
                     for (var i = 0; i < samples.Length; i++)
+                    {
+                        if ((i & 1023) == 0)
+                            cancellationToken.ThrowIfCancellationRequested();
                         samples[i] = Scale16(PlainNumber(data, ref p), max);
+                    }
                 }
                 else
                 {
@@ -95,8 +115,14 @@ internal static class PnmPixels
                     if (BitConverter.IsLittleEndian) BinaryPrimitives.ReverseEndianness(raster, samples);
                     else raster.CopyTo(samples);
                     if (max != 65535)
-                        foreach (ref var s in samples)
-                            s = Scale16(s, max);
+                    {
+                        for (var i = 0; i < samples.Length; i++)
+                        {
+                            if ((i & 4095) == 0)
+                                cancellationToken.ThrowIfCancellationRequested();
+                            samples[i] = Scale16(samples[i], max);
+                        }
+                    }
                 }
                 break;
             }
@@ -107,15 +133,16 @@ internal static class PnmPixels
                 var swap = info.Scale < 0 != BitConverter.IsLittleEndian;
                 for (var y = 0; y < height; y++)
                 {
+                    if ((y & 63) == 0)
+                        cancellationToken.ThrowIfCancellationRequested();
                     var from = MemoryMarshal.Cast<byte, uint>(raster.Slice((height - 1 - y) * rowBytes, rowBytes));
-                    var to = MemoryMarshal.Cast<byte, uint>(pixels.AsSpan(y * rowBytes, rowBytes));
+                    var to = MemoryMarshal.Cast<byte, uint>(destination.Slice(y * rowBytes, rowBytes));
                     if (swap) BinaryPrimitives.ReverseEndianness(from, to);
                     else from.CopyTo(to);
                 }
                 break;
             }
         }
-        return pixels;
     }
 
     public static byte Scale8(uint v, uint max) => (byte)((Math.Min(v, max) * 255 + max / 2) / max);

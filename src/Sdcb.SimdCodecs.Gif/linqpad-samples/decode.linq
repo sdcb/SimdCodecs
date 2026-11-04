@@ -32,7 +32,7 @@ async Task Main()
 		DumpContainer player = new();
 		player.Dump("Playing frames");
 
-		foreach (FrameTiming frame in reader.EnumerateFramesInto(canvas, 0, ImagePixelFormat.Rgba32))
+		foreach (FrameTiming frame in reader.EnumerateFramesInto(canvas, 0, PixelFormat.Rgba32))
 		{
 			rows.Add(new { frame.Index, DurationMs = frame.Duration?.TotalMilliseconds });
 			player.Content = Util.Image(ToPng(canvas, info.Width, info.Height));
