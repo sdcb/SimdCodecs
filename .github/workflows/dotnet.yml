@@ -134,6 +134,9 @@ jobs:
         path: ~/.nuget/packages
         key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
         restore-keys: nuget-${{ runner.os }}-${{ runner.arch }}-
+    # Before the build: the test project copies Fixtures/** into its output, where the tests read them.
+    - name: Fetch HEIF fixtures
+      run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh
     - name: Build tests
       run: dotnet build tests/Sdcb.SimdCodecs.Tests -c Release
     - name: Test JPEG
@@ -146,10 +149,8 @@ jobs:
     - name: Test BMP and ICO
       run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Bmp|FullyQualifiedName~Ico|FullyQualifiedName~Qoi|FullyQualifiedName~Pnm"
     # The HEVC / HEIF kernels have scalar twins too. HeifEquivalenceTests compares the tiers on random
-    # blocks and needs nothing; the golden tests need the fixtures. No REQUIRE_ORACLES here, so the live
-    # ffmpeg comparison skips while the goldens are still compared.
-    - name: Fetch HEIF fixtures
-      run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh
+    # blocks and needs nothing; the golden tests need the fixtures (fetched before the build). No
+    # REQUIRE_ORACLES here, so the live ffmpeg comparison skips while the goldens are still compared.
     - name: Test HEIF
       run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Heif"
 
