@@ -1,3 +1,7 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+
 namespace Sdcb.SimdCodecs.Heif;
 
 /// <summary>
@@ -97,33 +101,155 @@ internal static class HeifColor
         for (var row = 0; row < height; row++)
         {
             var yRow = y.Slice(row * yStride, width);
-            var cRow = (row >> 1) * cStride;
-            var outRow = rgba.Slice(row * rgbaStride, width * 4);
-            for (var x = 0; x < width; x++)
+            var cRowOffset = (row >> 1) * cStride;
+            var cbRow = cb.Slice(cRowOffset);
+            var crRow = cr.Slice(cRowOffset);
+            var outRow = rgba.Slice(row * rgbaStride);
+            var done = 0;
+            if (!k.Identity)
             {
-                var luma = yRow[x] - k.YOffset;
-                var u = cb[cRow + (x >> 1)] - k.COffset;
-                var v = cr[cRow + (x >> 1)] - k.COffset;
-                int r, g, b;
-                if (k.Identity)
-                {
-                    r = (k.Y * v + 32768) >> 16;
-                    g = (k.Y * luma + 32768) >> 16;
-                    b = (k.Y * u + 32768) >> 16;
-                }
-                else
-                {
-                    var yy = k.Y * luma + 32768;
-                    r = (yy + k.CrR * v) >> 16;
-                    g = (yy - k.CbG * u - k.CrG * v) >> 16;
-                    b = (yy + k.CbB * u) >> 16;
-                }
-                outRow[x * 4] = (byte)Math.Clamp(r, 0, 255);
-                outRow[x * 4 + 1] = (byte)Math.Clamp(g, 0, 255);
-                outRow[x * 4 + 2] = (byte)Math.Clamp(b, 0, 255);
-                outRow[x * 4 + 3] = 255;
+                if (Vector256.IsHardwareAccelerated && width >= 8)
+                    done = ToRgba420RowV256(yRow, cbRow, crRow, outRow, width, in k);
+                else if (Vector128.IsHardwareAccelerated && width >= 4)
+                    done = ToRgba420RowV128(yRow, cbRow, crRow, outRow, width, in k);
             }
+            ToRgba420RowScalar(yRow, cbRow, crRow, outRow, done, width, in k);
         }
+    }
+
+    /// <summary>
+    /// Scalar definition of one luma row of the 4:2:0 → RGBA8 conversion, starting at <paramref name="start"/>.
+    /// Called as a tail by the vector tiers and directly for the identity-matrix path.
+    /// </summary>
+    internal static void ToRgba420RowScalar(ReadOnlySpan<ushort> y, ReadOnlySpan<ushort> cbRow, ReadOnlySpan<ushort> crRow,
+        Span<byte> outRow, int start, int width, in Coefficients k)
+    {
+        for (var x = start; x < width; x++)
+        {
+            var luma = y[x] - k.YOffset;
+            var u = cbRow[x >> 1] - k.COffset;
+            var v = crRow[x >> 1] - k.COffset;
+            int r, g, b;
+            if (k.Identity)
+            {
+                r = (k.Y * v + 32768) >> 16;
+                g = (k.Y * luma + 32768) >> 16;
+                b = (k.Y * u + 32768) >> 16;
+            }
+            else
+            {
+                var yy = k.Y * luma + 32768;
+                r = (yy + k.CrR * v) >> 16;
+                g = (yy - k.CbG * u - k.CrG * v) >> 16;
+                b = (yy + k.CbB * u) >> 16;
+            }
+            outRow[x * 4] = (byte)Math.Clamp(r, 0, 255);
+            outRow[x * 4 + 1] = (byte)Math.Clamp(g, 0, 255);
+            outRow[x * 4 + 2] = (byte)Math.Clamp(b, 0, 255);
+            outRow[x * 4 + 3] = 255;
+        }
+    }
+
+    /// <summary>
+    /// Vector128 kernel for one luma row (non-identity path only). Processes 4 output pixels per step (each
+    /// chroma sample serves a pair of luma samples, so 4 pixels need 2 chroma pairs = 4 chroma values).
+    /// Returns the number of pixels completed (a multiple of 4). The proof: i + 4 ≤ width ≤ y.Length and cbRow/crRow
+    /// are width/2 long (stride), so y[i..i+4] and cb/cr[(i/2)..(i/2)+2] are in range by the loop guard.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    internal static int ToRgba420RowV128(ReadOnlySpan<ushort> y, ReadOnlySpan<ushort> cbRow, ReadOnlySpan<ushort> crRow,
+        Span<byte> outRow, int width, in Coefficients k)
+    {
+        ref var py = ref MemoryMarshal.GetReference(y);
+        ref var pcb = ref MemoryMarshal.GetReference(cbRow);
+        ref var pcr = ref MemoryMarshal.GetReference(crRow);
+        ref var po = ref MemoryMarshal.GetReference(outRow);
+        var vYOffset = Vector128.Create(k.YOffset);
+        var vY = Vector128.Create(k.Y);
+        var vCrR = Vector128.Create(k.CrR);
+        var vCbG = Vector128.Create(k.CbG);
+        var vCrG = Vector128.Create(k.CrG);
+        var vCbB = Vector128.Create(k.CbB);
+        var vHalf = Vector128.Create(32768);
+        var vMax = Vector128.Create(255);
+        var vAlpha = Vector128.Create((uint)0xFF000000u);
+        var i = 0;
+        for (; i + 4 <= width; i += 4)
+        {
+            // 4 luma samples expanded to int32.
+            var yv = Vector128.Create((int)Unsafe.Add(ref py, i), (int)Unsafe.Add(ref py, i + 1),
+                                      (int)Unsafe.Add(ref py, i + 2), (int)Unsafe.Add(ref py, i + 3)) - vYOffset;
+            // 2 chroma pairs, each replicated to serve 2 luma samples.
+            var ci = i >> 1;
+            var u0 = (int)Unsafe.Add(ref pcb, ci) - k.COffset;
+            var u1 = (int)Unsafe.Add(ref pcb, ci + 1) - k.COffset;
+            var v0 = (int)Unsafe.Add(ref pcr, ci) - k.COffset;
+            var v1 = (int)Unsafe.Add(ref pcr, ci + 1) - k.COffset;
+            var uv = Vector128.Create(u0, u0, u1, u1);
+            var vv = Vector128.Create(v0, v0, v1, v1);
+            var yy = yv * vY + vHalf;
+            var rv = Vector128.Min(Vector128.Max((yy + vCrR * vv) >> 16, Vector128<int>.Zero), vMax).AsUInt32();
+            var gv = Vector128.Min(Vector128.Max((yy - vCbG * uv - vCrG * vv) >> 16, Vector128<int>.Zero), vMax).AsUInt32();
+            var bv = Vector128.Min(Vector128.Max((yy + vCbB * uv) >> 16, Vector128<int>.Zero), vMax).AsUInt32();
+            // Pack 4 pixels: each pixel = R | (G << 8) | (B << 16) | 0xFF000000.
+            var pixels = rv | (gv << 8) | (bv << 16) | vAlpha;
+            pixels.StoreUnsafe(ref Unsafe.As<byte, uint>(ref po), (nuint)i);
+        }
+        return i;
+    }
+
+    /// <summary>
+    /// Vector256 kernel for one luma row (non-identity path only). Processes 8 output pixels per step.
+    /// Returns the number of pixels completed (a multiple of 8). The proof: i + 8 ≤ width ≤ y.Length and
+    /// cbRow/crRow are width/2 long, so y[i..i+8] and cb/cr[(i/2)..(i/2)+4] are in range by the loop guard.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    internal static int ToRgba420RowV256(ReadOnlySpan<ushort> y, ReadOnlySpan<ushort> cbRow, ReadOnlySpan<ushort> crRow,
+        Span<byte> outRow, int width, in Coefficients k)
+    {
+        ref var py = ref MemoryMarshal.GetReference(y);
+        ref var pcb = ref MemoryMarshal.GetReference(cbRow);
+        ref var pcr = ref MemoryMarshal.GetReference(crRow);
+        ref var po = ref MemoryMarshal.GetReference(outRow);
+        var vYOffset = Vector256.Create(k.YOffset);
+        var vY = Vector256.Create(k.Y);
+        var vCrR = Vector256.Create(k.CrR);
+        var vCbG = Vector256.Create(k.CbG);
+        var vCrG = Vector256.Create(k.CrG);
+        var vCbB = Vector256.Create(k.CbB);
+        var vHalf = Vector256.Create(32768);
+        var vMax = Vector256.Create(255);
+        var vAlpha = Vector256.Create((uint)0xFF000000u);
+        var i = 0;
+        for (; i + 8 <= width; i += 8)
+        {
+            // 8 luma samples.
+            var ylo = Vector128.Create((int)Unsafe.Add(ref py, i), (int)Unsafe.Add(ref py, i + 1),
+                                       (int)Unsafe.Add(ref py, i + 2), (int)Unsafe.Add(ref py, i + 3));
+            var yhi = Vector128.Create((int)Unsafe.Add(ref py, i + 4), (int)Unsafe.Add(ref py, i + 5),
+                                       (int)Unsafe.Add(ref py, i + 6), (int)Unsafe.Add(ref py, i + 7));
+            var yv = Vector256.Create(ylo, yhi) - vYOffset;
+            // 4 chroma pairs, each replicated to serve 2 luma samples.
+            var ci = i >> 1;
+            var uv = Vector256.Create(
+                (int)Unsafe.Add(ref pcb, ci) - k.COffset, (int)Unsafe.Add(ref pcb, ci) - k.COffset,
+                (int)Unsafe.Add(ref pcb, ci + 1) - k.COffset, (int)Unsafe.Add(ref pcb, ci + 1) - k.COffset,
+                (int)Unsafe.Add(ref pcb, ci + 2) - k.COffset, (int)Unsafe.Add(ref pcb, ci + 2) - k.COffset,
+                (int)Unsafe.Add(ref pcb, ci + 3) - k.COffset, (int)Unsafe.Add(ref pcb, ci + 3) - k.COffset);
+            var vv = Vector256.Create(
+                (int)Unsafe.Add(ref pcr, ci) - k.COffset, (int)Unsafe.Add(ref pcr, ci) - k.COffset,
+                (int)Unsafe.Add(ref pcr, ci + 1) - k.COffset, (int)Unsafe.Add(ref pcr, ci + 1) - k.COffset,
+                (int)Unsafe.Add(ref pcr, ci + 2) - k.COffset, (int)Unsafe.Add(ref pcr, ci + 2) - k.COffset,
+                (int)Unsafe.Add(ref pcr, ci + 3) - k.COffset, (int)Unsafe.Add(ref pcr, ci + 3) - k.COffset);
+            var yy = yv * vY + vHalf;
+            var rv = Vector256.Min(Vector256.Max((yy + vCrR * vv) >> 16, Vector256<int>.Zero), vMax).AsUInt32();
+            var gv = Vector256.Min(Vector256.Max((yy - vCbG * uv - vCrG * vv) >> 16, Vector256<int>.Zero), vMax).AsUInt32();
+            var bv = Vector256.Min(Vector256.Max((yy + vCbB * uv) >> 16, Vector256<int>.Zero), vMax).AsUInt32();
+            // Pack 8 pixels: R | (G << 8) | (B << 16) | 0xFF000000.
+            var pixels = rv | (gv << 8) | (bv << 16) | vAlpha;
+            pixels.StoreUnsafe(ref Unsafe.As<byte, uint>(ref po), (nuint)i);
+        }
+        return i;
     }
 
     /// <summary>

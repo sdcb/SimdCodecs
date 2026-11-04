@@ -1,4 +1,5 @@
 using System.Runtime.Intrinsics;
+using Sdcb.SimdCodecs.Heif;
 using Sdcb.SimdCodecs.Heif.Hevc;
 using Shouldly;
 
@@ -243,4 +244,87 @@ public sealed class HeifEquivalenceTests
     [Fact]
     public void SaoBand_dispatch_matches_the_definition() =>
         RunBand((c, d, n, band, bd, o) => { HevcSao.BandRow(c, d, n, band, bd, o); return n; }, 1);
+
+    /// <summary>The scalar Y′CbCr → RGBA8 of one row, straight from the frozen formula.</summary>
+    private static byte[] ReferenceRgbaRow(ushort[] y, ushort[] cb, ushort[] cr, int width, HeifColor.Coefficients k)
+    {
+        var result = new byte[width * 4 + 4];
+        for (var x = 0; x < width; x++)
+        {
+            var luma = y[x] - k.YOffset;
+            var u = cb[x >> 1] - k.COffset;
+            var v = cr[x >> 1] - k.COffset;
+            int r, g, b;
+            if (k.Identity)
+            {
+                r = (k.Y * v + 32768) >> 16;
+                g = (k.Y * luma + 32768) >> 16;
+                b = (k.Y * u + 32768) >> 16;
+            }
+            else
+            {
+                var yy = k.Y * luma + 32768;
+                r = (yy + k.CrR * v) >> 16;
+                g = (yy - k.CbG * u - k.CrG * v) >> 16;
+                b = (yy + k.CbB * u) >> 16;
+            }
+            result[x * 4] = (byte)Math.Clamp(r, 0, 255);
+            result[x * 4 + 1] = (byte)Math.Clamp(g, 0, 255);
+            result[x * 4 + 2] = (byte)Math.Clamp(b, 0, 255);
+            result[x * 4 + 3] = 255;
+        }
+        return result;
+    }
+
+    private delegate int ColorKernel(ushort[] y, ushort[] cb, ushort[] cr, byte[] outRow, int width, HeifColor.Coefficients k);
+
+    private static void RunColor(ColorKernel kernel, int granule)
+    {
+        var rng = new Random(521);
+        var matrices = new[] { 1, 4, 5, 6, 7, 9, 10, 2 }; // non-identity matrix coefficients
+        for (var iteration = 0; iteration < 2000; iteration++)
+        {
+            var bitDepth = rng.Next(2) == 0 ? 8 : 10;
+            var fullRange = rng.Next(2) == 0;
+            var matrix = matrices[rng.Next(matrices.Length)];
+            var k = HeifColor.For(matrix, fullRange, bitDepth);
+            var width = rng.Next(0, 80);
+            var mode = rng.Next(3);
+            var max = (1 << bitDepth) - 1;
+            var y = new ushort[width + 4];
+            var cb = new ushort[width / 2 + 8];
+            var cr = new ushort[width / 2 + 8];
+            for (var i = 0; i < y.Length; i++) y[i] = mode == 0 ? (ushort)rng.Next(max + 1) : mode == 1 ? (ushort)(rng.Next(2) == 0 ? 0 : max) : (ushort)(k.COffset + rng.Next(3) - 1);
+            for (var i = 0; i < cb.Length; i++) cb[i] = mode == 0 ? (ushort)rng.Next(max + 1) : mode == 1 ? (ushort)(rng.Next(2) == 0 ? 0 : max) : (ushort)(k.COffset + rng.Next(3) - 1);
+            for (var i = 0; i < cr.Length; i++) cr[i] = mode == 0 ? (ushort)rng.Next(max + 1) : mode == 1 ? (ushort)(rng.Next(2) == 0 ? 0 : max) : (ushort)(k.COffset + rng.Next(3) - 1);
+
+            var expectedBody = ReferenceRgbaRow(y, cb, cr, width, k); // length = width * 4
+            var expected = new byte[width * 4 + 4];
+            Array.Fill(expected, (byte)0xCD);
+            expectedBody.AsSpan(0, width * 4).CopyTo(expected);
+            var actual = new byte[width * 4 + 4];
+            Array.Fill(actual, (byte)0xCD);
+            var done = kernel(y, cb, cr, actual, width, k);
+            (done % granule).ShouldBe(0, $"iteration {iteration}: width={width}");
+            HeifColor.ToRgba420RowScalar(y, cb, cr, actual, done, width, k);
+            actual.ShouldBe(expected, $"iteration {iteration}: width={width} matrix={matrix} bitDepth={bitDepth} fullRange={fullRange} mode={mode}");
+        }
+    }
+
+    [Fact]
+    public void Color_scalar_matches_the_definition() => RunColor((y, cb, cr, o, w, k) => 0, 1);
+
+    [Fact]
+    public void Color_Vector128_matches_the_definition()
+    {
+        if (!HasV128) return;
+        RunColor((y, cb, cr, o, w, k) => w < 4 ? 0 : HeifColor.ToRgba420RowV128(y, cb, cr, o, w, k), 4);
+    }
+
+    [Fact]
+    public void Color_Vector256_matches_the_definition()
+    {
+        if (!HasV256) return;
+        RunColor((y, cb, cr, o, w, k) => w < 8 ? 0 : HeifColor.ToRgba420RowV256(y, cb, cr, o, w, k), 8);
+    }
 }
