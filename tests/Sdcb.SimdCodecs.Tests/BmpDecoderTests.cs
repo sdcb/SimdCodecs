@@ -441,7 +441,7 @@ public sealed class BmpDecoderTests
         var bmp = W.File(header, [], W.Concat(pixels, profile));
         BmpDecoder.Decode(bmp).IccProfile.ShouldBe(profile);
         BmpImageDecoder.TryDecode(bmp, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
-        image!.IccProfile.ToArray().ShouldBe(profile);
+        image!.Metadata.Icc.Span.ToArray().ShouldBe(profile);
 
         // A profile that points outside the data is ignored, not fatal.
         var broken = W.File(W.InfoHeader(124, width, height, 24, 0, colorSpace: 0x4D424544, profileOffset: 5000, profileSize: 300), [], pixels);

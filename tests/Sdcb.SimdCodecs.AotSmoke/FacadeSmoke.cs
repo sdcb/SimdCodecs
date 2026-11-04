@@ -45,7 +45,7 @@ internal static class FacadeSmoke
         const int w = 37, h = 23;
         var rgb = Program.Pattern(w, h);
         var png = SimdCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, ImageFormat.Png,
-            metadata: new ImageMetadata(icc: new byte[] { 1, 2, 3 }));
+            metadata: new ImageMetadata { Icc = new byte[] { 1, 2, 3 } });
         var jpeg = SimdCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, ImageFormat.Jpeg);
 
         Check(SimdCodecs.TryGetClosestSize(jpeg, 10, 6, out var cw, out var ch, out var scale), "v2", "TryGetClosestSize");

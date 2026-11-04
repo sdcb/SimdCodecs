@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 namespace Sdcb.SimdCodecs.Png;
 
@@ -28,8 +29,17 @@ namespace Sdcb.SimdCodecs.Png;
 public sealed class PngImageDecoder : IImageDecoder
 {
     /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
-    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Png, CanDecode, TryReadInfo,
-        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail);
+    public static ImageDecoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Png,
+        CanDecode = CanDecode,
+        TryReadInfo = TryReadInfo,
+        TryGetClosestSize = TryGetClosestSize,
+        TryDecode = TryDecode,
+        TryDecodeInto = TryDecodeInto,
+        TryReadMetadata = TryReadMetadata,
+        TryDecodeThumbnail = TryDecodeThumbnail,
+    };
 
     private static ReadOnlySpan<byte> Signature => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
@@ -107,7 +117,7 @@ public sealed class PngImageDecoder : IImageDecoder
                 break;
             }
         }
-        return new ImageMetadata(png.Exif, xmp, png.IccProfile);
+        return new ImageMetadata { Exif = png.Exif, Xmp = xmp, Icc = png.IccProfile };
     }
 
     /// <inheritdoc />
@@ -329,7 +339,6 @@ public sealed class PngImageDecoder : IImageDecoder
 
     private static RasterImage ToDecoded(PngImage png)
     {
-        var icc = png.IccProfile;
         var color = MapColorEncoding(png.Cicp, png.Gamma);
         var metadata = MetadataOf(png);
         // 1-, 2- and 4-bit greyscale comes out as 8-bit samples; the file's precision is what bitDepth records.
@@ -337,7 +346,7 @@ public sealed class PngImageDecoder : IImageDecoder
 
         // Indexed: palette (+ optional tRNS) expansion to RGBA8 - PngImage.ToRgba8 already does this.
         if (png.ColorType == 3)
-            return RasterImage.Wrap(png.Width, png.Height, 4, SampleFormat.UInt8, png.ToRgba8(), icc, color, metadata: metadata);
+            return RasterImage.Wrap(png.Width, png.Height, 4, SampleFormat.UInt8, png.ToRgba8(), color, metadata: metadata);
 
         var channels = PngReader.SamplesPerPixel(png.ColorType);
         var key = png.UnpackedTransparentColor();
@@ -348,19 +357,19 @@ public sealed class PngImageDecoder : IImageDecoder
             var samples = png.AsUInt16Samples();
             if (key is not null)
                 return RasterImage.Wrap(png.Width, png.Height, channels + 1, SampleFormat.UInt16,
-                    MemoryMarshal.AsBytes(WithKeyAlpha(samples, channels, key, ushort.MaxValue).AsSpan()).ToArray(), icc, color,
+                    MemoryMarshal.AsBytes(WithKeyAlpha(samples, channels, key, ushort.MaxValue).AsSpan()).ToArray(), color,
                     metadata: metadata);
             var bytes = MemoryMarshal.AsBytes(samples.AsSpan()).ToArray();
-            return RasterImage.Wrap(png.Width, png.Height, channels, SampleFormat.UInt16, bytes, icc, color, metadata: metadata);
+            return RasterImage.Wrap(png.Width, png.Height, channels, SampleFormat.UInt16, bytes, color, metadata: metadata);
         }
 
         // 8-bit: Pixels are already the interleaved host-order raster.
         if (key is not null)
         {
             return RasterImage.Wrap(png.Width, png.Height, channels + 1, SampleFormat.UInt8,
-                WithKeyAlpha(png.Pixels, channels, key, byte.MaxValue), icc, color, depth, metadata);
+                WithKeyAlpha(png.Pixels, channels, key, byte.MaxValue), color, depth, metadata);
         }
-        return RasterImage.Wrap(png.Width, png.Height, channels, SampleFormat.UInt8, png.Pixels, icc, color, depth, metadata);
+        return RasterImage.Wrap(png.Width, png.Height, channels, SampleFormat.UInt8, png.Pixels, color, depth, metadata);
     }
 
     // Samples of `channels` per pixel with an alpha sample appended to each pixel: 0 where the pixel is

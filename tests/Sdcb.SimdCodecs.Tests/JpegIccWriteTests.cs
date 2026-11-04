@@ -43,7 +43,7 @@ public sealed class JpegIccWriteTests
         byte[]? none = null;
         JpegEncoder.Encode(Rgb, 64, 48, 3, new JpegEncodeOptions { Quality = 85, IccProfile = none }).ShouldBe(plain);
         SimdCodecs.TryDecode(plain, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
-        JpegEncoder.Encode(Rgb, 64, 48, 3, new JpegEncodeOptions { Quality = 85, IccProfile = image.IccProfile.ToArray() }).ShouldBe(plain);
+        JpegEncoder.Encode(Rgb, 64, 48, 3, new JpegEncodeOptions { Quality = 85, IccProfile = image.Metadata.Icc.Span.ToArray() }).ShouldBe(plain);
     }
 
     [Fact]

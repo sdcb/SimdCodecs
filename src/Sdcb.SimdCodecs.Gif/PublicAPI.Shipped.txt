@@ -1,0 +1,80 @@
+#nullable enable
+Sdcb.SimdCodecs.Gif.GifAnimationFrame
+Sdcb.SimdCodecs.Gif.GifAnimationFrame.Deconstruct(out System.ReadOnlyMemory<byte> Pixels, out System.TimeSpan Duration) -> void
+Sdcb.SimdCodecs.Gif.GifAnimationFrame.Duration.get -> System.TimeSpan
+Sdcb.SimdCodecs.Gif.GifAnimationFrame.Duration.init -> void
+Sdcb.SimdCodecs.Gif.GifAnimationFrame.Equals(Sdcb.SimdCodecs.Gif.GifAnimationFrame other) -> bool
+Sdcb.SimdCodecs.Gif.GifAnimationFrame.GifAnimationFrame() -> void
+Sdcb.SimdCodecs.Gif.GifAnimationFrame.GifAnimationFrame(System.ReadOnlyMemory<byte> Pixels, System.TimeSpan Duration) -> void
+Sdcb.SimdCodecs.Gif.GifAnimationFrame.Pixels.get -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Gif.GifAnimationFrame.Pixels.init -> void
+Sdcb.SimdCodecs.Gif.GifDecoder
+Sdcb.SimdCodecs.Gif.GifEncodeOptions
+Sdcb.SimdCodecs.Gif.GifEncodeOptions.Dither.get -> bool
+Sdcb.SimdCodecs.Gif.GifEncodeOptions.Dither.init -> void
+Sdcb.SimdCodecs.Gif.GifEncodeOptions.Equals(Sdcb.SimdCodecs.Gif.GifEncodeOptions? other) -> bool
+Sdcb.SimdCodecs.Gif.GifEncodeOptions.GifEncodeOptions() -> void
+Sdcb.SimdCodecs.Gif.GifEncodeOptions.LoopCount.get -> int
+Sdcb.SimdCodecs.Gif.GifEncodeOptions.LoopCount.init -> void
+Sdcb.SimdCodecs.Gif.GifEncoder
+Sdcb.SimdCodecs.Gif.GifImage
+Sdcb.SimdCodecs.Gif.GifImage.Height.get -> int
+Sdcb.SimdCodecs.Gif.GifImage.Rgba.get -> byte[]!
+Sdcb.SimdCodecs.Gif.GifImage.Width.get -> int
+Sdcb.SimdCodecs.Gif.GifImageDecoder
+Sdcb.SimdCodecs.Gif.GifImageDecoder.GifImageDecoder() -> void
+Sdcb.SimdCodecs.Gif.GifImageEncoder
+Sdcb.SimdCodecs.Gif.GifImageEncoder.GifImageEncoder() -> void
+Sdcb.SimdCodecs.Gif.GifInfo
+Sdcb.SimdCodecs.Gif.GifInfo.Deconstruct(out int Width, out int Height, out int FrameCount, out bool HasAlpha, out int? LoopCount) -> void
+Sdcb.SimdCodecs.Gif.GifInfo.Equals(Sdcb.SimdCodecs.Gif.GifInfo other) -> bool
+Sdcb.SimdCodecs.Gif.GifInfo.FrameCount.get -> int
+Sdcb.SimdCodecs.Gif.GifInfo.FrameCount.init -> void
+Sdcb.SimdCodecs.Gif.GifInfo.GifInfo() -> void
+Sdcb.SimdCodecs.Gif.GifInfo.GifInfo(int Width, int Height, int FrameCount, bool HasAlpha, int? LoopCount) -> void
+Sdcb.SimdCodecs.Gif.GifInfo.HasAlpha.get -> bool
+Sdcb.SimdCodecs.Gif.GifInfo.HasAlpha.init -> void
+Sdcb.SimdCodecs.Gif.GifInfo.Height.get -> int
+Sdcb.SimdCodecs.Gif.GifInfo.Height.init -> void
+Sdcb.SimdCodecs.Gif.GifInfo.LoopCount.get -> int?
+Sdcb.SimdCodecs.Gif.GifInfo.LoopCount.init -> void
+Sdcb.SimdCodecs.Gif.GifInfo.Width.get -> int
+Sdcb.SimdCodecs.Gif.GifInfo.Width.init -> void
+override Sdcb.SimdCodecs.Gif.GifAnimationFrame.GetHashCode() -> int
+override Sdcb.SimdCodecs.Gif.GifEncodeOptions.<Clone>$() -> Sdcb.SimdCodecs.Gif.GifEncodeOptions!
+override Sdcb.SimdCodecs.Gif.GifEncodeOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Gif.GifEncodeOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Gif.GifEncodeOptions.ToString() -> string!
+override Sdcb.SimdCodecs.Gif.GifInfo.GetHashCode() -> int
+override sealed Sdcb.SimdCodecs.Gif.GifEncodeOptions.Equals(Sdcb.SimdCodecs.Abstractions.EncodeOptions? other) -> bool
+static Sdcb.SimdCodecs.Gif.GifAnimationFrame.operator !=(Sdcb.SimdCodecs.Gif.GifAnimationFrame left, Sdcb.SimdCodecs.Gif.GifAnimationFrame right) -> bool
+static Sdcb.SimdCodecs.Gif.GifAnimationFrame.operator ==(Sdcb.SimdCodecs.Gif.GifAnimationFrame left, Sdcb.SimdCodecs.Gif.GifAnimationFrame right) -> bool
+static Sdcb.SimdCodecs.Gif.GifDecoder.Decode(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Gif.GifImage!
+static Sdcb.SimdCodecs.Gif.GifDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> rgba, int stride = 0) -> void
+static Sdcb.SimdCodecs.Gif.GifDecoder.ReadInfo(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Gif.GifInfo
+static Sdcb.SimdCodecs.Gif.GifDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Gif.GifInfo info) -> bool
+static Sdcb.SimdCodecs.Gif.GifEncodeOptions.operator !=(Sdcb.SimdCodecs.Gif.GifEncodeOptions? left, Sdcb.SimdCodecs.Gif.GifEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Gif.GifEncodeOptions.operator ==(Sdcb.SimdCodecs.Gif.GifEncodeOptions? left, Sdcb.SimdCodecs.Gif.GifEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Gif.GifEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, int channels, Sdcb.SimdCodecs.Gif.GifEncodeOptions? options = null) -> byte[]!
+static Sdcb.SimdCodecs.Gif.GifEncoder.EncodeAnimation(System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Gif.GifAnimationFrame>! frames, int width, int height, int channels, Sdcb.SimdCodecs.Gif.GifEncodeOptions? options = null) -> byte[]!
+static Sdcb.SimdCodecs.Gif.GifImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Gif.GifImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Gif.GifImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Gif.GifImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Gif.GifImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Gif.GifImageDecoder.TryDecodeIntoRgba8(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> bool
+static Sdcb.SimdCodecs.Gif.GifImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Gif.GifImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Gif.GifImageDecoder.TryOpenFrames(System.ReadOnlyMemory<byte> data, out Sdcb.SimdCodecs.Abstractions.IImageFrameReader? reader) -> bool
+static Sdcb.SimdCodecs.Gif.GifImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Gif.GifImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Gif.GifImageEncoder.Create(System.Buffers.IBufferWriter<byte>! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
+static Sdcb.SimdCodecs.Gif.GifImageEncoder.Format.get -> Sdcb.SimdCodecs.Abstractions.ImageFormat
+static Sdcb.SimdCodecs.Gif.GifImageEncoder.GetClosestInputFormat(Sdcb.SimdCodecs.Abstractions.PixelFormat requested) -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+static Sdcb.SimdCodecs.Gif.GifImageEncoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration!
+static Sdcb.SimdCodecs.Gif.GifInfo.operator !=(Sdcb.SimdCodecs.Gif.GifInfo left, Sdcb.SimdCodecs.Gif.GifInfo right) -> bool
+static Sdcb.SimdCodecs.Gif.GifInfo.operator ==(Sdcb.SimdCodecs.Gif.GifInfo left, Sdcb.SimdCodecs.Gif.GifInfo right) -> bool
+~override Sdcb.SimdCodecs.Gif.GifAnimationFrame.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Gif.GifAnimationFrame.ToString() -> string
+~override Sdcb.SimdCodecs.Gif.GifInfo.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Gif.GifInfo.ToString() -> string

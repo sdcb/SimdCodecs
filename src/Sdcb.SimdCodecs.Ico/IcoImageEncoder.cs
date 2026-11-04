@@ -3,6 +3,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Threading;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 namespace Sdcb.SimdCodecs.Ico;
 
@@ -13,7 +14,12 @@ namespace Sdcb.SimdCodecs.Ico;
 public sealed class IcoImageEncoder : IImageEncoder
 {
     /// <summary>The registration for the facade's encoder registry, built from this type's method groups.</summary>
-    public static ImageEncoderRegistration Registration { get; } = new(ImageFormat.Ico, GetClosestInputFormat, Create);
+    public static ImageEncoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Ico,
+        GetClosestInputFormat = GetClosestInputFormat,
+        Create = Create,
+    };
 
     /// <inheritdoc />
     public static ImageFormat Format => ImageFormat.Ico;

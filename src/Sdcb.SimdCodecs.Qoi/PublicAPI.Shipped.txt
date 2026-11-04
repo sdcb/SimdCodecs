@@ -1,0 +1,54 @@
+#nullable enable
+Sdcb.SimdCodecs.Qoi.QoiColorSpace
+Sdcb.SimdCodecs.Qoi.QoiColorSpace.Linear = 1 -> Sdcb.SimdCodecs.Qoi.QoiColorSpace
+Sdcb.SimdCodecs.Qoi.QoiColorSpace.Srgb = 0 -> Sdcb.SimdCodecs.Qoi.QoiColorSpace
+Sdcb.SimdCodecs.Qoi.QoiDecoder
+Sdcb.SimdCodecs.Qoi.QoiEncoder
+Sdcb.SimdCodecs.Qoi.QoiImage
+Sdcb.SimdCodecs.Qoi.QoiImage.Channels.get -> int
+Sdcb.SimdCodecs.Qoi.QoiImage.ColorSpace.get -> Sdcb.SimdCodecs.Qoi.QoiColorSpace
+Sdcb.SimdCodecs.Qoi.QoiImage.Height.get -> int
+Sdcb.SimdCodecs.Qoi.QoiImage.Pixels.get -> byte[]!
+Sdcb.SimdCodecs.Qoi.QoiImage.Width.get -> int
+Sdcb.SimdCodecs.Qoi.QoiImageDecoder
+Sdcb.SimdCodecs.Qoi.QoiImageDecoder.QoiImageDecoder() -> void
+Sdcb.SimdCodecs.Qoi.QoiImageEncoder
+Sdcb.SimdCodecs.Qoi.QoiImageEncoder.QoiImageEncoder() -> void
+Sdcb.SimdCodecs.Qoi.QoiInfo
+Sdcb.SimdCodecs.Qoi.QoiInfo.Channels.get -> int
+Sdcb.SimdCodecs.Qoi.QoiInfo.Channels.init -> void
+Sdcb.SimdCodecs.Qoi.QoiInfo.ColorSpace.get -> Sdcb.SimdCodecs.Qoi.QoiColorSpace
+Sdcb.SimdCodecs.Qoi.QoiInfo.ColorSpace.init -> void
+Sdcb.SimdCodecs.Qoi.QoiInfo.Deconstruct(out int Width, out int Height, out int Channels, out Sdcb.SimdCodecs.Qoi.QoiColorSpace ColorSpace) -> void
+Sdcb.SimdCodecs.Qoi.QoiInfo.Equals(Sdcb.SimdCodecs.Qoi.QoiInfo other) -> bool
+Sdcb.SimdCodecs.Qoi.QoiInfo.Height.get -> int
+Sdcb.SimdCodecs.Qoi.QoiInfo.Height.init -> void
+Sdcb.SimdCodecs.Qoi.QoiInfo.QoiInfo() -> void
+Sdcb.SimdCodecs.Qoi.QoiInfo.QoiInfo(int Width, int Height, int Channels, Sdcb.SimdCodecs.Qoi.QoiColorSpace ColorSpace) -> void
+Sdcb.SimdCodecs.Qoi.QoiInfo.Width.get -> int
+Sdcb.SimdCodecs.Qoi.QoiInfo.Width.init -> void
+override Sdcb.SimdCodecs.Qoi.QoiInfo.GetHashCode() -> int
+static Sdcb.SimdCodecs.Qoi.QoiDecoder.Decode(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Qoi.QoiImage!
+static Sdcb.SimdCodecs.Qoi.QoiDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> destination, Sdcb.SimdCodecs.Abstractions.PixelFormat? format = null, int stride = 0) -> void
+static Sdcb.SimdCodecs.Qoi.QoiDecoder.ReadInfo(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Qoi.QoiInfo
+static Sdcb.SimdCodecs.Qoi.QoiDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Qoi.QoiInfo info) -> bool
+static Sdcb.SimdCodecs.Qoi.QoiEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Qoi.QoiColorSpace colorSpace = Sdcb.SimdCodecs.Qoi.QoiColorSpace.Srgb, int stride = 0) -> byte[]!
+static Sdcb.SimdCodecs.Qoi.QoiEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, System.IO.Stream! output, Sdcb.SimdCodecs.Qoi.QoiColorSpace colorSpace = Sdcb.SimdCodecs.Qoi.QoiColorSpace.Srgb, int stride = 0) -> void
+static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.TryDecodeIntoRgba8(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> bool
+static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Qoi.QoiImageEncoder.Create(System.Buffers.IBufferWriter<byte>! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
+static Sdcb.SimdCodecs.Qoi.QoiImageEncoder.Format.get -> Sdcb.SimdCodecs.Abstractions.ImageFormat
+static Sdcb.SimdCodecs.Qoi.QoiImageEncoder.GetClosestInputFormat(Sdcb.SimdCodecs.Abstractions.PixelFormat requested) -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+static Sdcb.SimdCodecs.Qoi.QoiImageEncoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration!
+static Sdcb.SimdCodecs.Qoi.QoiInfo.operator !=(Sdcb.SimdCodecs.Qoi.QoiInfo left, Sdcb.SimdCodecs.Qoi.QoiInfo right) -> bool
+static Sdcb.SimdCodecs.Qoi.QoiInfo.operator ==(Sdcb.SimdCodecs.Qoi.QoiInfo left, Sdcb.SimdCodecs.Qoi.QoiInfo right) -> bool
+~override Sdcb.SimdCodecs.Qoi.QoiInfo.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Qoi.QoiInfo.ToString() -> string

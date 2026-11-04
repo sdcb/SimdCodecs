@@ -6,9 +6,9 @@
 
 ## 保留的原则
 
-- **静态抽象成员 + 显式注册。** codec 不靠反射发现，NativeAOT 和 Mono AOT 都安全。每个 codec 用自己具体类型的方法组
-  构造 `Registration`（解码器的 `ImageDecoderRegistration`、编码器的 `ImageEncoderRegistration`），门面只引用这些属性，
-  从不在泛型方法里绑定委托（Mono AOT 会在那里陷入）。wasm 冒烟测试覆盖所有门面入口。
+- **静态抽象成员 + 显式注册。** codec 不靠反射发现，NativeAOT 和 Mono AOT 都安全。每个 codec 用对象初始化器、以自己
+  具体类型的方法组构造 `Registration`（解码器的 `ImageDecoderRegistration`、编码器的 `ImageEncoderRegistration`），门面
+  只引用这些属性，从不在泛型方法里绑定委托（Mono AOT 会在那里陷入）。wasm 冒烟测试覆盖所有门面入口。
 - **`ReadOnlySpan<byte>` 一次性 API 是热路径。** 会话 API（`ImageDecoder`）建在它之上。
 - **错误约定。** 不可信输入：`Try*` 返回 `false`（抛出型 API 抛 `InvalidDataException`），不挂起，不无界分配。取消
   抛 `OperationCanceledException`；调用方给的选项做不到（不支持的缩放、越界的区域）抛 `NotSupportedException` /
@@ -51,20 +51,24 @@ Premultiplied，只对 Rgba / Bgra 有意义）。构造函数拒绝无意义的
 - **取消**：检查点放在粗粒度位置（JPEG 每个 MCU 行、HEIF 每个 tile 和每 64 行输出、PNG / QOI 等每 64 行、WebP 每个
   宏块行），不进内层循环。
 - **`ImageInfo`** 在解码前给出 `ColorEncoding`（判断是不是 PQ / HLG）、`Resolution`（单位按文件声明）、`HasThumbnail`。
-- **`ImageDecoderFallback`** 给不具备原生能力的 codec 一行实现：解码再转换、原尺寸、无元数据、无缩略图。
+- **`ImageDecoderFallback`** 给不具备原生能力的 codec 一行实现：解码再转换、原尺寸、无元数据、无缩略图。它和
+  `DecodeOptions` 的 `Validate` / `Apply`（扩展成员）、`BufferedEncoderSession` 一样放在
+  `Sdcb.SimdCodecs.Abstractions.CodecSupport`：只有写 codec 的人需要，用户的 IntelliSense 里看不到。
 
 ## 元数据与缩略图
 
 接口层只提取和透传原始块（`ImageMetadata`：Exif 从 TIFF 头开始，XMP 是 UTF-8 包，ICC），解析交给 Exif 包，
 Abstractions 不依赖它。提取：JPEG（APP1 Exif / XMP、APP2 ICC）、PNG（eXIf、iTXt XMP、iCCP）、WebP（EXIF、XMP、ICCP）、
 TIFF（XMP 标签 700、ICC）、HEIF（`cdsc` 关联的 Exif item 和 `mime` XMP item、`colr` ICC）。缩略图：JPEG Exif IFD1、
-HEIF `thmb`。编码器把帧的 `ImageMetadata` 写进各自格式的位置。
+HEIF `thmb`。编码器把帧的 `ImageMetadata` 写进各自格式的位置。ICC 只有这一个入口（`IDecodedImage.Metadata.Icc`）。
+`ImageMetadata` 是 record，用初始化器构造、`with` 修改，以后加块（IPTC、文本、HDR 静态元数据）不必破坏兼容。
 
 ## 会话：`ImageDecoder` / `ImageFrame`
 
 借鉴 WIC：`ImageDecoder.Open(Stream | path | memory)`、`OpenAsync`；`Format`、`FrameCount`、`LoopCount`、`Metadata`；
 `GetFrame(i)` 给出 `Info`、`Duration`、`Decode(options)`、`CopyPixels(region, format, buffer, stride)`、
 `TryGetClosestSize`、`TryGetThumbnail`。输入经过 `IByteSource`（内存、可寻址流、内存映射文件，不可寻址流先缓冲）。
+`IByteSource` 放在 Abstractions 而不是门面里，这样 2.x 的 codec 可以直接接收它、只读需要的部分。
 2.0 里所有 codec 仍在整份文件上解码；逐 codec 换成增量输入是 2.x 的性能项，不改 API。
 
 ## 平面 YCbCr：`IPlanarImageDecoder`
@@ -91,3 +95,15 @@ duration)` → `WriteRows(rows, count, stride)` → `Commit()`。
 `RasterImage` 只有工厂方法：`Wrap`（接管调用方填好的数组或 `IMemoryOwner`）、`Allocate` / `Rent` / `Create`（创建后
 经 `WritablePixels` 填充）、`Crop`。`IDecodedImage : IDisposable`；释放后访问 `Pixels` 抛 `ObjectDisposedException`。
 不指定池时行为同 1.x，`Dispose` 可以不调用。
+
+## 兼容性
+
+公开 API 的变动要看得见，但不冻结：所有包同时发布，值得时可以改、可以删，在发布说明里写明即可。形状尽量让常见的
+扩展不必破坏兼容：
+
+- 注册类和 `ImageMetadata` 用 `init` 属性（门面需要的标 `required`），不用位置参数的构造函数：加成员不会让已编译的
+  调用方在运行时找不到方法。只有成对出现的平面委托由 `SimdCodecs.Register` 调 `Validate()` 检查。
+- 每个包都有 `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`（`Microsoft.CodeAnalysis.PublicApiAnalyzers`）。
+  Shipped 记的是上一次发布的公开 API；之后的变动写进 Unshipped，不写就编译报错（RS0016 / RS0017），这样每处变动都会
+  出现在评审的 diff 里。破坏性改动照常可以做，只要它值得、并在发布说明里写明。发布一个版本时把 Unshipped 并进 Shipped。同一分析器里关于可选参数重载形状的 RS0026 / RS0027 在 `.editorconfig` 里关闭：codec 有意
+  同时提供 `byte[]` 和 `ReadOnlySpan<byte>` 重载并带相同的可选参数。

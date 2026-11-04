@@ -1,0 +1,6 @@
+#nullable enable
+Sdcb.SimdCodecs.Color.Icc.IccProfiles
+static Sdcb.SimdCodecs.Color.Icc.IccProfiles.Describe(System.ReadOnlySpan<byte> profile) -> string?
+static Sdcb.SimdCodecs.Color.Icc.IccProfiles.SRgbV4.get -> System.ReadOnlyMemory<byte>
+static Sdcb.SimdCodecs.Color.Icc.IccProfiles.TryGetPrimaries(System.ReadOnlySpan<byte> profile, out Sdcb.SimdCodecs.Abstractions.ColorPrimaries primaries) -> bool
+static Sdcb.SimdCodecs.Color.Icc.IccProfiles.WithCicp(System.ReadOnlySpan<byte> baseProfile, Sdcb.SimdCodecs.Abstractions.ColorPrimaries primaries, Sdcb.SimdCodecs.Abstractions.TransferFunction transfer, Sdcb.SimdCodecs.Abstractions.MatrixCoefficients matrix = Sdcb.SimdCodecs.Abstractions.MatrixCoefficients.Identity, bool videoFullRange = true) -> byte[]!

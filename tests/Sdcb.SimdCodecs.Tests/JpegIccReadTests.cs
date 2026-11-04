@@ -34,8 +34,8 @@ public sealed class JpegIccReadTests
 
         Icc(jpeg).ShouldBe(profile.ToByteArray());
         SimdCodecs.TryDecode(jpeg, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
-        image.IccProfile.ToArray().ShouldBe(profile.ToByteArray());
-        IccProfiles.Describe(image.IccProfile).ShouldBe("Adobe RGB (1998)");
+        image.Metadata.Icc.Span.ToArray().ShouldBe(profile.ToByteArray());
+        IccProfiles.Describe(image.Metadata.Icc.Span).ShouldBe("Adobe RGB (1998)");
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public sealed class JpegIccReadTests
 
         Icc(jpeg).ShouldBe(profile.ToByteArray());
         SimdCodecs.TryDecode(jpeg, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
-        image.IccProfile.ToArray().ShouldBe(profile.ToByteArray());
+        image.Metadata.Icc.Span.ToArray().ShouldBe(profile.ToByteArray());
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public sealed class JpegIccReadTests
 
         Icc(jpeg).ShouldBeNull();
         SimdCodecs.TryDecode(jpeg, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
-        image.IccProfile.IsEmpty.ShouldBeTrue();
+        image.Metadata.Icc.Span.IsEmpty.ShouldBeTrue();
         Icc("not a jpeg"u8).ShouldBeNull();
     }
 

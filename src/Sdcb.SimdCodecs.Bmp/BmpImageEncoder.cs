@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Threading;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 namespace Sdcb.SimdCodecs.Bmp;
 
@@ -13,7 +14,12 @@ namespace Sdcb.SimdCodecs.Bmp;
 public sealed class BmpImageEncoder : IImageEncoder
 {
     /// <summary>The registration for the facade's encoder registry, built from this type's method groups.</summary>
-    public static ImageEncoderRegistration Registration { get; } = new(ImageFormat.Bmp, GetClosestInputFormat, Create);
+    public static ImageEncoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Bmp,
+        GetClosestInputFormat = GetClosestInputFormat,
+        Create = Create,
+    };
 
     /// <inheritdoc />
     public static ImageFormat Format => ImageFormat.Bmp;

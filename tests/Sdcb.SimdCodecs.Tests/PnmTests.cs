@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Text;
 using ImageMagick;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 using Sdcb.SimdCodecs.Pnm;
 using Shouldly;
 

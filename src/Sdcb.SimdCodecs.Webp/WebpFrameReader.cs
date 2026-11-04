@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 namespace Sdcb.SimdCodecs.Webp;
 
@@ -66,7 +67,8 @@ internal sealed class WebpFrameReader : IImageFrameReader
         var canvas = animation.Canvas;
         int width = _frameInfo.Width, height = _frameInfo.Height, channels = _frameInfo.Channels;
         var raster = RasterImage.Create(width, height, channels, SampleFormat.UInt8, options?.Pool,
-            iccProfile: _icc, colorEncoding: ColorEncoding.AssumedSrgb, bitDepth: 8);
+            colorEncoding: ColorEncoding.AssumedSrgb, bitDepth: 8,
+            metadata: _icc is null ? null : new ImageMetadata { Icc = _icc });
         try
         {
             if (channels == 4)

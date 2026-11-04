@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 namespace Sdcb.SimdCodecs.Webp;
 
@@ -91,15 +92,16 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
 
         int channels = webpInfo.HasAlpha ? 4 : 3;
         ImageMetadata? metadata = (container.HasExif || container.HasXmp || container.HasIccProfile)
-            ? new ImageMetadata(
-                container.HasExif ? container.Exif.ToArray() : default,
-                container.HasXmp ? container.Xmp.ToArray() : default,
-                container.HasIccProfile ? container.IccProfile.ToArray() : default)
+            ? new ImageMetadata
+            {
+                Exif = container.HasExif ? container.Exif.ToArray() : default,
+                Xmp = container.HasXmp ? container.Xmp.ToArray() : default,
+                Icc = container.HasIccProfile ? container.IccProfile.ToArray() : default,
+            }
             : null;
-        byte[]? icc = container.HasIccProfile ? container.IccProfile.ToArray() : null;
 
         var raster = RasterImage.Create(webpInfo.Width, webpInfo.Height, channels, SampleFormat.UInt8, options?.Pool,
-            iccProfile: icc, colorEncoding: ColorEncoding.AssumedSrgb, bitDepth: 8, metadata: metadata);
+            colorEncoding: ColorEncoding.AssumedSrgb, bitDepth: 8, metadata: metadata);
 
         try
         {
@@ -217,10 +219,12 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
                 return true;
             }
 
-            metadata = new ImageMetadata(
-                container.HasExif ? container.Exif.ToArray() : default,
-                container.HasXmp ? container.Xmp.ToArray() : default,
-                container.HasIccProfile ? container.IccProfile.ToArray() : default);
+            metadata = new ImageMetadata
+            {
+                Exif = container.HasExif ? container.Exif.ToArray() : default,
+                Xmp = container.HasXmp ? container.Xmp.ToArray() : default,
+                Icc = container.HasIccProfile ? container.IccProfile.ToArray() : default,
+            };
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
@@ -235,8 +239,18 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
         ImageDecoderFallback.NoThumbnail(out thumbnail);
 
     /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
-    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Webp, CanDecode, TryReadInfo,
-        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail, TryOpenFrames);
+    public static ImageDecoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Webp,
+        CanDecode = CanDecode,
+        TryReadInfo = TryReadInfo,
+        TryGetClosestSize = TryGetClosestSize,
+        TryDecode = TryDecode,
+        TryDecodeInto = TryDecodeInto,
+        TryReadMetadata = TryReadMetadata,
+        TryDecodeThumbnail = TryDecodeThumbnail,
+        TryOpenFrames = TryOpenFrames,
+    };
 
     /// <summary>
     /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA (an animation's first frame for animated

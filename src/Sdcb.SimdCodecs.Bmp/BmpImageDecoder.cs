@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 namespace Sdcb.SimdCodecs.Bmp;
 
@@ -13,8 +14,17 @@ namespace Sdcb.SimdCodecs.Bmp;
 public sealed class BmpImageDecoder : IImageDecoder
 {
     /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
-    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Bmp, CanDecode, TryReadInfo,
-        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail);
+    public static ImageDecoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Bmp,
+        CanDecode = CanDecode,
+        TryReadInfo = TryReadInfo,
+        TryGetClosestSize = TryGetClosestSize,
+        TryDecode = TryDecode,
+        TryDecodeInto = TryDecodeInto,
+        TryReadMetadata = TryReadMetadata,
+        TryDecodeThumbnail = TryDecodeThumbnail,
+    };
 
     /// <inheritdoc />
     /// <remarks>The 14-byte file header and the bitmap header's size field.</remarks>
@@ -70,7 +80,7 @@ public sealed class BmpImageDecoder : IImageDecoder
 
         options?.Validate(bmp.Width, bmp.Height, supportsScale: false);
         var raster = RasterImage.Create(bmp.Width, bmp.Height, bmp.Channels, SampleFormat.UInt8, options?.Pool,
-            BmpDecoder.Icc(data, header));
+            metadata: BmpDecoder.Icc(data, header) is { } icc ? new ImageMetadata { Icc = icc } : null);
         try
         {
             BmpPixels.Decode(data, header, raster.WritablePixels, bmp.Width * bmp.Channels,
@@ -114,7 +124,7 @@ public sealed class BmpImageDecoder : IImageDecoder
         try
         {
             var icc = BmpDecoder.Icc(data, BmpHeader.ReadFile(data));
-            metadata = icc is null ? ImageMetadata.Empty : new ImageMetadata(icc: icc);
+            metadata = icc is null ? ImageMetadata.Empty : new ImageMetadata { Icc = icc };
             return true;
         }
         catch (InvalidDataException)

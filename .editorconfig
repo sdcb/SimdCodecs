@@ -1,0 +1,14 @@
+root = true
+
+[*.cs]
+# Public API baseline (Microsoft.CodeAnalysis.PublicApiAnalyzers, see Directory.Build.props): an API that is not in
+# PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt, or one listed there that no longer exists, fails the build. This makes
+# API changes visible in review; it does not forbid them: update the files (and the release notes for a break).
+dotnet_diagnostic.RS0016.severity = error
+dotnet_diagnostic.RS0017.severity = error
+
+# The same analyzer's overload-shape rules (RS0026: several overloads with optional parameters; RS0027: the optional
+# parameters on an overload with fewer parameters) are API style, not the baseline. The codecs deliberately offer
+# byte[] and ReadOnlySpan<byte> overloads with the same optional options; they are not changed for this rule.
+dotnet_diagnostic.RS0026.severity = none
+dotnet_diagnostic.RS0027.severity = none

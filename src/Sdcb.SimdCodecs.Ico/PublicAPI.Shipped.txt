@@ -1,0 +1,119 @@
+#nullable enable
+Sdcb.SimdCodecs.Ico.CurImageDecoder
+Sdcb.SimdCodecs.Ico.CurImageDecoder.CurImageDecoder() -> void
+Sdcb.SimdCodecs.Ico.IcoDecoder
+Sdcb.SimdCodecs.Ico.IcoEncoder
+Sdcb.SimdCodecs.Ico.IcoEntry
+Sdcb.SimdCodecs.Ico.IcoEntry.BitsPerPixel.get -> int
+Sdcb.SimdCodecs.Ico.IcoEntry.BitsPerPixel.init -> void
+Sdcb.SimdCodecs.Ico.IcoEntry.Deconstruct(out int Width, out int Height, out int BitsPerPixel, out bool IsPng, out int HotspotX, out int HotspotY) -> void
+Sdcb.SimdCodecs.Ico.IcoEntry.Equals(Sdcb.SimdCodecs.Ico.IcoEntry other) -> bool
+Sdcb.SimdCodecs.Ico.IcoEntry.Height.get -> int
+Sdcb.SimdCodecs.Ico.IcoEntry.Height.init -> void
+Sdcb.SimdCodecs.Ico.IcoEntry.HotspotX.get -> int
+Sdcb.SimdCodecs.Ico.IcoEntry.HotspotX.init -> void
+Sdcb.SimdCodecs.Ico.IcoEntry.HotspotY.get -> int
+Sdcb.SimdCodecs.Ico.IcoEntry.HotspotY.init -> void
+Sdcb.SimdCodecs.Ico.IcoEntry.IcoEntry() -> void
+Sdcb.SimdCodecs.Ico.IcoEntry.IcoEntry(int Width, int Height, int BitsPerPixel, bool IsPng, int HotspotX, int HotspotY) -> void
+Sdcb.SimdCodecs.Ico.IcoEntry.IsPng.get -> bool
+Sdcb.SimdCodecs.Ico.IcoEntry.IsPng.init -> void
+Sdcb.SimdCodecs.Ico.IcoEntry.Width.get -> int
+Sdcb.SimdCodecs.Ico.IcoEntry.Width.init -> void
+Sdcb.SimdCodecs.Ico.IcoFrame
+Sdcb.SimdCodecs.Ico.IcoFrame.Deconstruct(out System.ReadOnlyMemory<byte> Pixels, out int Width, out int Height, out Sdcb.SimdCodecs.Abstractions.PixelFormat Format, out Sdcb.SimdCodecs.Ico.IcoImageEncoding Encoding, out int HotspotX, out int HotspotY) -> void
+Sdcb.SimdCodecs.Ico.IcoFrame.Encoding.get -> Sdcb.SimdCodecs.Ico.IcoImageEncoding
+Sdcb.SimdCodecs.Ico.IcoFrame.Encoding.init -> void
+Sdcb.SimdCodecs.Ico.IcoFrame.Equals(Sdcb.SimdCodecs.Ico.IcoFrame other) -> bool
+Sdcb.SimdCodecs.Ico.IcoFrame.Format.get -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+Sdcb.SimdCodecs.Ico.IcoFrame.Format.init -> void
+Sdcb.SimdCodecs.Ico.IcoFrame.Height.get -> int
+Sdcb.SimdCodecs.Ico.IcoFrame.Height.init -> void
+Sdcb.SimdCodecs.Ico.IcoFrame.HotspotX.get -> int
+Sdcb.SimdCodecs.Ico.IcoFrame.HotspotX.init -> void
+Sdcb.SimdCodecs.Ico.IcoFrame.HotspotY.get -> int
+Sdcb.SimdCodecs.Ico.IcoFrame.HotspotY.init -> void
+Sdcb.SimdCodecs.Ico.IcoFrame.IcoFrame() -> void
+Sdcb.SimdCodecs.Ico.IcoFrame.IcoFrame(System.ReadOnlyMemory<byte> Pixels, int Width, int Height, Sdcb.SimdCodecs.Abstractions.PixelFormat Format = default(Sdcb.SimdCodecs.Abstractions.PixelFormat), Sdcb.SimdCodecs.Ico.IcoImageEncoding Encoding = Sdcb.SimdCodecs.Ico.IcoImageEncoding.Auto, int HotspotX = 0, int HotspotY = 0) -> void
+Sdcb.SimdCodecs.Ico.IcoFrame.Pixels.get -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Ico.IcoFrame.Pixels.init -> void
+Sdcb.SimdCodecs.Ico.IcoFrame.Width.get -> int
+Sdcb.SimdCodecs.Ico.IcoFrame.Width.init -> void
+Sdcb.SimdCodecs.Ico.IcoImage
+Sdcb.SimdCodecs.Ico.IcoImage.Entry.get -> Sdcb.SimdCodecs.Ico.IcoEntry
+Sdcb.SimdCodecs.Ico.IcoImage.Height.get -> int
+Sdcb.SimdCodecs.Ico.IcoImage.Rgba.get -> byte[]!
+Sdcb.SimdCodecs.Ico.IcoImage.Width.get -> int
+Sdcb.SimdCodecs.Ico.IcoImageDecoder
+Sdcb.SimdCodecs.Ico.IcoImageDecoder.IcoImageDecoder() -> void
+Sdcb.SimdCodecs.Ico.IcoImageEncoder
+Sdcb.SimdCodecs.Ico.IcoImageEncoder.IcoImageEncoder() -> void
+Sdcb.SimdCodecs.Ico.IcoImageEncoding
+Sdcb.SimdCodecs.Ico.IcoImageEncoding.Auto = 0 -> Sdcb.SimdCodecs.Ico.IcoImageEncoding
+Sdcb.SimdCodecs.Ico.IcoImageEncoding.Bmp1 = 6 -> Sdcb.SimdCodecs.Ico.IcoImageEncoding
+Sdcb.SimdCodecs.Ico.IcoImageEncoding.Bmp24 = 3 -> Sdcb.SimdCodecs.Ico.IcoImageEncoding
+Sdcb.SimdCodecs.Ico.IcoImageEncoding.Bmp32 = 2 -> Sdcb.SimdCodecs.Ico.IcoImageEncoding
+Sdcb.SimdCodecs.Ico.IcoImageEncoding.Bmp4 = 5 -> Sdcb.SimdCodecs.Ico.IcoImageEncoding
+Sdcb.SimdCodecs.Ico.IcoImageEncoding.Bmp8 = 4 -> Sdcb.SimdCodecs.Ico.IcoImageEncoding
+Sdcb.SimdCodecs.Ico.IcoImageEncoding.Png = 1 -> Sdcb.SimdCodecs.Ico.IcoImageEncoding
+Sdcb.SimdCodecs.Ico.IcoInfo
+Sdcb.SimdCodecs.Ico.IcoInfo.<Clone>$() -> Sdcb.SimdCodecs.Ico.IcoInfo!
+Sdcb.SimdCodecs.Ico.IcoInfo.Best.get -> int
+Sdcb.SimdCodecs.Ico.IcoInfo.Best.init -> void
+Sdcb.SimdCodecs.Ico.IcoInfo.Deconstruct(out Sdcb.SimdCodecs.Ico.IcoKind Kind, out System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Ico.IcoEntry>! Entries, out int Best) -> void
+Sdcb.SimdCodecs.Ico.IcoInfo.Entries.get -> System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Ico.IcoEntry>!
+Sdcb.SimdCodecs.Ico.IcoInfo.Entries.init -> void
+Sdcb.SimdCodecs.Ico.IcoInfo.Equals(Sdcb.SimdCodecs.Ico.IcoInfo? other) -> bool
+Sdcb.SimdCodecs.Ico.IcoInfo.IcoInfo(Sdcb.SimdCodecs.Ico.IcoKind Kind, System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Ico.IcoEntry>! Entries, int Best) -> void
+Sdcb.SimdCodecs.Ico.IcoInfo.Kind.get -> Sdcb.SimdCodecs.Ico.IcoKind
+Sdcb.SimdCodecs.Ico.IcoInfo.Kind.init -> void
+Sdcb.SimdCodecs.Ico.IcoKind
+Sdcb.SimdCodecs.Ico.IcoKind.Cursor = 2 -> Sdcb.SimdCodecs.Ico.IcoKind
+Sdcb.SimdCodecs.Ico.IcoKind.Icon = 1 -> Sdcb.SimdCodecs.Ico.IcoKind
+override Sdcb.SimdCodecs.Ico.IcoEntry.GetHashCode() -> int
+override Sdcb.SimdCodecs.Ico.IcoFrame.GetHashCode() -> int
+override Sdcb.SimdCodecs.Ico.IcoInfo.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Ico.IcoInfo.GetHashCode() -> int
+override Sdcb.SimdCodecs.Ico.IcoInfo.ToString() -> string!
+static Sdcb.SimdCodecs.Ico.CurImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Ico.CurImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Ico.CurImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Ico.CurImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Ico.CurImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Ico.CurImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Ico.CurImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Ico.CurImageDecoder.TryOpenFrames(System.ReadOnlyMemory<byte> data, out Sdcb.SimdCodecs.Abstractions.IImageFrameReader? reader) -> bool
+static Sdcb.SimdCodecs.Ico.CurImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Ico.CurImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Ico.IcoDecoder.Decode(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Ico.IcoImage!
+static Sdcb.SimdCodecs.Ico.IcoDecoder.Decode(System.ReadOnlySpan<byte> data, int index) -> Sdcb.SimdCodecs.Ico.IcoImage!
+static Sdcb.SimdCodecs.Ico.IcoDecoder.DecodeTo(System.ReadOnlySpan<byte> data, int index, System.Span<byte> destination, Sdcb.SimdCodecs.Abstractions.PixelFormat? format = null, int stride = 0) -> void
+static Sdcb.SimdCodecs.Ico.IcoDecoder.ReadInfo(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Ico.IcoInfo!
+static Sdcb.SimdCodecs.Ico.IcoDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Ico.IcoInfo? info) -> bool
+static Sdcb.SimdCodecs.Ico.IcoEncoder.Encode(System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Ico.IcoFrame>! images) -> byte[]!
+static Sdcb.SimdCodecs.Ico.IcoEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat? format = null, Sdcb.SimdCodecs.Ico.IcoImageEncoding encoding = Sdcb.SimdCodecs.Ico.IcoImageEncoding.Auto) -> byte[]!
+static Sdcb.SimdCodecs.Ico.IcoEncoder.EncodeCursor(System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Ico.IcoFrame>! images) -> byte[]!
+static Sdcb.SimdCodecs.Ico.IcoEntry.operator !=(Sdcb.SimdCodecs.Ico.IcoEntry left, Sdcb.SimdCodecs.Ico.IcoEntry right) -> bool
+static Sdcb.SimdCodecs.Ico.IcoEntry.operator ==(Sdcb.SimdCodecs.Ico.IcoEntry left, Sdcb.SimdCodecs.Ico.IcoEntry right) -> bool
+static Sdcb.SimdCodecs.Ico.IcoFrame.operator !=(Sdcb.SimdCodecs.Ico.IcoFrame left, Sdcb.SimdCodecs.Ico.IcoFrame right) -> bool
+static Sdcb.SimdCodecs.Ico.IcoFrame.operator ==(Sdcb.SimdCodecs.Ico.IcoFrame left, Sdcb.SimdCodecs.Ico.IcoFrame right) -> bool
+static Sdcb.SimdCodecs.Ico.IcoImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Ico.IcoImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Ico.IcoImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Ico.IcoImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Ico.IcoImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Ico.IcoImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Ico.IcoImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Ico.IcoImageDecoder.TryOpenFrames(System.ReadOnlyMemory<byte> data, out Sdcb.SimdCodecs.Abstractions.IImageFrameReader? reader) -> bool
+static Sdcb.SimdCodecs.Ico.IcoImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Ico.IcoImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Ico.IcoImageEncoder.Create(System.Buffers.IBufferWriter<byte>! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
+static Sdcb.SimdCodecs.Ico.IcoImageEncoder.Format.get -> Sdcb.SimdCodecs.Abstractions.ImageFormat
+static Sdcb.SimdCodecs.Ico.IcoImageEncoder.GetClosestInputFormat(Sdcb.SimdCodecs.Abstractions.PixelFormat requested) -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+static Sdcb.SimdCodecs.Ico.IcoImageEncoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration!
+static Sdcb.SimdCodecs.Ico.IcoInfo.operator !=(Sdcb.SimdCodecs.Ico.IcoInfo? left, Sdcb.SimdCodecs.Ico.IcoInfo? right) -> bool
+static Sdcb.SimdCodecs.Ico.IcoInfo.operator ==(Sdcb.SimdCodecs.Ico.IcoInfo? left, Sdcb.SimdCodecs.Ico.IcoInfo? right) -> bool
+~override Sdcb.SimdCodecs.Ico.IcoEntry.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Ico.IcoEntry.ToString() -> string
+~override Sdcb.SimdCodecs.Ico.IcoFrame.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Ico.IcoFrame.ToString() -> string

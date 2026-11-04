@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 namespace Sdcb.SimdCodecs.Heif;
 
@@ -51,9 +52,19 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
     /// registry requires (see <see cref="ImageDecoderRegistration"/>). Still images only: the facade presents one
     /// as a single frame.
     /// </summary>
-    public static ImageDecoderRegistration Registration { get; } =
-        new(ImageFormat.Heif, CanDecode, TryReadInfo, TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata,
-            TryDecodeThumbnail, tryReadPlanarInfo: TryReadPlanarInfo, tryDecodePlanes: TryDecodePlanes);
+    public static ImageDecoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Heif,
+        CanDecode = CanDecode,
+        TryReadInfo = TryReadInfo,
+        TryGetClosestSize = TryGetClosestSize,
+        TryDecode = TryDecode,
+        TryDecodeInto = TryDecodeInto,
+        TryReadMetadata = TryReadMetadata,
+        TryDecodeThumbnail = TryDecodeThumbnail,
+        TryReadPlanarInfo = TryReadPlanarInfo,
+        TryDecodePlanes = TryDecodePlanes,
+    };
 
     /// <summary>The <c>ftyp</c> box with its compatible brands; an AVIF brand can sit anywhere in the list.</summary>
     public static int SignatureLength => 64;
@@ -139,7 +150,7 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
 
         var wide = depth > 8;
         var raster = RasterImage.Create(size.Width, size.Height, 3, wide ? SampleFormat.UInt16 : SampleFormat.UInt8,
-            options?.Pool, container.IccProfile, ColorEncodingOf(container), bitDepth: wide && depth < 16 ? depth : 0,
+            options?.Pool, ColorEncodingOf(container), bitDepth: wide && depth < 16 ? depth : 0,
             metadata: HeifMetadata.Read(data, container));
         try
         {
@@ -224,7 +235,8 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
             var depth = thumb.TileConfigs[0].ParseSps().BitDepthY;
             var wide = depth > 8;
             var raster = RasterImage.Allocate(width, height, 3, wide ? SampleFormat.UInt16 : SampleFormat.UInt8,
-                thumb.IccProfile, ColorEncodingOf(thumb), bitDepth: wide && depth < 16 ? depth : 0);
+                ColorEncodingOf(thumb), bitDepth: wide && depth < 16 ? depth : 0,
+                metadata: thumb.IccProfile is { Length: > 0 } icc ? new ImageMetadata { Icc = icc } : null);
             HeifDecoder.DecodeInto(data, thumb, raster.WritablePixels, width * 3 * (wide ? 2 : 1), wide ? PixelFormat.Rgb48 : PixelFormat.Rgb24);
             thumbnail = raster;
             return true;

@@ -16,7 +16,10 @@ mkdir -p "$work"
 # The HEIF fixtures FacadeSmoke embeds are downloaded, never committed.
 bash "$here/../Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh" > "$work/heif-fetch.log" || { cat "$work/heif-fetch.log"; exit 1; }
 
-dotnet run --project "$here" -c Release > "$work/jit.txt"
+# Build first, then run with --no-build: `dotnet run` prints restore warnings (e.g. NU1903 for a package advisory)
+# to stdout, which would land in jit.txt but never in the AOT binary's output.
+dotnet build "$here" -c Release > "$work/jit-build.log" || { cat "$work/jit-build.log"; exit 1; }
+dotnet run --project "$here" -c Release --no-build > "$work/jit.txt"
 lines="$(wc -l < "$work/jit.txt" | tr -d ' ')"
 [ "$lines" -gt 0 ] || { echo "no decodes ran" >&2; exit 1; }
 

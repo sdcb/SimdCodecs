@@ -196,7 +196,7 @@ public sealed class EncoderAdapterQoiPnmBmpTests
         byte[] icc = [1, 2, 3, 4, 5, 6, 7, 8];
         var writer = new ArrayBufferWriter<byte>();
         using var session = BmpImageEncoder.Create(writer, null);
-        var frame = session.AddFrame(1, 1, PixelFormat.Rgb24, metadata: new ImageMetadata(icc: icc));
+        var frame = session.AddFrame(1, 1, PixelFormat.Rgb24, metadata: new ImageMetadata { Icc = icc });
         frame.WriteRows(new byte[3], 1, 0, cancellationToken: ct);
         session.Commit(ct);
 

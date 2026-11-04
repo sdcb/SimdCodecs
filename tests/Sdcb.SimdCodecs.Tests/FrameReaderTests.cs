@@ -61,7 +61,7 @@ public sealed class FrameReaderTests
                 (first.Width, first.Height, first.Channels, first.SampleFormat)
                     .ShouldBe((still.Width, still.Height, still.Channels, still.SampleFormat));
                 first.Pixels.ToArray().ShouldBe(still.Pixels.ToArray(), Path.GetFileName(fixture));
-                first.IccProfile.ToArray().ShouldBe(still.IccProfile.ToArray());
+                first.Metadata.Icc.Span.ToArray().ShouldBe(still.Metadata.Icc.Span.ToArray());
             }
         }
     }

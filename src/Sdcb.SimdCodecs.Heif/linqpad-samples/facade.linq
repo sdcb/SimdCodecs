@@ -51,7 +51,7 @@ async Task Main()
 	// The fidelity view: 8-bit RGB with the ICC profile passed through and the colour encoding from the file.
 	if (SimdCodecs.TryDecode(heic, out IDecodedImage? image))
 	{
-		new { image.Width, image.Height, image.Channels, image.SampleFormat, IccBytes = image.IccProfile.Length, image.ColorEncoding }
+		new { image.Width, image.Height, image.Channels, image.SampleFormat, IccBytes = image.Metadata.Icc.Length, image.ColorEncoding }
 			.Dump("SimdCodecs.TryDecode");
 	}
 }

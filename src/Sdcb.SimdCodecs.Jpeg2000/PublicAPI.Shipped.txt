@@ -1,0 +1,87 @@
+#nullable enable
+Sdcb.SimdCodecs.Jpeg2000.Jp2Colour
+Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.<Clone>$() -> Sdcb.SimdCodecs.Jpeg2000.Jp2Colour!
+Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.Deconstruct(out int Method, out Sdcb.SimdCodecs.Jpeg2000.Jp2EnumeratedColourSpace? EnumeratedColourSpace, out byte[]? IccProfile) -> void
+Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.EnumeratedColourSpace.get -> Sdcb.SimdCodecs.Jpeg2000.Jp2EnumeratedColourSpace?
+Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.EnumeratedColourSpace.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.Equals(Sdcb.SimdCodecs.Jpeg2000.Jp2Colour? other) -> bool
+Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.IccProfile.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.Jp2Colour(int Method, Sdcb.SimdCodecs.Jpeg2000.Jp2EnumeratedColourSpace? EnumeratedColourSpace, byte[]? IccProfile) -> void
+Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.Method.get -> int
+Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.Method.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jp2EnumeratedColourSpace
+Sdcb.SimdCodecs.Jpeg2000.Jp2EnumeratedColourSpace.Greyscale = 17 -> Sdcb.SimdCodecs.Jpeg2000.Jp2EnumeratedColourSpace
+Sdcb.SimdCodecs.Jpeg2000.Jp2EnumeratedColourSpace.Srgb = 16 -> Sdcb.SimdCodecs.Jpeg2000.Jp2EnumeratedColourSpace
+Sdcb.SimdCodecs.Jpeg2000.Jp2EnumeratedColourSpace.Sycc = 18 -> Sdcb.SimdCodecs.Jpeg2000.Jp2EnumeratedColourSpace
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Decoder
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.<Clone>$() -> Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image!
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.BitDepth.get -> int
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.BitDepth.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Colour.get -> Sdcb.SimdCodecs.Jpeg2000.Jp2Colour?
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Colour.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Components.get -> int
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Components.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Deconstruct(out int Width, out int Height, out int BitDepth, out ushort[]! Samples, out int Components) -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Equals(Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image? other) -> bool
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Height.get -> int
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Height.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Jpeg2000Image(int Width, int Height, int BitDepth, ushort[]! Samples, int Components = 1) -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Samples.get -> ushort[]!
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Samples.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.To8Bit() -> byte[]!
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.ToGray8() -> byte[]!
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Width.get -> int
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Width.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder.Jpeg2000ImageDecoder() -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.<Clone>$() -> Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info!
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.BitDepth.get -> int
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.BitDepth.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.Colour.get -> Sdcb.SimdCodecs.Jpeg2000.Jp2Colour?
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.Colour.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.Components.get -> int
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.Components.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.DecompositionLevels.get -> int
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.DecompositionLevels.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.Deconstruct(out int Width, out int Height, out int Components, out int BitDepth, out int DecompositionLevels, out Sdcb.SimdCodecs.Jpeg2000.Jp2Colour? Colour) -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.Equals(Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info? other) -> bool
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.Height.get -> int
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.Height.init -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.Jpeg2000Info(int Width, int Height, int Components, int BitDepth, int DecompositionLevels, Sdcb.SimdCodecs.Jpeg2000.Jp2Colour? Colour) -> void
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.SizeAt(int reduce) -> (int Width, int Height)
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.Width.get -> int
+Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.Width.init -> void
+override Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.GetHashCode() -> int
+override Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.ToString() -> string!
+override Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.GetHashCode() -> int
+override Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.ToString() -> string!
+override Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.GetHashCode() -> int
+override Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.ToString() -> string!
+static Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.operator !=(Sdcb.SimdCodecs.Jpeg2000.Jp2Colour? left, Sdcb.SimdCodecs.Jpeg2000.Jp2Colour? right) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jp2Colour.operator ==(Sdcb.SimdCodecs.Jpeg2000.Jp2Colour? left, Sdcb.SimdCodecs.Jpeg2000.Jp2Colour? right) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Decoder.Decode(System.ReadOnlySpan<byte> data, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image!
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Decoder.Decode(System.ReadOnlySpan<byte> data, int reduce, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image!
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Decoder.IsCodestream(System.ReadOnlySpan<byte> data) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Decoder.IsJp2(System.ReadOnlySpan<byte> data) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Decoder.ReadInfo(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info!
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Decoder.ReductionFor(int width, int height, int minLongEdge) -> int
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.operator !=(Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image? left, Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image? right) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image.operator ==(Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image? left, Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Image? right) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder.TryDecodeIntoRgba8(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.operator !=(Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info? left, Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info? right) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info.operator ==(Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info? left, Sdcb.SimdCodecs.Jpeg2000.Jpeg2000Info? right) -> bool

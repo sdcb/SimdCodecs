@@ -1,0 +1,125 @@
+#nullable enable
+Sdcb.SimdCodecs.Bmp.BmpCompression
+Sdcb.SimdCodecs.Bmp.BmpCompression.AlphaBitfields = 6 -> Sdcb.SimdCodecs.Bmp.BmpCompression
+Sdcb.SimdCodecs.Bmp.BmpCompression.Bitfields = 3 -> Sdcb.SimdCodecs.Bmp.BmpCompression
+Sdcb.SimdCodecs.Bmp.BmpCompression.Huffman1D = 100 -> Sdcb.SimdCodecs.Bmp.BmpCompression
+Sdcb.SimdCodecs.Bmp.BmpCompression.Jpeg = 4 -> Sdcb.SimdCodecs.Bmp.BmpCompression
+Sdcb.SimdCodecs.Bmp.BmpCompression.Png = 5 -> Sdcb.SimdCodecs.Bmp.BmpCompression
+Sdcb.SimdCodecs.Bmp.BmpCompression.Rgb = 0 -> Sdcb.SimdCodecs.Bmp.BmpCompression
+Sdcb.SimdCodecs.Bmp.BmpCompression.Rle24 = 101 -> Sdcb.SimdCodecs.Bmp.BmpCompression
+Sdcb.SimdCodecs.Bmp.BmpCompression.Rle4 = 2 -> Sdcb.SimdCodecs.Bmp.BmpCompression
+Sdcb.SimdCodecs.Bmp.BmpCompression.Rle8 = 1 -> Sdcb.SimdCodecs.Bmp.BmpCompression
+Sdcb.SimdCodecs.Bmp.BmpDecoder
+Sdcb.SimdCodecs.Bmp.BmpEncodeFormat
+Sdcb.SimdCodecs.Bmp.BmpEncodeFormat.Argb32 = 8 -> Sdcb.SimdCodecs.Bmp.BmpEncodeFormat
+Sdcb.SimdCodecs.Bmp.BmpEncodeFormat.Auto = 0 -> Sdcb.SimdCodecs.Bmp.BmpEncodeFormat
+Sdcb.SimdCodecs.Bmp.BmpEncodeFormat.Indexed1 = 1 -> Sdcb.SimdCodecs.Bmp.BmpEncodeFormat
+Sdcb.SimdCodecs.Bmp.BmpEncodeFormat.Indexed4 = 2 -> Sdcb.SimdCodecs.Bmp.BmpEncodeFormat
+Sdcb.SimdCodecs.Bmp.BmpEncodeFormat.Indexed8 = 3 -> Sdcb.SimdCodecs.Bmp.BmpEncodeFormat
+Sdcb.SimdCodecs.Bmp.BmpEncodeFormat.Rgb24 = 6 -> Sdcb.SimdCodecs.Bmp.BmpEncodeFormat
+Sdcb.SimdCodecs.Bmp.BmpEncodeFormat.Rgb32 = 7 -> Sdcb.SimdCodecs.Bmp.BmpEncodeFormat
+Sdcb.SimdCodecs.Bmp.BmpEncodeFormat.Rgb555 = 4 -> Sdcb.SimdCodecs.Bmp.BmpEncodeFormat
+Sdcb.SimdCodecs.Bmp.BmpEncodeFormat.Rgb565 = 5 -> Sdcb.SimdCodecs.Bmp.BmpEncodeFormat
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.BmpEncodeOptions() -> void
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.Dither.get -> bool
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.Dither.init -> void
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.Equals(Sdcb.SimdCodecs.Bmp.BmpEncodeOptions? other) -> bool
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.Format.get -> Sdcb.SimdCodecs.Bmp.BmpEncodeFormat
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.Format.init -> void
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.Header.get -> Sdcb.SimdCodecs.Bmp.BmpHeaderVersion
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.Header.init -> void
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.IccProfile.get -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.IccProfile.init -> void
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.PixelsPerMeterX.get -> int
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.PixelsPerMeterX.init -> void
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.PixelsPerMeterY.get -> int
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.PixelsPerMeterY.init -> void
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.Rle.get -> bool
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.Rle.init -> void
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.TopDown.get -> bool
+Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.TopDown.init -> void
+Sdcb.SimdCodecs.Bmp.BmpEncoder
+Sdcb.SimdCodecs.Bmp.BmpHeaderKind
+Sdcb.SimdCodecs.Bmp.BmpHeaderKind.Core = 0 -> Sdcb.SimdCodecs.Bmp.BmpHeaderKind
+Sdcb.SimdCodecs.Bmp.BmpHeaderKind.Info = 2 -> Sdcb.SimdCodecs.Bmp.BmpHeaderKind
+Sdcb.SimdCodecs.Bmp.BmpHeaderKind.InfoV2 = 3 -> Sdcb.SimdCodecs.Bmp.BmpHeaderKind
+Sdcb.SimdCodecs.Bmp.BmpHeaderKind.InfoV3 = 4 -> Sdcb.SimdCodecs.Bmp.BmpHeaderKind
+Sdcb.SimdCodecs.Bmp.BmpHeaderKind.Os2 = 1 -> Sdcb.SimdCodecs.Bmp.BmpHeaderKind
+Sdcb.SimdCodecs.Bmp.BmpHeaderKind.V4 = 5 -> Sdcb.SimdCodecs.Bmp.BmpHeaderKind
+Sdcb.SimdCodecs.Bmp.BmpHeaderKind.V5 = 6 -> Sdcb.SimdCodecs.Bmp.BmpHeaderKind
+Sdcb.SimdCodecs.Bmp.BmpHeaderVersion
+Sdcb.SimdCodecs.Bmp.BmpHeaderVersion.Auto = 0 -> Sdcb.SimdCodecs.Bmp.BmpHeaderVersion
+Sdcb.SimdCodecs.Bmp.BmpHeaderVersion.Core = 1 -> Sdcb.SimdCodecs.Bmp.BmpHeaderVersion
+Sdcb.SimdCodecs.Bmp.BmpHeaderVersion.Info = 2 -> Sdcb.SimdCodecs.Bmp.BmpHeaderVersion
+Sdcb.SimdCodecs.Bmp.BmpHeaderVersion.V4 = 3 -> Sdcb.SimdCodecs.Bmp.BmpHeaderVersion
+Sdcb.SimdCodecs.Bmp.BmpHeaderVersion.V5 = 4 -> Sdcb.SimdCodecs.Bmp.BmpHeaderVersion
+Sdcb.SimdCodecs.Bmp.BmpImage
+Sdcb.SimdCodecs.Bmp.BmpImage.Channels.get -> int
+Sdcb.SimdCodecs.Bmp.BmpImage.Height.get -> int
+Sdcb.SimdCodecs.Bmp.BmpImage.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Bmp.BmpImage.Pixels.get -> byte[]!
+Sdcb.SimdCodecs.Bmp.BmpImage.Width.get -> int
+Sdcb.SimdCodecs.Bmp.BmpImageDecoder
+Sdcb.SimdCodecs.Bmp.BmpImageDecoder.BmpImageDecoder() -> void
+Sdcb.SimdCodecs.Bmp.BmpImageEncoder
+Sdcb.SimdCodecs.Bmp.BmpImageEncoder.BmpImageEncoder() -> void
+Sdcb.SimdCodecs.Bmp.BmpInfo
+Sdcb.SimdCodecs.Bmp.BmpInfo.BitsPerPixel.get -> int
+Sdcb.SimdCodecs.Bmp.BmpInfo.BitsPerPixel.init -> void
+Sdcb.SimdCodecs.Bmp.BmpInfo.BmpInfo() -> void
+Sdcb.SimdCodecs.Bmp.BmpInfo.BmpInfo(int Width, int Height, int BitsPerPixel, Sdcb.SimdCodecs.Bmp.BmpCompression Compression, Sdcb.SimdCodecs.Bmp.BmpHeaderKind HeaderKind, bool TopDown, bool HasAlpha, int PaletteSize) -> void
+Sdcb.SimdCodecs.Bmp.BmpInfo.Channels.get -> int
+Sdcb.SimdCodecs.Bmp.BmpInfo.Compression.get -> Sdcb.SimdCodecs.Bmp.BmpCompression
+Sdcb.SimdCodecs.Bmp.BmpInfo.Compression.init -> void
+Sdcb.SimdCodecs.Bmp.BmpInfo.Deconstruct(out int Width, out int Height, out int BitsPerPixel, out Sdcb.SimdCodecs.Bmp.BmpCompression Compression, out Sdcb.SimdCodecs.Bmp.BmpHeaderKind HeaderKind, out bool TopDown, out bool HasAlpha, out int PaletteSize) -> void
+Sdcb.SimdCodecs.Bmp.BmpInfo.Equals(Sdcb.SimdCodecs.Bmp.BmpInfo other) -> bool
+Sdcb.SimdCodecs.Bmp.BmpInfo.HasAlpha.get -> bool
+Sdcb.SimdCodecs.Bmp.BmpInfo.HasAlpha.init -> void
+Sdcb.SimdCodecs.Bmp.BmpInfo.HeaderKind.get -> Sdcb.SimdCodecs.Bmp.BmpHeaderKind
+Sdcb.SimdCodecs.Bmp.BmpInfo.HeaderKind.init -> void
+Sdcb.SimdCodecs.Bmp.BmpInfo.Height.get -> int
+Sdcb.SimdCodecs.Bmp.BmpInfo.Height.init -> void
+Sdcb.SimdCodecs.Bmp.BmpInfo.PaletteSize.get -> int
+Sdcb.SimdCodecs.Bmp.BmpInfo.PaletteSize.init -> void
+Sdcb.SimdCodecs.Bmp.BmpInfo.TopDown.get -> bool
+Sdcb.SimdCodecs.Bmp.BmpInfo.TopDown.init -> void
+Sdcb.SimdCodecs.Bmp.BmpInfo.Width.get -> int
+Sdcb.SimdCodecs.Bmp.BmpInfo.Width.init -> void
+override Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.<Clone>$() -> Sdcb.SimdCodecs.Bmp.BmpEncodeOptions!
+override Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.ToString() -> string!
+override Sdcb.SimdCodecs.Bmp.BmpInfo.GetHashCode() -> int
+override sealed Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.Equals(Sdcb.SimdCodecs.Abstractions.EncodeOptions? other) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpDecoder.Decode(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Bmp.BmpImage!
+static Sdcb.SimdCodecs.Bmp.BmpDecoder.DecodeDib(System.ReadOnlySpan<byte> dib, bool iconImage = false) -> Sdcb.SimdCodecs.Bmp.BmpImage!
+static Sdcb.SimdCodecs.Bmp.BmpDecoder.DecodeDibTo(System.ReadOnlySpan<byte> dib, System.Span<byte> destination, Sdcb.SimdCodecs.Abstractions.PixelFormat? format = null, int stride = 0, bool iconImage = false) -> void
+static Sdcb.SimdCodecs.Bmp.BmpDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> destination, Sdcb.SimdCodecs.Abstractions.PixelFormat? format = null, int stride = 0) -> void
+static Sdcb.SimdCodecs.Bmp.BmpDecoder.ReadDibInfo(System.ReadOnlySpan<byte> dib, bool iconImage = false) -> Sdcb.SimdCodecs.Bmp.BmpInfo
+static Sdcb.SimdCodecs.Bmp.BmpDecoder.ReadInfo(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Bmp.BmpInfo
+static Sdcb.SimdCodecs.Bmp.BmpDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Bmp.BmpInfo info) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.operator !=(Sdcb.SimdCodecs.Bmp.BmpEncodeOptions? left, Sdcb.SimdCodecs.Bmp.BmpEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpEncodeOptions.operator ==(Sdcb.SimdCodecs.Bmp.BmpEncodeOptions? left, Sdcb.SimdCodecs.Bmp.BmpEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Bmp.BmpEncodeOptions? options = null, int stride = 0) -> byte[]!
+static Sdcb.SimdCodecs.Bmp.BmpEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, System.IO.Stream! output, Sdcb.SimdCodecs.Bmp.BmpEncodeOptions? options = null, int stride = 0) -> void
+static Sdcb.SimdCodecs.Bmp.BmpEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, int channels, Sdcb.SimdCodecs.Bmp.BmpEncodeOptions? options = null) -> byte[]!
+static Sdcb.SimdCodecs.Bmp.BmpEncoder.EncodeDib(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Bmp.BmpEncodeOptions? options = null, int stride = 0, bool iconImage = false) -> byte[]!
+static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.TryDecodeIntoRgba8(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpImageEncoder.Create(System.Buffers.IBufferWriter<byte>! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
+static Sdcb.SimdCodecs.Bmp.BmpImageEncoder.Format.get -> Sdcb.SimdCodecs.Abstractions.ImageFormat
+static Sdcb.SimdCodecs.Bmp.BmpImageEncoder.GetClosestInputFormat(Sdcb.SimdCodecs.Abstractions.PixelFormat requested) -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+static Sdcb.SimdCodecs.Bmp.BmpImageEncoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration!
+static Sdcb.SimdCodecs.Bmp.BmpInfo.operator !=(Sdcb.SimdCodecs.Bmp.BmpInfo left, Sdcb.SimdCodecs.Bmp.BmpInfo right) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpInfo.operator ==(Sdcb.SimdCodecs.Bmp.BmpInfo left, Sdcb.SimdCodecs.Bmp.BmpInfo right) -> bool
+~override Sdcb.SimdCodecs.Bmp.BmpInfo.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Bmp.BmpInfo.ToString() -> string

@@ -32,7 +32,7 @@ public sealed class ColorEncodingTests
     public void RasterImage_carries_an_explicit_encoding_verbatim()
     {
         var pq = new ColorEncoding { Primaries = ColorPrimaries.BT2020, Transfer = TransferFunction.Pq };
-        var img = RasterImage.Wrap(1, 1, 3, SampleFormat.UInt8, [0, 0, 0], iccProfile: null, colorEncoding: pq);
+        var img = RasterImage.Wrap(1, 1, 3, SampleFormat.UInt8, [0, 0, 0], colorEncoding: pq);
 
         img.ColorEncoding.ShouldBeSameAs(pq);
     }

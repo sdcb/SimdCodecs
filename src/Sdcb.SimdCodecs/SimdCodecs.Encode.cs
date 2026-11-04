@@ -105,8 +105,6 @@ public static partial class SimdCodecs
             throw new NotSupportedException($"{image.SampleFormat} images have no integer projection to encode; convert them first.");
         var source = PixelFormat.ForChannels(image.Channels, image.SampleFormat);
         var metadata = image.Metadata;
-        if (metadata.Icc.IsEmpty && !image.IccProfile.IsEmpty)
-            metadata = metadata.WithIcc(image.IccProfile.ToArray());
         using var session = CreateEncoder(format, destination, options);
         var frame = session.AddFrame(image.Width, image.Height, source, image.ColorEncoding, metadata.IsEmpty ? null : metadata);
         frame.WriteRows(image.Pixels, image.Height, 0, cancellationToken);

@@ -99,7 +99,7 @@ public sealed class EncoderAdapterJpegWebpTiffTests
         var output = new ArrayBufferWriter<byte>();
         using (var session = JpegImageEncoder.Create(output))
         {
-            Push(session, pixels, PixelFormat.Rgb24, new ImageMetadata(exif: exif, icc: icc));
+            Push(session, pixels, PixelFormat.Rgb24, new ImageMetadata { Exif = exif, Icc = icc });
             session.Commit(TestContext.Current.CancellationToken);
         }
         SimdCodecs.TryReadMetadata(output.WrittenSpan, out var metadata).ShouldBeTrue();
@@ -112,7 +112,7 @@ public sealed class EncoderAdapterJpegWebpTiffTests
         var dropped = new ArrayBufferWriter<byte>();
         using (var session = JpegImageEncoder.Create(dropped))
         {
-            Push(session, pixels, PixelFormat.Rgb24, new ImageMetadata(exif: new byte[20], xmp: new byte[10]));
+            Push(session, pixels, PixelFormat.Rgb24, new ImageMetadata { Exif = new byte[20], Xmp = new byte[10] });
             session.Commit(TestContext.Current.CancellationToken);
         }
         dropped.WrittenSpan.ToArray().ShouldBe(plain);
@@ -199,7 +199,7 @@ public sealed class EncoderAdapterJpegWebpTiffTests
             var output = new ArrayBufferWriter<byte>();
             using (var session = WebpImageEncoder.Create(output, options))
             {
-                Push(session, RandomImage(PixelFormat.Rgb24, 8), PixelFormat.Rgb24, new ImageMetadata(exif: exif, icc: icc));
+                Push(session, RandomImage(PixelFormat.Rgb24, 8), PixelFormat.Rgb24, new ImageMetadata { Exif = exif, Icc = icc });
                 session.Commit(TestContext.Current.CancellationToken);
             }
             SimdCodecs.TryReadMetadata(output.WrittenSpan, out var metadata).ShouldBeTrue();
@@ -278,7 +278,7 @@ public sealed class EncoderAdapterJpegWebpTiffTests
         var output = new ArrayBufferWriter<byte>();
         using (var session = TiffImageEncoder.Create(output))
         {
-            Push(session, RandomImage(PixelFormat.Rgb24, 9), PixelFormat.Rgb24, new ImageMetadata(icc: icc));
+            Push(session, RandomImage(PixelFormat.Rgb24, 9), PixelFormat.Rgb24, new ImageMetadata { Icc = icc });
             session.Commit(TestContext.Current.CancellationToken);
         }
         TiffImageDecoder.TryReadMetadata(output.WrittenSpan, out var metadata).ShouldBeTrue();

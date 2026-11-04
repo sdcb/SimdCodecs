@@ -147,9 +147,11 @@ public static partial class SimdCodecs
     /// </summary>
     /// <param name="registration">The codec's entry, e.g. <c>HeifImageDecoder.Registration</c>.</param>
     /// <exception cref="ArgumentNullException"><paramref name="registration"/> is null.</exception>
+    /// <exception cref="ArgumentException">Only one of the registration's two planar delegates is set.</exception>
     public static void Register(ImageDecoderRegistration registration)
     {
         ArgumentNullException.ThrowIfNull(registration);
+        registration.Validate();
         lock (s_registerLock)
         {
             var current = s_registry;

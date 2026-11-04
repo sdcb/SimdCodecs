@@ -84,10 +84,11 @@ public sealed class RasterImageTests
     [Fact]
     public void IccProfile_defaults_empty_and_round_trips_when_present()
     {
-        RasterImage.Wrap(1, 1, 3, SampleFormat.UInt8, [0, 0, 0]).IccProfile.IsEmpty.ShouldBeTrue();
+        RasterImage.Wrap(1, 1, 3, SampleFormat.UInt8, [0, 0, 0]).Metadata.Icc.Span.IsEmpty.ShouldBeTrue();
 
         byte[] icc = [1, 2, 3];
-        RasterImage.Wrap(1, 1, 3, SampleFormat.UInt8, [0, 0, 0], icc).IccProfile.ToArray().ShouldBe(icc);
+        RasterImage.Wrap(1, 1, 3, SampleFormat.UInt8, [0, 0, 0], metadata: new ImageMetadata { Icc = icc })
+            .Metadata.Icc.ToArray().ShouldBe(icc);
     }
 
     [Theory]

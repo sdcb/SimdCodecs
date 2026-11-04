@@ -30,7 +30,7 @@ async Task Main()
 	// Or keep the decoder's native layout (channels, 8/16-bit or float samples, ICC profile).
 	if (SimdCodecs.TryDecode(data, out IDecodedImage? image))
 	{
-		new { image.Width, image.Height, image.Channels, image.SampleFormat, IccBytes = image.IccProfile.Length, image.ColorEncoding }
+		new { image.Width, image.Height, image.Channels, image.SampleFormat, IccBytes = image.Metadata.Icc.Length, image.ColorEncoding }
 			.Dump("SimdCodecs.TryDecode");
 	}
 }

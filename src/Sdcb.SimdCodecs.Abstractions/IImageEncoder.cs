@@ -90,8 +90,9 @@ public interface IImageFrameEncoder
 }
 
 /// <summary>
-/// A codec's entry in the facade's encoder registry: its <see cref="IImageEncoder"/> members as delegates. Build it from
-/// the concrete type's method groups — never inside a generic method (Mono AOT; see <see cref="ImageDecoderRegistration"/>).
+/// A codec's entry in the facade's encoder registry: its <see cref="IImageEncoder"/> members as delegates. Build it with
+/// an object initializer over the concrete type's method groups, never inside a generic method (Mono AOT; see
+/// <see cref="ImageDecoderRegistration"/>).
 /// </summary>
 public sealed class ImageEncoderRegistration
 {
@@ -101,26 +102,38 @@ public sealed class ImageEncoderRegistration
     /// <summary><see cref="IImageEncoder.Create"/>.</summary>
     public delegate IImageEncoderSession CreateHandler(IBufferWriter<byte> output, EncodeOptions? options);
 
-    /// <summary>Describes an encoder for the facade's registry.</summary>
-    /// <exception cref="ArgumentNullException">A delegate is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="format"/> is <see cref="ImageFormat.Unknown"/> or undefined.</exception>
-    public ImageEncoderRegistration(ImageFormat format, GetClosestInputFormatHandler getClosestInputFormat, CreateHandler create)
+    /// <summary>The format the encoder writes.</summary>
+    /// <exception cref="ArgumentOutOfRangeException">Set to <see cref="ImageFormat.Unknown"/> or an undefined value.</exception>
+    public required ImageFormat Format
     {
-        if (format == ImageFormat.Unknown || !Enum.IsDefined(format))
-            throw new ArgumentOutOfRangeException(nameof(format), format, "A registration names a defined, known format.");
-        ArgumentNullException.ThrowIfNull(getClosestInputFormat);
-        ArgumentNullException.ThrowIfNull(create);
-        Format = format;
-        GetClosestInputFormat = getClosestInputFormat;
-        Create = create;
+        get;
+        init
+        {
+            if (value == ImageFormat.Unknown || !Enum.IsDefined(value))
+                throw new ArgumentOutOfRangeException(nameof(value), value, "A registration names a defined, known format.");
+            field = value;
+        }
     }
 
-    /// <summary>The format the encoder writes.</summary>
-    public ImageFormat Format { get; }
-
     /// <summary>The encoder's input-format negotiation.</summary>
-    public GetClosestInputFormatHandler GetClosestInputFormat { get; }
+    public required GetClosestInputFormatHandler GetClosestInputFormat
+    {
+        get;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            field = value;
+        }
+    }
 
     /// <summary>The encoder's session factory.</summary>
-    public CreateHandler Create { get; }
+    public required CreateHandler Create
+    {
+        get;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            field = value;
+        }
+    }
 }

@@ -1,0 +1,302 @@
+#nullable enable
+Sdcb.SimdCodecs.Webp.WebpAnimation
+Sdcb.SimdCodecs.Webp.WebpAnimation.<Clone>$() -> Sdcb.SimdCodecs.Webp.WebpAnimation!
+Sdcb.SimdCodecs.Webp.WebpAnimation.BackgroundColor.get -> uint
+Sdcb.SimdCodecs.Webp.WebpAnimation.BackgroundColor.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimation.CanvasHeight.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimation.CanvasHeight.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimation.CanvasWidth.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimation.CanvasWidth.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimation.Deconstruct(out int CanvasWidth, out int CanvasHeight, out int LoopCount, out uint BackgroundColor, out System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Webp.WebpFrame!>! Frames) -> void
+Sdcb.SimdCodecs.Webp.WebpAnimation.Equals(Sdcb.SimdCodecs.Webp.WebpAnimation? other) -> bool
+Sdcb.SimdCodecs.Webp.WebpAnimation.Exif.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpAnimation.Exif.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimation.Frames.get -> System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Webp.WebpFrame!>!
+Sdcb.SimdCodecs.Webp.WebpAnimation.Frames.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimation.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpAnimation.IccProfile.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimation.LoopCount.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimation.LoopCount.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimation.WebpAnimation(int CanvasWidth, int CanvasHeight, int LoopCount, uint BackgroundColor, System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Webp.WebpFrame!>! Frames) -> void
+Sdcb.SimdCodecs.Webp.WebpAnimation.Xmp.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpAnimation.Xmp.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame
+Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.Deconstruct(out System.ReadOnlyMemory<byte> Pixels, out System.TimeSpan Duration) -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.Duration.get -> System.TimeSpan
+Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.Duration.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.Equals(Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame other) -> bool
+Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.Pixels.get -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.Pixels.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.WebpAnimationCanvasFrame() -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.WebpAnimationCanvasFrame(System.ReadOnlyMemory<byte> Pixels, System.TimeSpan Duration) -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder.BackgroundColor.get -> uint
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder.CanvasHeight.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder.CanvasWidth.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder.FrameCount.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder.FrameIndexAt(long timestampMs) -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder.Frames.get -> System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Webp.WebpFrameInfo>!
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder.LoopCount.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder.NextFrameIndex.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder.Reset() -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder.Seek(int frameIndex, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder.TryDecodeNextFrame(System.Span<byte> canvasRgba, out Sdcb.SimdCodecs.Webp.WebpFrameInfo frame, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+Sdcb.SimdCodecs.Webp.WebpAnimationDecoder.WebpAnimationDecoder(System.ReadOnlyMemory<byte> data) -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.AlphaQuality.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.AlphaQuality.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.BackgroundColor.get -> uint
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.BackgroundColor.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.Equals(Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions? other) -> bool
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.Exif.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.Exif.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.IccProfile.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.LoopCount.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.LoopCount.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.LosslessEffort.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.LosslessEffort.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.LossyEffort.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.LossyEffort.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.MaxKeyframeDistance.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.MaxKeyframeDistance.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.Mode.get -> Sdcb.SimdCodecs.Webp.WebpAnimationMode
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.Mode.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.Quality.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.Quality.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.WebpAnimationEncodeOptions() -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.Xmp.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.Xmp.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncoder
+Sdcb.SimdCodecs.Webp.WebpAnimationEncoder.AddFrame(Sdcb.SimdCodecs.Webp.WebpAnimationFrame! frame) -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncoder.AddFrame(System.ReadOnlySpan<byte> canvas, Sdcb.SimdCodecs.Abstractions.PixelFormat format, System.TimeSpan duration, int stride = 0) -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncoder.Encode() -> byte[]!
+Sdcb.SimdCodecs.Webp.WebpAnimationEncoder.Encode(System.IO.Stream! output) -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationEncoder.FrameCount.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationEncoder.WebpAnimationEncoder(int canvasWidth, int canvasHeight, Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions? options = null) -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.<Clone>$() -> Sdcb.SimdCodecs.Webp.WebpAnimationFrame!
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Blend.get -> bool
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Blend.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.DisposeToBackground.get -> bool
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.DisposeToBackground.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Duration.get -> System.TimeSpan
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Duration.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Equals(Sdcb.SimdCodecs.Webp.WebpAnimationFrame? other) -> bool
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Format.get -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Format.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Height.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Height.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Lossless.get -> bool?
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Lossless.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Pixels.get -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Pixels.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Quality.get -> int?
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Quality.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Stride.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Stride.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.WebpAnimationFrame() -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Width.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Width.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.X.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.X.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Y.get -> int
+Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Y.init -> void
+Sdcb.SimdCodecs.Webp.WebpAnimationMode
+Sdcb.SimdCodecs.Webp.WebpAnimationMode.Lossless = 1 -> Sdcb.SimdCodecs.Webp.WebpAnimationMode
+Sdcb.SimdCodecs.Webp.WebpAnimationMode.Lossy = 0 -> Sdcb.SimdCodecs.Webp.WebpAnimationMode
+Sdcb.SimdCodecs.Webp.WebpAnimationMode.Mixed = 2 -> Sdcb.SimdCodecs.Webp.WebpAnimationMode
+Sdcb.SimdCodecs.Webp.WebpDecodeOptions
+Sdcb.SimdCodecs.Webp.WebpDecodeOptions.<Clone>$() -> Sdcb.SimdCodecs.Webp.WebpDecodeOptions!
+Sdcb.SimdCodecs.Webp.WebpDecodeOptions.Equals(Sdcb.SimdCodecs.Webp.WebpDecodeOptions? other) -> bool
+Sdcb.SimdCodecs.Webp.WebpDecodeOptions.Multithreaded.get -> bool
+Sdcb.SimdCodecs.Webp.WebpDecodeOptions.Multithreaded.init -> void
+Sdcb.SimdCodecs.Webp.WebpDecodeOptions.WebpDecodeOptions() -> void
+Sdcb.SimdCodecs.Webp.WebpDecoder
+Sdcb.SimdCodecs.Webp.WebpEncoder
+Sdcb.SimdCodecs.Webp.WebpFormat
+Sdcb.SimdCodecs.Webp.WebpFormat.Animated = 2 -> Sdcb.SimdCodecs.Webp.WebpFormat
+Sdcb.SimdCodecs.Webp.WebpFormat.Lossless = 1 -> Sdcb.SimdCodecs.Webp.WebpFormat
+Sdcb.SimdCodecs.Webp.WebpFormat.Lossy = 0 -> Sdcb.SimdCodecs.Webp.WebpFormat
+Sdcb.SimdCodecs.Webp.WebpFrame
+Sdcb.SimdCodecs.Webp.WebpFrame.<Clone>$() -> Sdcb.SimdCodecs.Webp.WebpFrame!
+Sdcb.SimdCodecs.Webp.WebpFrame.Deconstruct(out byte[]! Rgba, out int TimestampMs, out int DurationMs) -> void
+Sdcb.SimdCodecs.Webp.WebpFrame.DurationMs.get -> int
+Sdcb.SimdCodecs.Webp.WebpFrame.DurationMs.init -> void
+Sdcb.SimdCodecs.Webp.WebpFrame.Equals(Sdcb.SimdCodecs.Webp.WebpFrame? other) -> bool
+Sdcb.SimdCodecs.Webp.WebpFrame.Rgba.get -> byte[]!
+Sdcb.SimdCodecs.Webp.WebpFrame.Rgba.init -> void
+Sdcb.SimdCodecs.Webp.WebpFrame.TimestampMs.get -> int
+Sdcb.SimdCodecs.Webp.WebpFrame.TimestampMs.init -> void
+Sdcb.SimdCodecs.Webp.WebpFrame.WebpFrame(byte[]! Rgba, int TimestampMs, int DurationMs) -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.Blend.get -> bool
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.Blend.init -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.Deconstruct(out int Index, out int X, out int Y, out int Width, out int Height, out int TimestampMs, out int DurationMs, out bool Blend, out bool DisposeToBackground, out bool IsIndependent) -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.DisposeToBackground.get -> bool
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.DisposeToBackground.init -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.DurationMs.get -> int
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.DurationMs.init -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.Equals(Sdcb.SimdCodecs.Webp.WebpFrameInfo other) -> bool
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.Height.get -> int
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.Height.init -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.Index.get -> int
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.Index.init -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.IsIndependent.get -> bool
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.IsIndependent.init -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.TimestampMs.get -> int
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.TimestampMs.init -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.WebpFrameInfo() -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.WebpFrameInfo(int Index, int X, int Y, int Width, int Height, int TimestampMs, int DurationMs, bool Blend, bool DisposeToBackground, bool IsIndependent) -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.Width.get -> int
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.Width.init -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.X.get -> int
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.X.init -> void
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.Y.get -> int
+Sdcb.SimdCodecs.Webp.WebpFrameInfo.Y.init -> void
+Sdcb.SimdCodecs.Webp.WebpImage
+Sdcb.SimdCodecs.Webp.WebpImage.Exif.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpImage.HasAlpha.get -> bool
+Sdcb.SimdCodecs.Webp.WebpImage.Height.get -> int
+Sdcb.SimdCodecs.Webp.WebpImage.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpImage.Rgba.get -> byte[]!
+Sdcb.SimdCodecs.Webp.WebpImage.Width.get -> int
+Sdcb.SimdCodecs.Webp.WebpImage.Xmp.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpImageDecoder
+Sdcb.SimdCodecs.Webp.WebpImageDecoder.WebpImageDecoder() -> void
+Sdcb.SimdCodecs.Webp.WebpImageEncoder
+Sdcb.SimdCodecs.Webp.WebpImageEncoder.WebpImageEncoder() -> void
+Sdcb.SimdCodecs.Webp.WebpInfo
+Sdcb.SimdCodecs.Webp.WebpInfo.Deconstruct(out int Width, out int Height, out bool HasAlpha, out Sdcb.SimdCodecs.Webp.WebpFormat Format, out int FrameCount) -> void
+Sdcb.SimdCodecs.Webp.WebpInfo.Equals(Sdcb.SimdCodecs.Webp.WebpInfo other) -> bool
+Sdcb.SimdCodecs.Webp.WebpInfo.Format.get -> Sdcb.SimdCodecs.Webp.WebpFormat
+Sdcb.SimdCodecs.Webp.WebpInfo.Format.init -> void
+Sdcb.SimdCodecs.Webp.WebpInfo.FrameCount.get -> int
+Sdcb.SimdCodecs.Webp.WebpInfo.FrameCount.init -> void
+Sdcb.SimdCodecs.Webp.WebpInfo.HasAlpha.get -> bool
+Sdcb.SimdCodecs.Webp.WebpInfo.HasAlpha.init -> void
+Sdcb.SimdCodecs.Webp.WebpInfo.Height.get -> int
+Sdcb.SimdCodecs.Webp.WebpInfo.Height.init -> void
+Sdcb.SimdCodecs.Webp.WebpInfo.WebpInfo() -> void
+Sdcb.SimdCodecs.Webp.WebpInfo.WebpInfo(int Width, int Height, bool HasAlpha, Sdcb.SimdCodecs.Webp.WebpFormat Format, int FrameCount) -> void
+Sdcb.SimdCodecs.Webp.WebpInfo.Width.get -> int
+Sdcb.SimdCodecs.Webp.WebpInfo.Width.init -> void
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.Effort.get -> int
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.Effort.init -> void
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.Equals(Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions? other) -> bool
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.Exact.get -> bool
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.Exact.init -> void
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.Exif.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.Exif.init -> void
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.IccProfile.init -> void
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.WebpLosslessEncodeOptions() -> void
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.Xmp.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.Xmp.init -> void
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.AlphaQuality.get -> int
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.AlphaQuality.init -> void
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Effort.get -> int
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Effort.init -> void
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Equals(Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions? other) -> bool
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Exact.get -> bool
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Exact.init -> void
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Exif.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Exif.init -> void
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.IccProfile.init -> void
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Quality.get -> int
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Quality.init -> void
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.WebpLossyEncodeOptions() -> void
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Xmp.get -> byte[]?
+Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Xmp.init -> void
+const Sdcb.SimdCodecs.Webp.WebpDecoder.DefaultMaximumAnimationPixels = 268435456 -> long
+const Sdcb.SimdCodecs.Webp.WebpEncoder.MaximumDimension = 16384 -> int
+const Sdcb.SimdCodecs.Webp.WebpEncoder.MaximumLossyDimension = 16383 -> int
+override Sdcb.SimdCodecs.Webp.WebpAnimation.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Webp.WebpAnimation.GetHashCode() -> int
+override Sdcb.SimdCodecs.Webp.WebpAnimation.ToString() -> string!
+override Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.GetHashCode() -> int
+override Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.<Clone>$() -> Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions!
+override Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.ToString() -> string!
+override Sdcb.SimdCodecs.Webp.WebpAnimationFrame.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Webp.WebpAnimationFrame.GetHashCode() -> int
+override Sdcb.SimdCodecs.Webp.WebpAnimationFrame.ToString() -> string!
+override Sdcb.SimdCodecs.Webp.WebpDecodeOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Webp.WebpDecodeOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Webp.WebpDecodeOptions.ToString() -> string!
+override Sdcb.SimdCodecs.Webp.WebpFrame.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Webp.WebpFrame.GetHashCode() -> int
+override Sdcb.SimdCodecs.Webp.WebpFrame.ToString() -> string!
+override Sdcb.SimdCodecs.Webp.WebpFrameInfo.GetHashCode() -> int
+override Sdcb.SimdCodecs.Webp.WebpInfo.GetHashCode() -> int
+override Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.<Clone>$() -> Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions!
+override Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.ToString() -> string!
+override Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.<Clone>$() -> Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions!
+override Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.ToString() -> string!
+override sealed Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.Equals(Sdcb.SimdCodecs.Abstractions.EncodeOptions? other) -> bool
+override sealed Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.Equals(Sdcb.SimdCodecs.Abstractions.EncodeOptions? other) -> bool
+override sealed Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.Equals(Sdcb.SimdCodecs.Abstractions.EncodeOptions? other) -> bool
+static Sdcb.SimdCodecs.Webp.WebpAnimation.operator !=(Sdcb.SimdCodecs.Webp.WebpAnimation? left, Sdcb.SimdCodecs.Webp.WebpAnimation? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpAnimation.operator ==(Sdcb.SimdCodecs.Webp.WebpAnimation? left, Sdcb.SimdCodecs.Webp.WebpAnimation? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.operator !=(Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame left, Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.operator ==(Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame left, Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.operator !=(Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions? left, Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions.operator ==(Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions? left, Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpAnimationFrame.operator !=(Sdcb.SimdCodecs.Webp.WebpAnimationFrame? left, Sdcb.SimdCodecs.Webp.WebpAnimationFrame? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpAnimationFrame.operator ==(Sdcb.SimdCodecs.Webp.WebpAnimationFrame? left, Sdcb.SimdCodecs.Webp.WebpAnimationFrame? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpDecodeOptions.operator !=(Sdcb.SimdCodecs.Webp.WebpDecodeOptions? left, Sdcb.SimdCodecs.Webp.WebpDecodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpDecodeOptions.operator ==(Sdcb.SimdCodecs.Webp.WebpDecodeOptions? left, Sdcb.SimdCodecs.Webp.WebpDecodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpDecoder.Decode(System.ReadOnlySpan<byte> data, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Webp.WebpImage!
+static Sdcb.SimdCodecs.Webp.WebpDecoder.DecodeAnimation(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Webp.WebpAnimation!
+static Sdcb.SimdCodecs.Webp.WebpDecoder.DecodeAnimation(System.ReadOnlySpan<byte> data, long maximumTotalPixels, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Webp.WebpAnimation!
+static Sdcb.SimdCodecs.Webp.WebpDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> rgba, int stride = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+static Sdcb.SimdCodecs.Webp.WebpDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> rgba, int stride, Sdcb.SimdCodecs.Webp.WebpDecodeOptions? options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+static Sdcb.SimdCodecs.Webp.WebpDecoder.ReadInfo(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Webp.WebpInfo
+static Sdcb.SimdCodecs.Webp.WebpDecoder.TryDecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> rgba, int stride = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Webp.WebpDecoder.TryDecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> rgba, int stride, Sdcb.SimdCodecs.Webp.WebpDecodeOptions? options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Webp.WebpDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Webp.WebpInfo info) -> bool
+static Sdcb.SimdCodecs.Webp.WebpEncoder.EncodeAnimation(System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame>! frames, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions? options = null) -> byte[]!
+static Sdcb.SimdCodecs.Webp.WebpEncoder.EncodeAnimation(System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame>! frames, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, System.IO.Stream! output, Sdcb.SimdCodecs.Webp.WebpAnimationEncodeOptions? options = null) -> void
+static Sdcb.SimdCodecs.Webp.WebpEncoder.EncodeLossless(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions? options = null, int stride = 0) -> byte[]!
+static Sdcb.SimdCodecs.Webp.WebpEncoder.EncodeLossless(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, System.IO.Stream! output, Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions? options = null, int stride = 0) -> void
+static Sdcb.SimdCodecs.Webp.WebpEncoder.EncodeLossy(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions? options = null, int stride = 0) -> byte[]!
+static Sdcb.SimdCodecs.Webp.WebpEncoder.EncodeLossy(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, System.IO.Stream! output, Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions? options = null, int stride = 0) -> void
+static Sdcb.SimdCodecs.Webp.WebpFrame.operator !=(Sdcb.SimdCodecs.Webp.WebpFrame? left, Sdcb.SimdCodecs.Webp.WebpFrame? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpFrame.operator ==(Sdcb.SimdCodecs.Webp.WebpFrame? left, Sdcb.SimdCodecs.Webp.WebpFrame? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpFrameInfo.operator !=(Sdcb.SimdCodecs.Webp.WebpFrameInfo left, Sdcb.SimdCodecs.Webp.WebpFrameInfo right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpFrameInfo.operator ==(Sdcb.SimdCodecs.Webp.WebpFrameInfo left, Sdcb.SimdCodecs.Webp.WebpFrameInfo right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.CanDecode(System.ReadOnlySpan<byte> data) -> bool
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.TryDecodeIntoRgba8(System.ReadOnlySpan<byte> data, System.Span<byte> destination) -> bool
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.TryOpenFrames(System.ReadOnlyMemory<byte> data, out Sdcb.SimdCodecs.Abstractions.IImageFrameReader? reader) -> bool
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Webp.WebpImageEncoder.Create(System.Buffers.IBufferWriter<byte>! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
+static Sdcb.SimdCodecs.Webp.WebpImageEncoder.Format.get -> Sdcb.SimdCodecs.Abstractions.ImageFormat
+static Sdcb.SimdCodecs.Webp.WebpImageEncoder.GetClosestInputFormat(Sdcb.SimdCodecs.Abstractions.PixelFormat requested) -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+static Sdcb.SimdCodecs.Webp.WebpImageEncoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration!
+static Sdcb.SimdCodecs.Webp.WebpInfo.operator !=(Sdcb.SimdCodecs.Webp.WebpInfo left, Sdcb.SimdCodecs.Webp.WebpInfo right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpInfo.operator ==(Sdcb.SimdCodecs.Webp.WebpInfo left, Sdcb.SimdCodecs.Webp.WebpInfo right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.operator !=(Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions? left, Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions.operator ==(Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions? left, Sdcb.SimdCodecs.Webp.WebpLosslessEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.operator !=(Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions? left, Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.operator ==(Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions? left, Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions? right) -> bool
+~override Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Webp.WebpAnimationCanvasFrame.ToString() -> string
+~override Sdcb.SimdCodecs.Webp.WebpFrameInfo.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Webp.WebpFrameInfo.ToString() -> string
+~override Sdcb.SimdCodecs.Webp.WebpInfo.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Webp.WebpInfo.ToString() -> string

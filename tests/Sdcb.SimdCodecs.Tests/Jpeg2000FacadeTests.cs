@@ -108,7 +108,7 @@ public class Jpeg2000FacadeTests
 
         SimdCodecs.TryDecode(jp2, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
-        image.IccProfile.ToArray().ShouldBe(profile);
+        image.Metadata.Icc.Span.ToArray().ShouldBe(profile);
     }
 
     /// <summary>

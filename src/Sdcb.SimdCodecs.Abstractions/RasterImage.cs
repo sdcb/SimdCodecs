@@ -11,10 +11,10 @@ namespace Sdcb.SimdCodecs.Abstractions;
 /// <see cref="Pixels"/> for the fidelity tier or call <see cref="IDecodedImage.TryCopyTo"/> / <see cref="ToRgba8"/> for
 /// display.
 /// <para>
-/// Four ways to make one: <see cref="Wrap(int, int, int, SampleFormat, byte[], byte[], ColorEncoding, int, ImageMetadata)"/>
+/// Four ways to make one: <see cref="Wrap(int, int, int, SampleFormat, byte[], ColorEncoding, int, ImageMetadata)"/>
 /// takes over an array the caller filled; <see cref="Allocate"/> and <see cref="Rent"/> create an empty one to fill
 /// through <see cref="WritablePixels"/> (from new memory or from a pool); and
-/// <see cref="Wrap(int, int, int, SampleFormat, IMemoryOwner{byte}, byte[], ColorEncoding, int, ImageMetadata)"/>
+/// <see cref="Wrap(int, int, int, SampleFormat, IMemoryOwner{byte}, ColorEncoding, int, ImageMetadata)"/>
 /// takes over memory with an owner. <see cref="Dispose"/> returns pooled or owned memory; afterwards
 /// <see cref="Pixels"/> throws <see cref="ObjectDisposedException"/>, whichever way the image was made.
 /// </para>
@@ -29,7 +29,7 @@ public sealed class RasterImage : IDecodedImage
     private int _disposed;
 
     private RasterImage(int width, int height, int channels, SampleFormat sampleFormat, int bitDepth,
-        byte[]? iccProfile, ColorEncoding? colorEncoding, ImageMetadata? metadata)
+        ColorEncoding? colorEncoding, ImageMetadata? metadata)
     {
         if (width <= 0 || height <= 0)
             throw new ArgumentOutOfRangeException(nameof(width), "Width and height must be positive.");
@@ -46,8 +46,7 @@ public sealed class RasterImage : IDecodedImage
         _bitDepth = bitDepth;
         _length = checked(width * height * channels * BytesPerSample(sampleFormat));
         ColorEncoding = colorEncoding ?? ColorEncoding.AssumedSrgb;
-        metadata ??= ImageMetadata.Empty;
-        Metadata = iccProfile is { Length: > 0 } && metadata.Icc.IsEmpty ? metadata.WithIcc(iccProfile) : metadata;
+        Metadata = metadata ?? ImageMetadata.Empty;
     }
 
     /// <summary>
@@ -60,17 +59,15 @@ public sealed class RasterImage : IDecodedImage
     /// <param name="sampleFormat">The per-channel sample type of <paramref name="pixels"/>.</param>
     /// <param name="pixels">Interleaved, row-major, tightly-packed samples in host byte order, straight alpha; at least
     /// <c>width × height × channels × bytesPerSample</c> bytes.</param>
-    /// <param name="iccProfile">The embedded ICC profile, if any (becomes <see cref="ImageMetadata.Icc"/> unless
-    /// <paramref name="metadata"/> has one).</param>
     /// <param name="colorEncoding">How the samples encode colour; null means <see cref="ColorEncoding.AssumedSrgb"/>.</param>
     /// <param name="bitDepth">Bits of real precision per sample; 0 means the full width of <paramref name="sampleFormat"/>.</param>
-    /// <param name="metadata">The file's metadata blocks.</param>
+    /// <param name="metadata">The file's metadata blocks (Exif, XMP, ICC profile).</param>
     /// <exception cref="ArgumentException">An argument is out of range, or <paramref name="pixels"/> is too small.</exception>
     public static RasterImage Wrap(int width, int height, int channels, SampleFormat sampleFormat, byte[] pixels,
-        byte[]? iccProfile = null, ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null)
+        ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null)
     {
         ArgumentNullException.ThrowIfNull(pixels);
-        var image = new RasterImage(width, height, channels, sampleFormat, bitDepth, iccProfile, colorEncoding, metadata);
+        var image = new RasterImage(width, height, channels, sampleFormat, bitDepth, colorEncoding, metadata);
         if (pixels.Length < image._length)
             throw new ArgumentException($"Pixel buffer too small: {pixels.Length} < {image._length} (width*height*channels*bytesPerSample).", nameof(pixels));
         image._array = pixels;
@@ -86,16 +83,15 @@ public sealed class RasterImage : IDecodedImage
     /// <param name="channels">Samples per pixel, 1..4.</param>
     /// <param name="sampleFormat">The per-channel sample type.</param>
     /// <param name="owner">The memory holding the samples, laid out as <see cref="Pixels"/> describes.</param>
-    /// <param name="iccProfile">The embedded ICC profile, if any.</param>
     /// <param name="colorEncoding">How the samples encode colour; null means <see cref="ColorEncoding.AssumedSrgb"/>.</param>
     /// <param name="bitDepth">Bits of real precision per sample; 0 means the full width of <paramref name="sampleFormat"/>.</param>
-    /// <param name="metadata">The file's metadata blocks.</param>
+    /// <param name="metadata">The file's metadata blocks (Exif, XMP, ICC profile).</param>
     /// <exception cref="ArgumentException">An argument is out of range, or the memory is too small.</exception>
     public static RasterImage Wrap(int width, int height, int channels, SampleFormat sampleFormat, IMemoryOwner<byte> owner,
-        byte[]? iccProfile = null, ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null)
+        ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null)
     {
         ArgumentNullException.ThrowIfNull(owner);
-        var image = new RasterImage(width, height, channels, sampleFormat, bitDepth, iccProfile, colorEncoding, metadata);
+        var image = new RasterImage(width, height, channels, sampleFormat, bitDepth, colorEncoding, metadata);
         if (owner.Memory.Length < image._length)
             throw new ArgumentException($"Pixel memory too small: {owner.Memory.Length} < {image._length}.", nameof(owner));
         image._owner = owner;
@@ -107,14 +103,13 @@ public sealed class RasterImage : IDecodedImage
     /// <param name="height">Pixel height (&gt; 0).</param>
     /// <param name="channels">Samples per pixel, 1..4.</param>
     /// <param name="sampleFormat">The per-channel sample type.</param>
-    /// <param name="iccProfile">The embedded ICC profile, if any.</param>
     /// <param name="colorEncoding">How the samples encode colour; null means <see cref="ColorEncoding.AssumedSrgb"/>.</param>
     /// <param name="bitDepth">Bits of real precision per sample; 0 means the full width of <paramref name="sampleFormat"/>.</param>
-    /// <param name="metadata">The file's metadata blocks.</param>
+    /// <param name="metadata">The file's metadata blocks (Exif, XMP, ICC profile).</param>
     public static RasterImage Allocate(int width, int height, int channels, SampleFormat sampleFormat,
-        byte[]? iccProfile = null, ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null)
+        ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null)
     {
-        var image = new RasterImage(width, height, channels, sampleFormat, bitDepth, iccProfile, colorEncoding, metadata);
+        var image = new RasterImage(width, height, channels, sampleFormat, bitDepth, colorEncoding, metadata);
         image._array = GC.AllocateUninitializedArray<byte>(image._length);
         image._array.AsSpan().Clear();
         return image;
@@ -129,14 +124,13 @@ public sealed class RasterImage : IDecodedImage
     /// <param name="channels">Samples per pixel, 1..4.</param>
     /// <param name="sampleFormat">The per-channel sample type.</param>
     /// <param name="pool">The pool; null means <see cref="ArrayPool{T}.Shared"/>.</param>
-    /// <param name="iccProfile">The embedded ICC profile, if any.</param>
     /// <param name="colorEncoding">How the samples encode colour; null means <see cref="ColorEncoding.AssumedSrgb"/>.</param>
     /// <param name="bitDepth">Bits of real precision per sample; 0 means the full width of <paramref name="sampleFormat"/>.</param>
-    /// <param name="metadata">The file's metadata blocks.</param>
+    /// <param name="metadata">The file's metadata blocks (Exif, XMP, ICC profile).</param>
     public static RasterImage Rent(int width, int height, int channels, SampleFormat sampleFormat, ArrayPool<byte>? pool = null,
-        byte[]? iccProfile = null, ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null)
+        ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null)
     {
-        var image = new RasterImage(width, height, channels, sampleFormat, bitDepth, iccProfile, colorEncoding, metadata);
+        var image = new RasterImage(width, height, channels, sampleFormat, bitDepth, colorEncoding, metadata);
         image._pool = pool ?? ArrayPool<byte>.Shared;
         image._array = image._pool.Rent(image._length);
         return image;
@@ -147,10 +141,10 @@ public sealed class RasterImage : IDecodedImage
     /// otherwise <see cref="Allocate"/>. What a codec calls with <see cref="DecodeOptions.Pool"/>.
     /// </summary>
     public static RasterImage Create(int width, int height, int channels, SampleFormat sampleFormat, ArrayPool<byte>? pool,
-        byte[]? iccProfile = null, ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null) =>
+        ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null) =>
         pool is null
-            ? Allocate(width, height, channels, sampleFormat, iccProfile, colorEncoding, bitDepth, metadata)
-            : Rent(width, height, channels, sampleFormat, pool, iccProfile, colorEncoding, bitDepth, metadata);
+            ? Allocate(width, height, channels, sampleFormat, colorEncoding, bitDepth, metadata)
+            : Rent(width, height, channels, sampleFormat, pool, colorEncoding, bitDepth, metadata);
 
     /// <summary>
     /// Copies the pixels of <paramref name="region"/> out of <paramref name="source"/> into a new image (rented from
@@ -163,8 +157,8 @@ public sealed class RasterImage : IDecodedImage
         if (!region.FitsIn(source.Width, source.Height))
             throw new ArgumentException($"The region {region} does not lie inside the {source.Width}x{source.Height} image.", nameof(region));
         var image = Create(region.Width, region.Height, source.Channels, source.SampleFormat, pool,
-            null, source.ColorEncoding, source.BitDepth == BytesPerSample(source.SampleFormat) * 8 ? 0 : source.BitDepth,
-            source.Metadata.Icc.IsEmpty && !source.IccProfile.IsEmpty ? source.Metadata.WithIcc(source.IccProfile.ToArray()) : source.Metadata);
+            source.ColorEncoding, source.BitDepth == BytesPerSample(source.SampleFormat) * 8 ? 0 : source.BitDepth,
+            source.Metadata);
         var bpp = source.Channels * BytesPerSample(source.SampleFormat);
         var inRow = source.Width * bpp;
         var outRow = region.Width * bpp;
@@ -206,9 +200,6 @@ public sealed class RasterImage : IDecodedImage
             return _array is { } a ? a.AsSpan(0, _length) : _owner!.Memory.Span[.._length];
         }
     }
-
-    /// <inheritdoc />
-    public ReadOnlySpan<byte> IccProfile => Metadata.Icc.Span;
 
     /// <inheritdoc />
     public ColorEncoding ColorEncoding { get; }

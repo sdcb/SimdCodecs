@@ -21,7 +21,7 @@ public sealed class WebpMetadataTests
         Assert.Equal(xmp, image.Xmp);
         Assert.True(WebpImageDecoder.TryDecode(source, out IDecodedImage? decoded, cancellationToken: TestContext.Current.CancellationToken));
         Assert.NotNull(decoded);
-        Assert.Equal(icc, decoded.IccProfile.ToArray());
+        Assert.Equal(icc, decoded.Metadata.Icc.Span.ToArray());
         Assert.Equal(ColorEncoding.AssumedSrgb, decoded.ColorEncoding);
     }
 

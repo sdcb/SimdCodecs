@@ -1,0 +1,188 @@
+#nullable enable
+Sdcb.SimdCodecs.Jpeg.JpegComponentInfo
+Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.Deconstruct(out int Id, out int HorizontalSampling, out int VerticalSampling) -> void
+Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.Equals(Sdcb.SimdCodecs.Jpeg.JpegComponentInfo other) -> bool
+Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.HorizontalSampling.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.HorizontalSampling.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.Id.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.Id.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.JpegComponentInfo() -> void
+Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.JpegComponentInfo(int Id, int HorizontalSampling, int VerticalSampling) -> void
+Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.VerticalSampling.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.VerticalSampling.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegDecoder
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Equals(Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions? other) -> bool
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Exif.get -> System.ReadOnlyMemory<byte>?
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Exif.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.IccProfile.get -> System.ReadOnlyMemory<byte>?
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.IccProfile.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.JpegEncodeOptions() -> void
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.OptimizeHuffman.get -> bool
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.OptimizeHuffman.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Progressive.get -> bool
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Progressive.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Quality.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Quality.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Subsampling.get -> Sdcb.SimdCodecs.Jpeg.JpegSubsampling
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Subsampling.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Xmp.get -> Sdcb.SimdCodecs.Jpeg.JpegXmp?
+Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Xmp.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegEncoder
+Sdcb.SimdCodecs.Jpeg.JpegImage
+Sdcb.SimdCodecs.Jpeg.JpegImage.Height.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegImage.Pixels.get -> byte[]!
+Sdcb.SimdCodecs.Jpeg.JpegImage.Width.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegImageDecoder
+Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.JpegImageDecoder() -> void
+Sdcb.SimdCodecs.Jpeg.JpegImageEncoder
+Sdcb.SimdCodecs.Jpeg.JpegImageEncoder.JpegImageEncoder() -> void
+Sdcb.SimdCodecs.Jpeg.JpegInfo
+Sdcb.SimdCodecs.Jpeg.JpegInfo.<Clone>$() -> Sdcb.SimdCodecs.Jpeg.JpegInfo!
+Sdcb.SimdCodecs.Jpeg.JpegInfo.ChromaSubsampled.get -> bool
+Sdcb.SimdCodecs.Jpeg.JpegInfo.ChromaSubsampled.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegInfo.ChromaSubsamplingRatio.get -> string?
+Sdcb.SimdCodecs.Jpeg.JpegInfo.ComponentInfo.get -> System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Jpeg.JpegComponentInfo>!
+Sdcb.SimdCodecs.Jpeg.JpegInfo.ComponentInfo.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegInfo.Components.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegInfo.Components.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegInfo.Deconstruct(out int Width, out int Height, out int Components, out bool Progressive) -> void
+Sdcb.SimdCodecs.Jpeg.JpegInfo.Equals(Sdcb.SimdCodecs.Jpeg.JpegInfo? other) -> bool
+Sdcb.SimdCodecs.Jpeg.JpegInfo.Height.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegInfo.Height.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegInfo.JpegInfo(int Width, int Height, int Components, bool Progressive) -> void
+Sdcb.SimdCodecs.Jpeg.JpegInfo.Orientation.get -> Sdcb.SimdCodecs.Abstractions.ImageOrientation
+Sdcb.SimdCodecs.Jpeg.JpegInfo.Orientation.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegInfo.Progressive.get -> bool
+Sdcb.SimdCodecs.Jpeg.JpegInfo.Progressive.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegInfo.ScaledSize(Sdcb.SimdCodecs.Jpeg.JpegScale scale) -> (int Width, int Height)
+Sdcb.SimdCodecs.Jpeg.JpegInfo.Width.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegInfo.Width.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegPixelFormat
+Sdcb.SimdCodecs.Jpeg.JpegPixelFormat.Bgr24 = 3 -> Sdcb.SimdCodecs.Jpeg.JpegPixelFormat
+Sdcb.SimdCodecs.Jpeg.JpegPixelFormat.Bgra32 = 1 -> Sdcb.SimdCodecs.Jpeg.JpegPixelFormat
+Sdcb.SimdCodecs.Jpeg.JpegPixelFormat.Gray8 = 4 -> Sdcb.SimdCodecs.Jpeg.JpegPixelFormat
+Sdcb.SimdCodecs.Jpeg.JpegPixelFormat.Rgb24 = 2 -> Sdcb.SimdCodecs.Jpeg.JpegPixelFormat
+Sdcb.SimdCodecs.Jpeg.JpegPixelFormat.Rgba32 = 0 -> Sdcb.SimdCodecs.Jpeg.JpegPixelFormat
+Sdcb.SimdCodecs.Jpeg.JpegScale
+Sdcb.SimdCodecs.Jpeg.JpegScale.Eighth = 8 -> Sdcb.SimdCodecs.Jpeg.JpegScale
+Sdcb.SimdCodecs.Jpeg.JpegScale.Full = 1 -> Sdcb.SimdCodecs.Jpeg.JpegScale
+Sdcb.SimdCodecs.Jpeg.JpegScale.Half = 2 -> Sdcb.SimdCodecs.Jpeg.JpegScale
+Sdcb.SimdCodecs.Jpeg.JpegScale.Quarter = 4 -> Sdcb.SimdCodecs.Jpeg.JpegScale
+Sdcb.SimdCodecs.Jpeg.JpegSegment
+Sdcb.SimdCodecs.Jpeg.JpegSegment.Deconstruct(out byte Marker, out int SegmentOffset, out int PayloadOffset, out int PayloadLength) -> void
+Sdcb.SimdCodecs.Jpeg.JpegSegment.Equals(Sdcb.SimdCodecs.Jpeg.JpegSegment other) -> bool
+Sdcb.SimdCodecs.Jpeg.JpegSegment.JpegSegment() -> void
+Sdcb.SimdCodecs.Jpeg.JpegSegment.JpegSegment(byte Marker, int SegmentOffset, int PayloadOffset, int PayloadLength) -> void
+Sdcb.SimdCodecs.Jpeg.JpegSegment.Marker.get -> byte
+Sdcb.SimdCodecs.Jpeg.JpegSegment.Marker.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegSegment.Payload(System.ReadOnlySpan<byte> jpeg) -> System.ReadOnlySpan<byte>
+Sdcb.SimdCodecs.Jpeg.JpegSegment.PayloadLength.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegSegment.PayloadLength.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegSegment.PayloadOffset.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegSegment.PayloadOffset.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegSegment.SegmentOffset.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegSegment.SegmentOffset.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegSegment.TotalLength.get -> int
+Sdcb.SimdCodecs.Jpeg.JpegSegmentScanner
+Sdcb.SimdCodecs.Jpeg.JpegSubsampling
+Sdcb.SimdCodecs.Jpeg.JpegSubsampling.Auto = 0 -> Sdcb.SimdCodecs.Jpeg.JpegSubsampling
+Sdcb.SimdCodecs.Jpeg.JpegSubsampling.Chroma420 = 2 -> Sdcb.SimdCodecs.Jpeg.JpegSubsampling
+Sdcb.SimdCodecs.Jpeg.JpegSubsampling.Chroma444 = 1 -> Sdcb.SimdCodecs.Jpeg.JpegSubsampling
+Sdcb.SimdCodecs.Jpeg.JpegXmp
+Sdcb.SimdCodecs.Jpeg.JpegXmp.<Clone>$() -> Sdcb.SimdCodecs.Jpeg.JpegXmp!
+Sdcb.SimdCodecs.Jpeg.JpegXmp.BuildPacket() -> byte[]!
+Sdcb.SimdCodecs.Jpeg.JpegXmp.CreatorTool.get -> string?
+Sdcb.SimdCodecs.Jpeg.JpegXmp.CreatorTool.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegXmp.CustomNamespaceUri.get -> string?
+Sdcb.SimdCodecs.Jpeg.JpegXmp.CustomNamespaceUri.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegXmp.CustomPrefix.get -> string?
+Sdcb.SimdCodecs.Jpeg.JpegXmp.CustomPrefix.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegXmp.CustomProperties.get -> System.Collections.Generic.IReadOnlyList<System.Collections.Generic.KeyValuePair<string!, string!>>?
+Sdcb.SimdCodecs.Jpeg.JpegXmp.CustomProperties.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegXmp.Description.get -> string?
+Sdcb.SimdCodecs.Jpeg.JpegXmp.Description.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegXmp.Equals(Sdcb.SimdCodecs.Jpeg.JpegXmp? other) -> bool
+Sdcb.SimdCodecs.Jpeg.JpegXmp.JpegXmp() -> void
+Sdcb.SimdCodecs.Jpeg.LosslessJpeg
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.<Clone>$() -> Sdcb.SimdCodecs.Jpeg.LosslessJpegResult!
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Components.get -> int
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Components.init -> void
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Deconstruct(out int Width, out int Height, out int Precision, out int Components, out ushort[]! Samples) -> void
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Equals(Sdcb.SimdCodecs.Jpeg.LosslessJpegResult? other) -> bool
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Height.get -> int
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Height.init -> void
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.LosslessJpegResult(int Width, int Height, int Precision, int Components, ushort[]! Samples) -> void
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Precision.get -> int
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Precision.init -> void
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Samples.get -> ushort[]!
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Samples.init -> void
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Width.get -> int
+Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Width.init -> void
+const Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.MaxExifBytes = 65527 -> int
+const Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.MaxIccChunkBytes = 65519 -> int
+const Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.MaxIccProfileBytes = 16707345 -> int
+const Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.MaxXmpPacketBytes = 65504 -> int
+const Sdcb.SimdCodecs.Jpeg.JpegSegmentScanner.Sos = 218 -> byte
+const Sdcb.SimdCodecs.Jpeg.JpegXmp.DublinCoreNamespaceUri = "http://purl.org/dc/elements/1.1/" -> string!
+const Sdcb.SimdCodecs.Jpeg.JpegXmp.XmpNamespaceUri = "http://ns.adobe.com/xap/1.0/" -> string!
+override Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.GetHashCode() -> int
+override Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.<Clone>$() -> Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions!
+override Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.ToString() -> string!
+override Sdcb.SimdCodecs.Jpeg.JpegInfo.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Jpeg.JpegInfo.GetHashCode() -> int
+override Sdcb.SimdCodecs.Jpeg.JpegInfo.ToString() -> string!
+override Sdcb.SimdCodecs.Jpeg.JpegSegment.GetHashCode() -> int
+override Sdcb.SimdCodecs.Jpeg.JpegXmp.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Jpeg.JpegXmp.GetHashCode() -> int
+override Sdcb.SimdCodecs.Jpeg.JpegXmp.ToString() -> string!
+override Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.GetHashCode() -> int
+override Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.ToString() -> string!
+override sealed Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.Equals(Sdcb.SimdCodecs.Abstractions.EncodeOptions? other) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.operator !=(Sdcb.SimdCodecs.Jpeg.JpegComponentInfo left, Sdcb.SimdCodecs.Jpeg.JpegComponentInfo right) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.operator ==(Sdcb.SimdCodecs.Jpeg.JpegComponentInfo left, Sdcb.SimdCodecs.Jpeg.JpegComponentInfo right) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Jpeg.JpegScale scale = Sdcb.SimdCodecs.Jpeg.JpegScale.Full) -> Sdcb.SimdCodecs.Jpeg.JpegImage!
+static Sdcb.SimdCodecs.Jpeg.JpegDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Jpeg.JpegPixelFormat format, Sdcb.SimdCodecs.Jpeg.JpegScale scale = Sdcb.SimdCodecs.Jpeg.JpegScale.Full) -> (int Width, int Height)
+static Sdcb.SimdCodecs.Jpeg.JpegDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Jpeg.JpegPixelFormat format, Sdcb.SimdCodecs.Jpeg.JpegScale scale, System.Threading.CancellationToken cancellationToken) -> (int Width, int Height)
+static Sdcb.SimdCodecs.Jpeg.JpegDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination, Sdcb.SimdCodecs.Jpeg.JpegScale scale = Sdcb.SimdCodecs.Jpeg.JpegScale.Full) -> (int Width, int Height)
+static Sdcb.SimdCodecs.Jpeg.JpegDecoder.ReadInfo(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Jpeg.JpegInfo!
+static Sdcb.SimdCodecs.Jpeg.JpegDecoder.TryReadIccProfile(System.ReadOnlySpan<byte> data, out byte[]? profile) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Jpeg.JpegInfo? info) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.operator !=(Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions? left, Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions.operator ==(Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions? left, Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, int channels, Sdcb.SimdCodecs.Jpeg.JpegEncodeOptions? options = null) -> byte[]!
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.TryDecodeIntoRgba8(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegImageEncoder.Create(System.Buffers.IBufferWriter<byte>! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
+static Sdcb.SimdCodecs.Jpeg.JpegImageEncoder.Format.get -> Sdcb.SimdCodecs.Abstractions.ImageFormat
+static Sdcb.SimdCodecs.Jpeg.JpegImageEncoder.GetClosestInputFormat(Sdcb.SimdCodecs.Abstractions.PixelFormat requested) -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+static Sdcb.SimdCodecs.Jpeg.JpegImageEncoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration!
+static Sdcb.SimdCodecs.Jpeg.JpegInfo.operator !=(Sdcb.SimdCodecs.Jpeg.JpegInfo? left, Sdcb.SimdCodecs.Jpeg.JpegInfo? right) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegInfo.operator ==(Sdcb.SimdCodecs.Jpeg.JpegInfo? left, Sdcb.SimdCodecs.Jpeg.JpegInfo? right) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegSegment.operator !=(Sdcb.SimdCodecs.Jpeg.JpegSegment left, Sdcb.SimdCodecs.Jpeg.JpegSegment right) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegSegment.operator ==(Sdcb.SimdCodecs.Jpeg.JpegSegment left, Sdcb.SimdCodecs.Jpeg.JpegSegment right) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegSegmentScanner.Scan(System.ReadOnlySpan<byte> jpeg) -> System.Collections.Generic.List<Sdcb.SimdCodecs.Jpeg.JpegSegment>!
+static Sdcb.SimdCodecs.Jpeg.JpegSegmentScanner.TryFindAppPayload(System.ReadOnlySpan<byte> jpeg, byte appMarker, System.ReadOnlySpan<byte> identifier, out System.Range payload) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegXmp.operator !=(Sdcb.SimdCodecs.Jpeg.JpegXmp? left, Sdcb.SimdCodecs.Jpeg.JpegXmp? right) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegXmp.operator ==(Sdcb.SimdCodecs.Jpeg.JpegXmp? left, Sdcb.SimdCodecs.Jpeg.JpegXmp? right) -> bool
+static Sdcb.SimdCodecs.Jpeg.LosslessJpeg.FromMemory(System.ReadOnlySpan<byte> bytes) -> Sdcb.SimdCodecs.Jpeg.LosslessJpegResult!
+static Sdcb.SimdCodecs.Jpeg.LosslessJpeg.FromMemory(byte[]! bytes) -> Sdcb.SimdCodecs.Jpeg.LosslessJpegResult!
+static Sdcb.SimdCodecs.Jpeg.LosslessJpeg.FromStream(System.IO.Stream! stream) -> Sdcb.SimdCodecs.Jpeg.LosslessJpegResult!
+static Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.operator !=(Sdcb.SimdCodecs.Jpeg.LosslessJpegResult? left, Sdcb.SimdCodecs.Jpeg.LosslessJpegResult? right) -> bool
+static Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.operator ==(Sdcb.SimdCodecs.Jpeg.LosslessJpegResult? left, Sdcb.SimdCodecs.Jpeg.LosslessJpegResult? right) -> bool
+~override Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.ToString() -> string
+~override Sdcb.SimdCodecs.Jpeg.JpegSegment.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Jpeg.JpegSegment.ToString() -> string
