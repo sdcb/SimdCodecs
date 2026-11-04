@@ -36,6 +36,8 @@
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
     <!-- JpegDiagnostics (coefficients + pre-upsampling planes) for the accuracy tooling. -->
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Jpeg.Benchmarks" />
+    <!-- JpegDiagnostics ablation for the browser-wasm stage timing (wasm and desktop builds share the name). -->
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Jpeg.WasmBench" />
   </ItemGroup>
 
   <ItemGroup>

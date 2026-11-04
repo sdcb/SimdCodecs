@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.Wasm;
 using System.Runtime.Intrinsics.X86;
 
 namespace Sdcb.SimdCodecs.Jpeg;
@@ -63,6 +64,9 @@ internal static class JpegIdct
 
     /// <summary>The Vector256 kernels use AVX2 packs and conversions directly.</summary>
     private static bool UseV256 => Vector256.IsHardwareAccelerated && Avx2.IsSupported;
+
+    /// <summary>The in-register Vector128 kernel; see <see cref="Idct8x8V128Reg(byte[], int, int, ReadOnlySpan{short}, bool, bool)"/> for why only on wasm.</summary>
+    private static bool UseV128Reg => PackedSimd.IsSupported;
     private const float Max = 255f;
 
     private static byte Clamp(int x)
@@ -129,6 +133,8 @@ internal static class JpegIdct
             DcOnly(outPlane, outOffset, outStride, data[0]);
         else if (UseV256)
             Idct8x8V256(outPlane, outOffset, outStride, data, MaxRow[last] < 4, MaxCol[last] < 4);
+        else if (UseV128Reg)
+            Idct8x8V128Reg(outPlane, outOffset, outStride, data, MaxRow[last] < 4, MaxCol[last] < 4);
         else
             Idct8x8(outPlane, outOffset, outStride, data);
     }
@@ -158,6 +164,8 @@ internal static class JpegIdct
     {
         if (UseV256)
             Idct8x8V256(outPlane, outOffset, outStride, data);
+        else if (UseV128Reg)
+            Idct8x8V128Reg(outPlane, outOffset, outStride, data);
         else if (Vector128.IsHardwareAccelerated)
             Idct8x8V128(outPlane, outOffset, outStride, data);
         else
@@ -510,6 +518,221 @@ internal static class JpegIdct
         }
     }
 
+    // ------------------------------------------------------------------ Vector128, in registers (wasm)
+
+    /// <summary>
+    /// Each row is a (left, right) pair of <see cref="Vector128{T}"/> halves; both 1-D
+    /// passes run on four lanes at a time, with in-register 4×4 transposes between them,
+    /// and the same sparse half-passes as the Vector256 kernel. The dispatcher uses it
+    /// where <see cref="PackedSimd"/> is supported (browser-wasm: 3× faster than
+    /// <see cref="Idct8x8V128(byte[], int, int, ReadOnlySpan{short})"/> there); on x64
+    /// without AVX2 it made the whole decode 1.3× slower than that kernel (32 live vectors, 16 registers),
+    /// so SSE and AdvSimd keep the scratch-block one. Portable code: the tests run it everywhere.
+    /// </summary>
+    internal static void Idct8x8V128Reg(byte[] outPlane, int outOffset, int outStride, ReadOnlySpan<short> data) =>
+        Idct8x8V128Reg(outPlane, outOffset, outStride, data, false, false);
+
+    /// <summary>
+    /// <see cref="Idct8x8V128Reg(byte[], int, int, ReadOnlySpan{short})"/>, dropping the zero
+    /// half of the column pass and/or of the row pass exactly as
+    /// <see cref="Idct8x8V256(byte[], int, int, ReadOnlySpan{short}, bool, bool)"/> does.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    internal static void Idct8x8V128Reg(byte[] outPlane, int outOffset, int outStride, ReadOnlySpan<short> data, bool halfRows, bool halfCols)
+    {
+        TransformV128RegRows(data, halfRows, halfCols,
+            out var l0, out var l1, out var l2, out var l3, out var l4, out var l5, out var l6, out var l7,
+            out var h0, out var h1, out var h2, out var h3, out var h4, out var h5, out var h6, out var h7);
+
+        var b01 = ToBytes(l0, h0, l1, h1);
+        var b23 = ToBytes(l2, h2, l3, h3);
+        var b45 = ToBytes(l4, h4, l5, h5);
+        var b67 = ToBytes(l6, h6, l7, h7);
+
+        ref var dst = ref MemoryMarshal.GetArrayDataReference(outPlane);
+        _ = outPlane[outOffset + 7 * outStride + 7];
+        _ = outPlane[outOffset];
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset), b01.GetElement(0));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + outStride), b01.GetElement(1));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 2 * outStride), b23.GetElement(0));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 3 * outStride), b23.GetElement(1));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 4 * outStride), b45.GetElement(0));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 5 * outStride), b45.GetElement(1));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 6 * outStride), b67.GetElement(0));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 7 * outStride), b67.GetElement(1));
+    }
+
+    /// <summary>
+    /// Two rows (each a left and a right half) → 16 output bytes, row a then row b.
+    /// With PackedSimd: trunc(s + 128.5) first and the saturating narrows clamp, the same
+    /// bytes as trunc(min(max(s + 128.5, 0), 255)) by the argument in
+    /// <see cref="Idct8x8V256(byte[], int, int, ReadOnlySpan{short}, bool, bool)"/>.
+    /// Elsewhere the clamp comes first and the narrows truncate exact 0…255 lanes.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector128<ulong> ToBytes(Vector128<float> aLo, Vector128<float> aHi, Vector128<float> bLo, Vector128<float> bHi)
+    {
+        var bias = Vector128.Create(Bias);
+        if (PackedSimd.IsSupported)
+        {
+            var a = PackedSimd.ConvertNarrowingSaturateSigned(PackedSimd.ConvertToInt32Saturate(aLo + bias), PackedSimd.ConvertToInt32Saturate(aHi + bias));
+            var b = PackedSimd.ConvertNarrowingSaturateSigned(PackedSimd.ConvertToInt32Saturate(bLo + bias), PackedSimd.ConvertToInt32Saturate(bHi + bias));
+            return PackedSimd.ConvertNarrowingSaturateUnsigned(a, b).AsUInt64();
+        }
+
+        var lo = Vector128<float>.Zero;
+        var hi = Vector128.Create(Max);
+        var ia = Vector128.Narrow(
+            Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(aLo + bias, lo), hi)),
+            Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(aHi + bias, lo), hi))).AsUInt16();
+        var ib = Vector128.Narrow(
+            Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(bLo + bias, lo), hi)),
+            Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(bHi + bias, lo), hi))).AsUInt16();
+        return Vector128.Narrow(ia, ib).AsUInt64();
+    }
+
+    /// <summary>
+    /// Both 1-D passes; output row r is (<c>l</c>r, <c>h</c>r), before level shift and rounding.
+    /// The block is handled as four 4×4 quadrants: rows 0–3 / 4–7 × left / right half.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void TransformV128RegRows(ReadOnlySpan<short> data, bool halfRows, bool halfCols,
+        out Vector128<float> l0, out Vector128<float> l1, out Vector128<float> l2, out Vector128<float> l3,
+        out Vector128<float> l4, out Vector128<float> l5, out Vector128<float> l6, out Vector128<float> l7,
+        out Vector128<float> h0, out Vector128<float> h1, out Vector128<float> h2, out Vector128<float> h3,
+        out Vector128<float> h4, out Vector128<float> h5, out Vector128<float> h6, out Vector128<float> h7)
+    {
+        if (data.Length < 64)
+            throw new ArgumentException("IDCT block needs 64 coefficients.", nameof(data));
+        ref var d = ref MemoryMarshal.GetReference(data);
+
+        // Column pass, lane-parallel on each half as loaded: a = left half (columns 0–3),
+        // b = right half (columns 4–7). Coefficient rows 4–7 zero (halfRows): the f0…f3 half
+        // of the transform. Columns 4–7 zero (halfCols): the right half's outputs are exact
+        // +0 and only feed the half of the row pass that is dropped, so they are not computed.
+        Vector128<float> a0, a1, a2, a3, a4, a5, a6, a7;
+        Vector128<float> b0 = default, b1 = default, b2 = default, b3 = default, b4 = default, b5 = default, b6 = default, b7 = default;
+        LoadRow128(ref d, 0, out var x0, out var y0);
+        LoadRow128(ref d, 1, out var x1, out var y1);
+        LoadRow128(ref d, 2, out var x2, out var y2);
+        LoadRow128(ref d, 3, out var x3, out var y3);
+        if (halfRows)
+        {
+            Idct1DHalf(x0, x1, x2, x3, out a0, out a1, out a2, out a3, out a4, out a5, out a6, out a7);
+            if (!halfCols)
+                Idct1DHalf(y0, y1, y2, y3, out b0, out b1, out b2, out b3, out b4, out b5, out b6, out b7);
+        }
+        else
+        {
+            LoadRow128(ref d, 4, out var x4, out var y4);
+            LoadRow128(ref d, 5, out var x5, out var y5);
+            LoadRow128(ref d, 6, out var x6, out var y6);
+            LoadRow128(ref d, 7, out var x7, out var y7);
+            Idct1D(x0, x1, x2, x3, x4, x5, x6, x7, out a0, out a1, out a2, out a3, out a4, out a5, out a6, out a7);
+            if (!halfCols)
+                Idct1D(y0, y1, y2, y3, y4, y5, y6, y7, out b0, out b1, out b2, out b3, out b4, out b5, out b6, out b7);
+        }
+
+        // Transpose each quadrant: afterwards a0…a3 hold frequencies 0–3 of output rows 0–3
+        // (one row per lane), a4…a7 the same for rows 4–7, and b0…b3 / b4…b7 frequencies 4–7.
+        Transpose4(ref a0, ref a1, ref a2, ref a3);
+        Transpose4(ref a4, ref a5, ref a6, ref a7);
+        if (!halfCols)
+        {
+            Transpose4(ref b0, ref b1, ref b2, ref b3);
+            Transpose4(ref b4, ref b5, ref b6, ref b7);
+        }
+
+        // Row pass, lane-parallel over rows 0–3 (→ l) and rows 4–7 (→ h): l x / h x is
+        // output column x of those rows.
+        if (halfCols)
+        {
+            Idct1DHalf(a0, a1, a2, a3, out l0, out l1, out l2, out l3, out l4, out l5, out l6, out l7);
+            Idct1DHalf(a4, a5, a6, a7, out h0, out h1, out h2, out h3, out h4, out h5, out h6, out h7);
+        }
+        else
+        {
+            Idct1D(a0, a1, a2, a3, b0, b1, b2, b3, out l0, out l1, out l2, out l3, out l4, out l5, out l6, out l7);
+            Idct1D(a4, a5, a6, a7, b4, b5, b6, b7, out h0, out h1, out h2, out h3, out h4, out h5, out h6, out h7);
+        }
+
+        // Back to rows: l0…l3 → left halves of rows 0–3, l4…l7 → right halves of rows 0–3,
+        // h0…h3 / h4…h7 the same for rows 4–7; then regroup into left (l) and right (h) halves.
+        Transpose4(ref l0, ref l1, ref l2, ref l3);
+        Transpose4(ref l4, ref l5, ref l6, ref l7);
+        Transpose4(ref h0, ref h1, ref h2, ref h3);
+        Transpose4(ref h4, ref h5, ref h6, ref h7);
+        (l4, l5, l6, l7, h0, h1, h2, h3) = (h0, h1, h2, h3, l4, l5, l6, l7);
+    }
+
+    /// <summary>Test hook: <see cref="TransformV128RegRows"/> stored row-major.</summary>
+    internal static void TransformV128Reg(ReadOnlySpan<short> data, Span<float> o) => TransformV128Reg(data, o, false, false);
+
+    /// <summary>Test hook: the sparse variants of <see cref="TransformV128RegRows"/>, stored row-major.</summary>
+    internal static void TransformV128Reg(ReadOnlySpan<short> data, Span<float> o, bool halfRows, bool halfCols)
+    {
+        TransformV128RegRows(data, halfRows, halfCols,
+            out var l0, out var l1, out var l2, out var l3, out var l4, out var l5, out var l6, out var l7,
+            out var h0, out var h1, out var h2, out var h3, out var h4, out var h5, out var h6, out var h7);
+        ReadOnlySpan<Vector128<float>> rows = [l0, h0, l1, h1, l2, h2, l3, h3, l4, h4, l5, h5, l6, h6, l7, h7];
+        for (var i = 0; i < rows.Length; i++)
+            rows[i].CopyTo(o.Slice(i * 4));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void LoadRow128(ref short data, int row, out Vector128<float> lo, out Vector128<float> hi)
+    {
+        var s = Vector128.LoadUnsafe(ref data, (nuint)(row * 8));
+        lo = V128.ConvertToSingle(Vector128.WidenLower(s));
+        hi = V128.ConvertToSingle(Vector128.WidenUpper(s));
+    }
+
+    /// <summary>
+    /// In-place 4×4 transpose. Lanes pair up by a 64-bit shift and a constant-mask select,
+    /// then the 64-bit halves recombine: on wasm each step is one i64x2 shift and/or one
+    /// i8x16.shuffle (Vector128.Shuffle would be a runtime swizzle there).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void Transpose4(ref Vector128<float> r0, ref Vector128<float> r1, ref Vector128<float> r2, ref Vector128<float> r3)
+    {
+        var even = Vector128.Create(-1, 0, -1, 0).AsSingle();
+        var t0 = Vector128.ConditionalSelect(even, r0, V128.ShiftLeft(r1.AsUInt64(), 32).AsSingle());          // r0.0 r1.0 r0.2 r1.2
+        var t1 = Vector128.ConditionalSelect(even, V128.ShiftRightLogical(r0.AsUInt64(), 32).AsSingle(), r1); // r0.1 r1.1 r0.3 r1.3
+        var t2 = Vector128.ConditionalSelect(even, r2, V128.ShiftLeft(r3.AsUInt64(), 32).AsSingle());
+        var t3 = Vector128.ConditionalSelect(even, V128.ShiftRightLogical(r2.AsUInt64(), 32).AsSingle(), r3);
+        r0 = Vector128.Create(t0.AsUInt64().GetLower(), t2.AsUInt64().GetLower()).AsSingle();
+        r1 = Vector128.Create(t1.AsUInt64().GetLower(), t3.AsUInt64().GetLower()).AsSingle();
+        r2 = Vector128.Create(t0.AsUInt64().GetUpper(), t2.AsUInt64().GetUpper()).AsSingle();
+        r3 = Vector128.Create(t1.AsUInt64().GetUpper(), t3.AsUInt64().GetUpper()).AsSingle();
+    }
+
+    /// <summary>The Vector128 twin of the Vector256 <c>Idct1DHalf</c>; textually identical.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void Idct1DHalf(Vector128<float> f0, Vector128<float> f1, Vector128<float> f2, Vector128<float> f3,
+        out Vector128<float> s0, out Vector128<float> s1, out Vector128<float> s2, out Vector128<float> s3,
+        out Vector128<float> s4, out Vector128<float> s5, out Vector128<float> s6, out Vector128<float> s7)
+    {
+        var a0 = f0 * K4;
+        var b0 = f2 * C2;
+        var b1 = f2 * C6;
+        var e0 = a0 + b0;
+        var e1 = a0 + b1;
+        var e2 = a0 - b1;
+        var e3 = a0 - b0;
+        var o0 = f1 * C1 + f3 * C3;
+        var o1 = f1 * C3 - f3 * C7;
+        var o2 = f1 * C5 - f3 * C1;
+        var o3 = f1 * C7 - f3 * C5;
+        s0 = e0 + o0;
+        s1 = e1 + o1;
+        s2 = e2 + o2;
+        s3 = e3 + o3;
+        s4 = e3 - o3;
+        s5 = e2 - o2;
+        s6 = e1 - o1;
+        s7 = e0 - o0;
+    }
+
     // ------------------------------------------------------------------ Vector128
 
     /// <summary>
@@ -527,8 +750,8 @@ internal static class JpegIdct
         var bias = Vector128.Create(Bias);
         for (var y = 0; y < 8; y++)
         {
-            var a = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(Vector128.Create<float>(o.Slice(y * 8)) + bias, lo), hi));
-            var b = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(Vector128.Create<float>(o.Slice(y * 8 + 4)) + bias, lo), hi));
+            var a = V128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(Vector128.Create<float>(o.Slice(y * 8)) + bias, lo), hi));
+            var b = V128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(Vector128.Create<float>(o.Slice(y * 8 + 4)) + bias, lo), hi));
             var w = Vector128.Narrow(a, b).AsUInt16();
             var bytes = Vector128.Narrow(w, w).AsUInt64();
             MemoryMarshal.Write(outPlane.AsSpan(outOffset + y * outStride, 8), bytes.GetElement(0));
@@ -586,7 +809,7 @@ internal static class JpegIdct
     private static Vector128<float> LoadHalf128(ReadOnlySpan<short> data, int row, int half)
     {
         var s = Vector128.Create(data.Slice(row * 8, 8));
-        return Vector128.ConvertToSingle(half == 0 ? Vector128.WidenLower(s) : Vector128.WidenUpper(s));
+        return V128.ConvertToSingle(half == 0 ? Vector128.WidenLower(s) : Vector128.WidenUpper(s));
     }
 
     // Reduced-IDCT basis tables, T[u * B + p] = (c_u / 2) * cos((2p+1) u π / (2B)).
@@ -702,10 +925,10 @@ internal static class JpegIdct
         var lo = Vector128<float>.Zero;
         var hi = Vector128.Create(Max);
         var bias = Vector128.Create(Bias);
-        var i0 = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s0 + bias, lo), hi));
-        var i1 = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s1 + bias, lo), hi));
-        var i2 = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s2 + bias, lo), hi));
-        var i3 = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s3 + bias, lo), hi));
+        var i0 = V128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s0 + bias, lo), hi));
+        var i1 = V128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s1 + bias, lo), hi));
+        var i2 = V128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s2 + bias, lo), hi));
+        var i3 = V128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s3 + bias, lo), hi));
 
         // Every lane is 0..255 here, so the truncating narrows are exact.
         var bytes = Vector128.Narrow(Vector128.Narrow(i0, i1).AsUInt16(), Vector128.Narrow(i2, i3).AsUInt16()).AsUInt32();
@@ -751,7 +974,7 @@ internal static class JpegIdct
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static Vector128<float> Pass1(ReadOnlySpan<short> row, Vector128<float> t0, Vector128<float> t1, Vector128<float> t2, Vector128<float> t3)
         {
-            var x = Vector128.ConvertToSingle(Vector128.WidenLower(Vector128.Create(row)));
+            var x = V128.ConvertToSingle(Vector128.WidenLower(Vector128.Create(row)));
             var acc = Vector128<float>.Zero + t0 * Vector128.Shuffle(x, Vector128.Create(0));
             acc += t1 * Vector128.Shuffle(x, Vector128.Create(1));
             acc += t2 * Vector128.Shuffle(x, Vector128.Create(2));

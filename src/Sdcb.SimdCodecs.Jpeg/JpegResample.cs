@@ -66,8 +66,8 @@ internal static class JpegResample
             var eight = Vector128.Create((ushort)8);
             for (; i + 16 <= n; i += 16)
             {
-                var lo = Vector128.ShiftRightLogical(Vector128.LoadUnsafe(ref s, (nuint)i) + eight, 4);
-                var hi = Vector128.ShiftRightLogical(Vector128.LoadUnsafe(ref s, (nuint)(i + 8)) + eight, 4);
+                var lo = V128.ShiftRightLogical(Vector128.LoadUnsafe(ref s, (nuint)i) + eight, 4);
+                var hi = V128.ShiftRightLogical(Vector128.LoadUnsafe(ref s, (nuint)(i + 8)) + eight, 4);
                 Vector128.Narrow(lo, hi).StoreUnsafe(ref d, (nuint)i);
             }
         }
@@ -162,7 +162,7 @@ internal static class JpegResample
     {
         var i = 0;
         for (; i + 8 <= w; i += 8)
-            Vector128.ShiftLeft(Load8(ref near, i), 4).StoreUnsafe(ref d, (nuint)i);
+            V128.ShiftLeft(Load8(ref near, i), 4).StoreUnsafe(ref d, (nuint)i);
         return i;
     }
 
@@ -172,7 +172,7 @@ internal static class JpegResample
         var three = Vector128.Create((ushort)3);
         var i = 0;
         for (; i + 8 <= w; i += 8)
-            Vector128.ShiftLeft(Load8(ref near, i) * three + Load8(ref far, i), 2).StoreUnsafe(ref d, (nuint)i);
+            V128.ShiftLeft(Load8(ref near, i) * three + Load8(ref far, i), 2).StoreUnsafe(ref d, (nuint)i);
         return i;
     }
 
@@ -188,8 +188,8 @@ internal static class JpegResample
             var tc = Load8(ref near, i) * three + Load8(ref far, i);
             var a = tp * three + tc; // output 2i−1
             var b = tc * three + tp; // output 2i
-            var lo = Vector128.WidenLower(a) | Vector128.ShiftLeft(Vector128.WidenLower(b), 16);
-            var hi = Vector128.WidenUpper(a) | Vector128.ShiftLeft(Vector128.WidenUpper(b), 16);
+            var lo = Vector128.WidenLower(a) | V128.ShiftLeft(Vector128.WidenLower(b), 16);
+            var hi = Vector128.WidenUpper(a) | V128.ShiftLeft(Vector128.WidenUpper(b), 16);
             lo.AsUInt16().StoreUnsafe(ref d, (nuint)(2 * i - 1));
             hi.AsUInt16().StoreUnsafe(ref d, (nuint)(2 * i + 7));
         }
