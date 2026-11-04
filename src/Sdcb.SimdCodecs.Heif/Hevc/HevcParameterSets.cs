@@ -246,6 +246,9 @@ internal sealed class HevcSps
     internal int TransferCharacteristics = 2;
     internal int MatrixCoefficients = 2;
 
+    // VUI chroma_sample_loc_type_top_field (E.2.1); 0 (left) when absent, or when the VUI ends before it.
+    internal int ChromaSampleLocType;
+
     internal int CtbSizeY => 1 << CtbLog2SizeY;
     internal int PicWidthInCtbs => (Width + CtbSizeY - 1) >> CtbLog2SizeY;
     internal int PicHeightInCtbs => (Height + CtbSizeY - 1) >> CtbLog2SizeY;
@@ -456,6 +459,22 @@ internal sealed class HevcSps
                 sps.TransferCharacteristics = (int)r.ReadBits(8);
                 sps.MatrixCoefficients = (int)r.ReadBits(8);
             }
+        }
+
+        // chroma_loc_info_present_flag, then two ue(v) (top and bottom field). It is informational (the planar output
+        // reports it; the RGB conversion replicates chroma regardless), so a VUI that ends here, or a value outside
+        // the 0..5 the standard defines, reads as the default 0 instead of failing a picture that decodes today.
+        if (r.BitsLeft < 1 || !r.ReadFlag())
+            return;
+        var probe = r;
+        try
+        {
+            var top = probe.ReadUe();
+            sps.ChromaSampleLocType = top <= 5 ? (int)top : 0;
+        }
+        catch (InvalidDataException)
+        {
+            sps.ChromaSampleLocType = 0;
         }
     }
 }

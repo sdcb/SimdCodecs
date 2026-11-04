@@ -59,7 +59,7 @@ public static class HeifDecoder
         var container = HeifContainer.Parse(data);
         var (width, height) = container.DisplaySize();
         var pixels = new byte[(long)width * height * 4];
-        var bitDepth = DecodeInto(data, container, pixels, width * 4, ImagePixelFormat.Rgba32);
+        var bitDepth = DecodeInto(data, container, pixels, width * 4, PixelFormat.Rgba32);
         return new HeifImage(width, height, pixels, bitDepth, container.IccProfile);
     }
 
@@ -82,7 +82,7 @@ public static class HeifDecoder
         {
             throw new ArgumentException($"The destination needs {(long)width * height * 4} bytes for a {width}x{height} image.", nameof(rgbaDestination));
         }
-        DecodeInto(data, container, rgbaDestination, width * 4, ImagePixelFormat.Rgba32);
+        DecodeInto(data, container, rgbaDestination, width * 4, PixelFormat.Rgba32);
         return (width, height);
     }
 
@@ -106,16 +106,17 @@ public static class HeifDecoder
     /// the exception the body threw (an <see cref="InvalidDataException"/> when any tile threw one), never as an
     /// <see cref="AggregateException"/>, so the parallel path fails the way the serial one does.
     /// </summary>
-    internal static void ForEachTile(int count, Action<int> body)
+    internal static void ForEachTile(int count, Action<int> body, CancellationToken cancellationToken = default)
     {
         if (count == 1)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             body(0);
             return;
         }
         try
         {
-            Parallel.For(0, count, body);
+            Parallel.For(0, count, new ParallelOptions { CancellationToken = cancellationToken }, body);
         }
         catch (AggregateException e)
         {
@@ -171,10 +172,12 @@ public static class HeifDecoder
     /// Decodes the primary image, display-oriented, into <paramref name="destination"/> in <paramref name="format"/>
     /// with <paramref name="stride"/> bytes per row; returns the coded bit depth. Each tile is converted into the
     /// output as soon as it is decoded and its planes go back to the pool (<see cref="HeifCanvas"/>), so the only
-    /// image-sized buffer is the destination.
+    /// image-sized buffer is the destination. A 16-bit <paramref name="format"/> takes the 16-bit conversion
+    /// (<see cref="HeifColor.For16"/>); an 8-bit one the frozen 8-bit conversion, straight from the coded samples.
+    /// Cancellation is checked per tile and per band of output rows.
     /// </summary>
     internal static unsafe int DecodeInto(ReadOnlySpan<byte> data, HeifContainer container, Span<byte> destination, int stride,
-        ImagePixelFormat format)
+        PixelFormat format, CancellationToken cancellationToken = default)
     {
         var payloads = ResolvePayloads(data, container);
         var configs = container.TileConfigs;
@@ -185,13 +188,16 @@ public static class HeifDecoder
         {
             throw new InvalidDataException("The grid tiles do not cover the output image.");
         }
-        var coefficients = container.NclxColour is { } nclx
-            ? HeifColor.For(nclx.MatrixCoefficients, nclx.FullRange, sps.BitDepthY)
-            : HeifColor.For(sps.MatrixCoefficients, sps.VideoFullRange, sps.BitDepthY);
+        var (matrix, fullRange) = container.NclxColour is { } nclx
+            ? (nclx.MatrixCoefficients, nclx.FullRange)
+            : (sps.MatrixCoefficients, sps.VideoFullRange);
+        var coefficients = format.Sample == SampleFormat.UInt16
+            ? HeifColor.For16(matrix, fullRange, sps.BitDepthY)
+            : HeifColor.For(matrix, fullRange, sps.BitDepthY);
 
         fixed (byte* pointer = destination)
         {
-            var canvas = new HeifCanvas(container, pointer, destination.Length, stride, format, coefficients);
+            var canvas = new HeifCanvas(container, pointer, destination.Length, stride, format, coefficients, cancellationToken);
             var columns = container.GridColumns;
             ForEachTile(payloads.Length, i =>
             {
@@ -214,7 +220,7 @@ public static class HeifDecoder
                 {
                     picture.Release();
                 }
-            });
+            }, cancellationToken);
         }
         return sps.BitDepthY;
     }
@@ -227,7 +233,16 @@ public static class HeifDecoder
     internal static (ushort[] Y, ushort[] Cb, ushort[] Cr, int Width, int Height, int BitDepth) DecodeYuv(ReadOnlySpan<byte> data)
     {
         var container = HeifContainer.Parse(data);
+        return DecodeYuv(data, container, default);
+    }
+
+    /// <inheritdoc cref="DecodeYuv(ReadOnlySpan{byte})"/>
+    internal static (ushort[] Y, ushort[] Cb, ushort[] Cr, int Width, int Height, int BitDepth) DecodeYuv(ReadOnlySpan<byte> data,
+        HeifContainer container, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         var pictures = DecodeCodedImages(data, container);
+        cancellationToken.ThrowIfCancellationRequested();
         var (tileW, tileH) = ValidateTiles(container, pictures);
         int w = container.CanvasWidth, h = container.CanvasHeight;
         int cw = (w + 1) >> 1, ch = (h + 1) >> 1;

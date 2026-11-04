@@ -59,12 +59,20 @@ internal sealed class HeifContainer
     internal List<Transform> Transforms { get; } = [];
 
     /// <exception cref="InvalidDataException">The file is not a decodable HEIF still image.</exception>
-    internal static HeifContainer Parse(ReadOnlySpan<byte> data)
+    internal static HeifContainer Parse(ReadOnlySpan<byte> data) => Parse(data, 0);
+
+    /// <summary>
+    /// <see cref="Parse(ReadOnlySpan{byte})"/> with item <paramref name="itemId"/> in place of the primary item (0: the
+    /// primary): how a <c>thmb</c> thumbnail, an image item of its own, is decoded.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The file or the item is not decodable.</exception>
+    internal static HeifContainer Parse(ReadOnlySpan<byte> data, uint itemId)
     {
         var items = ItemContainer.Parse(data);
         var container = new HeifContainer { Items = items };
-        if (items.PrimaryItemId == 0) throw new InvalidDataException("The HEIF file has no primary item ('pitm').");
-        var primary = items.Find(items.PrimaryItemId) ?? throw new InvalidDataException("The primary item is not declared in 'iinf'.");
+        if (itemId == 0) itemId = items.PrimaryItemId;
+        if (itemId == 0) throw new InvalidDataException("The HEIF file has no primary item ('pitm').");
+        var primary = items.Find(itemId) ?? throw new InvalidDataException("The image item is not declared in 'iinf'.");
         container.Primary = primary;
 
         if (primary.Type == ItemHvc1)

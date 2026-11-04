@@ -10,13 +10,20 @@ namespace Sdcb.SimdCodecs.Heif;
 /// this package conveys no patent licence), so a consumer that installs it enables it explicitly, once, at
 /// start-up: <c>SimdCodecs.Register(HeifImageDecoder.Registration)</c>.
 /// <para>
-/// The primary image is decoded to 8-bit RGB, display-oriented: the clean aperture (<c>clap</c>), rotation
+/// The primary image is decoded to RGB, display-oriented: the clean aperture (<c>clap</c>), rotation
 /// (<c>irot</c>) and mirror (<c>imir</c>) properties are applied, so <see cref="ImageInfo.Width"/> /
 /// <see cref="ImageInfo.Height"/> are the displayed size and <see cref="ImageInfo.Orientation"/> is always
 /// <see cref="ImageOrientation.Normal"/>. Alpha, depth and gain-map auxiliary images are not decoded, so the
-/// raster has 3 channels. A Main 10 source is converted to 8-bit samples in 1.x (it is not kept at 10 bits),
-/// so <see cref="ImageInfo.BitDepth"/> reports 8 — the precision of the samples handed back, which is what a
-/// consumer can rely on; <see cref="HeifDecoder.ReadInfo"/> reports the coded depth.
+/// raster has 3 channels. An 8-bit (Main) image decodes to 8-bit samples; a Main 10 image to 16-bit samples
+/// with <see cref="IDecodedImage.BitDepth"/> 10 (the full 10 bits of precision, scaled to 0..65535 by the 16-bit
+/// conversion). <see cref="TryDecodeInto"/> converts straight from the coded samples in either depth.
+/// </para>
+/// <para>
+/// Metadata: the <c>Exif</c> and XMP (<c>mime</c>) items describing the primary image are passed through
+/// (<see cref="TryReadMetadata"/>); its <c>thmb</c> thumbnail decodes through <see cref="TryDecodeThumbnail"/>. The
+/// Exif orientation tag is not applied (the item properties are): transcode with care, or rewrite it to 1.
+/// The planes (<see cref="IPlanarImageDecoder"/>) are the canvas before the transformative properties, at the coded
+/// bit depth; an image with any transform has no planar output (<see cref="TryReadPlanarInfo"/> is false).
 /// </para>
 /// <para>
 /// An ICC profile in the container is passed through as is. <see cref="IDecodedImage.ColorEncoding"/> takes
@@ -34,7 +41,7 @@ namespace Sdcb.SimdCodecs.Heif;
 /// false rather than throw.
 /// </para>
 /// </summary>
-public sealed class HeifImageDecoder : IImageDecoder
+public sealed class HeifImageDecoder : IPlanarImageDecoder
 {
     /// <summary>
     /// This codec's entry for <c>SimdCodecs.Register</c> — its members bound by method group, as the facade's
@@ -42,7 +49,8 @@ public sealed class HeifImageDecoder : IImageDecoder
     /// as a single frame.
     /// </summary>
     public static ImageDecoderRegistration Registration { get; } =
-        new(ImageFormat.Heif, CanDecode, TryReadInfo, TryDecode, TryDecodeInto);
+        new(ImageFormat.Heif, CanDecode, TryReadInfo, TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata,
+            TryDecodeThumbnail, tryReadPlanarInfo: TryReadPlanarInfo, tryDecodePlanes: TryDecodePlanes);
 
     /// <summary>The <c>ftyp</c> box with its compatible brands; an AVIF brand can sit anywhere in the list.</summary>
     public static int SignatureLength => 64;
@@ -79,10 +87,13 @@ public sealed class HeifImageDecoder : IImageDecoder
         try
         {
             var (width, height) = container.DisplaySize();
-            info = new ImageInfo(width, height, 3, SampleFormat.UInt8)
+            var depth = container.TileConfigs[0].ParseSps().BitDepthY;
+            info = new ImageInfo(width, height, 3, depth > 8 ? SampleFormat.UInt16 : SampleFormat.UInt8)
             {
                 Format = ImageFormat.Heif,
-                BitDepth = 8,
+                BitDepth = depth,
+                ColorEncoding = ColorEncodingOf(container),
+                HasThumbnail = HeifMetadata.FindThumbnail(container) is not null,
             };
             return true;
         }
@@ -93,19 +104,85 @@ public sealed class HeifImageDecoder : IImageDecoder
     }
 
     /// <inheritdoc />
-    /// <remarks>8-bit RGB, 3 channels, at the display size; a Main 10 source is converted to 8 bits (see the class
-    /// remarks).</remarks>
-    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image)
+    /// <remarks>HEIF does not scale natively: the display size, at scale 1.</remarks>
+    public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
+        out int width, out int height, out int scaleDenominator) =>
+        ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
+
+    /// <inheritdoc />
+    /// <remarks>RGB, 3 channels, at the display size: 8-bit samples for an 8-bit image, 16-bit (bit depth 10) for a
+    /// Main 10 one. A region is decoded whole and cropped.</remarks>
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         image = null;
         if (!TryParse(data, out var container)) return false;
+        (int Width, int Height) size;
+        int depth;
         try
         {
-            var (width, height) = container.DisplaySize();
-            var rgb = new byte[(long)width * height * 3];
-            HeifDecoder.DecodeInto(data, container, rgb, width * 3, ImagePixelFormat.Rgb24);
+            size = container.DisplaySize();
+            depth = container.TileConfigs[0].ParseSps().BitDepthY;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+        options?.Validate(size.Width, size.Height, supportsScale: false);
 
-            image = new RasterImage(width, height, 3, SampleFormat.UInt8, rgb, container.IccProfile, ColorEncodingOf(container));
+        var wide = depth > 8;
+        var raster = RasterImage.Create(size.Width, size.Height, 3, wide ? SampleFormat.UInt16 : SampleFormat.UInt8,
+            options?.Pool, container.IccProfile, ColorEncodingOf(container), bitDepth: wide && depth < 16 ? depth : 0,
+            metadata: HeifMetadata.Read(data, container));
+        try
+        {
+            HeifDecoder.DecodeInto(data, container, raster.WritablePixels, size.Width * 3 * (wide ? 2 : 1),
+                wide ? PixelFormat.Rgb48 : PixelFormat.Rgb24, cancellationToken);
+        }
+        catch (Exception e)
+        {
+            raster.Dispose();
+            if (e is InvalidDataException or ArgumentException or OverflowException)
+                return false;
+            throw;
+        }
+        image = DecodeOptions.Apply(raster, options);
+        return true;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Every layout and stride is written straight into <paramref name="destination"/>, one grid tile at a time,
+    /// with no image-sized intermediate: 8-bit formats through the frozen 8-bit conversion, 16-bit ones through the
+    /// 16-bit conversion, both from the coded samples. <see cref="PixelFormat.Gray8"/> is the stored luma,
+    /// range-mapped to 8 bits (see <see cref="IImageDecoder.TryDecodeInto"/> on codecs that store luma; the formula is
+    /// frozen in <c>HeifColor</c>), except for an identity-matrix (GBR) image, which takes the luma of the RGB. A
+    /// region is decoded whole and cropped. False, without throwing, for malformed or unsupported data, a
+    /// destination that does not fit, and a PQ or HLG transfer function.
+    /// </remarks>
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        if (options?.Region is not null)
+            return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
+        if (!TryParse(data, out var container)) return false;
+        (int Width, int Height) size;
+        try
+        {
+            size = container.DisplaySize();
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+        options?.Validate(size.Width, size.Height, supportsScale: false);
+        if (!PixelConverter.TryGetLayout(size.Width, size.Height, format, stride, destination.Length, out var rowStride)) return false;
+        try
+        {
+            if (ColorEncodingOf(container).Transfer is TransferFunction.Pq or TransferFunction.Hlg) return false;
+
+            // Every layout and stride is written straight into the destination, a tile at a time (HeifCanvas).
+            HeifDecoder.DecodeInto(data, container, destination, rowStride, format, cancellationToken);
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or OverflowException)
@@ -115,31 +192,90 @@ public sealed class HeifImageDecoder : IImageDecoder
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Every layout and stride is written straight into <paramref name="destination"/>, one grid tile at a time,
-    /// with no image-sized intermediate. <see cref="ImagePixelFormat.Gray8"/> is the stored luma, range-mapped to 8 bits
-    /// (see <see cref="IImageDecoder.TryDecodeInto"/> on codecs that store luma; the formula is frozen in
-    /// <c>HeifColor</c>), except for an identity-matrix (GBR) image, which takes the luma of the RGB. False, without
-    /// throwing, for malformed or unsupported data, a destination that does not fit, and a PQ or HLG transfer
-    /// function.
-    /// </remarks>
-    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format)
+    /// <remarks>The <c>Exif</c> item (from its TIFF header) and XMP <c>mime</c> item that describe the primary image
+    /// (<c>cdsc</c>), and the <c>colr</c> ICC profile.</remarks>
+    public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata)
     {
+        metadata = null;
         if (!TryParse(data, out var container)) return false;
+        metadata = HeifMetadata.Read(data, container);
+        return true;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>The primary image's <c>thmb</c> item, an HEVC image of its own, decoded with its own properties.</remarks>
+    public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail)
+    {
+        thumbnail = null;
+        if (!TryParse(data, out var container) || HeifMetadata.FindThumbnail(container) is not { } item) return false;
         try
         {
-            var (width, height) = container.DisplaySize();
-            if (!PixelConverter.TryGetLayout(width, height, format, stride, destination.Length, out var rowStride)) return false;
-            if (ColorEncodingOf(container).Transfer is TransferFunction.Pq or TransferFunction.Hlg) return false;
-
-            // Every layout and stride is written straight into the destination, a tile at a time (HeifCanvas).
-            HeifDecoder.DecodeInto(data, container, destination, rowStride, format);
+            var thumb = HeifContainer.Parse(data, item.Id);
+            var (width, height) = thumb.DisplaySize();
+            var depth = thumb.TileConfigs[0].ParseSps().BitDepthY;
+            var wide = depth > 8;
+            var raster = RasterImage.Allocate(width, height, 3, wide ? SampleFormat.UInt16 : SampleFormat.UInt8,
+                thumb.IccProfile, ColorEncodingOf(thumb), bitDepth: wide && depth < 16 ? depth : 0);
+            HeifDecoder.DecodeInto(data, thumb, raster.WritablePixels, width * 3 * (wide ? 2 : 1), wide ? PixelFormat.Rgb48 : PixelFormat.Rgb24);
+            thumbnail = raster;
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or OverflowException)
         {
             return false;
         }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>4:2:0 at the coded bit depth, on the canvas (the grid output before transforms). False for an image
+    /// with a <c>clap</c>, <c>irot</c> or <c>imir</c> property: the planes would not be the displayed image, and an odd
+    /// crop cannot be carried by 4:2:0 planes at all; decode such an image through <see cref="TryDecode"/>.</remarks>
+    public static bool TryReadPlanarInfo(ReadOnlySpan<byte> data, out PlanarInfo info)
+    {
+        info = default;
+        if (!TryParse(data, out var container) || container.Transforms.Count != 0) return false;
+        try
+        {
+            info = PlanarInfoOf(container);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public static bool TryDecodePlanes(ReadOnlySpan<byte> data, Span<ushort> y, Span<ushort> cb, Span<ushort> cr,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryParse(data, out var container) || container.Transforms.Count != 0) return false;
+        try
+        {
+            var info = PlanarInfoOf(container);
+            if (y.Length < info.LumaLength || cb.Length < info.ChromaLength || cr.Length < info.ChromaLength) return false;
+            var planes = HeifDecoder.DecodeYuv(data, container, cancellationToken);
+            planes.Y.AsSpan(0, info.LumaLength).CopyTo(y);
+            planes.Cb.AsSpan(0, info.ChromaLength).CopyTo(cb);
+            planes.Cr.AsSpan(0, info.ChromaLength).CopyTo(cr);
+            return true;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or OverflowException)
+        {
+            return false;
+        }
+    }
+
+    private static PlanarInfo PlanarInfoOf(HeifContainer container)
+    {
+        var sps = container.TileConfigs[0].ParseSps();
+        var (matrix, fullRange) = container.NclxColour is { } nclx
+            ? (nclx.MatrixCoefficients, nclx.FullRange)
+            : (sps.MatrixCoefficients, sps.VideoFullRange);
+        // H.265 E.3.1: chroma_sample_loc_type defaults to 0 (left) when the VUI does not signal it.
+        return new PlanarInfo(container.CanvasWidth, container.CanvasHeight, 2, 2, sps.BitDepthY,
+            (MatrixCoefficients)(matrix is >= 0 and <= 255 ? matrix : 2), fullRange,
+            (ChromaLocation)Math.Clamp(sps.ChromaSampleLocType, 0, 5));
     }
 
     /// <summary>Parses the container of a still image; false for anything <see cref="HeifDecoder"/> cannot decode.</summary>
