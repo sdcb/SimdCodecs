@@ -83,4 +83,21 @@ public sealed class GainMapDecodedImage : IDecodedImage
     /// <summary>The authored SDR base rendition as 8-bit RGBA — the format's
     /// graceful fallback for the display/int path, not a tone-map of the HDR.</summary>
     public byte[] ToRgba8() => Source.Base.ToRgba8();
+
+    /// <summary>The authored SDR base rendition as 16-bit RGBA (its 8-bit samples × 257), like
+    /// <see cref="ToRgba8"/> the integer path's SDR fallback.</summary>
+    public ushort[] ToRgba16() => Source.Base.ToRgba16();
+
+    /// <summary>The integer path: the SDR base rendition in <paramref name="format"/>, as the facade's
+    /// <c>TryDecodeInto</c> writes it.</summary>
+    public bool TryCopyTo(Span<byte> destination, int stride, PixelFormat format) =>
+        Source.Base.TryCopyTo(destination, stride, format);
+
+    /// <summary>The file's metadata blocks (the base JPEG's Exif, XMP and ICC profile); empty when not supplied.</summary>
+    public ImageMetadata Metadata { get; init; } = ImageMetadata.Empty;
+
+    /// <summary>Releases nothing: the rasters live in ordinary memory.</summary>
+    public void Dispose()
+    {
+    }
 }

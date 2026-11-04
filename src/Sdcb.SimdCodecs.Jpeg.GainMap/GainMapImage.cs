@@ -72,7 +72,7 @@ public sealed class GainMapImage
                 output[o + 1] = (float)lut[basePixels[i + baseG]];
                 output[o + 2] = (float)lut[basePixels[i + baseB]];
             }
-            return new RasterImage(width, height, 3, SampleFormat.Float32, outBytes, null, encoding);
+            return RasterImage.Wrap(width, height, 3, SampleFormat.Float32, outBytes, null, encoding);
         }
 
         var logMin = Math.Log2(Metadata.GainMapMin);
@@ -126,7 +126,7 @@ public sealed class GainMapImage
             }
         }
 
-        return new RasterImage(width, height, 3, SampleFormat.Float32, outBytes, null, encoding);
+        return RasterImage.Wrap(width, height, 3, SampleFormat.Float32, outBytes, null, encoding);
     }
 
     /// <summary>The gain-application weight W ∈ [0,1] for a display headroom — the

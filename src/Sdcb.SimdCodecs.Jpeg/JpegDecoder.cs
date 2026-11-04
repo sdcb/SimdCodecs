@@ -178,7 +178,19 @@ public static class JpegDecoder
     /// <exception cref="InvalidDataException">The stream is not a decodable JPEG.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The stride is shorter than a row, or the format is unknown.</exception>
     /// <exception cref="ArgumentException">The destination is too small.</exception>
-    public static (int Width, int Height) DecodeTo(ReadOnlySpan<byte> data, Span<byte> destination, int stride, JpegPixelFormat format, JpegScale scale = JpegScale.Full)
+    public static (int Width, int Height) DecodeTo(ReadOnlySpan<byte> data, Span<byte> destination, int stride, JpegPixelFormat format, JpegScale scale = JpegScale.Full) =>
+        DecodeTo(data, destination, stride, format, scale, default);
+
+    /// <summary>
+    /// <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, JpegPixelFormat, JpegScale)"/>, checking
+    /// <paramref name="cancellationToken"/> once per MCU row.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The stream is not a decodable JPEG.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The stride is shorter than a row, or the format is unknown.</exception>
+    /// <exception cref="ArgumentException">The destination is too small.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    public static (int Width, int Height) DecodeTo(ReadOnlySpan<byte> data, Span<byte> destination, int stride, JpegPixelFormat format,
+        JpegScale scale, CancellationToken cancellationToken)
     {
         var bytesPerPixel = format switch
         {
@@ -202,6 +214,7 @@ public static class JpegDecoder
                     nameof(destination));
             }
 
+            core.CancellationToken = cancellationToken;
             core.DecodeInto(destination, stride, format);
             return (core.OutX, core.OutY);
         }

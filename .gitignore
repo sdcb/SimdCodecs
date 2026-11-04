@@ -280,3 +280,4 @@ tests/Sdcb.SimdCodecs.Tests/Fixtures/heif/*.heic
 tests/Sdcb.SimdCodecs.Tests/Fixtures/heif/*.heics
 benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/heif-inputs/
 tools/heif-fixtures/out/
+.claude/worktrees/
