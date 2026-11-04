@@ -52,7 +52,7 @@ OCR 这类场景足够，但和 WIC（Windows Imaging Component）这类专业�
 **2.0 设计。** 通道布局、样本类型和 alpha 语义三者正交，组合成一个结构体：
 
 ```csharp
-public enum ChannelLayout : byte { Rgba, Bgra, Rgb, Bgr, Gray }
+public enum ChannelLayout : byte { Rgba, Bgra, Rgb, Bgr, Gray, GrayAlpha }
 public enum AlphaMode     : byte { Straight, Premultiplied }   // 只对 Rgba / Bgra 有意义
 
 public readonly record struct PixelFormat
@@ -69,11 +69,13 @@ public readonly record struct PixelFormat
     public static PixelFormat Rgb24   { get; }
     public static PixelFormat Bgr24   { get; }
     public static PixelFormat Gray8   { get; }
+    public static PixelFormat GrayAlpha16 { get; }   // 8 位灰度 + 8 位 alpha
     public static PixelFormat Rgba64  { get; }   // 16 位
     public static PixelFormat Bgra64  { get; }
     public static PixelFormat Rgb48   { get; }
     public static PixelFormat Bgr48   { get; }
     public static PixelFormat Gray16  { get; }
+    public static PixelFormat GrayAlpha32 { get; }   // 16 位灰度 + 16 位 alpha
     public static PixelFormat Rgba32Premultiplied { get; }
     public static PixelFormat Bgra32Premultiplied { get; }
     public static PixelFormat Rgba64Premultiplied { get; }
@@ -84,6 +86,11 @@ public readonly record struct PixelFormat
 构造函数拒绝无意义的组合（例如 `Gray` + `Premultiplied`），所以不存在越界值，`TryGetLayout` 里的枚举范围检查
 也就不需要了。浮点输出不放进 `PixelFormat`：浮点没有规范的整数映射，仍走 `IDecodedImage.ToFloats()`。
 
+`GrayAlpha` 是 1.x 没有的布局。`IDecodedImage` 会产出 2 通道（灰度 + alpha）图像，PNG、TIFF、PNM 也都能存它；
+没有这个布局，解码只能扩成 RGBA 输出，编码器也收不到灰度 + alpha 输入。灰度 + alpha 的预乘没有常见用途，
+`AlphaMode` 仍只对 `Rgba` / `Bgra` 有意义。16 位样本一律是主机字节序，与 `IDecodedImage.Pixels` 相同；文件格式
+要求大端（PNG）时由编码器交换字节。
+
 **需要先定下来的数值约定**（定下后冻结，和 `JpegColor` 一样，改动算输出变化）：
 
 | 转换 | 约定 |
@@ -91,6 +98,7 @@ public readonly record struct PixelFormat
 | 8 位 → 16 位 | `v × 257`，精确，0→0、255→65535 |
 | 16 位 → 8 位 | **保留 1.x 的取高字节（`v >> 8`），已决定。** 它和 `round(v × 255 / 65535)` 最多差 1 个码值，不值得为此改动所有 16 位源的 8 位输出和 golden |
 | N 位源（10、12 位）→ 16 位 | `round(v × 65535 / (2^N − 1))`，满量程线性映射，不是左移补零 |
+| 16 位 → N 位（编码器目标位深 10、12 位等） | `round(v × (2^N − 1) / 65535)`，上一行的精确逆运算：正向映射的误差小于半个 N 位码值，所以 N 位 → 16 位 → N 位原样还原（例如 10 位 HEIF 解码后编码成 10 位 AVIF 不损失） |
 | 预乘 | `round(c × a / max)`；只在输出时预乘，解码器内部和 `IDecodedImage.Pixels` 始终是非预乘的 |
 | 反预乘（编码器输入） | `a = 0` 时颜色取 0；否则 `min(max, round(c × max / a))`。编码器收到预乘输入时先反预乘，再按非预乘输入处理 |
 | 编码器丢弃 alpha | 不合成，直接丢掉（沿用 1.x `PixelConverter` 的约定）。预乘输入先反预乘再丢 alpha，所以它和对应的非预乘输入编码出相同的结果，而不是隐式合成到黑底上。需要合成到某个底色的，由调用方在编码前自己做 |
@@ -395,7 +403,7 @@ public interface IImageEncoder
 {
     static abstract ImageFormat Format { get; }
 
-    /// 编码器把 requested 改成它能原生接收的最接近格式（例如 JPEG 把 Rgba64 改成 Rgb24）。
+    /// 编码器把 requested 改成它能原生接收的最接近格式（例如 JPEG 把 Rgba64 改成 Rgba32）。
     static abstract PixelFormat GetClosestInputFormat(PixelFormat requested);
 
     static abstract IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null);
@@ -436,12 +444,28 @@ SimdCodecs.Encode(IDecodedImage image, ImageFormat format, Stream destination, E
 
 **输入格式。** 分契约、实施、验收三层。
 
-*契约。* 每个编码器至少接收 5 种 8 位布局：`Rgba32`、`Bgra32`、`Rgb24`、`Bgr24`、`Gray8`，以及
+*契约。* 每个编码器至少接收 6 种 8 位布局：`Rgba32`、`Bgra32`、`Rgb24`、`Bgr24`、`Gray8`、`GrayAlpha16`，以及
 `Rgba32Premultiplied`、`Bgra32Premultiplied`（按第 3 节的反预乘约定处理）。对这些格式，`GetClosestInputFormat`
-原样返回；只有编码器存不下的精度（例如 JPEG 收到 16 位格式）才会改成别的格式。这条要求的目的是让 UI 框架的
+原样返回。这条要求的目的是让 UI 框架的
 帧缓冲直接进编码器，调用方不用自己转换：Avalonia、WPF、WinUI、System.Drawing、Direct2D 的位图大多是 BGRA，
 而且往往是预乘的。`stride` 由 `WriteRows` 带进来，不要求调用方把帧缓冲先拷成紧密排列。输入格式决定输出的颜色类型：
 `Gray8` 写成灰度（PNG 灰度、JPEG 单分量），不先展开成 RGBA。
+
+16 位输入按编码器能否存高位深分两类：
+
+- **能存高位深的**（PNG、TIFF、PNM，以后的 AVIF、JXL）：还必须接收 `Rgba64`、`Bgra64`、`Rgb48`、`Bgr48`、`Gray16`、
+  `GrayAlpha32`、`Rgba64Premultiplied`、`Bgra64Premultiplied`，并且**不得悄悄降成 8 位**：16 位进来，文件里就是 16 位
+  （或 `EncodeOptions` 指定的位深）。目标位深小于 16（AVIF 的 10 / 12 位，JXL 的任意位深）时按第 3 节的 16 位 → N 位
+  规则转换。PNG 和 PNM 在 1.x 已有 16 位入口（`PngWriter.EncodeRgba16` / `EncodeRgb16` / `EncodeGray16` /
+  `EncodeGrayAlpha16`，`PnmEncoder.Encode(ReadOnlySpan<ushort>, …)`），适配器直接接上即可。
+- **只能存 8 位的**（JPEG、WebP、GIF、BMP、QOI）：`GetClosestInputFormat` 把 16 位格式协商成对应的 8 位格式
+  （`Rgba64` → `Rgba32`，`Gray16` → `Gray8`，预乘保持预乘），让降精度对调用方可见。调用方仍传 16 位时编码器也接收，
+  按第 3 节的 `v >> 8` 降位，结果与调用方自己降位后再传入相同；门面的 `Encode(IDecodedImage)` 走的就是这条路。
+  有损编码器可以把 16 位作为**可选**的原生路径（例如 JPEG 的颜色转换直接从 16 位样本取 float，省掉一次 8 位量化），
+  不强制，按质量门限验收。
+
+浮点和 HDR（PQ / HLG）输入不在 `PixelFormat` 里，等 AVIF / JXL 做 HDR 编码时另行设计（可能是与
+`IDecodedImage.ToFloats()` 对应的浮点入口）。
 
 *实施。* M0 先在适配器里逐行用 `PixelConverter` 把输入转成编码器内部的格式（同类转换：灰度仍是灰度，有 alpha
 仍有 alpha，不一律转成 RGBA）。`WriteRows` 本来就是逐行的，只需一行临时缓冲，不需要整帧拷贝。为此 2.0 的
@@ -505,7 +529,7 @@ public sealed class RasterImage : IDecodedImage
 
 | # | 项 | 破坏性 | 难度 | 主要影响 |
 |---|---|:---:|:---:|---|
-| 3 | `PixelFormat` 结构体（16 位、预乘） | 是 | 中 | Abstractions、12 个适配器、4 个多帧读取器、门面、JPEG/PNG/WebP 快速路径、测试 |
+| 3 | `PixelFormat` 结构体（16 位、预乘、灰度 + alpha） | 是 | 中 | Abstractions、12 个适配器、4 个多帧读取器、门面、JPEG/PNG/WebP 快速路径、测试 |
 | 4 | `IDecodedImage` 16 位输出、`BitDepth`、`IDisposable` | 是 | 低–中 | Abstractions、HEIF 颜色转换 |
 | 5 | `ImageInfo` 增加颜色与分辨率 | 否 | 低 | 各 codec 的 `TryReadInfo` |
 | 6 | 解码选项与尺寸协商 | 是 | 中–高 | JPEG、HEIF、JPEG 2000、TIFF |
