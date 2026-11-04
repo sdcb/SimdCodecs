@@ -102,5 +102,7 @@ duration)` → `WriteRows(rows, count, stride)` → `Commit()`。
 
 - 注册类和 `ImageMetadata` 用 `init` 属性（门面需要的标 `required`），不用位置参数的构造函数：加成员不会让已编译的
   调用方在运行时找不到方法。只有成对出现的平面委托由 `SimdCodecs.Register` 调 `Validate()` 检查。
-- 每个包都有 `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`（`Microsoft.CodeAnalysis.PublicApiAnalyzers`）：
-  公开 API 的任何变动都要在这两个文件里出现，否则编译报错；发布一个版本时把 Unshipped 并进 Shipped。
+- 每个包都有 `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`（`Microsoft.CodeAnalysis.PublicApiAnalyzers`）。
+  Shipped 记的是 2.0 的公开 API；之后的变动写进 Unshipped，不写就编译报错（RS0016 / RS0017）；发布一个版本时把
+  Unshipped 并进 Shipped。同一分析器里关于可选参数重载形状的 RS0026 / RS0027 在 `.editorconfig` 里关闭：codec 有意
+  同时提供 `byte[]` 和 `ReadOnlySpan<byte>` 重载并带相同的可选参数。

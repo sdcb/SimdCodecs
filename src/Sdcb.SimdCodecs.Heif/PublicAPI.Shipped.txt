@@ -1,0 +1,39 @@
+#nullable enable
+Sdcb.SimdCodecs.Heif.HeifDecoder
+Sdcb.SimdCodecs.Heif.HeifImage
+Sdcb.SimdCodecs.Heif.HeifImage.BitDepth.get -> int
+Sdcb.SimdCodecs.Heif.HeifImage.Dispose() -> void
+Sdcb.SimdCodecs.Heif.HeifImage.Height.get -> int
+Sdcb.SimdCodecs.Heif.HeifImage.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Heif.HeifImage.Rgba.get -> System.ReadOnlySpan<byte>
+Sdcb.SimdCodecs.Heif.HeifImage.Width.get -> int
+Sdcb.SimdCodecs.Heif.HeifImageDecoder
+Sdcb.SimdCodecs.Heif.HeifImageDecoder.HeifImageDecoder() -> void
+Sdcb.SimdCodecs.Heif.HeifInfo
+Sdcb.SimdCodecs.Heif.HeifInfo.BitDepth.get -> int
+Sdcb.SimdCodecs.Heif.HeifInfo.BitDepth.init -> void
+Sdcb.SimdCodecs.Heif.HeifInfo.HeifInfo() -> void
+Sdcb.SimdCodecs.Heif.HeifInfo.Height.get -> int
+Sdcb.SimdCodecs.Heif.HeifInfo.Height.init -> void
+Sdcb.SimdCodecs.Heif.HeifInfo.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Heif.HeifInfo.IccProfile.init -> void
+Sdcb.SimdCodecs.Heif.HeifInfo.Orientation.get -> Sdcb.SimdCodecs.Abstractions.ImageOrientation
+Sdcb.SimdCodecs.Heif.HeifInfo.Orientation.init -> void
+Sdcb.SimdCodecs.Heif.HeifInfo.TileCount.get -> int
+Sdcb.SimdCodecs.Heif.HeifInfo.TileCount.init -> void
+Sdcb.SimdCodecs.Heif.HeifInfo.Width.get -> int
+Sdcb.SimdCodecs.Heif.HeifInfo.Width.init -> void
+static Sdcb.SimdCodecs.Heif.HeifDecoder.Decode(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Heif.HeifImage!
+static Sdcb.SimdCodecs.Heif.HeifDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> (int Width, int Height)
+static Sdcb.SimdCodecs.Heif.HeifDecoder.ReadInfo(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Heif.HeifInfo!
+static Sdcb.SimdCodecs.Heif.HeifImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Heif.HeifImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Heif.HeifImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Heif.HeifImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Heif.HeifImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Heif.HeifImageDecoder.TryDecodePlanes(System.ReadOnlySpan<byte> data, System.Span<ushort> y, System.Span<ushort> cb, System.Span<ushort> cr, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Heif.HeifImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Heif.HeifImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Heif.HeifImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Heif.HeifImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Heif.HeifImageDecoder.TryReadPlanarInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.PlanarInfo info) -> bool

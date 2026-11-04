@@ -1,0 +1,103 @@
+#nullable enable
+Sdcb.SimdCodecs.Pnm.PfmImageDecoder
+Sdcb.SimdCodecs.Pnm.PfmImageDecoder.PfmImageDecoder() -> void
+Sdcb.SimdCodecs.Pnm.PnmDecoder
+Sdcb.SimdCodecs.Pnm.PnmEncodeOptions
+Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.Equals(Sdcb.SimdCodecs.Pnm.PnmEncodeOptions? other) -> bool
+Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.Format.get -> Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.Format.init -> void
+Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.MaxValue.get -> int
+Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.MaxValue.init -> void
+Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.PnmEncodeOptions() -> void
+Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.TupleType.get -> string?
+Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.TupleType.init -> void
+Sdcb.SimdCodecs.Pnm.PnmEncoder
+Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmFormat.Arbitrary = 7 -> Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmFormat.Auto = 0 -> Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmFormat.Bitmap = 4 -> Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmFormat.FloatGraymap = 8 -> Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmFormat.FloatPixmap = 9 -> Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmFormat.Graymap = 5 -> Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmFormat.Pixmap = 6 -> Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmFormat.PlainBitmap = 1 -> Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmFormat.PlainGraymap = 2 -> Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmFormat.PlainPixmap = 3 -> Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmImage
+Sdcb.SimdCodecs.Pnm.PnmImage.Channels.get -> int
+Sdcb.SimdCodecs.Pnm.PnmImage.Height.get -> int
+Sdcb.SimdCodecs.Pnm.PnmImage.Info.get -> Sdcb.SimdCodecs.Pnm.PnmInfo
+Sdcb.SimdCodecs.Pnm.PnmImage.Pixels.get -> byte[]!
+Sdcb.SimdCodecs.Pnm.PnmImage.SampleFormat.get -> Sdcb.SimdCodecs.Abstractions.SampleFormat
+Sdcb.SimdCodecs.Pnm.PnmImage.Width.get -> int
+Sdcb.SimdCodecs.Pnm.PnmImageDecoder
+Sdcb.SimdCodecs.Pnm.PnmImageDecoder.PnmImageDecoder() -> void
+Sdcb.SimdCodecs.Pnm.PnmImageEncoder
+Sdcb.SimdCodecs.Pnm.PnmImageEncoder.PnmImageEncoder() -> void
+Sdcb.SimdCodecs.Pnm.PnmInfo
+Sdcb.SimdCodecs.Pnm.PnmInfo.Channels.get -> int
+Sdcb.SimdCodecs.Pnm.PnmInfo.Channels.init -> void
+Sdcb.SimdCodecs.Pnm.PnmInfo.Deconstruct(out int Width, out int Height, out Sdcb.SimdCodecs.Pnm.PnmFormat Format, out int Channels, out int MaxValue, out string? TupleType, out float Scale) -> void
+Sdcb.SimdCodecs.Pnm.PnmInfo.Equals(Sdcb.SimdCodecs.Pnm.PnmInfo other) -> bool
+Sdcb.SimdCodecs.Pnm.PnmInfo.Format.get -> Sdcb.SimdCodecs.Pnm.PnmFormat
+Sdcb.SimdCodecs.Pnm.PnmInfo.Format.init -> void
+Sdcb.SimdCodecs.Pnm.PnmInfo.Height.get -> int
+Sdcb.SimdCodecs.Pnm.PnmInfo.Height.init -> void
+Sdcb.SimdCodecs.Pnm.PnmInfo.IsPlain.get -> bool
+Sdcb.SimdCodecs.Pnm.PnmInfo.MaxValue.get -> int
+Sdcb.SimdCodecs.Pnm.PnmInfo.MaxValue.init -> void
+Sdcb.SimdCodecs.Pnm.PnmInfo.PnmInfo() -> void
+Sdcb.SimdCodecs.Pnm.PnmInfo.PnmInfo(int Width, int Height, Sdcb.SimdCodecs.Pnm.PnmFormat Format, int Channels, int MaxValue, string? TupleType, float Scale) -> void
+Sdcb.SimdCodecs.Pnm.PnmInfo.SampleFormat.get -> Sdcb.SimdCodecs.Abstractions.SampleFormat
+Sdcb.SimdCodecs.Pnm.PnmInfo.Scale.get -> float
+Sdcb.SimdCodecs.Pnm.PnmInfo.Scale.init -> void
+Sdcb.SimdCodecs.Pnm.PnmInfo.TupleType.get -> string?
+Sdcb.SimdCodecs.Pnm.PnmInfo.TupleType.init -> void
+Sdcb.SimdCodecs.Pnm.PnmInfo.Width.get -> int
+Sdcb.SimdCodecs.Pnm.PnmInfo.Width.init -> void
+override Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.<Clone>$() -> Sdcb.SimdCodecs.Pnm.PnmEncodeOptions!
+override Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.ToString() -> string!
+override Sdcb.SimdCodecs.Pnm.PnmInfo.GetHashCode() -> int
+override sealed Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.Equals(Sdcb.SimdCodecs.Abstractions.EncodeOptions? other) -> bool
+static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmDecoder.Decode(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Pnm.PnmImage!
+static Sdcb.SimdCodecs.Pnm.PnmDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> destination, Sdcb.SimdCodecs.Abstractions.PixelFormat? format = null, int stride = 0) -> void
+static Sdcb.SimdCodecs.Pnm.PnmDecoder.ReadInfo(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Pnm.PnmInfo
+static Sdcb.SimdCodecs.Pnm.PnmDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Pnm.PnmInfo info) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.operator !=(Sdcb.SimdCodecs.Pnm.PnmEncodeOptions? left, Sdcb.SimdCodecs.Pnm.PnmEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.operator ==(Sdcb.SimdCodecs.Pnm.PnmEncodeOptions? left, Sdcb.SimdCodecs.Pnm.PnmEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Pnm.PnmEncodeOptions? options = null, int stride = 0) -> byte[]!
+static Sdcb.SimdCodecs.Pnm.PnmEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, System.IO.Stream! output, Sdcb.SimdCodecs.Pnm.PnmEncodeOptions? options = null, int stride = 0) -> void
+static Sdcb.SimdCodecs.Pnm.PnmEncoder.Encode(System.ReadOnlySpan<byte> samples, int width, int height, int channels, Sdcb.SimdCodecs.Pnm.PnmEncodeOptions? options = null) -> byte[]!
+static Sdcb.SimdCodecs.Pnm.PnmEncoder.Encode(System.ReadOnlySpan<ushort> samples, int width, int height, int channels, Sdcb.SimdCodecs.Pnm.PnmEncodeOptions? options = null) -> byte[]!
+static Sdcb.SimdCodecs.Pnm.PnmEncoder.Encode(System.ReadOnlySpan<ushort> samples, int width, int height, int channels, System.IO.Stream! output, Sdcb.SimdCodecs.Pnm.PnmEncodeOptions? options = null) -> void
+static Sdcb.SimdCodecs.Pnm.PnmEncoder.EncodePfm(System.ReadOnlySpan<float> samples, int width, int height, int channels) -> byte[]!
+static Sdcb.SimdCodecs.Pnm.PnmEncoder.EncodePfm(System.ReadOnlySpan<float> samples, int width, int height, int channels, System.IO.Stream! output) -> void
+static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.TryDecodeIntoRgba8(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmImageEncoder.Create(System.Buffers.IBufferWriter<byte>! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
+static Sdcb.SimdCodecs.Pnm.PnmImageEncoder.Format.get -> Sdcb.SimdCodecs.Abstractions.ImageFormat
+static Sdcb.SimdCodecs.Pnm.PnmImageEncoder.GetClosestInputFormat(Sdcb.SimdCodecs.Abstractions.PixelFormat requested) -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+static Sdcb.SimdCodecs.Pnm.PnmImageEncoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration!
+static Sdcb.SimdCodecs.Pnm.PnmInfo.operator !=(Sdcb.SimdCodecs.Pnm.PnmInfo left, Sdcb.SimdCodecs.Pnm.PnmInfo right) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmInfo.operator ==(Sdcb.SimdCodecs.Pnm.PnmInfo left, Sdcb.SimdCodecs.Pnm.PnmInfo right) -> bool
+~override Sdcb.SimdCodecs.Pnm.PnmInfo.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Pnm.PnmInfo.ToString() -> string

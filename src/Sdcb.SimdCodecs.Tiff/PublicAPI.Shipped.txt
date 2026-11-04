@@ -1,0 +1,322 @@
+#nullable enable
+Sdcb.SimdCodecs.Tiff.IImageSource
+Sdcb.SimdCodecs.Tiff.IImageSource.Compression.get -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.IImageSource.GetSegmentAsync(int index, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>>
+Sdcb.SimdCodecs.Tiff.IImageSource.Height.get -> int
+Sdcb.SimdCodecs.Tiff.IImageSource.IsPreCompressed.get -> bool
+Sdcb.SimdCodecs.Tiff.IImageSource.Photometric.get -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.IImageSource.SegmentCount.get -> int
+Sdcb.SimdCodecs.Tiff.IImageSource.Width.get -> int
+Sdcb.SimdCodecs.Tiff.ITiffStripSink
+Sdcb.SimdCodecs.Tiff.ITiffStripSink.BeginPage(int pageIndex, Sdcb.SimdCodecs.Tiff.TiffPage! description) -> bool
+Sdcb.SimdCodecs.Tiff.ITiffStripSink.Strip(int pageIndex, int firstRow, int rowCount, System.ReadOnlySpan<byte> samples) -> void
+Sdcb.SimdCodecs.Tiff.JpegPassthroughSource
+Sdcb.SimdCodecs.Tiff.JpegPassthroughSource.Compression.get -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.JpegPassthroughSource.GetSegmentAsync(int index, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>>
+Sdcb.SimdCodecs.Tiff.JpegPassthroughSource.Height.get -> int
+Sdcb.SimdCodecs.Tiff.JpegPassthroughSource.IsPreCompressed.get -> bool
+Sdcb.SimdCodecs.Tiff.JpegPassthroughSource.JpegPassthroughSource(System.ReadOnlyMemory<byte> jpegBytes, int width, int height) -> void
+Sdcb.SimdCodecs.Tiff.JpegPassthroughSource.Photometric.get -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.JpegPassthroughSource.SegmentCount.get -> int
+Sdcb.SimdCodecs.Tiff.JpegPassthroughSource.Width.get -> int
+Sdcb.SimdCodecs.Tiff.PixelSource
+Sdcb.SimdCodecs.Tiff.PixelSource.Compression.get -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.PixelSource.GetSegmentAsync(int index, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>>
+Sdcb.SimdCodecs.Tiff.PixelSource.Height.get -> int
+Sdcb.SimdCodecs.Tiff.PixelSource.IsPreCompressed.get -> bool
+Sdcb.SimdCodecs.Tiff.PixelSource.Photometric.get -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.PixelSource.PixelSource(System.ReadOnlyMemory<byte> pixels, int width, int height, Sdcb.SimdCodecs.Tiff.TiffPageOptions! options) -> void
+Sdcb.SimdCodecs.Tiff.PixelSource.SegmentCount.get -> int
+Sdcb.SimdCodecs.Tiff.PixelSource.Width.get -> int
+Sdcb.SimdCodecs.Tiff.PngDeflateSource
+Sdcb.SimdCodecs.Tiff.PngDeflateSource.Compression.get -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.PngDeflateSource.Dispose() -> void
+Sdcb.SimdCodecs.Tiff.PngDeflateSource.GetSegmentAsync(int index, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>>
+Sdcb.SimdCodecs.Tiff.PngDeflateSource.Height.get -> int
+Sdcb.SimdCodecs.Tiff.PngDeflateSource.IsPreCompressed.get -> bool
+Sdcb.SimdCodecs.Tiff.PngDeflateSource.Photometric.get -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.PngDeflateSource.SegmentCount.get -> int
+Sdcb.SimdCodecs.Tiff.PngDeflateSource.Width.get -> int
+Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffCompression.CcittRle = 2 -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffCompression.CcittT4 = 3 -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffCompression.CcittT6 = 4 -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffCompression.Deflate = 8 -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffCompression.Jpeg = 7 -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffCompression.Lzw = 5 -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffCompression.PackBits = 32773 -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffCompression.Uncompressed = 1 -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffCompression.ZlibPkzip = 32946 -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffDocument
+Sdcb.SimdCodecs.Tiff.TiffDocument.<Clone>$() -> Sdcb.SimdCodecs.Tiff.TiffDocument!
+Sdcb.SimdCodecs.Tiff.TiffDocument.Deconstruct(out System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Tiff.TiffPage!>! Pages) -> void
+Sdcb.SimdCodecs.Tiff.TiffDocument.Equals(Sdcb.SimdCodecs.Tiff.TiffDocument? other) -> bool
+Sdcb.SimdCodecs.Tiff.TiffDocument.Pages.get -> System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Tiff.TiffPage!>!
+Sdcb.SimdCodecs.Tiff.TiffDocument.Pages.init -> void
+Sdcb.SimdCodecs.Tiff.TiffDocument.TiffDocument(System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Tiff.TiffPage!>! Pages) -> void
+Sdcb.SimdCodecs.Tiff.TiffEncodeOptions
+Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.Equals(Sdcb.SimdCodecs.Tiff.TiffEncodeOptions? other) -> bool
+Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.Page.get -> Sdcb.SimdCodecs.Tiff.TiffPageOptions?
+Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.Page.init -> void
+Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.TiffEncodeOptions() -> void
+Sdcb.SimdCodecs.Tiff.TiffExtraSamples
+Sdcb.SimdCodecs.Tiff.TiffExtraSamples.AssociatedAlpha = 1 -> Sdcb.SimdCodecs.Tiff.TiffExtraSamples
+Sdcb.SimdCodecs.Tiff.TiffExtraSamples.UnassociatedAlpha = 2 -> Sdcb.SimdCodecs.Tiff.TiffExtraSamples
+Sdcb.SimdCodecs.Tiff.TiffExtraSamples.Unspecified = 0 -> Sdcb.SimdCodecs.Tiff.TiffExtraSamples
+Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.Ascii = 2 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.Byte = 1 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.Double = 12 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.Float = 11 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.Long = 4 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.Rational = 5 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.SByte = 6 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.SLong = 9 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.SRational = 10 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.SShort = 8 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.Short = 3 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.Undefined = 7 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffImageDecoder
+Sdcb.SimdCodecs.Tiff.TiffImageDecoder.TiffImageDecoder() -> void
+Sdcb.SimdCodecs.Tiff.TiffImageEncoder
+Sdcb.SimdCodecs.Tiff.TiffImageEncoder.TiffImageEncoder() -> void
+Sdcb.SimdCodecs.Tiff.TiffLayout
+Sdcb.SimdCodecs.Tiff.TiffLayout.Strip = 0 -> Sdcb.SimdCodecs.Tiff.TiffLayout
+Sdcb.SimdCodecs.Tiff.TiffLayout.Tiled = 1 -> Sdcb.SimdCodecs.Tiff.TiffLayout
+Sdcb.SimdCodecs.Tiff.TiffPage
+Sdcb.SimdCodecs.Tiff.TiffPage.<Clone>$() -> Sdcb.SimdCodecs.Tiff.TiffPage!
+Sdcb.SimdCodecs.Tiff.TiffPage.BitsPerSample.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPage.BitsPerSample.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.Compression.get -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffPage.Compression.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.Deconstruct(out int Width, out int Height, out int SamplesPerPixel, out int BitsPerSample, out Sdcb.SimdCodecs.Tiff.TiffPhotometric Photometric, out Sdcb.SimdCodecs.Tiff.TiffSampleFormat SampleFormat, out Sdcb.SimdCodecs.Tiff.TiffCompression Compression, out int RowsPerStrip, out byte[]! Pixels, out float? SMinSampleValue, out float? SMaxSampleValue, out byte[]? IccProfile, out int? ExifIfdOffset, out int? GpsInfoIfdOffset, out bool FileIsLittleEndian, out int TileWidth, out int TileHeight, out int StoredBitsPerSample) -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.Equals(Sdcb.SimdCodecs.Tiff.TiffPage? other) -> bool
+Sdcb.SimdCodecs.Tiff.TiffPage.ExifIfdOffset.get -> int?
+Sdcb.SimdCodecs.Tiff.TiffPage.ExifIfdOffset.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.FileIsLittleEndian.get -> bool
+Sdcb.SimdCodecs.Tiff.TiffPage.FileIsLittleEndian.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.GpsInfoIfdOffset.get -> int?
+Sdcb.SimdCodecs.Tiff.TiffPage.GpsInfoIfdOffset.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.Height.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPage.Height.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Tiff.TiffPage.IccProfile.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.Photometric.get -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.TiffPage.Photometric.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.Pixels.get -> byte[]!
+Sdcb.SimdCodecs.Tiff.TiffPage.Pixels.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.RowsPerStrip.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPage.RowsPerStrip.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.SMaxSampleValue.get -> float?
+Sdcb.SimdCodecs.Tiff.TiffPage.SMaxSampleValue.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.SMinSampleValue.get -> float?
+Sdcb.SimdCodecs.Tiff.TiffPage.SMinSampleValue.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.SampleFormat.get -> Sdcb.SimdCodecs.Tiff.TiffSampleFormat
+Sdcb.SimdCodecs.Tiff.TiffPage.SampleFormat.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.SamplesPerPixel.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPage.SamplesPerPixel.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.StoredBitsPerSample.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPage.StoredBitsPerSample.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.TiffPage(int Width, int Height, int SamplesPerPixel, int BitsPerSample, Sdcb.SimdCodecs.Tiff.TiffPhotometric Photometric, Sdcb.SimdCodecs.Tiff.TiffSampleFormat SampleFormat, Sdcb.SimdCodecs.Tiff.TiffCompression Compression, int RowsPerStrip, byte[]! Pixels, float? SMinSampleValue, float? SMaxSampleValue, byte[]? IccProfile, int? ExifIfdOffset, int? GpsInfoIfdOffset, bool FileIsLittleEndian, int TileWidth = 0, int TileHeight = 0, int StoredBitsPerSample = 0) -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.TileHeight.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPage.TileHeight.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.TileWidth.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPage.TileWidth.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.Width.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPage.Width.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageLayout
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.BitsPerSample.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.BytesPerPixel.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.Compression.get -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.FileIsLittleEndian.get -> bool
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.Height.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.IsPlanar.get -> bool
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.IsTiled.get -> bool
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.Orientation.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.PageIndex.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.Photometric.get -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.Predictor.get -> Sdcb.SimdCodecs.Tiff.TiffPredictor
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.RowsPerStrip.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.SampleFormat.get -> Sdcb.SimdCodecs.Tiff.TiffSampleFormat
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.SamplesPerPixel.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.SegmentAt(int x, int y) -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.SegmentBytes(int segmentIndex) -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.SegmentCount.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.SegmentRectangle(int segmentIndex) -> Sdcb.SimdCodecs.Tiff.TiffSegmentRect
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.SegmentsAcross.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.SegmentsDown.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.StoredBitsPerSample.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.TileHeight.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.TileWidth.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.Width.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageOptions
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.<Clone>$() -> Sdcb.SimdCodecs.Tiff.TiffPageOptions!
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Artist.get -> string?
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Artist.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.BitsPerSample.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.BitsPerSample.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Compression.get -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Compression.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.DpiX.get -> double
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.DpiX.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.DpiY.get -> double
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.DpiY.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Equals(Sdcb.SimdCodecs.Tiff.TiffPageOptions? other) -> bool
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.ExtraSamples.get -> Sdcb.SimdCodecs.Tiff.TiffExtraSamples?
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.ExtraSamples.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.IccProfile.get -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.IccProfile.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Layout.get -> Sdcb.SimdCodecs.Tiff.TiffLayout
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Layout.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Photometric.get -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Photometric.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.RowsPerStrip.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.RowsPerStrip.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.SMaxSampleValue.get -> float?
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.SMaxSampleValue.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.SMinSampleValue.get -> float?
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.SMinSampleValue.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.SampleFormat.get -> Sdcb.SimdCodecs.Tiff.TiffSampleFormat
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.SampleFormat.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.SamplesPerPixel.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.SamplesPerPixel.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Software.get -> string?
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Software.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.TiffPageOptions() -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.TileHeight.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.TileHeight.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.TileWidth.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.TileWidth.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.TiffPhotometric.CieLab = 8 -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.TiffPhotometric.Cmyk = 5 -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.TiffPhotometric.MinIsBlack = 1 -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.TiffPhotometric.MinIsWhite = 0 -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.TiffPhotometric.Palette = 3 -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.TiffPhotometric.Rgb = 2 -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.TiffPhotometric.TransparencyMask = 4 -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.TiffPhotometric.YCbCr = 6 -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
+Sdcb.SimdCodecs.Tiff.TiffPredictor
+Sdcb.SimdCodecs.Tiff.TiffPredictor.FloatingPoint = 3 -> Sdcb.SimdCodecs.Tiff.TiffPredictor
+Sdcb.SimdCodecs.Tiff.TiffPredictor.HorizontalDifferencing = 2 -> Sdcb.SimdCodecs.Tiff.TiffPredictor
+Sdcb.SimdCodecs.Tiff.TiffPredictor.None = 1 -> Sdcb.SimdCodecs.Tiff.TiffPredictor
+Sdcb.SimdCodecs.Tiff.TiffReader
+Sdcb.SimdCodecs.Tiff.TiffSampleFormat
+Sdcb.SimdCodecs.Tiff.TiffSampleFormat.IeeeFloat = 3 -> Sdcb.SimdCodecs.Tiff.TiffSampleFormat
+Sdcb.SimdCodecs.Tiff.TiffSampleFormat.Int = 2 -> Sdcb.SimdCodecs.Tiff.TiffSampleFormat
+Sdcb.SimdCodecs.Tiff.TiffSampleFormat.Uint = 1 -> Sdcb.SimdCodecs.Tiff.TiffSampleFormat
+Sdcb.SimdCodecs.Tiff.TiffSampleFormat.Undefined = 4 -> Sdcb.SimdCodecs.Tiff.TiffSampleFormat
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect.Deconstruct(out int X, out int Y, out int Width, out int Height) -> void
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect.Equals(Sdcb.SimdCodecs.Tiff.TiffSegmentRect other) -> bool
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect.Height.get -> int
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect.Height.init -> void
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect.TiffSegmentRect() -> void
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect.TiffSegmentRect(int X, int Y, int Width, int Height) -> void
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect.Width.get -> int
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect.Width.init -> void
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect.X.get -> int
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect.X.init -> void
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect.Y.get -> int
+Sdcb.SimdCodecs.Tiff.TiffSegmentRect.Y.init -> void
+Sdcb.SimdCodecs.Tiff.TiffTag
+Sdcb.SimdCodecs.Tiff.TiffWriter
+Sdcb.SimdCodecs.Tiff.TiffWriter.AddJpegPageAsync(System.ReadOnlyMemory<byte> jpegBytes, int width, int height, double dpi = 96, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Sdcb.SimdCodecs.Tiff.TiffWriter.AddPageAsync(Sdcb.SimdCodecs.Tiff.IImageSource! source, Sdcb.SimdCodecs.Tiff.TiffPageOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Sdcb.SimdCodecs.Tiff.TiffWriter.AddPageAsync(System.ReadOnlyMemory<byte> pixels, int width, int height, Sdcb.SimdCodecs.Tiff.TiffPageOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Sdcb.SimdCodecs.Tiff.TiffWriter.AddPngPageAsync(System.ReadOnlyMemory<byte> pngBytes, double dpi = 96, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Sdcb.SimdCodecs.Tiff.TiffWriter.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Sdcb.SimdCodecs.Tiff.TiffWriter.FlushAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+const Sdcb.SimdCodecs.Tiff.TiffTag.Artist = 315 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.BitsPerSample = 258 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.Compression = 259 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.ExifIfd = 34665 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.ExtraSamples = 338 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.FillOrder = 266 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.GpsInfoIfd = 34853 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.IccProfile = 34675 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.ImageLength = 257 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.ImageWidth = 256 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.Orientation = 274 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.PageNumber = 297 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.PhotometricInterp = 262 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.PlanarConfig = 284 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.Predictor = 317 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.ResolutionUnit = 296 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.RowsPerStrip = 278 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.SMaxSampleValue = 341 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.SMinSampleValue = 340 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.SampleFormat = 339 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.SamplesPerPixel = 277 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.Software = 305 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.StripByteCounts = 279 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.StripOffsets = 273 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.SubFileType = 254 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.T4Options = 292 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.T6Options = 293 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.TileByteCounts = 325 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.TileLength = 323 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.TileOffsets = 324 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.TileWidth = 322 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.XResolution = 282 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.XmpPacket = 700 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.YResolution = 283 -> ushort
+override Sdcb.SimdCodecs.Tiff.TiffDocument.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Tiff.TiffDocument.GetHashCode() -> int
+override Sdcb.SimdCodecs.Tiff.TiffDocument.ToString() -> string!
+override Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.<Clone>$() -> Sdcb.SimdCodecs.Tiff.TiffEncodeOptions!
+override Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.ToString() -> string!
+override Sdcb.SimdCodecs.Tiff.TiffPage.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Tiff.TiffPage.GetHashCode() -> int
+override Sdcb.SimdCodecs.Tiff.TiffPage.ToString() -> string!
+override Sdcb.SimdCodecs.Tiff.TiffPageOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Tiff.TiffPageOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Tiff.TiffPageOptions.ToString() -> string!
+override Sdcb.SimdCodecs.Tiff.TiffSegmentRect.GetHashCode() -> int
+override sealed Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.Equals(Sdcb.SimdCodecs.Abstractions.EncodeOptions? other) -> bool
+static Sdcb.SimdCodecs.Tiff.PngDeflateSource.Create(System.ReadOnlyMemory<byte> pngBytes) -> Sdcb.SimdCodecs.Tiff.PngDeflateSource!
+static Sdcb.SimdCodecs.Tiff.TiffDocument.operator !=(Sdcb.SimdCodecs.Tiff.TiffDocument? left, Sdcb.SimdCodecs.Tiff.TiffDocument? right) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffDocument.operator ==(Sdcb.SimdCodecs.Tiff.TiffDocument? left, Sdcb.SimdCodecs.Tiff.TiffDocument? right) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.operator !=(Sdcb.SimdCodecs.Tiff.TiffEncodeOptions? left, Sdcb.SimdCodecs.Tiff.TiffEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.operator ==(Sdcb.SimdCodecs.Tiff.TiffEncodeOptions? left, Sdcb.SimdCodecs.Tiff.TiffEncodeOptions? right) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.TryDecodeIntoRgba8(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.TryOpenFrames(System.ReadOnlyMemory<byte> data, out Sdcb.SimdCodecs.Abstractions.IImageFrameReader? reader) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffImageEncoder.Create(System.Buffers.IBufferWriter<byte>! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
+static Sdcb.SimdCodecs.Tiff.TiffImageEncoder.Format.get -> Sdcb.SimdCodecs.Abstractions.ImageFormat
+static Sdcb.SimdCodecs.Tiff.TiffImageEncoder.GetClosestInputFormat(Sdcb.SimdCodecs.Abstractions.PixelFormat requested) -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+static Sdcb.SimdCodecs.Tiff.TiffImageEncoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration!
+static Sdcb.SimdCodecs.Tiff.TiffPage.operator !=(Sdcb.SimdCodecs.Tiff.TiffPage? left, Sdcb.SimdCodecs.Tiff.TiffPage? right) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffPage.operator ==(Sdcb.SimdCodecs.Tiff.TiffPage? left, Sdcb.SimdCodecs.Tiff.TiffPage? right) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffPageOptions.Default.get -> Sdcb.SimdCodecs.Tiff.TiffPageOptions!
+static Sdcb.SimdCodecs.Tiff.TiffPageOptions.operator !=(Sdcb.SimdCodecs.Tiff.TiffPageOptions? left, Sdcb.SimdCodecs.Tiff.TiffPageOptions? right) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffPageOptions.operator ==(Sdcb.SimdCodecs.Tiff.TiffPageOptions? left, Sdcb.SimdCodecs.Tiff.TiffPageOptions? right) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffReader.Read(System.IO.Stream! stream) -> Sdcb.SimdCodecs.Tiff.TiffDocument!
+static Sdcb.SimdCodecs.Tiff.TiffReader.Read(System.ReadOnlySpan<byte> tiff) -> Sdcb.SimdCodecs.Tiff.TiffDocument!
+static Sdcb.SimdCodecs.Tiff.TiffReader.ReadInto<TSink>(System.ReadOnlySpan<byte> tiff, ref TSink sink) -> Sdcb.SimdCodecs.Tiff.TiffDocument!
+static Sdcb.SimdCodecs.Tiff.TiffReader.ReadLayout(System.IO.Stream! stream, int pageIndex = 0) -> Sdcb.SimdCodecs.Tiff.TiffPageLayout!
+static Sdcb.SimdCodecs.Tiff.TiffReader.ReadLayout(System.ReadOnlySpan<byte> tiff, int pageIndex = 0) -> Sdcb.SimdCodecs.Tiff.TiffPageLayout!
+static Sdcb.SimdCodecs.Tiff.TiffReader.ReadLayout(string! path, int pageIndex = 0) -> Sdcb.SimdCodecs.Tiff.TiffPageLayout!
+static Sdcb.SimdCodecs.Tiff.TiffReader.ReadPage(System.ReadOnlySpan<byte> tiff, int pageIndex = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Tiff.TiffPage!
+static Sdcb.SimdCodecs.Tiff.TiffReader.ReadSegment(System.IO.Stream! stream, Sdcb.SimdCodecs.Tiff.TiffPageLayout! layout, int segmentIndex, System.Span<byte> destination) -> Sdcb.SimdCodecs.Tiff.TiffSegmentRect
+static Sdcb.SimdCodecs.Tiff.TiffReader.ReadSegment(System.IO.Stream! stream, int pageIndex, int segmentIndex, System.Span<byte> destination) -> Sdcb.SimdCodecs.Tiff.TiffSegmentRect
+static Sdcb.SimdCodecs.Tiff.TiffReader.ReadSegment(System.ReadOnlySpan<byte> tiff, Sdcb.SimdCodecs.Tiff.TiffPageLayout! layout, int segmentIndex, System.Span<byte> destination) -> Sdcb.SimdCodecs.Tiff.TiffSegmentRect
+static Sdcb.SimdCodecs.Tiff.TiffReader.ReadSegment(System.ReadOnlySpan<byte> tiff, int pageIndex, int segmentIndex, System.Span<byte> destination) -> Sdcb.SimdCodecs.Tiff.TiffSegmentRect
+static Sdcb.SimdCodecs.Tiff.TiffReader.ReadSegment(string! path, Sdcb.SimdCodecs.Tiff.TiffPageLayout! layout, int segmentIndex, System.Span<byte> destination) -> Sdcb.SimdCodecs.Tiff.TiffSegmentRect
+static Sdcb.SimdCodecs.Tiff.TiffReader.ReadSegment(string! path, int pageIndex, int segmentIndex, System.Span<byte> destination) -> Sdcb.SimdCodecs.Tiff.TiffSegmentRect
+static Sdcb.SimdCodecs.Tiff.TiffSegmentRect.operator !=(Sdcb.SimdCodecs.Tiff.TiffSegmentRect left, Sdcb.SimdCodecs.Tiff.TiffSegmentRect right) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffSegmentRect.operator ==(Sdcb.SimdCodecs.Tiff.TiffSegmentRect left, Sdcb.SimdCodecs.Tiff.TiffSegmentRect right) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffWriter.Create(System.IO.Stream! stream) -> Sdcb.SimdCodecs.Tiff.TiffWriter!
+static Sdcb.SimdCodecs.Tiff.TiffWriter.Create(string! filePath) -> Sdcb.SimdCodecs.Tiff.TiffWriter!
+~override Sdcb.SimdCodecs.Tiff.TiffSegmentRect.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Tiff.TiffSegmentRect.ToString() -> string

@@ -5,6 +5,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Shipped packages: the public API baseline (PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt per package). -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
     <!-- Sdcb.SimdCodecs.Tests (xunit v3 + Shouldly). -->
     <PackageVersion Include="Shouldly" Version="4.3.0" />

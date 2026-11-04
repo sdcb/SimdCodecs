@@ -1,0 +1,142 @@
+#nullable enable
+Sdcb.SimdCodecs.Exif.ExifMetadata
+Sdcb.SimdCodecs.Exif.ExifMetadata.<Clone>$() -> Sdcb.SimdCodecs.Exif.ExifMetadata!
+Sdcb.SimdCodecs.Exif.ExifMetadata.Artist.get -> string?
+Sdcb.SimdCodecs.Exif.ExifMetadata.Artist.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.CaptureTime.get -> System.DateTime?
+Sdcb.SimdCodecs.Exif.ExifMetadata.CaptureTime.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.Copyright.get -> string?
+Sdcb.SimdCodecs.Exif.ExifMetadata.Copyright.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.Deconstruct(out string? Make, out string? Model, out System.DateTime? CaptureTime, out System.DateTime? FileTime, out Sdcb.SimdCodecs.Exif.Rational? ExposureTime, out Sdcb.SimdCodecs.Exif.Rational? FNumber, out int? Iso, out Sdcb.SimdCodecs.Exif.Rational? FocalLength, out int? FocalLengthIn35mm, out string? Software, out string? Artist, out string? Copyright, out ushort? Orientation, out int? PixelWidth, out int? PixelHeight, out Sdcb.SimdCodecs.Exif.GpsCoordinates? Gps, out System.Collections.Generic.IReadOnlyDictionary<ushort, Sdcb.SimdCodecs.Exif.ExifTagValue!>! RawTags) -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.Equals(Sdcb.SimdCodecs.Exif.ExifMetadata? other) -> bool
+Sdcb.SimdCodecs.Exif.ExifMetadata.ExifMetadata(string? Make, string? Model, System.DateTime? CaptureTime, System.DateTime? FileTime, Sdcb.SimdCodecs.Exif.Rational? ExposureTime, Sdcb.SimdCodecs.Exif.Rational? FNumber, int? Iso, Sdcb.SimdCodecs.Exif.Rational? FocalLength, int? FocalLengthIn35mm, string? Software, string? Artist, string? Copyright, ushort? Orientation, int? PixelWidth, int? PixelHeight, Sdcb.SimdCodecs.Exif.GpsCoordinates? Gps, System.Collections.Generic.IReadOnlyDictionary<ushort, Sdcb.SimdCodecs.Exif.ExifTagValue!>! RawTags) -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.ExposureTime.get -> Sdcb.SimdCodecs.Exif.Rational?
+Sdcb.SimdCodecs.Exif.ExifMetadata.ExposureTime.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.FNumber.get -> Sdcb.SimdCodecs.Exif.Rational?
+Sdcb.SimdCodecs.Exif.ExifMetadata.FNumber.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.FileTime.get -> System.DateTime?
+Sdcb.SimdCodecs.Exif.ExifMetadata.FileTime.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.FocalLength.get -> Sdcb.SimdCodecs.Exif.Rational?
+Sdcb.SimdCodecs.Exif.ExifMetadata.FocalLength.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.FocalLengthIn35mm.get -> int?
+Sdcb.SimdCodecs.Exif.ExifMetadata.FocalLengthIn35mm.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.Gps.get -> Sdcb.SimdCodecs.Exif.GpsCoordinates?
+Sdcb.SimdCodecs.Exif.ExifMetadata.Gps.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.Iso.get -> int?
+Sdcb.SimdCodecs.Exif.ExifMetadata.Iso.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.Make.get -> string?
+Sdcb.SimdCodecs.Exif.ExifMetadata.Make.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.Model.get -> string?
+Sdcb.SimdCodecs.Exif.ExifMetadata.Model.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.Orientation.get -> ushort?
+Sdcb.SimdCodecs.Exif.ExifMetadata.Orientation.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.PixelHeight.get -> int?
+Sdcb.SimdCodecs.Exif.ExifMetadata.PixelHeight.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.PixelWidth.get -> int?
+Sdcb.SimdCodecs.Exif.ExifMetadata.PixelWidth.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.RawTags.get -> System.Collections.Generic.IReadOnlyDictionary<ushort, Sdcb.SimdCodecs.Exif.ExifTagValue!>!
+Sdcb.SimdCodecs.Exif.ExifMetadata.RawTags.init -> void
+Sdcb.SimdCodecs.Exif.ExifMetadata.Software.get -> string?
+Sdcb.SimdCodecs.Exif.ExifMetadata.Software.init -> void
+Sdcb.SimdCodecs.Exif.ExifReader
+Sdcb.SimdCodecs.Exif.ExifTagValue
+Sdcb.SimdCodecs.Exif.ExifTagValue.<Clone>$() -> Sdcb.SimdCodecs.Exif.ExifTagValue!
+Sdcb.SimdCodecs.Exif.ExifTagValue.Bytes.get -> byte[]!
+Sdcb.SimdCodecs.Exif.ExifTagValue.Bytes.init -> void
+Sdcb.SimdCodecs.Exif.ExifTagValue.Count.get -> int
+Sdcb.SimdCodecs.Exif.ExifTagValue.Count.init -> void
+Sdcb.SimdCodecs.Exif.ExifTagValue.Deconstruct(out ushort Tag, out Sdcb.SimdCodecs.Tiff.TiffFieldType Type, out int Count, out byte[]! Bytes) -> void
+Sdcb.SimdCodecs.Exif.ExifTagValue.Equals(Sdcb.SimdCodecs.Exif.ExifTagValue? other) -> bool
+Sdcb.SimdCodecs.Exif.ExifTagValue.ExifTagValue(ushort Tag, Sdcb.SimdCodecs.Tiff.TiffFieldType Type, int Count, byte[]! Bytes) -> void
+Sdcb.SimdCodecs.Exif.ExifTagValue.Tag.get -> ushort
+Sdcb.SimdCodecs.Exif.ExifTagValue.Tag.init -> void
+Sdcb.SimdCodecs.Exif.ExifTagValue.Type.get -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Exif.ExifTagValue.Type.init -> void
+Sdcb.SimdCodecs.Exif.ExifWriteData
+Sdcb.SimdCodecs.Exif.ExifWriteData.<Clone>$() -> Sdcb.SimdCodecs.Exif.ExifWriteData!
+Sdcb.SimdCodecs.Exif.ExifWriteData.Artist.get -> string?
+Sdcb.SimdCodecs.Exif.ExifWriteData.Artist.init -> void
+Sdcb.SimdCodecs.Exif.ExifWriteData.DateTime.get -> System.DateTime?
+Sdcb.SimdCodecs.Exif.ExifWriteData.DateTime.init -> void
+Sdcb.SimdCodecs.Exif.ExifWriteData.Deconstruct(out string? Software, out string? ImageDescription, out string? Artist, out System.DateTime? DateTime, out string? UserComment) -> void
+Sdcb.SimdCodecs.Exif.ExifWriteData.Equals(Sdcb.SimdCodecs.Exif.ExifWriteData? other) -> bool
+Sdcb.SimdCodecs.Exif.ExifWriteData.ExifWriteData(string? Software = null, string? ImageDescription = null, string? Artist = null, System.DateTime? DateTime = null, string? UserComment = null) -> void
+Sdcb.SimdCodecs.Exif.ExifWriteData.ImageDescription.get -> string?
+Sdcb.SimdCodecs.Exif.ExifWriteData.ImageDescription.init -> void
+Sdcb.SimdCodecs.Exif.ExifWriteData.Software.get -> string?
+Sdcb.SimdCodecs.Exif.ExifWriteData.Software.init -> void
+Sdcb.SimdCodecs.Exif.ExifWriteData.UserComment.get -> string?
+Sdcb.SimdCodecs.Exif.ExifWriteData.UserComment.init -> void
+Sdcb.SimdCodecs.Exif.ExifWriter
+Sdcb.SimdCodecs.Exif.GpsCoordinates
+Sdcb.SimdCodecs.Exif.GpsCoordinates.<Clone>$() -> Sdcb.SimdCodecs.Exif.GpsCoordinates!
+Sdcb.SimdCodecs.Exif.GpsCoordinates.Altitude.get -> double?
+Sdcb.SimdCodecs.Exif.GpsCoordinates.Altitude.init -> void
+Sdcb.SimdCodecs.Exif.GpsCoordinates.Deconstruct(out double Latitude, out double Longitude, out double? Altitude, out System.DateTime? Timestamp) -> void
+Sdcb.SimdCodecs.Exif.GpsCoordinates.Equals(Sdcb.SimdCodecs.Exif.GpsCoordinates? other) -> bool
+Sdcb.SimdCodecs.Exif.GpsCoordinates.GpsCoordinates(double Latitude, double Longitude, double? Altitude, System.DateTime? Timestamp) -> void
+Sdcb.SimdCodecs.Exif.GpsCoordinates.Latitude.get -> double
+Sdcb.SimdCodecs.Exif.GpsCoordinates.Latitude.init -> void
+Sdcb.SimdCodecs.Exif.GpsCoordinates.Longitude.get -> double
+Sdcb.SimdCodecs.Exif.GpsCoordinates.Longitude.init -> void
+Sdcb.SimdCodecs.Exif.GpsCoordinates.Timestamp.get -> System.DateTime?
+Sdcb.SimdCodecs.Exif.GpsCoordinates.Timestamp.init -> void
+Sdcb.SimdCodecs.Exif.Rational
+Sdcb.SimdCodecs.Exif.Rational.Deconstruct(out uint Numerator, out uint Denominator) -> void
+Sdcb.SimdCodecs.Exif.Rational.Denominator.get -> uint
+Sdcb.SimdCodecs.Exif.Rational.Denominator.init -> void
+Sdcb.SimdCodecs.Exif.Rational.Equals(Sdcb.SimdCodecs.Exif.Rational other) -> bool
+Sdcb.SimdCodecs.Exif.Rational.Numerator.get -> uint
+Sdcb.SimdCodecs.Exif.Rational.Numerator.init -> void
+Sdcb.SimdCodecs.Exif.Rational.Rational() -> void
+Sdcb.SimdCodecs.Exif.Rational.Rational(uint Numerator, uint Denominator) -> void
+Sdcb.SimdCodecs.Exif.Rational.ToDouble() -> double
+Sdcb.SimdCodecs.Exif.SRational
+Sdcb.SimdCodecs.Exif.SRational.Deconstruct(out int Numerator, out int Denominator) -> void
+Sdcb.SimdCodecs.Exif.SRational.Denominator.get -> int
+Sdcb.SimdCodecs.Exif.SRational.Denominator.init -> void
+Sdcb.SimdCodecs.Exif.SRational.Equals(Sdcb.SimdCodecs.Exif.SRational other) -> bool
+Sdcb.SimdCodecs.Exif.SRational.Numerator.get -> int
+Sdcb.SimdCodecs.Exif.SRational.Numerator.init -> void
+Sdcb.SimdCodecs.Exif.SRational.SRational() -> void
+Sdcb.SimdCodecs.Exif.SRational.SRational(int Numerator, int Denominator) -> void
+Sdcb.SimdCodecs.Exif.SRational.ToDouble() -> double
+override Sdcb.SimdCodecs.Exif.ExifMetadata.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Exif.ExifMetadata.GetHashCode() -> int
+override Sdcb.SimdCodecs.Exif.ExifMetadata.ToString() -> string!
+override Sdcb.SimdCodecs.Exif.ExifTagValue.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Exif.ExifTagValue.GetHashCode() -> int
+override Sdcb.SimdCodecs.Exif.ExifTagValue.ToString() -> string!
+override Sdcb.SimdCodecs.Exif.ExifWriteData.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Exif.ExifWriteData.GetHashCode() -> int
+override Sdcb.SimdCodecs.Exif.ExifWriteData.ToString() -> string!
+override Sdcb.SimdCodecs.Exif.GpsCoordinates.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Exif.GpsCoordinates.GetHashCode() -> int
+override Sdcb.SimdCodecs.Exif.GpsCoordinates.ToString() -> string!
+override Sdcb.SimdCodecs.Exif.Rational.GetHashCode() -> int
+override Sdcb.SimdCodecs.Exif.Rational.ToString() -> string!
+override Sdcb.SimdCodecs.Exif.SRational.GetHashCode() -> int
+override Sdcb.SimdCodecs.Exif.SRational.ToString() -> string!
+static Sdcb.SimdCodecs.Exif.ExifMetadata.operator !=(Sdcb.SimdCodecs.Exif.ExifMetadata? left, Sdcb.SimdCodecs.Exif.ExifMetadata? right) -> bool
+static Sdcb.SimdCodecs.Exif.ExifMetadata.operator ==(Sdcb.SimdCodecs.Exif.ExifMetadata? left, Sdcb.SimdCodecs.Exif.ExifMetadata? right) -> bool
+static Sdcb.SimdCodecs.Exif.ExifReader.FromBytes(System.ReadOnlySpan<byte> bytes) -> Sdcb.SimdCodecs.Exif.ExifMetadata?
+static Sdcb.SimdCodecs.Exif.ExifReader.FromIfd(System.ReadOnlySpan<byte> tiff, int ifdOffset, bool fileIsLittleEndian) -> Sdcb.SimdCodecs.Exif.ExifMetadata!
+static Sdcb.SimdCodecs.Exif.ExifReader.FromJpeg(System.ReadOnlySpan<byte> jpeg) -> Sdcb.SimdCodecs.Exif.ExifMetadata?
+static Sdcb.SimdCodecs.Exif.ExifReader.FromPng(System.ReadOnlySpan<byte> png) -> Sdcb.SimdCodecs.Exif.ExifMetadata?
+static Sdcb.SimdCodecs.Exif.ExifReader.FromTiff(System.ReadOnlySpan<byte> tiff) -> Sdcb.SimdCodecs.Exif.ExifMetadata?
+static Sdcb.SimdCodecs.Exif.ExifReader.FromWebp(System.ReadOnlySpan<byte> webp) -> Sdcb.SimdCodecs.Exif.ExifMetadata?
+static Sdcb.SimdCodecs.Exif.ExifTagValue.operator !=(Sdcb.SimdCodecs.Exif.ExifTagValue? left, Sdcb.SimdCodecs.Exif.ExifTagValue? right) -> bool
+static Sdcb.SimdCodecs.Exif.ExifTagValue.operator ==(Sdcb.SimdCodecs.Exif.ExifTagValue? left, Sdcb.SimdCodecs.Exif.ExifTagValue? right) -> bool
+static Sdcb.SimdCodecs.Exif.ExifWriteData.operator !=(Sdcb.SimdCodecs.Exif.ExifWriteData? left, Sdcb.SimdCodecs.Exif.ExifWriteData? right) -> bool
+static Sdcb.SimdCodecs.Exif.ExifWriteData.operator ==(Sdcb.SimdCodecs.Exif.ExifWriteData? left, Sdcb.SimdCodecs.Exif.ExifWriteData? right) -> bool
+static Sdcb.SimdCodecs.Exif.ExifWriter.AsciiCharacterCode.get -> System.ReadOnlySpan<byte>
+static Sdcb.SimdCodecs.Exif.ExifWriter.Build(Sdcb.SimdCodecs.Exif.ExifWriteData! data) -> byte[]!
+static Sdcb.SimdCodecs.Exif.ExifWriter.UnicodeCharacterCode.get -> System.ReadOnlySpan<byte>
+static Sdcb.SimdCodecs.Exif.GpsCoordinates.operator !=(Sdcb.SimdCodecs.Exif.GpsCoordinates? left, Sdcb.SimdCodecs.Exif.GpsCoordinates? right) -> bool
+static Sdcb.SimdCodecs.Exif.GpsCoordinates.operator ==(Sdcb.SimdCodecs.Exif.GpsCoordinates? left, Sdcb.SimdCodecs.Exif.GpsCoordinates? right) -> bool
+static Sdcb.SimdCodecs.Exif.Rational.operator !=(Sdcb.SimdCodecs.Exif.Rational left, Sdcb.SimdCodecs.Exif.Rational right) -> bool
+static Sdcb.SimdCodecs.Exif.Rational.operator ==(Sdcb.SimdCodecs.Exif.Rational left, Sdcb.SimdCodecs.Exif.Rational right) -> bool
+static Sdcb.SimdCodecs.Exif.SRational.operator !=(Sdcb.SimdCodecs.Exif.SRational left, Sdcb.SimdCodecs.Exif.SRational right) -> bool
+static Sdcb.SimdCodecs.Exif.SRational.operator ==(Sdcb.SimdCodecs.Exif.SRational left, Sdcb.SimdCodecs.Exif.SRational right) -> bool
+~override Sdcb.SimdCodecs.Exif.Rational.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Exif.SRational.Equals(object obj) -> bool

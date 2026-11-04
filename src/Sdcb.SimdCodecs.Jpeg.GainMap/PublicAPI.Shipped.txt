@@ -1,0 +1,114 @@
+#nullable enable
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.<Clone>$() -> Sdcb.SimdCodecs.Jpeg.GainMapComputeResult!
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.Deconstruct(out byte[]! GainMapGray8, out int Width, out int Height, out Sdcb.SimdCodecs.Jpeg.GainMapMetadata! Metadata) -> void
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.Equals(Sdcb.SimdCodecs.Jpeg.GainMapComputeResult? other) -> bool
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.GainMapComputeResult(byte[]! GainMapGray8, int Width, int Height, Sdcb.SimdCodecs.Jpeg.GainMapMetadata! Metadata) -> void
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.GainMapGray8.get -> byte[]!
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.GainMapGray8.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.Height.get -> int
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.Height.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.Metadata.get -> Sdcb.SimdCodecs.Jpeg.GainMapMetadata!
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.Metadata.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.Width.get -> int
+Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.Width.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.Channels.get -> int
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.ColorEncoding.get -> Sdcb.SimdCodecs.Abstractions.ColorEncoding!
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.Dispose() -> void
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.GainMapDecodedImage(Sdcb.SimdCodecs.Jpeg.GainMapImage! source, double displayHeadroom, Sdcb.SimdCodecs.Abstractions.ColorPrimaries primaries = Sdcb.SimdCodecs.Abstractions.ColorPrimaries.BT709) -> void
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.Height.get -> int
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.IccProfile.get -> System.ReadOnlySpan<byte>
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.Metadata.get -> Sdcb.SimdCodecs.Abstractions.ImageMetadata!
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.Metadata.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.Pixels.get -> System.ReadOnlySpan<byte>
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.SampleFormat.get -> Sdcb.SimdCodecs.Abstractions.SampleFormat
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.Source.get -> Sdcb.SimdCodecs.Jpeg.GainMapImage!
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.ToFloats() -> float[]!
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.ToRgba16() -> ushort[]!
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.ToRgba8() -> byte[]!
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.TryCopyTo(System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format) -> bool
+Sdcb.SimdCodecs.Jpeg.GainMapDecodedImage.Width.get -> int
+Sdcb.SimdCodecs.Jpeg.GainMapImage
+Sdcb.SimdCodecs.Jpeg.GainMapImage.Base.get -> Sdcb.SimdCodecs.Abstractions.RasterImage!
+Sdcb.SimdCodecs.Jpeg.GainMapImage.GainMap.get -> Sdcb.SimdCodecs.Abstractions.RasterImage!
+Sdcb.SimdCodecs.Jpeg.GainMapImage.GainMapImage(Sdcb.SimdCodecs.Abstractions.RasterImage! baseImage, Sdcb.SimdCodecs.Abstractions.RasterImage! gainMap, Sdcb.SimdCodecs.Jpeg.GainMapMetadata! metadata) -> void
+Sdcb.SimdCodecs.Jpeg.GainMapImage.Metadata.get -> Sdcb.SimdCodecs.Jpeg.GainMapMetadata!
+Sdcb.SimdCodecs.Jpeg.GainMapImage.ReconstructHdr(double displayHeadroom) -> Sdcb.SimdCodecs.Abstractions.RasterImage!
+Sdcb.SimdCodecs.Jpeg.GainMapImage.Weight(double displayHeadroom) -> double
+Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder
+Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.GainMapImageDecoder() -> void
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.<Clone>$() -> Sdcb.SimdCodecs.Jpeg.GainMapMetadata!
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.BaseRenditionIsHdr.get -> bool
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.BaseRenditionIsHdr.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.Equals(Sdcb.SimdCodecs.Jpeg.GainMapMetadata? other) -> bool
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.GainMapMax.get -> double
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.GainMapMax.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.GainMapMetadata() -> void
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.GainMapMin.get -> double
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.GainMapMin.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.Gamma.get -> double
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.Gamma.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.HdrCapacityMax.get -> double
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.HdrCapacityMax.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.HdrCapacityMin.get -> double
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.HdrCapacityMin.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.OffsetHdr.get -> double
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.OffsetHdr.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.OffsetSdr.get -> double
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.OffsetSdr.init -> void
+Sdcb.SimdCodecs.Jpeg.GainMapMetadata.Validate() -> void
+Sdcb.SimdCodecs.Jpeg.GainMapXmp
+Sdcb.SimdCodecs.Jpeg.JpegGainMap
+Sdcb.SimdCodecs.Jpeg.MpfSegment
+Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry
+Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.Attribute.get -> uint
+Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.Attribute.init -> void
+Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.Deconstruct(out uint Attribute, out uint ImageLength, out long ImageOffset) -> void
+Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.Entry() -> void
+Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.Entry(uint Attribute, uint ImageLength, long ImageOffset) -> void
+Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.Equals(Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry other) -> bool
+Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.ImageLength.get -> uint
+Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.ImageLength.init -> void
+Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.ImageOffset.get -> long
+Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.ImageOffset.init -> void
+const Sdcb.SimdCodecs.Jpeg.MpfSegment.TotalLength = 90 -> int
+override Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.GetHashCode() -> int
+override Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.ToString() -> string!
+override Sdcb.SimdCodecs.Jpeg.GainMapMetadata.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Jpeg.GainMapMetadata.GetHashCode() -> int
+override Sdcb.SimdCodecs.Jpeg.GainMapMetadata.ToString() -> string!
+override Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.GetHashCode() -> int
+static Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.operator !=(Sdcb.SimdCodecs.Jpeg.GainMapComputeResult? left, Sdcb.SimdCodecs.Jpeg.GainMapComputeResult? right) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.operator ==(Sdcb.SimdCodecs.Jpeg.GainMapComputeResult? left, Sdcb.SimdCodecs.Jpeg.GainMapComputeResult? right) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.TryDecodeIntoRgba8(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapMetadata.operator !=(Sdcb.SimdCodecs.Jpeg.GainMapMetadata? left, Sdcb.SimdCodecs.Jpeg.GainMapMetadata? right) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapMetadata.operator ==(Sdcb.SimdCodecs.Jpeg.GainMapMetadata? left, Sdcb.SimdCodecs.Jpeg.GainMapMetadata? right) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapXmp.App1Identifier.get -> System.ReadOnlySpan<byte>
+static Sdcb.SimdCodecs.Jpeg.GainMapXmp.TryParseContainerGainMapLength(System.ReadOnlySpan<byte> xmpPacket, out int gainMapLength) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapXmp.TryParseGainMapMetadata(System.ReadOnlySpan<byte> xmpPacket, out Sdcb.SimdCodecs.Jpeg.GainMapMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapXmp.WriteGainMapApp1(Sdcb.SimdCodecs.Jpeg.GainMapMetadata! metadata) -> byte[]!
+static Sdcb.SimdCodecs.Jpeg.GainMapXmp.WritePrimaryApp1(int gainMapLength) -> byte[]!
+static Sdcb.SimdCodecs.Jpeg.JpegGainMap.Assemble(System.ReadOnlySpan<byte> sdrBaseJpeg, System.ReadOnlySpan<byte> gainMapJpeg, Sdcb.SimdCodecs.Jpeg.GainMapMetadata! metadata) -> byte[]!
+static Sdcb.SimdCodecs.Jpeg.JpegGainMap.Compute(System.ReadOnlySpan<float> hdrLinearRgb, System.ReadOnlySpan<byte> sdrRgb8, int width, int height, int downscale = 4) -> Sdcb.SimdCodecs.Jpeg.GainMapComputeResult!
+static Sdcb.SimdCodecs.Jpeg.JpegGainMap.RemoveGainMapMetadata(System.ReadOnlySpan<byte> jpeg) -> byte[]!
+static Sdcb.SimdCodecs.Jpeg.JpegGainMap.TryRead(System.ReadOnlySpan<byte> jpeg, out Sdcb.SimdCodecs.Jpeg.GainMapImage? image) -> bool
+static Sdcb.SimdCodecs.Jpeg.JpegGainMap.TrySplit(System.ReadOnlySpan<byte> jpeg, out System.Range baseJpeg, out System.Range gainMapJpeg, out Sdcb.SimdCodecs.Jpeg.GainMapMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.operator !=(Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry left, Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry right) -> bool
+static Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.operator ==(Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry left, Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry right) -> bool
+static Sdcb.SimdCodecs.Jpeg.MpfSegment.Identifier.get -> System.ReadOnlySpan<byte>
+static Sdcb.SimdCodecs.Jpeg.MpfSegment.TryParse(System.ReadOnlySpan<byte> payload, long payloadOffset, out Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry[]! entries) -> bool
+static Sdcb.SimdCodecs.Jpeg.MpfSegment.Write(int segmentOffset, int primaryImageLength, int gainMapImageLength) -> byte[]!
+~override Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.ToString() -> string

@@ -1,0 +1,274 @@
+#nullable enable
+Sdcb.SimdCodecs.Png.ChromaticityChunk
+Sdcb.SimdCodecs.Png.ChromaticityChunk.<Clone>$() -> Sdcb.SimdCodecs.Png.ChromaticityChunk!
+Sdcb.SimdCodecs.Png.ChromaticityChunk.BlueX.get -> double
+Sdcb.SimdCodecs.Png.ChromaticityChunk.BlueX.init -> void
+Sdcb.SimdCodecs.Png.ChromaticityChunk.BlueY.get -> double
+Sdcb.SimdCodecs.Png.ChromaticityChunk.BlueY.init -> void
+Sdcb.SimdCodecs.Png.ChromaticityChunk.ChromaticityChunk(double WhiteX, double WhiteY, double RedX, double RedY, double GreenX, double GreenY, double BlueX, double BlueY) -> void
+Sdcb.SimdCodecs.Png.ChromaticityChunk.Deconstruct(out double WhiteX, out double WhiteY, out double RedX, out double RedY, out double GreenX, out double GreenY, out double BlueX, out double BlueY) -> void
+Sdcb.SimdCodecs.Png.ChromaticityChunk.Equals(Sdcb.SimdCodecs.Png.ChromaticityChunk? other) -> bool
+Sdcb.SimdCodecs.Png.ChromaticityChunk.GreenX.get -> double
+Sdcb.SimdCodecs.Png.ChromaticityChunk.GreenX.init -> void
+Sdcb.SimdCodecs.Png.ChromaticityChunk.GreenY.get -> double
+Sdcb.SimdCodecs.Png.ChromaticityChunk.GreenY.init -> void
+Sdcb.SimdCodecs.Png.ChromaticityChunk.RedX.get -> double
+Sdcb.SimdCodecs.Png.ChromaticityChunk.RedX.init -> void
+Sdcb.SimdCodecs.Png.ChromaticityChunk.RedY.get -> double
+Sdcb.SimdCodecs.Png.ChromaticityChunk.RedY.init -> void
+Sdcb.SimdCodecs.Png.ChromaticityChunk.WhiteX.get -> double
+Sdcb.SimdCodecs.Png.ChromaticityChunk.WhiteX.init -> void
+Sdcb.SimdCodecs.Png.ChromaticityChunk.WhiteY.get -> double
+Sdcb.SimdCodecs.Png.ChromaticityChunk.WhiteY.init -> void
+Sdcb.SimdCodecs.Png.CicpChunk
+Sdcb.SimdCodecs.Png.CicpChunk.<Clone>$() -> Sdcb.SimdCodecs.Png.CicpChunk!
+Sdcb.SimdCodecs.Png.CicpChunk.CicpChunk(Sdcb.SimdCodecs.Abstractions.ColorPrimaries ColorPrimaries, Sdcb.SimdCodecs.Abstractions.TransferFunction TransferFunction, Sdcb.SimdCodecs.Abstractions.MatrixCoefficients MatrixCoefficients, bool VideoFullRangeFlag) -> void
+Sdcb.SimdCodecs.Png.CicpChunk.ColorPrimaries.get -> Sdcb.SimdCodecs.Abstractions.ColorPrimaries
+Sdcb.SimdCodecs.Png.CicpChunk.ColorPrimaries.init -> void
+Sdcb.SimdCodecs.Png.CicpChunk.Deconstruct(out Sdcb.SimdCodecs.Abstractions.ColorPrimaries ColorPrimaries, out Sdcb.SimdCodecs.Abstractions.TransferFunction TransferFunction, out Sdcb.SimdCodecs.Abstractions.MatrixCoefficients MatrixCoefficients, out bool VideoFullRangeFlag) -> void
+Sdcb.SimdCodecs.Png.CicpChunk.Equals(Sdcb.SimdCodecs.Png.CicpChunk? other) -> bool
+Sdcb.SimdCodecs.Png.CicpChunk.MatrixCoefficients.get -> Sdcb.SimdCodecs.Abstractions.MatrixCoefficients
+Sdcb.SimdCodecs.Png.CicpChunk.MatrixCoefficients.init -> void
+Sdcb.SimdCodecs.Png.CicpChunk.TransferFunction.get -> Sdcb.SimdCodecs.Abstractions.TransferFunction
+Sdcb.SimdCodecs.Png.CicpChunk.TransferFunction.init -> void
+Sdcb.SimdCodecs.Png.CicpChunk.VideoFullRangeFlag.get -> bool
+Sdcb.SimdCodecs.Png.CicpChunk.VideoFullRangeFlag.init -> void
+Sdcb.SimdCodecs.Png.ClliChunk
+Sdcb.SimdCodecs.Png.ClliChunk.<Clone>$() -> Sdcb.SimdCodecs.Png.ClliChunk!
+Sdcb.SimdCodecs.Png.ClliChunk.ClliChunk(uint MaxCllUnits, uint MaxFallUnits) -> void
+Sdcb.SimdCodecs.Png.ClliChunk.Deconstruct(out uint MaxCllUnits, out uint MaxFallUnits) -> void
+Sdcb.SimdCodecs.Png.ClliChunk.Equals(Sdcb.SimdCodecs.Png.ClliChunk? other) -> bool
+Sdcb.SimdCodecs.Png.ClliChunk.MaxCllUnits.get -> uint
+Sdcb.SimdCodecs.Png.ClliChunk.MaxCllUnits.init -> void
+Sdcb.SimdCodecs.Png.ClliChunk.MaxFallUnits.get -> uint
+Sdcb.SimdCodecs.Png.ClliChunk.MaxFallUnits.init -> void
+Sdcb.SimdCodecs.Png.MdcvChunk
+Sdcb.SimdCodecs.Png.MdcvChunk.<Clone>$() -> Sdcb.SimdCodecs.Png.MdcvChunk!
+Sdcb.SimdCodecs.Png.MdcvChunk.BlueX.get -> ushort
+Sdcb.SimdCodecs.Png.MdcvChunk.BlueX.init -> void
+Sdcb.SimdCodecs.Png.MdcvChunk.BlueY.get -> ushort
+Sdcb.SimdCodecs.Png.MdcvChunk.BlueY.init -> void
+Sdcb.SimdCodecs.Png.MdcvChunk.Deconstruct(out ushort RedX, out ushort RedY, out ushort GreenX, out ushort GreenY, out ushort BlueX, out ushort BlueY, out ushort WhitePointX, out ushort WhitePointY, out uint MaxLuminanceUnits, out uint MinLuminanceUnits) -> void
+Sdcb.SimdCodecs.Png.MdcvChunk.Equals(Sdcb.SimdCodecs.Png.MdcvChunk? other) -> bool
+Sdcb.SimdCodecs.Png.MdcvChunk.GreenX.get -> ushort
+Sdcb.SimdCodecs.Png.MdcvChunk.GreenX.init -> void
+Sdcb.SimdCodecs.Png.MdcvChunk.GreenY.get -> ushort
+Sdcb.SimdCodecs.Png.MdcvChunk.GreenY.init -> void
+Sdcb.SimdCodecs.Png.MdcvChunk.MaxLuminanceUnits.get -> uint
+Sdcb.SimdCodecs.Png.MdcvChunk.MaxLuminanceUnits.init -> void
+Sdcb.SimdCodecs.Png.MdcvChunk.MdcvChunk(ushort RedX, ushort RedY, ushort GreenX, ushort GreenY, ushort BlueX, ushort BlueY, ushort WhitePointX, ushort WhitePointY, uint MaxLuminanceUnits, uint MinLuminanceUnits) -> void
+Sdcb.SimdCodecs.Png.MdcvChunk.MinLuminanceUnits.get -> uint
+Sdcb.SimdCodecs.Png.MdcvChunk.MinLuminanceUnits.init -> void
+Sdcb.SimdCodecs.Png.MdcvChunk.RedX.get -> ushort
+Sdcb.SimdCodecs.Png.MdcvChunk.RedX.init -> void
+Sdcb.SimdCodecs.Png.MdcvChunk.RedY.get -> ushort
+Sdcb.SimdCodecs.Png.MdcvChunk.RedY.init -> void
+Sdcb.SimdCodecs.Png.MdcvChunk.WhitePointX.get -> ushort
+Sdcb.SimdCodecs.Png.MdcvChunk.WhitePointX.init -> void
+Sdcb.SimdCodecs.Png.MdcvChunk.WhitePointY.get -> ushort
+Sdcb.SimdCodecs.Png.MdcvChunk.WhitePointY.init -> void
+Sdcb.SimdCodecs.Png.PngImage
+Sdcb.SimdCodecs.Png.PngImage.<Clone>$() -> Sdcb.SimdCodecs.Png.PngImage!
+Sdcb.SimdCodecs.Png.PngImage.AsUInt16Samples() -> ushort[]!
+Sdcb.SimdCodecs.Png.PngImage.BitDepth.get -> int
+Sdcb.SimdCodecs.Png.PngImage.BitDepth.init -> void
+Sdcb.SimdCodecs.Png.PngImage.Chromaticity.get -> Sdcb.SimdCodecs.Png.ChromaticityChunk?
+Sdcb.SimdCodecs.Png.PngImage.Chromaticity.init -> void
+Sdcb.SimdCodecs.Png.PngImage.Cicp.get -> Sdcb.SimdCodecs.Png.CicpChunk?
+Sdcb.SimdCodecs.Png.PngImage.Cicp.init -> void
+Sdcb.SimdCodecs.Png.PngImage.Clli.get -> Sdcb.SimdCodecs.Png.ClliChunk?
+Sdcb.SimdCodecs.Png.PngImage.Clli.init -> void
+Sdcb.SimdCodecs.Png.PngImage.ColorType.get -> int
+Sdcb.SimdCodecs.Png.PngImage.ColorType.init -> void
+Sdcb.SimdCodecs.Png.PngImage.Equals(Sdcb.SimdCodecs.Png.PngImage? other) -> bool
+Sdcb.SimdCodecs.Png.PngImage.Exif.get -> byte[]?
+Sdcb.SimdCodecs.Png.PngImage.Exif.init -> void
+Sdcb.SimdCodecs.Png.PngImage.ExpandToRgba8(System.Span<byte> destination) -> void
+Sdcb.SimdCodecs.Png.PngImage.Gamma.get -> double?
+Sdcb.SimdCodecs.Png.PngImage.Gamma.init -> void
+Sdcb.SimdCodecs.Png.PngImage.HasHdrSignaling.get -> bool
+Sdcb.SimdCodecs.Png.PngImage.Height.get -> int
+Sdcb.SimdCodecs.Png.PngImage.Height.init -> void
+Sdcb.SimdCodecs.Png.PngImage.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Png.PngImage.IccProfile.init -> void
+Sdcb.SimdCodecs.Png.PngImage.IccProfileName.get -> string?
+Sdcb.SimdCodecs.Png.PngImage.IccProfileName.init -> void
+Sdcb.SimdCodecs.Png.PngImage.Interlaced.get -> bool
+Sdcb.SimdCodecs.Png.PngImage.Interlaced.init -> void
+Sdcb.SimdCodecs.Png.PngImage.Mdcv.get -> Sdcb.SimdCodecs.Png.MdcvChunk?
+Sdcb.SimdCodecs.Png.PngImage.Mdcv.init -> void
+Sdcb.SimdCodecs.Png.PngImage.Palette.get -> byte[]?
+Sdcb.SimdCodecs.Png.PngImage.Palette.init -> void
+Sdcb.SimdCodecs.Png.PngImage.PaletteAlpha.get -> byte[]?
+Sdcb.SimdCodecs.Png.PngImage.PaletteAlpha.init -> void
+Sdcb.SimdCodecs.Png.PngImage.PhysicalDimensions.get -> Sdcb.SimdCodecs.Png.PngPhysicalDimensions?
+Sdcb.SimdCodecs.Png.PngImage.PhysicalDimensions.init -> void
+Sdcb.SimdCodecs.Png.PngImage.Pixels.get -> byte[]!
+Sdcb.SimdCodecs.Png.PngImage.Pixels.init -> void
+Sdcb.SimdCodecs.Png.PngImage.PngImage() -> void
+Sdcb.SimdCodecs.Png.PngImage.SamplesPerPixel.get -> int
+Sdcb.SimdCodecs.Png.PngImage.SourceBitDepth.get -> int
+Sdcb.SimdCodecs.Png.PngImage.SourceBitDepth.init -> void
+Sdcb.SimdCodecs.Png.PngImage.SrgbRenderingIntent.get -> byte?
+Sdcb.SimdCodecs.Png.PngImage.SrgbRenderingIntent.init -> void
+Sdcb.SimdCodecs.Png.PngImage.Text.get -> System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Png.PngText!>!
+Sdcb.SimdCodecs.Png.PngImage.Text.init -> void
+Sdcb.SimdCodecs.Png.PngImage.ToRgba8() -> byte[]!
+Sdcb.SimdCodecs.Png.PngImage.TransparentColor.get -> ushort[]?
+Sdcb.SimdCodecs.Png.PngImage.TransparentColor.init -> void
+Sdcb.SimdCodecs.Png.PngImage.Width.get -> int
+Sdcb.SimdCodecs.Png.PngImage.Width.init -> void
+Sdcb.SimdCodecs.Png.PngImageDecoder
+Sdcb.SimdCodecs.Png.PngImageDecoder.PngImageDecoder() -> void
+Sdcb.SimdCodecs.Png.PngImageEncoder
+Sdcb.SimdCodecs.Png.PngImageEncoder.PngImageEncoder() -> void
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions.<Clone>$() -> Sdcb.SimdCodecs.Png.PngPhysicalDimensions!
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions.Deconstruct(out uint PixelsPerUnitX, out uint PixelsPerUnitY, out bool UnitIsMetre) -> void
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions.DpiX.get -> double?
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions.DpiY.get -> double?
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions.Equals(Sdcb.SimdCodecs.Png.PngPhysicalDimensions? other) -> bool
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions.PixelsPerUnitX.get -> uint
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions.PixelsPerUnitX.init -> void
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions.PixelsPerUnitY.get -> uint
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions.PixelsPerUnitY.init -> void
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions.PngPhysicalDimensions(uint PixelsPerUnitX, uint PixelsPerUnitY, bool UnitIsMetre) -> void
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions.UnitIsMetre.get -> bool
+Sdcb.SimdCodecs.Png.PngPhysicalDimensions.UnitIsMetre.init -> void
+Sdcb.SimdCodecs.Png.PngPredictor
+Sdcb.SimdCodecs.Png.PngReader
+Sdcb.SimdCodecs.Png.PngText
+Sdcb.SimdCodecs.Png.PngText.<Clone>$() -> Sdcb.SimdCodecs.Png.PngText!
+Sdcb.SimdCodecs.Png.PngText.Deconstruct(out string! Keyword, out string! Text) -> void
+Sdcb.SimdCodecs.Png.PngText.Equals(Sdcb.SimdCodecs.Png.PngText? other) -> bool
+Sdcb.SimdCodecs.Png.PngText.Keyword.get -> string!
+Sdcb.SimdCodecs.Png.PngText.Keyword.init -> void
+Sdcb.SimdCodecs.Png.PngText.PngText(string! Keyword, string! Text) -> void
+Sdcb.SimdCodecs.Png.PngText.Text.get -> string!
+Sdcb.SimdCodecs.Png.PngText.Text.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions
+Sdcb.SimdCodecs.Png.PngWriteOptions.Chromaticity.get -> Sdcb.SimdCodecs.Png.ChromaticityChunk?
+Sdcb.SimdCodecs.Png.PngWriteOptions.Chromaticity.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.Cicp.get -> Sdcb.SimdCodecs.Png.CicpChunk?
+Sdcb.SimdCodecs.Png.PngWriteOptions.Cicp.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.Clli.get -> Sdcb.SimdCodecs.Png.ClliChunk?
+Sdcb.SimdCodecs.Png.PngWriteOptions.Clli.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.CompressionLevel.get -> System.IO.Compression.CompressionLevel
+Sdcb.SimdCodecs.Png.PngWriteOptions.CompressionLevel.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.DiscardAlpha.get -> bool
+Sdcb.SimdCodecs.Png.PngWriteOptions.DiscardAlpha.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.Equals(Sdcb.SimdCodecs.Png.PngWriteOptions? other) -> bool
+Sdcb.SimdCodecs.Png.PngWriteOptions.Exif.get -> byte[]?
+Sdcb.SimdCodecs.Png.PngWriteOptions.Exif.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.Gamma.get -> double?
+Sdcb.SimdCodecs.Png.PngWriteOptions.Gamma.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Png.PngWriteOptions.IccProfile.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.IccProfileName.get -> string!
+Sdcb.SimdCodecs.Png.PngWriteOptions.IccProfileName.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.LosslessReduction.get -> bool
+Sdcb.SimdCodecs.Png.PngWriteOptions.LosslessReduction.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.Mdcv.get -> Sdcb.SimdCodecs.Png.MdcvChunk?
+Sdcb.SimdCodecs.Png.PngWriteOptions.Mdcv.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.ParallelFragments.get -> int
+Sdcb.SimdCodecs.Png.PngWriteOptions.ParallelFragments.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.PhysicalDimensions.get -> Sdcb.SimdCodecs.Png.PngPhysicalDimensions?
+Sdcb.SimdCodecs.Png.PngWriteOptions.PhysicalDimensions.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.PngWriteOptions() -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.SrgbRenderingIntent.get -> byte?
+Sdcb.SimdCodecs.Png.PngWriteOptions.SrgbRenderingIntent.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.Text.get -> System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Png.PngText!>?
+Sdcb.SimdCodecs.Png.PngWriteOptions.Text.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.TransparentColor.get -> ushort[]?
+Sdcb.SimdCodecs.Png.PngWriteOptions.TransparentColor.init -> void
+Sdcb.SimdCodecs.Png.PngWriter
+const Sdcb.SimdCodecs.Png.PngReader.MaxInflatedIccProfileBytes = 16777216 -> int
+const Sdcb.SimdCodecs.Png.PngReader.MaxInflatedTextBytes = 8388608 -> int
+const Sdcb.SimdCodecs.Png.PngText.MaxKeywordLength = 79 -> int
+const Sdcb.SimdCodecs.Png.PngWriter.MinimumParallelFragmentBytes = 262144 -> int
+const Sdcb.SimdCodecs.Png.PngWriter.TextCompressionThreshold = 1024 -> int
+override Sdcb.SimdCodecs.Png.ChromaticityChunk.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Png.ChromaticityChunk.GetHashCode() -> int
+override Sdcb.SimdCodecs.Png.ChromaticityChunk.ToString() -> string!
+override Sdcb.SimdCodecs.Png.CicpChunk.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Png.CicpChunk.GetHashCode() -> int
+override Sdcb.SimdCodecs.Png.CicpChunk.ToString() -> string!
+override Sdcb.SimdCodecs.Png.ClliChunk.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Png.ClliChunk.GetHashCode() -> int
+override Sdcb.SimdCodecs.Png.ClliChunk.ToString() -> string!
+override Sdcb.SimdCodecs.Png.MdcvChunk.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Png.MdcvChunk.GetHashCode() -> int
+override Sdcb.SimdCodecs.Png.MdcvChunk.ToString() -> string!
+override Sdcb.SimdCodecs.Png.PngImage.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Png.PngImage.GetHashCode() -> int
+override Sdcb.SimdCodecs.Png.PngImage.ToString() -> string!
+override Sdcb.SimdCodecs.Png.PngPhysicalDimensions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Png.PngPhysicalDimensions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Png.PngPhysicalDimensions.ToString() -> string!
+override Sdcb.SimdCodecs.Png.PngText.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Png.PngText.GetHashCode() -> int
+override Sdcb.SimdCodecs.Png.PngText.ToString() -> string!
+override Sdcb.SimdCodecs.Png.PngWriteOptions.<Clone>$() -> Sdcb.SimdCodecs.Png.PngWriteOptions!
+override Sdcb.SimdCodecs.Png.PngWriteOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Png.PngWriteOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Png.PngWriteOptions.ToString() -> string!
+override sealed Sdcb.SimdCodecs.Png.PngWriteOptions.Equals(Sdcb.SimdCodecs.Abstractions.EncodeOptions? other) -> bool
+static Sdcb.SimdCodecs.Png.ChromaticityChunk.operator !=(Sdcb.SimdCodecs.Png.ChromaticityChunk? left, Sdcb.SimdCodecs.Png.ChromaticityChunk? right) -> bool
+static Sdcb.SimdCodecs.Png.ChromaticityChunk.operator ==(Sdcb.SimdCodecs.Png.ChromaticityChunk? left, Sdcb.SimdCodecs.Png.ChromaticityChunk? right) -> bool
+static Sdcb.SimdCodecs.Png.CicpChunk.Bt2020Hlg.get -> Sdcb.SimdCodecs.Png.CicpChunk!
+static Sdcb.SimdCodecs.Png.CicpChunk.Hdr10Pq.get -> Sdcb.SimdCodecs.Png.CicpChunk!
+static Sdcb.SimdCodecs.Png.CicpChunk.Srgb.get -> Sdcb.SimdCodecs.Png.CicpChunk!
+static Sdcb.SimdCodecs.Png.CicpChunk.SrgbPq.get -> Sdcb.SimdCodecs.Png.CicpChunk!
+static Sdcb.SimdCodecs.Png.CicpChunk.operator !=(Sdcb.SimdCodecs.Png.CicpChunk? left, Sdcb.SimdCodecs.Png.CicpChunk? right) -> bool
+static Sdcb.SimdCodecs.Png.CicpChunk.operator ==(Sdcb.SimdCodecs.Png.CicpChunk? left, Sdcb.SimdCodecs.Png.CicpChunk? right) -> bool
+static Sdcb.SimdCodecs.Png.ClliChunk.operator !=(Sdcb.SimdCodecs.Png.ClliChunk? left, Sdcb.SimdCodecs.Png.ClliChunk? right) -> bool
+static Sdcb.SimdCodecs.Png.ClliChunk.operator ==(Sdcb.SimdCodecs.Png.ClliChunk? left, Sdcb.SimdCodecs.Png.ClliChunk? right) -> bool
+static Sdcb.SimdCodecs.Png.MdcvChunk.operator !=(Sdcb.SimdCodecs.Png.MdcvChunk? left, Sdcb.SimdCodecs.Png.MdcvChunk? right) -> bool
+static Sdcb.SimdCodecs.Png.MdcvChunk.operator ==(Sdcb.SimdCodecs.Png.MdcvChunk? left, Sdcb.SimdCodecs.Png.MdcvChunk? right) -> bool
+static Sdcb.SimdCodecs.Png.PngImage.operator !=(Sdcb.SimdCodecs.Png.PngImage? left, Sdcb.SimdCodecs.Png.PngImage? right) -> bool
+static Sdcb.SimdCodecs.Png.PngImage.operator ==(Sdcb.SimdCodecs.Png.PngImage? left, Sdcb.SimdCodecs.Png.PngImage? right) -> bool
+static Sdcb.SimdCodecs.Png.PngImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Png.PngImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
+static Sdcb.SimdCodecs.Png.PngImageDecoder.SignatureLength.get -> int
+static Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecodeIntoRgba8(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> bool
+static Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecodeRgba8(System.ReadOnlySpan<byte> data, out byte[]? rgba, out int width, out int height) -> bool
+static Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.Png.PngImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Png.PngImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.Png.PngImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.Png.PngImageEncoder.Create(System.Buffers.IBufferWriter<byte>! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
+static Sdcb.SimdCodecs.Png.PngImageEncoder.Format.get -> Sdcb.SimdCodecs.Abstractions.ImageFormat
+static Sdcb.SimdCodecs.Png.PngImageEncoder.GetClosestInputFormat(Sdcb.SimdCodecs.Abstractions.PixelFormat requested) -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+static Sdcb.SimdCodecs.Png.PngImageEncoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration!
+static Sdcb.SimdCodecs.Png.PngPhysicalDimensions.FromDpi(double dpi) -> Sdcb.SimdCodecs.Png.PngPhysicalDimensions!
+static Sdcb.SimdCodecs.Png.PngPhysicalDimensions.operator !=(Sdcb.SimdCodecs.Png.PngPhysicalDimensions? left, Sdcb.SimdCodecs.Png.PngPhysicalDimensions? right) -> bool
+static Sdcb.SimdCodecs.Png.PngPhysicalDimensions.operator ==(Sdcb.SimdCodecs.Png.PngPhysicalDimensions? left, Sdcb.SimdCodecs.Png.PngPhysicalDimensions? right) -> bool
+static Sdcb.SimdCodecs.Png.PngPredictor.Unfilter(System.ReadOnlySpan<byte> input, int columns, int bytesPerComponent = 1) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngReader.Decode(System.ReadOnlySpan<byte> data, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Png.PngImage!
+static Sdcb.SimdCodecs.Png.PngReader.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Png.PngImage? image, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.Png.PngText.IsValidKeyword(string! keyword) -> bool
+static Sdcb.SimdCodecs.Png.PngText.operator !=(Sdcb.SimdCodecs.Png.PngText? left, Sdcb.SimdCodecs.Png.PngText? right) -> bool
+static Sdcb.SimdCodecs.Png.PngText.operator ==(Sdcb.SimdCodecs.Png.PngText? left, Sdcb.SimdCodecs.Png.PngText? right) -> bool
+static Sdcb.SimdCodecs.Png.PngWriteOptions.operator !=(Sdcb.SimdCodecs.Png.PngWriteOptions? left, Sdcb.SimdCodecs.Png.PngWriteOptions? right) -> bool
+static Sdcb.SimdCodecs.Png.PngWriteOptions.operator ==(Sdcb.SimdCodecs.Png.PngWriteOptions? left, Sdcb.SimdCodecs.Png.PngWriteOptions? right) -> bool
+static Sdcb.SimdCodecs.Png.PngWriter.Encode(System.ReadOnlySpan<byte> rgba, int width, int height) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.Encode(System.ReadOnlySpan<byte> rgba, int width, int height, Sdcb.SimdCodecs.Png.PngWriteOptions! options) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.Encode(System.ReadOnlySpan<byte> rgba, int width, int height, System.ReadOnlySpan<byte> iccProfile) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeGray16(System.ReadOnlySpan<ushort> gray, int width, int height, Sdcb.SimdCodecs.Png.PngWriteOptions! options) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeGray16(System.ReadOnlySpan<ushort> gray, int width, int height, System.ReadOnlySpan<byte> iccProfile = default(System.ReadOnlySpan<byte>)) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeGray8(System.ReadOnlySpan<byte> gray, int width, int height, Sdcb.SimdCodecs.Png.PngWriteOptions! options) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeGray8(System.ReadOnlySpan<byte> gray, int width, int height, System.ReadOnlySpan<byte> iccProfile = default(System.ReadOnlySpan<byte>)) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeGrayAlpha16(System.ReadOnlySpan<ushort> grayAlpha, int width, int height, Sdcb.SimdCodecs.Png.PngWriteOptions! options) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeGrayAlpha16(System.ReadOnlySpan<ushort> grayAlpha, int width, int height, System.ReadOnlySpan<byte> iccProfile = default(System.ReadOnlySpan<byte>)) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeGrayAlpha8(System.ReadOnlySpan<byte> grayAlpha, int width, int height, Sdcb.SimdCodecs.Png.PngWriteOptions! options) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeGrayAlpha8(System.ReadOnlySpan<byte> grayAlpha, int width, int height, System.ReadOnlySpan<byte> iccProfile = default(System.ReadOnlySpan<byte>)) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeRgb16(System.ReadOnlySpan<ushort> rgb, int width, int height, Sdcb.SimdCodecs.Png.PngWriteOptions! options) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeRgb16(System.ReadOnlySpan<ushort> rgb, int width, int height, System.ReadOnlySpan<byte> iccProfile = default(System.ReadOnlySpan<byte>)) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeRgb8(System.ReadOnlySpan<byte> rgb, int width, int height, Sdcb.SimdCodecs.Png.PngWriteOptions! options) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeRgb8(System.ReadOnlySpan<byte> rgb, int width, int height, System.ReadOnlySpan<byte> iccProfile = default(System.ReadOnlySpan<byte>)) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeRgba16(System.ReadOnlySpan<ushort> rgba, int width, int height, Sdcb.SimdCodecs.Png.PngWriteOptions! options) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.EncodeRgba16(System.ReadOnlySpan<ushort> rgba, int width, int height, System.ReadOnlySpan<byte> iccProfile = default(System.ReadOnlySpan<byte>)) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngWriter.Save(string! path, System.ReadOnlySpan<byte> rgba, int width, int height) -> void
+static Sdcb.SimdCodecs.Png.PngWriter.Save(string! path, System.ReadOnlySpan<byte> rgba, int width, int height, System.ReadOnlySpan<byte> iccProfile) -> void

@@ -1,0 +1,3 @@
+#nullable enable
+Sdcb.SimdCodecs.Jpeg.JpegIccInjector
+static Sdcb.SimdCodecs.Jpeg.JpegIccInjector.EmbedIccProfile(System.ReadOnlySpan<byte> jpeg, System.ReadOnlyMemory<byte> profile) -> byte[]!
