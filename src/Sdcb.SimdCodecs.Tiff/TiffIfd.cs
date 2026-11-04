@@ -66,7 +66,8 @@ internal sealed record ParsedIfd(
     bool IsTiled, int TileWidth, int TileHeight,
     uint[] SegmentOffsets, uint[] SegmentByteCounts, TiffSegmentGeometry Geometry,
     float? SMin, float? SMax, byte[]? Icc, int? ExifIfdOffset, int? GpsInfoIfdOffset,
-    long NextIfdOffset, bool LsbFirst = false, uint FaxOptions = 0, int Orientation = 1)
+    long NextIfdOffset, bool LsbFirst = false, uint FaxOptions = 0, int Orientation = 1,
+    byte[]? Xmp = null, double XResolution = 0, double YResolution = 0, int ResolutionUnit = 2)
 {
     /// <summary>Bits per sample of <see cref="TiffPage.Pixels"/>: a 1/2/4-bit page is expanded to 8.</summary>
     public int OutputBitsPerSample => BitsPerSample < 8 ? 8 : BitsPerSample;
@@ -142,6 +143,9 @@ internal static class TiffIfdParser
         uint t4Options = 0;
         uint t6Options = 0;
         var orientation = 1;
+        byte[]? xmp = null;
+        double xRes = 0, yRes = 0;
+        var resUnit = 2;
 
         for (var i = 0; i < entryCount; i++)
         {
@@ -189,6 +193,22 @@ internal static class TiffIfdParser
                     // Metadata, never a reason to refuse a page: anything but one SHORT in 1..8 means the default.
                     var o = type == TiffFieldType.Short && count == 1 ? U16(valueSpan[..2], fileIsLE) : 0;
                     orientation = o is >= 1 and <= 8 ? o : 1;
+                    break;
+                case TiffTag.XmpPacket:
+                    // Metadata, never a reason to refuse a page: an unreadable packet is simply absent.
+                    try { xmp = ByteArray(ref src, type, count, valueSpan, fileIsLE); }
+                    catch (Exception e) when (e is InvalidDataException or NotSupportedException) { xmp = null; }
+                    break;
+                case TiffTag.XResolution:
+                    xRes = LenientRational(ref src, type, count, valueSpan, fileIsLE);
+                    break;
+                case TiffTag.YResolution:
+                    yRes = LenientRational(ref src, type, count, valueSpan, fileIsLE);
+                    break;
+                case TiffTag.ResolutionUnit:
+                    // Anything but one SHORT in 1..3 means the default (inch).
+                    var ru = type == TiffFieldType.Short && count == 1 ? U16(valueSpan[..2], fileIsLE) : 0;
+                    resUnit = ru is >= 1 and <= 3 ? ru : 2;
                     break;
                 default:
                     // Unrecognised tag: TIFF spec says skip unknown tags.
@@ -272,7 +292,8 @@ internal static class TiffIfdParser
             sampleFormat, planarConfig, predictor, rowsPerStrip, isTiled, tileWidth, tileHeight,
             segmentOffsets, segmentByteCounts, geometry, sMin, sMax, icc, exifIfdOffset, gpsIfdOffset,
             nextIfdOffset, LsbFirst: fillOrder == 2,
-            FaxOptions: compression == TiffCompression.CcittT6 ? t6Options : t4Options, Orientation: orientation);
+            FaxOptions: compression == TiffCompression.CcittT6 ? t6Options : t4Options, Orientation: orientation,
+            Xmp: xmp, XResolution: xRes, YResolution: yRes, ResolutionUnit: resUnit);
     }
 
     public static ushort U16(ReadOnlySpan<byte> b, bool le) =>
@@ -280,6 +301,24 @@ internal static class TiffIfdParser
 
     public static uint U32(ReadOnlySpan<byte> b, bool le) =>
         le ? BinaryPrimitives.ReadUInt32LittleEndian(b) : BinaryPrimitives.ReadUInt32BigEndian(b);
+
+    /// <summary>One RATIONAL as a non-negative double, or 0 when the tag is not a usable RATIONAL (resolution is metadata: never a reason to refuse a page).</summary>
+    private static double LenientRational<T>(ref T src, TiffFieldType type, uint count, ReadOnlySpan<byte> valueSpan, bool le)
+        where T : ITiffBytes, allows ref struct
+    {
+        if (type != TiffFieldType.Rational || count < 1) return 0;
+        try
+        {
+            var data = Value(ref src, 1, 8, valueSpan, le);
+            var num = U32(data.AsSpan(0, 4), le);
+            var den = U32(data.AsSpan(4, 4), le);
+            return den == 0 ? 0 : (double)num / den;
+        }
+        catch (InvalidDataException)
+        {
+            return 0;
+        }
+    }
 
     private static uint Scalar(TiffFieldType type, ReadOnlySpan<byte> v, bool le) => type switch
     {

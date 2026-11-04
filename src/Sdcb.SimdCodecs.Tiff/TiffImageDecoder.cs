@@ -28,9 +28,20 @@ namespace Sdcb.SimdCodecs.Tiff;
 /// assumption. SMin/SMax stay available via <see cref="TiffReader"/> for
 /// consumers that stretch.
 /// </para>
+/// <para>
+/// 1/2/4-bit grey is expanded to fill 8 bits (the maximum code becomes 255) and reports
+/// <see cref="IDecodedImage.BitDepth"/> 1/2/4; 16-bit float reports 16. Scaling is not supported (a
+/// <see cref="DecodeOptions.ScaleDenominator"/> other than 1 throws <see cref="NotSupportedException"/>); a
+/// <see cref="DecodeOptions.Region"/> decodes the whole page and crops it. Cancellation is checked per strip,
+/// per row of tiles and per page.
+/// </para>
 /// </summary>
 public sealed class TiffImageDecoder : IMultiFrameImageDecoder
 {
+    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Tiff, CanDecode, TryReadInfo,
+        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail, TryOpenFrames);
+
     /// <inheritdoc />
     public static int SignatureLength => 4;
 
@@ -50,13 +61,14 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
     }
 
     /// <inheritdoc />
-    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image)
-    {
-        var ok = TryDecodePage(data, 0, out var raster);
-        image = raster;
-        return ok;
-    }
+    public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
+        out int width, out int height, out int scaleDenominator) =>
+        ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
 
+    /// <inheritdoc />
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        TryDecodePage(data, 0, options, cancellationToken, out image);
     /// <inheritdoc />
     /// <remarks>Every page is a frame, with its own size, layout and orientation; a page this adapter
     /// refuses (palette, CMYK, ...) is listed but fails to decode, without stopping the others. Pages are
@@ -93,6 +105,8 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
                 Format = ImageFormat.Tiff,
                 BitDepth = layout.StoredBitsPerSample,
                 Orientation = (ImageOrientation)layout.Orientation,
+                ColorEncoding = ColorOf(layout.SampleFormat),
+                Resolution = ResolutionOf(layout),
             };
             return true;
         }
@@ -103,27 +117,74 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
     }
 
     /// <inheritdoc />
-    /// <remarks>False for float pages: scene-linear float has no canonical 8-bit
-    /// projection (see <see cref="RasterImage.ExpandToRgba8"/>) — use
-    /// <see cref="TryDecode"/> + <see cref="IDecodedImage.ToFloats"/> instead.</remarks>
-    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format) =>
-        TryDecode(data, out var image) && PixelConverter.TryConvert(image, destination, stride, format);
+    /// <remarks>TIFF has no scaling. The result of the generic decode-then-convert path
+    /// (<see cref="ImageDecoderFallback.TryDecodeInto"/>); a float page is converted by
+    /// <see cref="PixelConverter"/> like any other. A <see cref="DecodeOptions.Region"/> decodes the whole page
+    /// and crops it.</remarks>
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>The ICC profile (tag 34675) and the XMP packet (tag 700, raw bytes) of the first page.
+    /// <see cref="ImageMetadata.Exif"/> is always empty: a TIFF file is itself a TIFF structure, so its tags
+    /// (and the Exif IFD behind tag 34665) are read from the file by <c>Sdcb.SimdCodecs.Exif</c> directly rather than
+    /// repackaged as an Exif block.</remarks>
+    public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata)
+    {
+        metadata = null;
+        try
+        {
+            var layout = TiffReader.ReadLayout(data, 0);
+            metadata = new ImageMetadata(xmp: layout.Xmp ?? default, icc: layout.IccProfile ?? default);
+            return true;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>This reader does not extract thumbnails: always false.</remarks>
+    public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail) =>
+        ImageDecoderFallback.NoThumbnail(out thumbnail);
 
     /// <summary>
     /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA: <paramref name="rgbaDestination"/> must be
     /// at least <c>Width * Height * 4</c> bytes.
     /// </summary>
     public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
-        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
+        TryDecodeInto(data, rgbaDestination, 0, PixelFormat.Rgba32);
 
     /// <summary>Page <paramref name="pageIndex"/> as <see cref="TryDecode"/> presents the first.</summary>
-    internal static bool TryDecodePage(ReadOnlySpan<byte> data, int pageIndex, [NotNullWhen(true)] out RasterImage? image)
+    internal static bool TryDecodePage(ReadOnlySpan<byte> data, int pageIndex, DecodeOptions? options,
+        CancellationToken cancellationToken, [NotNullWhen(true)] out IDecodedImage? image)
     {
         image = null;
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (options is not null)
+        {
+            // Check the options against the page before any strip is decoded (outside the try: they throw).
+            TiffPageLayout layout;
+            try
+            {
+                layout = TiffReader.ReadLayout(data, pageIndex);
+            }
+            catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+            {
+                return false;
+            }
+            if (!TryMapLayout(layout.Photometric, layout.SamplesPerPixel, layout.BitsPerSample, layout.SampleFormat, out _))
+                return false;
+            options.Validate(layout.Width, layout.Height, supportsScale: false);
+        }
+
         TiffPage page;
         try
         {
-            page = TiffReader.ReadPage(data, pageIndex);
+            page = TiffReader.ReadPage(data, pageIndex, cancellationToken);
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
         {
@@ -146,23 +207,47 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
             }
         }
 
-        var color = page.SampleFormat == TiffSampleFormat.IeeeFloat
-            ? new ColorEncoding { Transfer = TransferFunction.Linear, Float = FloatSemantics.SceneReferred }
-            : ColorEncoding.AssumedSrgb;
+        var color = ColorOf(page.SampleFormat);
+        // Real precision below the container: 1/2/4-bit grey (expanded to fill 8 bits) and 16-bit half floats.
+        var fullBits = format switch { SampleFormat.UInt8 => 8, SampleFormat.UInt16 => 16, _ => 32 };
+        var bitDepth = page.StoredBitsPerSample > 0 && page.StoredBitsPerSample < fullBits ? page.StoredBitsPerSample : 0;
 
+        RasterImage raster;
         if (page.BitsPerSample == 16 && page.SampleFormat == TiffSampleFormat.IeeeFloat)
         {
             // 16-bit IEEE float (half): widen losslessly to Float32.
             var halves = MemoryMarshal.Cast<byte, Half>(page.Pixels);
             var widened = new float[halves.Length];
             for (var i = 0; i < halves.Length; i++) widened[i] = (float)halves[i];
-            image = new RasterImage(page.Width, page.Height, channels, SampleFormat.Float32,
-                MemoryMarshal.AsBytes(widened.AsSpan()).ToArray(), page.IccProfile, color);
-            return true;
+            raster = RasterImage.Wrap(page.Width, page.Height, channels, SampleFormat.Float32,
+                MemoryMarshal.AsBytes(widened.AsSpan()).ToArray(), page.IccProfile, color, bitDepth);
         }
-
-        image = new RasterImage(page.Width, page.Height, channels, format, page.Pixels, page.IccProfile, color);
+        else
+        {
+            raster = RasterImage.Wrap(page.Width, page.Height, channels, format, page.Pixels, page.IccProfile, color, bitDepth);
+        }
+        image = DecodeOptions.Apply(raster, options);
         return true;
+    }
+
+    private static ColorEncoding ColorOf(TiffSampleFormat sampleFormat) =>
+        sampleFormat == TiffSampleFormat.IeeeFloat
+            ? new ColorEncoding { Transfer = TransferFunction.Linear, Float = FloatSemantics.SceneReferred }
+            : ColorEncoding.AssumedSrgb;
+
+    /// <summary>XResolution / YResolution / ResolutionUnit (tags 282 / 283 / 296); null unless both densities are present and positive.</summary>
+    private static Resolution? ResolutionOf(TiffPageLayout layout)
+    {
+        if (!(layout.XResolution > 0) || !(layout.YResolution > 0)
+            || double.IsInfinity(layout.XResolution) || double.IsInfinity(layout.YResolution))
+            return null;
+        var unit = layout.ResolutionUnit switch
+        {
+            1 => ResolutionUnit.AspectRatio,
+            3 => ResolutionUnit.PerCentimeter,
+            _ => ResolutionUnit.PerInch,
+        };
+        return new Resolution(layout.XResolution, layout.YResolution, unit);
     }
 
     /// <summary>

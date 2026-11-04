@@ -20,6 +20,7 @@ public static class TiffTag
     public const ushort T4Options         = 292;
     public const ushort T6Options         = 293;
     public const ushort ResolutionUnit    = 296;
+    public const ushort XmpPacket         = 700;
     public const ushort Predictor         = 317;
     public const ushort PageNumber        = 297;
     public const ushort Software          = 305;
