@@ -153,7 +153,7 @@ internal sealed class IcoContainer
 
     /// <summary>Decodes image <paramref name="index"/> into <paramref name="destination"/> (laid out by the caller).</summary>
     /// <exception cref="InvalidDataException">The image does not decode.</exception>
-    public void DecodeInto(ReadOnlySpan<byte> data, int index, Span<byte> destination, int rowStride, ImagePixelFormat format)
+    public void DecodeInto(ReadOnlySpan<byte> data, int index, Span<byte> destination, int rowStride, PixelFormat format)
     {
         var payload = Payload(data, index);
         if (Entries[index].IsPng)
@@ -171,7 +171,7 @@ internal sealed class IcoContainer
     {
         var entry = Entries[index];
         var rgba = new byte[(long)entry.Width * entry.Height * 4];
-        DecodeInto(data, index, rgba, entry.Width * 4, ImagePixelFormat.Rgba32);
+        DecodeInto(data, index, rgba, entry.Width * 4, PixelFormat.Rgba32);
         return new IcoImage(entry, rgba);
     }
 }
