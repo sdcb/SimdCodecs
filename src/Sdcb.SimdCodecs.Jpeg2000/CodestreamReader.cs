@@ -51,7 +51,7 @@ internal sealed record CodestreamHeader(
 /// <para>
 /// The distinction kept throughout: <see cref="InvalidDataException"/> means the
 /// bytes are malformed or hostile, <see cref="NotSupportedException"/> means
-/// they are a perfectly legal codestream using a feature this rung does not
+/// they are a perfectly legal codestream using a feature this decoder does not
 /// implement yet. A caller can reasonably retry the second with another decoder
 /// and cannot do anything with the first.
 /// </para>
@@ -232,7 +232,7 @@ internal static class CodestreamReader
         var tileIndex = ReadUInt16(data, ref offset, "Isot");
         var psot = (int)ReadUInt32(data, ref offset, "Psot");
         var partIndex = data[offset++];
-        offset++; // TNsot — how many parts this tile has; unused while multi-part is refused.
+        offset++; // TNsot, how many parts this tile has: the parts are counted, not trusted.
 
         // Psot counts from the first byte of the SOT MARKER, not from here. Zero
         // is legal and means "to the end of the codestream, or to the next SOT",
@@ -243,9 +243,9 @@ internal static class CodestreamReader
                 $"JPEG 2000: tile-part at offset {sotStart} declares Psot={psot}, which does not fit the " +
                 "codestream.");
 
-        // Between SOT and SOD sit the tile-part header markers. Rung 1 decodes a
-        // single-tile-part codestream whose coding style is entirely in the main
-        // header, so anything here is out of envelope and is named as such.
+        // Between SOT and SOD sit the tile-part header markers. Coding style is read
+        // from the main header only, so a marker here that overrides it for one tile
+        // is out of envelope and is named as such.
         while (true)
         {
             var marker = ReadUInt16(data, ref offset, "tile-part header marker");
@@ -492,8 +492,7 @@ internal static class CodestreamReader
 
     /// <summary>
     /// Refuses, by name, everything outside the envelope this decoder has actually
-    /// been validated against. Each message says which rung owns the feature, so
-    /// the refusal reads as a roadmap position rather than a dead end.
+    /// been validated against, naming the feature in the message.
     /// </summary>
     private static void Validate(CodestreamHeader header)
     {
@@ -522,23 +521,18 @@ internal static class CodestreamReader
                     $"{first.BitDepth}-bit. Components of different precisions are not implemented.");
         }
 
-        if (siz.TileCount != 1)
-            throw new NotSupportedException(
-                $"JPEG 2000: this codestream has {siz.TileCount} tiles; only single-tile images are " +
-                "implemented. Multiple tiles are rung 3.");
-        if (header.TileParts.Count != 1)
-            throw new NotSupportedException(
-                $"JPEG 2000: this tile is split into {header.TileParts.Count} tile-parts, which is rung 3.");
+        // A.4.2: Isot is 16 bits, so a codestream cannot address more tiles than that; one that
+        // declares more is not a JPEG 2000 codestream.
+        if (siz.TileCount > 65535)
+            throw new InvalidDataException(
+                $"JPEG 2000: SIZ declares {siz.TileCount:N0} tiles, more than the 65,535 a tile index can name.");
 
-        if (header.Progression != ProgressionOrder.Lrcp)
-            throw new NotSupportedException(
-                $"JPEG 2000: progression order {header.Progression} is not implemented; only LRCP is. " +
-                "With one tile and maximal precincts the five orders differ only in how they nest layer, " +
-                "resolution and component, and only LRCP's nesting has a fixture behind it.");
-
-        if (header.UseSopMarkers || header.UseEphMarkers)
-            throw new NotSupportedException(
-                "JPEG 2000: SOP and EPH markers are not implemented; they are rung 3.");
+        foreach (var part in header.TileParts)
+        {
+            if (part.TileIndex >= siz.TileCount)
+                throw new InvalidDataException(
+                    $"JPEG 2000: a tile-part names tile {part.TileIndex}, but SIZ declares only {siz.TileCount}.");
+        }
 
         for (var c = 0; c < siz.Components.Length; c++)
         {
@@ -559,18 +553,28 @@ internal static class CodestreamReader
                     "sizes. Only scalar quantization, derived or expounded, is implemented for the 9/7 " +
                     "wavelet.");
 
-            if (coding.CodeBlockStyle != 0)
+            // T.800 Table A.19. Context reset (0x02), predictable termination (0x10, which only
+            // constrains how the encoder terminates) and segmentation symbols (0x20) are decoded.
+            // Selective arithmetic bypass, termination on every pass and the vertically causal
+            // context each change how the coded bytes are read, so ignoring one would desynchronise
+            // tier-1 rather than degrade quality.
+            var unsupported = coding.CodeBlockStyle & ~(CodeBlockStyles.ResetContexts |
+                CodeBlockStyles.PredictableTermination | CodeBlockStyles.SegmentationSymbols);
+            if (unsupported != 0)
                 throw new NotSupportedException(
-                    $"JPEG 2000: code-block style flags 0x{coding.CodeBlockStyle:X2} are not implemented " +
-                    "(T.800 Table A.19: selective arithmetic bypass, context reset, termination per pass, " +
-                    "vertically causal context, predictable termination, segmentation symbols). Each changes " +
-                    "how the coded bytes are read, so ignoring one desynchronises tier-1 rather than degrading " +
-                    "quality.");
+                    $"JPEG 2000: code-block style flags 0x{unsupported:X2} are not implemented (T.800 Table " +
+                    "A.19: 0x01 selective arithmetic bypass, 0x04 termination on each pass, 0x08 vertically " +
+                    "causal context). Each changes how the coded bytes are read.");
 
-            if (coding.PrecinctSizes.Length != 0)
-                throw new NotSupportedException(
-                    "JPEG 2000: custom precinct sizes are not implemented; only the maximal default, which " +
-                    "makes each resolution a single precinct. Precincts are rung 3.");
+            // A.6.1: a precinct exponent of 0 is allowed only at resolution 0. Above it the bands see
+            // the precinct at half size, which a zero exponent cannot be halved into.
+            for (var r = 1; r < coding.ResolutionCount; r++)
+            {
+                if (coding.PrecinctWidthExponent(r) == 0 || coding.PrecinctHeightExponent(r) == 0)
+                    throw new InvalidDataException(
+                        $"JPEG 2000: component {c} declares a precinct exponent of 0 at resolution {r}, " +
+                        "which T.800 allows only at resolution 0.");
+            }
         }
 
         if (header.MultipleComponentTransform)

@@ -61,20 +61,13 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
 
         try
         {
-            var codestream = data;
-            Jp2Colour? colour = null;
-            if (Jpeg2000Decoder.IsJp2(data))
-            {
-                var layout = Jp2Reader.Read(data);
-                codestream = data.Slice(layout.CodestreamStart, layout.CodestreamLength);
-                colour = layout.Colour;
-            }
+            // ReadInfo, not SIZ alone: a JP2 palette changes how many channels, and of what depth,
+            // the decoded image has.
+            var j2k = Jpeg2000Decoder.ReadInfo(data);
+            if (!Presentable(j2k.Components, j2k.Colour)) return false;
 
-            var siz = CodestreamReader.Read(codestream).Siz;
-            if (!Presentable(siz.Components.Length, colour)) return false;
-
-            var depth = siz.Components[0].BitDepth;
-            info = new ImageInfo(siz.Width, siz.Height, siz.Components.Length, FormatFor(depth))
+            var depth = j2k.BitDepth;
+            info = new ImageInfo(j2k.Width, j2k.Height, j2k.Components, FormatFor(depth))
             {
                 Format = ImageFormat.Jpeg2000,
                 BitDepth = depth,

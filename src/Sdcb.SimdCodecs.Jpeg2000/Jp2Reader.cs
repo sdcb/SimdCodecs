@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.IO;
 
 namespace Sdcb.SimdCodecs.Jpeg2000;
@@ -37,19 +38,66 @@ public enum Jp2EnumeratedColourSpace
 public sealed record Jp2Colour(int Method, Jp2EnumeratedColourSpace? EnumeratedColourSpace, byte[]? IccProfile);
 
 /// <summary>Where a JP2 file's codestream is, and what its header said about colour.</summary>
-internal readonly record struct Jp2Layout(int CodestreamStart, int CodestreamLength, Jp2Colour? Colour);
+internal readonly record struct Jp2Layout(int CodestreamStart, int CodestreamLength, Jp2Colour? Colour)
+{
+    /// <summary>
+    /// The palette and component mapping boxes, or null when the header has neither and the
+    /// codestream's components are the image's channels as they stand.
+    /// </summary>
+    public Jp2ChannelMapping? Channels { get; init; }
+}
+
+/// <summary>
+/// A JP2 palette (<c>pclr</c>, T.800 I.5.3.4) together with the component mapping (<c>cmap</c>,
+/// I.5.3.5) that says which channel of the image comes from which component, directly or through
+/// which palette column.
+/// </summary>
+/// <param name="Entries">NE, the number of palette entries; 0 when there is no palette.</param>
+/// <param name="Columns">NPC, the number of palette columns.</param>
+/// <param name="ColumnDepths">The bit depth of each palette column.</param>
+/// <param name="Values">The palette, <c>Values[entry * Columns + column]</c>.</param>
+/// <param name="Map">Each output channel: the codestream component, and the palette column or -1 for direct use.</param>
+internal sealed record Jp2ChannelMapping(
+    int Entries, int Columns, int[] ColumnDepths, ushort[] Values, (int Component, int Column)[] Map)
+{
+    /// <summary>
+    /// The bit depth of every output channel, which must agree, since the decoded image carries one
+    /// precision. <paramref name="componentDepths"/> supplies it for the directly mapped channels.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The mapping names a component that does not exist.</exception>
+    /// <exception cref="NotSupportedException">The channels come out at different precisions.</exception>
+    public int OutputDepth(IReadOnlyList<int> componentDepths)
+    {
+        var depth = 0;
+        foreach (var (component, column) in Map)
+        {
+            if (component >= componentDepths.Count)
+                throw new InvalidDataException(
+                    $"JPEG 2000: the component mapping box names component {component}, but the codestream has " +
+                    $"{componentDepths.Count}.");
+
+            var channelDepth = column < 0 ? componentDepths[component] : ColumnDepths[column];
+            if (depth != 0 && channelDepth != depth)
+                throw new NotSupportedException(
+                    "JPEG 2000: the JP2 channels come out at different bit depths, and the decoded image has one " +
+                    "precision for all of them.");
+            depth = channelDepth;
+        }
+
+        return depth;
+    }
+}
 
 /// <summary>
 /// Reads the JP2 file format of T.800 Annex I far enough to find the codestream and its colour
 /// specification: the signature and file type boxes, the header superbox with its image header and
 /// colour boxes, and the contiguous codestream box.
 /// <para>
-/// <b>What is refused, and why each is a refusal rather than something skipped.</b> The palette
-/// (<c>pclr</c>), component mapping (<c>cmap</c>) and channel definition (<c>cdef</c>) boxes each
-/// change what the decoded components mean: a palette turns one component of indices into three of
-/// colour, a mapping reorders them, a channel definition says one is alpha. A reader that skipped
-/// them would hand back samples whose meaning it had silently got wrong, which is the failure this
-/// decoder exists to avoid. None of the JP2 images found in real PDFs carries one.
+/// The palette (<c>pclr</c>) and component mapping (<c>cmap</c>) boxes are read here and applied by
+/// the decoder: a palette turns one component of indices into channels of colour. The channel
+/// definition box (<c>cdef</c>) is refused, because it can say a component is alpha or reorder the
+/// colour channels, and a reader that skipped it would hand back samples whose meaning it had
+/// silently got wrong.
 /// </para>
 /// <para>
 /// The image header's own width, height and component count are not checked against the
@@ -88,6 +136,7 @@ internal static class Jp2Reader
         var sawFileType = false;
         var sawHeader = false;
         Jp2Colour? colour = null;
+        Jp2ChannelMapping? channels = null;
 
         while (offset < data.Length)
         {
@@ -109,7 +158,7 @@ internal static class Jp2Reader
                 case Header:
                     if (!sawFileType)
                         throw new InvalidDataException("JPEG 2000: the JP2 header box comes before the file type box.");
-                    colour = ReadHeader(body);
+                    (colour, channels) = ReadHeader(body);
                     sawHeader = true;
                     break;
 
@@ -118,7 +167,7 @@ internal static class Jp2Reader
                         throw new InvalidDataException("JPEG 2000: the codestream box comes before the JP2 header box.");
 
                     // The first codestream is the image (I.5.4); anything after it is not read.
-                    return new Jp2Layout(bodyStart, bodyLength, colour);
+                    return new Jp2Layout(bodyStart, bodyLength, colour) { Channels = channels };
             }
 
             // Every other top-level box (resolution, XML, UUID, IPR) is metadata about the image,
@@ -133,9 +182,11 @@ internal static class Jp2Reader
     /// The header superbox: the image header first (I.5.3.1), then at least one colour
     /// specification, of which only the first counts (I.5.3.3).
     /// </summary>
-    private static Jp2Colour? ReadHeader(ReadOnlySpan<byte> header)
+    private static (Jp2Colour? Colour, Jp2ChannelMapping? Channels) ReadHeader(ReadOnlySpan<byte> header)
     {
         Jp2Colour? colour = null;
+        Jp2ChannelMapping? palette = null;
+        (int Component, int Column)[]? map = null;
         var offset = 0;
         var first = true;
 
@@ -166,14 +217,12 @@ internal static class Jp2Reader
                     break;
 
                 case Palette:
-                    throw new NotSupportedException(
-                        "JPEG 2000: the JP2 file has a palette box (pclr), which turns a component of " +
-                        "indices into colours. It is not implemented, and ignoring it would return the " +
-                        "indices as if they were the picture.");
+                    palette ??= ReadPalette(body);
+                    break;
 
                 case ComponentMapping:
-                    throw new NotSupportedException(
-                        "JPEG 2000: the JP2 file has a component mapping box (cmap), which is not implemented.");
+                    map ??= ReadComponentMapping(body);
+                    break;
 
                 case ChannelDefinition:
                     throw new NotSupportedException(
@@ -185,7 +234,115 @@ internal static class Jp2Reader
         }
 
         if (first) throw new InvalidDataException("JPEG 2000: the JP2 header box is empty.");
-        return colour;
+        return (colour, Combine(palette, map));
+    }
+
+    /// <summary>
+    /// I.5.3.4 and I.5.3.5 together. A palette is meaningless without the mapping that says which
+    /// component indexes it, so one without the other is malformed; a mapping without a palette can
+    /// only select components directly.
+    /// </summary>
+    private static Jp2ChannelMapping? Combine(Jp2ChannelMapping? palette, (int Component, int Column)[]? map)
+    {
+        if (palette is null && map is null) return null;
+        if (map is null)
+            throw new InvalidDataException("JPEG 2000: the JP2 file has a palette box but no component mapping box.");
+
+        palette ??= new Jp2ChannelMapping(0, 0, [], [], []);
+        foreach (var (_, column) in map)
+        {
+            if (column >= palette.Columns)
+                throw new InvalidDataException(
+                    $"JPEG 2000: the component mapping box names palette column {column}, but the palette has " +
+                    $"{palette.Columns}.");
+        }
+
+        return palette with { Map = map };
+    }
+
+    /// <summary>
+    /// The palette box (I.5.3.4): NE(2) entries and NPC(1) columns, a depth byte per column (the low
+    /// seven bits are the depth less one, the top bit the sign), then the entries one after another,
+    /// each value in as many whole bytes as its column's depth needs.
+    /// </summary>
+    private static Jp2ChannelMapping ReadPalette(ReadOnlySpan<byte> body)
+    {
+        if (body.Length < 3)
+            throw new InvalidDataException("JPEG 2000: the palette box is too short.");
+
+        var entries = BinaryPrimitives.ReadUInt16BigEndian(body);
+        int columns = body[2];
+
+        // I.5.3.4 bounds NE at 1024 and NPC at 255, and neither below 1. The box is checked against
+        // its own length before anything is sized from it, so the table it allocates is never more
+        // than the bytes that describe it.
+        if (entries is 0 or > 1024 || columns == 0)
+            throw new InvalidDataException(
+                $"JPEG 2000: the palette box declares {entries} entries of {columns} columns, outside what T.800 allows.");
+        if (body.Length < 3 + columns)
+            throw new InvalidDataException("JPEG 2000: the palette box is too short for its column depths.");
+
+        var depths = new int[columns];
+        var bytes = new int[columns];
+        var rowBytes = 0;
+        for (var c = 0; c < columns; c++)
+        {
+            var b = body[3 + c];
+            if ((b & 0x80) != 0)
+                throw new NotSupportedException("JPEG 2000: signed palette columns are not implemented.");
+
+            depths[c] = (b & 0x7F) + 1;
+            if (depths[c] > 16)
+                throw new NotSupportedException(
+                    $"JPEG 2000: a {depths[c]}-bit palette column is not implemented; the limit here is 16.");
+            bytes[c] = (depths[c] + 7) / 8;
+            rowBytes += bytes[c];
+        }
+
+        var offset = 3 + columns;
+        if (body.Length - offset < (long)entries * rowBytes)
+            throw new InvalidDataException("JPEG 2000: the palette box is too short for its entries.");
+
+        var values = new ushort[entries * columns];
+        for (var e = 0; e < entries; e++)
+        {
+            for (var c = 0; c < columns; c++)
+            {
+                int value = bytes[c] == 1 ? body[offset] : BinaryPrimitives.ReadUInt16BigEndian(body[offset..]);
+                offset += bytes[c];
+
+                // Bits above the column's declared depth are not part of the value.
+                values[e * columns + c] = (ushort)(value & ((1 << depths[c]) - 1));
+            }
+        }
+
+        return new Jp2ChannelMapping(entries, columns, depths, values, []);
+    }
+
+    /// <summary>
+    /// The component mapping box (I.5.3.5): four bytes per output channel, CMP(2) MTYP(1) PCOL(1).
+    /// MTYP 0 takes component CMP as it is, MTYP 1 looks it up in palette column PCOL.
+    /// </summary>
+    private static (int Component, int Column)[] ReadComponentMapping(ReadOnlySpan<byte> body)
+    {
+        if (body.Length == 0 || body.Length % 4 != 0)
+            throw new InvalidDataException("JPEG 2000: the component mapping box is not a whole number of entries.");
+
+        var map = new (int Component, int Column)[body.Length / 4];
+        for (var i = 0; i < map.Length; i++)
+        {
+            var entry = body.Slice(i * 4, 4);
+            int component = BinaryPrimitives.ReadUInt16BigEndian(entry);
+            map[i] = entry[2] switch
+            {
+                0 => (component, -1),
+                1 => (component, entry[3]),
+                _ => throw new InvalidDataException(
+                    $"JPEG 2000: the component mapping box has mapping type {entry[2]}, which T.800 does not define."),
+            };
+        }
+
+        return map;
     }
 
     /// <summary>

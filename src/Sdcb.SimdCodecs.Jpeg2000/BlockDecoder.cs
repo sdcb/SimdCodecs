@@ -81,6 +81,60 @@ internal static class BlockDecoder
         var mq = new MqDecoder(coded);
 
         Span<byte> contexts = stackalloc byte[ContextCount];
+        ResetContexts(contexts);
+
+        var passesLeft = block.PassCount;
+        var plane = planes - 1;
+        var reset = (band.CodeBlockStyle & CodeBlockStyles.ResetContexts) != 0;
+        var segmentation = (band.CodeBlockStyle & CodeBlockStyles.SegmentationSymbols) != 0;
+
+        // The first pass of a code-block is always a cleanup pass: there is
+        // nothing significant yet for a significance-propagation pass to
+        // propagate from, and nothing to refine.
+        Cleanup(ref mq, contexts, state, plane, segmentation);
+        if (reset) ResetContexts(contexts);
+        passesLeft--;
+        plane--;
+
+        while (plane >= 0 && passesLeft > 0)
+        {
+            state.SignificancePropagationPass(ref mq, contexts, plane);
+            if (reset) ResetContexts(contexts);
+            if (--passesLeft == 0) break;
+
+            state.MagnitudeRefinementPass(ref mq, contexts, plane);
+            if (reset) ResetContexts(contexts);
+            if (--passesLeft == 0) break;
+
+            Cleanup(ref mq, contexts, state, plane, segmentation);
+            if (reset) ResetContexts(contexts);
+            passesLeft--;
+            plane--;
+        }
+
+        state.WriteTo(band, block);
+    }
+
+    /// <summary>
+    /// The cleanup pass, followed when the code-block style asks for it by the segmentation symbol
+    /// of D.5: four decisions in the uniform context, 1010 in a sound codestream. They carry no
+    /// coefficient data, only a check an error-resilient decoder could make, so they are decoded to
+    /// keep the codeword in step and their value is not acted on.
+    /// </summary>
+    private static void Cleanup(ref MqDecoder mq, scoped Span<byte> contexts, BlockState state, int plane, bool segmentation)
+    {
+        state.CleanupPass(ref mq, contexts, plane);
+        if (!segmentation) return;
+
+        for (var i = 0; i < 4; i++) mq.Decode(contexts, UniformContext);
+    }
+
+    /// <summary>
+    /// The initial states of T.800 Table D.7: every context at state 0 bar three. Called once
+    /// before the first pass, and after every pass when the code-block style resets contexts (D.4.1).
+    /// </summary>
+    private static void ResetContexts(Span<byte> contexts)
+    {
         contexts.Clear();
 
         // The three states T.800 Table D.7 seeds away from zero. This is the
@@ -90,31 +144,6 @@ internal static class BlockDecoder
         contexts[0] = 4 << 1;                    // zero coding, all-insignificant neighbourhood
         contexts[RunLengthContext] = 3 << 1;
         contexts[UniformContext] = 46 << 1;
-
-        var passesLeft = block.PassCount;
-        var plane = planes - 1;
-
-        // The first pass of a code-block is always a cleanup pass: there is
-        // nothing significant yet for a significance-propagation pass to
-        // propagate from, and nothing to refine.
-        state.CleanupPass(ref mq, contexts, plane);
-        passesLeft--;
-        plane--;
-
-        while (plane >= 0 && passesLeft > 0)
-        {
-            state.SignificancePropagationPass(ref mq, contexts, plane);
-            if (--passesLeft == 0) break;
-
-            state.MagnitudeRefinementPass(ref mq, contexts, plane);
-            if (--passesLeft == 0) break;
-
-            state.CleanupPass(ref mq, contexts, plane);
-            passesLeft--;
-            plane--;
-        }
-
-        state.WriteTo(band, block);
     }
 
     /// <summary>
