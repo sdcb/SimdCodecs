@@ -3,7 +3,7 @@ using Sdcb.SimdCodecs.Abstractions;
 
 namespace Sdcb.SimdCodecs.Webp;
 
-/// <summary>Options for <see cref="WebpEncoder.EncodeLossy(ReadOnlySpan{byte}, int, int, ImagePixelFormat, WebpLossyEncodeOptions?, int)"/>.</summary>
+/// <summary>Options for <see cref="WebpEncoder.EncodeLossy(ReadOnlySpan{byte}, int, int, PixelFormat, WebpLossyEncodeOptions?, int)"/>.</summary>
 public sealed record WebpLossyEncodeOptions
 {
     /// <summary>
@@ -52,11 +52,11 @@ public static partial class WebpEncoder
     /// <param name="pixels">The image, top row first.</param>
     /// <param name="width">Width in pixels, 1..16383.</param>
     /// <param name="height">Height in pixels, 1..16383.</param>
-    /// <param name="format">The input layout.</param>
+    /// <param name="format">The input layout: any <see cref="PixelFormat"/>. WebP stores 8 bits, so 16-bit input is narrowed and premultiplied input unpremultiplied; formats without alpha are stored opaque.</param>
     /// <param name="options">Quality, effort and metadata; null for the defaults.</param>
     /// <param name="stride">Bytes from one input row to the next; 0 means tightly packed.</param>
     /// <exception cref="ArgumentException">The size or buffer does not fit.</exception>
-    public static byte[] EncodeLossy(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    public static byte[] EncodeLossy(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format,
         WebpLossyEncodeOptions? options = null, int stride = 0)
     {
         options ??= new WebpLossyEncodeOptions();
@@ -66,8 +66,8 @@ public static partial class WebpEncoder
     }
 
     /// <summary>Encodes a lossy WebP file into <paramref name="output"/>, from its current position.</summary>
-    /// <inheritdoc cref="EncodeLossy(ReadOnlySpan{byte}, int, int, ImagePixelFormat, WebpLossyEncodeOptions?, int)"/>
-    public static void EncodeLossy(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, Stream output,
+    /// <inheritdoc cref="EncodeLossy(ReadOnlySpan{byte}, int, int, PixelFormat, WebpLossyEncodeOptions?, int)"/>
+    public static void EncodeLossy(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, Stream output,
         WebpLossyEncodeOptions? options = null, int stride = 0)
     {
         ArgumentNullException.ThrowIfNull(output);
@@ -75,7 +75,7 @@ public static partial class WebpEncoder
     }
 
     /// <summary>The benchmark's entry: the VP8 bitstream under an explicit encoder configuration.</summary>
-    internal static byte[] EncodeLossy(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    internal static byte[] EncodeLossy(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format,
         Vp8EncoderConfig config)
     {
         (byte[] vp8, byte[]? alph) = EncodeVp8(pixels, width, height, format, new WebpLossyEncodeOptions { Effort = config.Effort }, 0, config);
@@ -83,7 +83,7 @@ public static partial class WebpEncoder
     }
 
     /// <summary>The VP8 frame, and the ALPH payload when the image has transparency.</summary>
-    internal static (byte[] Vp8, byte[]? Alph) EncodeVp8(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    internal static (byte[] Vp8, byte[]? Alph) EncodeVp8(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format,
         WebpLossyEncodeOptions options, int stride, Vp8EncoderConfig? config)
     {
         if (width is < 1 or > MaximumLossyDimension || height is < 1 or > MaximumLossyDimension)

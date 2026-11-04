@@ -53,7 +53,7 @@ public static class WebpDecoder
     /// The returned frames hold up to 1 GiB of RGBA at this limit, and the decoder's working canvas
     /// (up to 256 MiB) comes on top of them. Measured: an 8192×8192 × 4-frame file of 244 bytes, which
     /// is exactly at the limit, allocates 1.25 GiB. A caller with a tighter memory budget should pass
-    /// a smaller limit to <see cref="DecodeAnimation(ReadOnlySpan{byte}, long)"/>, or stream with
+    /// a smaller limit to <see cref="DecodeAnimation(ReadOnlySpan{byte}, long, CancellationToken)"/>, or stream with
     /// <see cref="WebpAnimationDecoder"/>.
     /// </para>
     /// </summary>
@@ -79,12 +79,13 @@ public static class WebpDecoder
     /// </summary>
     /// <param name="data">A still or animated WebP image.</param>
     /// <param name="maximumTotalPixels">The most pixels all returned frames may hold together.</param>
+    /// <param name="cancellationToken">Cancellation token checked between frames.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="maximumTotalPixels"/> is not positive.</exception>
     /// <exception cref="InvalidDataException">
     /// The data is malformed, or canvas × frame count exceeds <paramref name="maximumTotalPixels"/>.
     /// </exception>
     /// <exception cref="NotSupportedException">The data uses a feature this decoder does not support.</exception>
-    public static WebpAnimation DecodeAnimation(ReadOnlySpan<byte> data, long maximumTotalPixels)
+    public static WebpAnimation DecodeAnimation(ReadOnlySpan<byte> data, long maximumTotalPixels, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumTotalPixels);
         WebpContainer container = WebpContainer.Read(data);
@@ -110,8 +111,9 @@ public static class WebpDecoder
         var frames = new List<WebpFrame>(decoder.FrameCount);
         for (int index = 0; index < decoder.FrameCount; index++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             byte[] rgba = new byte[canvasBytes];
-            if (!decoder.TryDecodeNextFrame(rgba, out WebpFrameInfo frame))
+            if (!decoder.TryDecodeNextFrame(rgba, out WebpFrameInfo frame, cancellationToken))
             {
                 throw new InvalidDataException("The WebP animation ended before its declared frame count.");
             }
@@ -139,20 +141,21 @@ public static class WebpDecoder
     /// 8192×8192 canvas allocates 512 MiB here, and through the facade.
     /// </summary>
     /// <param name="data">The complete WebP file.</param>
+    /// <param name="cancellationToken">Cancellation token checked between macroblock rows or row groups.</param>
     /// <exception cref="InvalidDataException">The data is malformed.</exception>
     /// <exception cref="NotSupportedException">The data uses a feature this decoder does not support.</exception>
-    public static WebpImage Decode(ReadOnlySpan<byte> data)
+    public static WebpImage Decode(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default)
     {
         WebpContainer container = WebpContainer.Read(data);
         WebpInfo info = container.Info;
         byte[] rgba;
         if (info.Format == WebpFormat.Animated)
         {
-            rgba = DecodeFirstAnimationFrame(data, info.Width, info.Height);
+            rgba = DecodeFirstAnimationFrame(data, info.Width, info.Height, cancellationToken: cancellationToken);
         }
         else if (info.Format == WebpFormat.Lossless)
         {
-            rgba = Vp8LDecoder.DecodeRgba(container.Vp8Bitstream);
+            rgba = Vp8LDecoder.DecodeRgba(container.Vp8Bitstream, cancellationToken);
         }
         else
         {
@@ -166,7 +169,7 @@ public static class WebpDecoder
                     ? ReadOnlySpan<byte>.Empty
                     : alpha.AsSpan(0, checked(info.Width * info.Height));
                 DecodeLossyRgba(container.Vp8Bitstream, info.Width, info.Height, rgba, checked(info.Width * 4),
-                    fancy: true, alphaSpan, WebpAblation.None);
+                    fancy: true, alphaSpan, WebpAblation.None, cancellationToken: cancellationToken);
             }
             finally
             {
@@ -199,22 +202,23 @@ public static class WebpDecoder
     /// </exception>
     /// <exception cref="InvalidDataException">The data is malformed.</exception>
     /// <exception cref="NotSupportedException">The data uses a feature this decoder does not support.</exception>
-    public static void DecodeTo(ReadOnlySpan<byte> data, Span<byte> rgba, int stride = 0)
+    public static void DecodeTo(ReadOnlySpan<byte> data, Span<byte> rgba, int stride = 0, CancellationToken cancellationToken = default)
     {
-        DecodeTo(data, rgba, stride, fancy: true, WebpAblation.None);
+        DecodeTo(data, rgba, stride, fancy: true, WebpAblation.None, multithreaded: false, cancellationToken: cancellationToken);
     }
 
     /// <summary>
-    /// <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int)"/> with <paramref name="options"/>
+    /// <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, CancellationToken)"/> with <paramref name="options"/>
     /// (null: the defaults).
     /// </summary>
     /// <param name="data">The complete WebP file.</param>
-    /// <param name="rgba">The destination, as for <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int)"/>.</param>
+    /// <param name="rgba">The destination, as for <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, CancellationToken)"/>.</param>
     /// <param name="stride">Row pitch in bytes; 0 means tightly packed.</param>
     /// <param name="options">Decoding options, such as opt-in multithreading.</param>
-    public static void DecodeTo(ReadOnlySpan<byte> data, Span<byte> rgba, int stride, WebpDecodeOptions? options)
+    /// <param name="cancellationToken">Cancellation token checked between macroblock rows or row groups.</param>
+    public static void DecodeTo(ReadOnlySpan<byte> data, Span<byte> rgba, int stride, WebpDecodeOptions? options, CancellationToken cancellationToken = default)
     {
-        DecodeTo(data, rgba, stride, fancy: true, WebpAblation.None, options?.Multithreaded ?? false);
+        DecodeTo(data, rgba, stride, fancy: true, WebpAblation.None, options?.Multithreaded ?? false, cancellationToken: cancellationToken);
     }
 
     internal static void DecodeTo(
@@ -223,7 +227,8 @@ public static class WebpDecoder
         int stride,
         bool fancy,
         WebpAblation ablation,
-        bool multithreaded = false)
+        bool multithreaded = false,
+        CancellationToken cancellationToken = default)
     {
         WebpContainer container = WebpContainer.Read(data);
         WebpInfo info = container.Info;
@@ -250,11 +255,11 @@ public static class WebpDecoder
             {
                 // Tightly packed: the frame goes straight from the working canvas into the caller's
                 // buffer, with no intermediate copy.
-                DecodeFirstAnimationFrame(data, rgba[..requiredLength], fancy);
+                DecodeFirstAnimationFrame(data, rgba[..requiredLength], fancy, cancellationToken);
                 return;
             }
 
-            byte[] firstFrame = DecodeFirstAnimationFrame(data, info.Width, info.Height, fancy);
+            byte[] firstFrame = DecodeFirstAnimationFrame(data, info.Width, info.Height, fancy, cancellationToken);
             for (int row = 0; row < info.Height; row++)
             {
                 firstFrame.AsSpan(row * minimumStride, minimumStride)
@@ -266,12 +271,12 @@ public static class WebpDecoder
 
         if (info.Format == WebpFormat.Lossless)
         {
-            Vp8LDecoder.DecodeRgbaTo(container.Vp8Bitstream, rgba, stride, ablation);
+            Vp8LDecoder.DecodeRgbaTo(container.Vp8Bitstream, rgba, stride, ablation, cancellationToken);
         }
         else if (multithreaded && container.HasAlphaChunk && (ablation & WebpAblation.SkipAlpha) == 0)
         {
             DecodeLossyWithConcurrentAlpha(container.Vp8Bitstream, container.AlphaData, info.Width, info.Height,
-                rgba, stride, fancy, ablation);
+                rgba, stride, fancy, ablation, cancellationToken);
         }
         else
         {
@@ -283,7 +288,7 @@ public static class WebpDecoder
                 ReadOnlySpan<byte> alphaSpan = alpha is null
                     ? ReadOnlySpan<byte>.Empty
                     : alpha.AsSpan(0, checked(info.Width * info.Height));
-                DecodeLossyRgba(container.Vp8Bitstream, info.Width, info.Height, rgba, stride, fancy, alphaSpan, ablation);
+                DecodeLossyRgba(container.Vp8Bitstream, info.Width, info.Height, rgba, stride, fancy, alphaSpan, ablation, cancellationToken: cancellationToken);
             }
             finally
             {
@@ -296,29 +301,31 @@ public static class WebpDecoder
     }
 
     /// <summary>
-    /// <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int)"/> that returns false instead of throwing for malformed or unsupported
+    /// <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, CancellationToken)"/> that returns false instead of throwing for malformed or unsupported
     /// data, a stride below width × 4, or a destination that is too small. The destination may be
     /// partly written when false is returned.
     /// </summary>
     /// <param name="data">The complete WebP file.</param>
-    /// <param name="rgba">The destination, as for <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int)"/>.</param>
+    /// <param name="rgba">The destination, as for <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, CancellationToken)"/>.</param>
     /// <param name="stride">Row pitch in bytes; 0 means tightly packed.</param>
-    public static bool TryDecodeTo(ReadOnlySpan<byte> data, Span<byte> rgba, int stride = 0) =>
-        TryDecodeTo(data, rgba, stride, null);
+    /// <param name="cancellationToken">Cancellation token checked between macroblock rows or row groups.</param>
+    public static bool TryDecodeTo(ReadOnlySpan<byte> data, Span<byte> rgba, int stride = 0, CancellationToken cancellationToken = default) =>
+        TryDecodeTo(data, rgba, stride, null, cancellationToken);
 
     /// <summary>
-    /// <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, WebpDecodeOptions?)"/> that returns false
-    /// instead of throwing, as <see cref="TryDecodeTo(ReadOnlySpan{byte}, Span{byte}, int)"/> does.
+    /// <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, WebpDecodeOptions?, CancellationToken)"/> that returns false
+    /// instead of throwing, as <see cref="TryDecodeTo(ReadOnlySpan{byte}, Span{byte}, int, CancellationToken)"/> does.
     /// </summary>
     /// <param name="data">The complete WebP file.</param>
-    /// <param name="rgba">The destination, as for <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int)"/>.</param>
+    /// <param name="rgba">The destination, as for <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, CancellationToken)"/>.</param>
     /// <param name="stride">Row pitch in bytes; 0 means tightly packed.</param>
     /// <param name="options">Decoding options, such as opt-in multithreading.</param>
-    public static bool TryDecodeTo(ReadOnlySpan<byte> data, Span<byte> rgba, int stride, WebpDecodeOptions? options)
+    /// <param name="cancellationToken">Cancellation token checked between macroblock rows or row groups.</param>
+    public static bool TryDecodeTo(ReadOnlySpan<byte> data, Span<byte> rgba, int stride, WebpDecodeOptions? options, CancellationToken cancellationToken = default)
     {
         try
         {
-            DecodeTo(data, rgba, stride, options);
+            DecodeTo(data, rgba, stride, options, cancellationToken);
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
@@ -349,7 +356,8 @@ public static class WebpDecoder
         ReadOnlySpan<byte> alphaData,
         int width,
         int height,
-        bool fancy = true)
+        bool fancy = true,
+        CancellationToken cancellationToken = default)
     {
         if (format == WebpFormat.Lossless)
         {
@@ -358,7 +366,7 @@ public static class WebpDecoder
                 throw new InvalidDataException("A VP8L animation frame cannot have a separate ALPH chunk.");
             }
 
-            return Vp8LDecoder.DecodeRgba(bitstream);
+            return Vp8LDecoder.DecodeRgba(bitstream, cancellationToken);
         }
 
         byte[] rgba = new byte[checked(width * height * 4)];
@@ -370,7 +378,8 @@ public static class WebpDecoder
             ReadOnlySpan<byte> alphaSpan = alpha is null
                 ? ReadOnlySpan<byte>.Empty
                 : alpha.AsSpan(0, checked(width * height));
-            DecodeLossyRgba(bitstream, width, height, rgba, checked(width * 4), fancy, alphaSpan, WebpAblation.None);
+            DecodeLossyRgba(bitstream, width, height, rgba, checked(width * 4), fancy, alphaSpan, WebpAblation.None,
+                cancellationToken: cancellationToken);
         }
         finally
         {
@@ -387,17 +396,19 @@ public static class WebpDecoder
         ReadOnlySpan<byte> data,
         int width,
         int height,
-        bool fancy = true)
+        bool fancy = true,
+        CancellationToken cancellationToken = default)
     {
         byte[] rgba = new byte[checked(width * height * 4)];
-        DecodeFirstAnimationFrame(data, rgba, fancy);
+        DecodeFirstAnimationFrame(data, rgba, fancy, cancellationToken);
         return rgba;
     }
 
-    private static void DecodeFirstAnimationFrame(ReadOnlySpan<byte> data, Span<byte> canvasRgba, bool fancy)
+    private static void DecodeFirstAnimationFrame(ReadOnlySpan<byte> data, Span<byte> canvasRgba, bool fancy,
+        CancellationToken cancellationToken = default)
     {
         var decoder = new WebpAnimationDecoder(data.ToArray(), fancy);
-        if (!decoder.TryDecodeNextFrame(canvasRgba, out _))
+        if (!decoder.TryDecodeNextFrame(canvasRgba, out _, cancellationToken))
         {
             throw new InvalidDataException("The WebP animation has no frames.");
         }
@@ -416,7 +427,8 @@ public static class WebpDecoder
         Span<byte> output,
         int stride,
         bool fancy,
-        WebpAblation ablation)
+        WebpAblation ablation,
+        CancellationToken cancellationToken = default)
     {
         // The task cannot hold a span of the caller's data: it gets a pooled copy of the chunk.
         int alphaLength = alphaData.Length;
@@ -431,7 +443,7 @@ public static class WebpDecoder
                 byte[] decoded = DecodeAndUnfilterAlpha(alphaCopy.AsSpan(0, alphaLength), width, height);
                 pending.Publish(decoded);
                 return decoded;
-            });
+            }, cancellationToken);
         }
         catch
         {
@@ -442,7 +454,7 @@ public static class WebpDecoder
         bool frameDecoded = false;
         try
         {
-            DecodeLossyRgba(bitstream, width, height, output, stride, fancy, ReadOnlySpan<byte>.Empty, ablation, pending);
+            DecodeLossyRgba(bitstream, width, height, output, stride, fancy, ReadOnlySpan<byte>.Empty, ablation, pending, cancellationToken);
             frameDecoded = true;
         }
         finally
@@ -525,7 +537,8 @@ public static class WebpDecoder
         bool fancy,
         ReadOnlySpan<byte> alpha,
         WebpAblation ablation,
-        PendingAlpha? pendingAlpha = null)
+        PendingAlpha? pendingAlpha = null,
+        CancellationToken cancellationToken = default)
     {
         int chromaWidth = (width + 1) >> 1;
         ushort[] tRows = WebpBufferPool<ushort>.Rent(checked(chromaWidth * 2));
@@ -533,7 +546,7 @@ public static class WebpDecoder
         try
         {
             var sink = new RgbaSink(output, stride, width, height, fancy, alpha, tRows, chromaRows, pendingAlpha);
-            Vp8Decoder.DecodeFrame(bitstream, width, height, ablation, ref sink);
+            Vp8Decoder.DecodeFrame(bitstream, width, height, ablation, ref sink, cancellationToken);
         }
         finally
         {
