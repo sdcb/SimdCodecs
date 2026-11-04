@@ -25,11 +25,15 @@ public sealed class JpegIdctEquivalenceTests
         var fs = new float[64];
         var f128 = new float[64];
         var f256 = new float[64];
+        var fReg = new float[64];
         JpegIdct.TransformScalar(block, fs);
         JpegIdct.TransformV128(block, f128);
         JpegIdct.TransformV256(block, f256);
+        JpegIdct.TransformV128Reg(block, fReg);
         for (var i = 0; i < 64; i++)
         {
+            BitConverter.SingleToInt32Bits(fReg[i]).ShouldBe(BitConverter.SingleToInt32Bits(fs[i]),
+                $"{because}: Vector128 in-register transform differs at {i}: {fReg[i]:R} vs scalar {fs[i]:R}");
             BitConverter.SingleToInt32Bits(f128[i]).ShouldBe(BitConverter.SingleToInt32Bits(fs[i]),
                 $"{because}: Vector128 transform differs at {i}: {f128[i]:R} vs scalar {fs[i]:R}");
             BitConverter.SingleToInt32Bits(f256[i]).ShouldBe(BitConverter.SingleToInt32Bits(fs[i]),
@@ -39,13 +43,16 @@ public sealed class JpegIdctEquivalenceTests
         var scalar = new byte[64];
         var v128 = new byte[64];
         var v256 = new byte[64];
+        var reg = new byte[64];
 
         JpegIdct.Idct8x8Scalar(scalar, 0, Stride, block);
         JpegIdct.Idct8x8V128(v128, 0, Stride, block);
         JpegIdct.Idct8x8V256(v256, 0, Stride, block);
+        JpegIdct.Idct8x8V128Reg(reg, 0, Stride, block);
 
         for (var i = 0; i < 64; i++)
         {
+            reg[i].ShouldBe(scalar[i], $"{because}: Vector128 in-register mismatch at sample {i} (row {i / 8}, col {i % 8})");
             v128[i].ShouldBe(scalar[i], $"{because}: Vector128 mismatch at sample {i} (row {i / 8}, col {i % 8})");
             v256[i].ShouldBe(scalar[i], $"{because}: Vector256 mismatch at sample {i} (row {i / 8}, col {i % 8})");
         }
@@ -127,7 +134,7 @@ public sealed class JpegIdctEquivalenceTests
         const int offset = 11;
         var outputs = new List<byte[]>();
         foreach (var kernel in new Action<byte[], int, int, ReadOnlySpan<short>>[]
-                 { JpegIdct.Idct8x8Scalar, JpegIdct.Idct8x8V128, JpegIdct.Idct8x8V256 })
+                 { JpegIdct.Idct8x8Scalar, JpegIdct.Idct8x8V128, JpegIdct.Idct8x8V256, JpegIdct.Idct8x8V128Reg })
         {
             var buf = new byte[stride * 8 + offset];
             Array.Fill(buf, (byte)0xAB);
@@ -144,6 +151,7 @@ public sealed class JpegIdctEquivalenceTests
 
         outputs[1].ShouldBe(outputs[0]);
         outputs[2].ShouldBe(outputs[0]);
+        outputs[3].ShouldBe(outputs[0]);
     }
 
     /// <summary>
@@ -285,7 +293,8 @@ public sealed class JpegIdctEquivalenceTests
 
     /// <summary>
     /// For every last-coefficient index the dispatcher may drop the zero half of either
-    /// pass; that must be bit-exact (float bits) and pick halves that really are zero.
+    /// pass; that must be bit-exact (float bits, in the Vector256 and the in-register Vector128
+    /// kernel, which wasm dispatches to) and pick halves that really are zero.
     /// </summary>
     [Fact]
     public void SparsePaths_MatchFullTransform_ForEveryLastIndex()
@@ -293,8 +302,10 @@ public sealed class JpegIdctEquivalenceTests
         var rnd = new Random(42);
         var fs = new float[64];
         var f256 = new float[64];
+        var fReg = new float[64];
         var scalar = new byte[64];
         var dispatched = new byte[64];
+        var reg = new byte[64];
         for (var last = 0; last < 64; last++)
         {
             var (halfRows, halfCols) = JpegIdct.SparseFlags(last);
@@ -309,12 +320,18 @@ public sealed class JpegIdctEquivalenceTests
 
                 JpegIdct.TransformScalar(block, fs);
                 JpegIdct.TransformV256(block, f256, halfRows, halfCols);
+                JpegIdct.TransformV128Reg(block, fReg, halfRows, halfCols);
                 for (var i = 0; i < 64; i++)
+                {
                     BitConverter.SingleToInt32Bits(f256[i]).ShouldBe(BitConverter.SingleToInt32Bits(fs[i]), $"last {last} trial {trial} sample {i}");
+                    BitConverter.SingleToInt32Bits(fReg[i]).ShouldBe(BitConverter.SingleToInt32Bits(fs[i]), $"Vector128 in-register: last {last} trial {trial} sample {i}");
+                }
 
                 JpegIdct.Idct8x8Scalar(scalar, 0, Stride, block);
                 JpegIdct.Idct8x8(dispatched, 0, Stride, block, last);
                 dispatched.ShouldBe(scalar, $"last {last} trial {trial}");
+                JpegIdct.Idct8x8V128Reg(reg, 0, Stride, block, halfRows, halfCols);
+                reg.ShouldBe(scalar, $"Vector128 in-register: last {last} trial {trial}");
             }
         }
     }

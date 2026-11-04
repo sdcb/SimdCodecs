@@ -46,4 +46,12 @@ internal static class V128
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Vector128<int> ConvertToInt32Native(Vector128<float> v) =>
         PackedSimd.IsSupported ? PackedSimd.ConvertToInt32Saturate(v) : Vector128.ConvertToInt32Native(v);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static Vector128<ulong> ShiftLeft(Vector128<ulong> v, [ConstantExpected] int n) =>
+        PackedSimd.IsSupported ? PackedSimd.ShiftLeft(v, n) : Vector128.ShiftLeft(v, n);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static Vector128<ulong> ShiftRightLogical(Vector128<ulong> v, [ConstantExpected] int n) =>
+        PackedSimd.IsSupported ? PackedSimd.ShiftRightLogical(v, n) : Vector128.ShiftRightLogical(v, n);
 }
