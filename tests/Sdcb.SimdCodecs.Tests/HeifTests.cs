@@ -51,9 +51,11 @@ public sealed class HeifTests
     [MemberData(nameof(Decodable))]
     public void PrimaryImage_YuvPlanes_AreByteExact(string fixture)
     {
+        // The fixture first: without its input the oracle cannot run, so a job that has not fetched the
+        // fixtures skips here even under REQUIRE_ORACLES; with the fixture present, ffmpeg is required.
+        byte[] data = ReadFixture(fixture);
         string? ffmpeg = HeifOracle.Ffmpeg;
         OracleGate.RequireOrSkip(ffmpeg is not null, $"ffmpeg {HeifOracle.PinnedVersion}", HeifOracle.FfmpegReason);
-        byte[] data = ReadFixture(fixture);
 
         // Dimensions first: a wrong size makes every later comparison meaningless.
         var info = HeifDecoder.ReadInfo(data);
