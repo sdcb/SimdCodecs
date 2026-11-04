@@ -10,10 +10,11 @@ without breaking again. Most code needs a rename and nothing else. Every 8-bit d
 |---|---|
 | `ImagePixelFormat` (enum) | `PixelFormat` (readonly record struct): `PixelFormat.Rgba32`, `.Bgra32`, `.Rgb24`, `.Bgr24`, `.Gray8` are the same layouts |
 | `PixelConverter.BytesPerPixel(format)` | `format.BytesPerPixel` |
-| `new RasterImage(w, h, channels, sample, pixels, icc, color)` | `RasterImage.Wrap(w, h, channels, sample, pixels, icc, color)` |
+| `new RasterImage(w, h, channels, sample, pixels, icc, color)` | `RasterImage.Wrap(w, h, channels, sample, pixels, color, metadata: new ImageMetadata { Icc = icc })` |
+| `image.IccProfile` | `image.Metadata.Icc` (the ICC profile now travels with the Exif and XMP blocks) |
 | `rasterImage.ExpandToRgba8(destination)` | `image.TryCopyTo(destination, 0, PixelFormat.Rgba32)` |
 | `PixelConverter.ConvertRow(src, channels, sample, dst, ImagePixelFormat, n)` | the same call with a `PixelFormat`; or the new `ConvertRow(src, srcFormat, dst, dstFormat, n)` from any format to any format |
-| `new ImageDecoderRegistration(format, canDecode, readInfo, decode, decodeInto[, openFrames])` | use the codec's `XxxImageDecoder.Registration` property; building one by hand takes the eight 2.0 members |
+| `new ImageDecoderRegistration(format, canDecode, readInfo, decode, decodeInto[, openFrames])` | use the codec's `XxxImageDecoder.Registration` property; one built by hand is an object initializer: `new ImageDecoderRegistration { Format = …, CanDecode = …, … }` with the eight required 2.0 members |
 
 Code that `switch`ed over `ImagePixelFormat` switches over `format.Layout` (`ChannelLayout.Rgba`, …) or compares with
 `==`. A method that took `ImagePixelFormat format = ImagePixelFormat.Rgba32` takes `PixelFormat? format = null`.
@@ -29,7 +30,9 @@ Code that `switch`ed over `ImagePixelFormat` switches over `format.Layout` (`Cha
   value from narrowing the 16-bit image; `TryDecodeInto` to `Rgba64` gives the full precision.
 - **New members on interfaces.** A third-party `IImageDecoder` implements `TryGetClosestSize`, `TryReadMetadata`,
   `TryDecodeThumbnail` (`ImageDecoderFallback` has one-line implementations for a codec without native support) and
-  the `DecodeOptions?` / `CancellationToken` parameters of `TryDecode` / `TryDecodeInto`.
+  the `DecodeOptions?` / `CancellationToken` parameters of `TryDecode` / `TryDecodeInto`. The helpers for codec
+  authors (`ImageDecoderFallback`, `BufferedEncoderSession`, `DecodeOptions.Validate` / `Apply`) are in
+  `Sdcb.SimdCodecs.Abstractions.CodecSupport`.
 - **Cancellation.** Every decode and encode entry point takes a `CancellationToken`; a cancelled token throws
   `OperationCanceledException` (it never makes a `Try` method return false).
 - **`ImageInfo` reports more**: `ColorEncoding`, `Resolution`, `HasThumbnail`. Code comparing whole `ImageInfo` values

@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Threading;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 namespace Sdcb.SimdCodecs.Pnm;
 

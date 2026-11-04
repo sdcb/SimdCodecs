@@ -2,14 +2,14 @@ using System;
 using System.IO;
 using System.IO.MemoryMappedFiles;
 
-namespace Sdcb.SimdCodecs;
+namespace Sdcb.SimdCodecs.Abstractions;
 
 /// <summary>
-/// Random-access bytes an image is read from: memory, a seekable stream or a memory-mapped file. The session API
-/// (<see cref="ImageDecoder"/>) reads through it, so a codec can later fetch only the parts it needs (a HEIF item,
-/// a TIFF strip) instead of the whole file. In 2.0 every codec still decodes from the whole file in memory:
-/// <see cref="ImageDecoder"/> materialises it once (<see cref="GetMemory"/>), without a copy for memory and mapped
-/// files.
+/// Random-access bytes an image is read from: memory, a seekable stream or a memory-mapped file. The facade's session
+/// API (<c>Sdcb.SimdCodecs.ImageDecoder</c>) reads through it. It lives here, beside the codec interfaces, so that a
+/// codec can later take one and fetch only the parts it needs (a HEIF item, a TIFF strip) instead of the whole file.
+/// In 2.0 every codec still decodes from the whole file in memory: the session materialises it once
+/// (<see cref="GetMemory"/>), without a copy for memory and mapped files.
 /// </summary>
 public interface IByteSource : IDisposable
 {
@@ -28,7 +28,7 @@ public interface IByteSource : IDisposable
     ReadOnlyMemory<byte> GetMemory();
 }
 
-/// <summary>The <see cref="IByteSource"/> implementations the session API opens.</summary>
+/// <summary>The <see cref="IByteSource"/> implementations: over memory, a stream, or a file.</summary>
 public static class ByteSource
 {
     /// <summary>A source over memory the caller keeps unchanged while it is used.</summary>

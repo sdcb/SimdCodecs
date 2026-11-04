@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 
-namespace Sdcb.SimdCodecs.Abstractions;
+namespace Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 /// <summary>
 /// The generic paths an <see cref="IImageDecoder"/> implementation falls back on for what it has no native code

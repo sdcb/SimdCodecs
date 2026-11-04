@@ -27,6 +27,7 @@ public sealed class ImageDecoder : IDisposable
     private readonly ReadOnlyMemory<byte> _data;
     private readonly ImageDecoderRegistration _codec;
     private readonly IImageFrameReader _frames;
+    private ImageMetadata? _metadata;
     private bool _disposed;
 
     private ImageDecoder(IByteSource source, ReadOnlyMemory<byte> data, ImageDecoderRegistration codec, IImageFrameReader frames)
@@ -105,8 +106,16 @@ public sealed class ImageDecoder : IDisposable
     /// <summary>For an animation, how many times it plays (0: forever); null for pages and stills.</summary>
     public int? LoopCount => _frames.LoopCount;
 
-    /// <summary>The file's metadata blocks (Exif, XMP, ICC); <see cref="ImageMetadata.Empty"/> when it has none.</summary>
-    public ImageMetadata Metadata => _codec.TryReadMetadata(Data, out var metadata) ? metadata : ImageMetadata.Empty;
+    /// <summary>The file's metadata blocks (Exif, XMP, ICC); <see cref="ImageMetadata.Empty"/> when it has none. Read
+    /// from the file once, on first use.</summary>
+    public ImageMetadata Metadata
+    {
+        get
+        {
+            var data = Data; // throws once disposed, cached or not
+            return _metadata ??= _codec.TryReadMetadata(data, out var metadata) ? metadata : ImageMetadata.Empty;
+        }
+    }
 
     /// <summary>Frame <paramref name="index"/>.</summary>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is not below <see cref="FrameCount"/>.</exception>

@@ -44,7 +44,7 @@ HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmar
   逐 codec 换成真正的增量输入是 2.x 的性能项。
 - **`ColorEncoding` 不反映 ICC。** 只有格式自己的色彩标记（PNG 的 cICP，表示线性的 gAMA 1.0，HEIF 的 nclx
   `colr` 盒或 HEVC VUI）会写进 `IDecodedImage.ColorEncoding`；只带 ICC 的图片（例如 Display P3 照片）仍报默认的 sRGB。要知道 ICC 声明的
-  色彩空间，请读 `IccProfile`。
+  色彩空间，请读 `Metadata.Icc`。
 - **EXIF 方向只报告、不应用。** `ImageInfo.Orientation` 告诉你该怎样旋转或翻转，像素本身始终是存储时的
   方向。
 - **浮点图像没有自动的整数投影。** 浮点 TIFF、增益图 JPEG 重建出的 HDR 等，`TryDecodeInto` 返回 `false`

@@ -1,5 +1,6 @@
 using System.Buffers;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 namespace Sdcb.SimdCodecs.Jpeg;
 

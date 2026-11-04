@@ -27,7 +27,7 @@ public enum FloatSemantics : byte
 /// <see cref="IDecodedImage.SampleFormat"/>). Uses the ITU-T H.273 vocabulary
 /// (<see cref="ColorPrimaries"/> / <see cref="TransferFunction"/>) shared with
 /// PNG-3 cICP signalling and ICC v4.4 <c>cicp</c> tags. Like
-/// <see cref="IDecodedImage.IccProfile"/> this is informational — it never rescales
+/// <see cref="ImageMetadata.Icc"/> this is informational — it never rescales
 /// pixels; it tells a consumer what transform the samples are already in.
 /// <para>
 /// There is deliberately no matrix-coefficients slot:

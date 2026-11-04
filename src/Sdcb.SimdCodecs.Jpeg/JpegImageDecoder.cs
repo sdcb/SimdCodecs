@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 namespace Sdcb.SimdCodecs.Jpeg;
 
@@ -11,7 +12,7 @@ namespace Sdcb.SimdCodecs.Jpeg;
 /// into the <c>Sdcb.SimdCodecs</c> facade. A greyscale JPEG (one SOF component)
 /// decodes to a 1-channel <see cref="SampleFormat.UInt8"/> raster of its samples;
 /// every other JPEG (YCbCr, RGB, CMYK, YCCK) to 3-channel RGB - JPEG has no alpha. The
-/// embedded APP2 ICC profile, if any, comes back as <see cref="IDecodedImage.IccProfile"/>.
+/// embedded APP2 ICC profile, if any, comes back as <see cref="IDecodedImage.Metadata"/>.<see cref="ImageMetadata.Icc"/>.
 /// <para>
 /// <see cref="TryDecodeInto"/> is a genuine zero-copy decode for the five basic 8-bit
 /// <see cref="PixelFormat"/>s (<see cref="PixelFormat.IsBasic8"/>) via

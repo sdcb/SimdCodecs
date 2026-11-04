@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 using Sdcb.SimdCodecs.Color.Icc;
 
 namespace Sdcb.SimdCodecs.Jpeg;

@@ -80,7 +80,7 @@ public sealed record JpegEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOpti
     /// When set, the ICC profile to embed, written as APP2 <c>ICC_PROFILE</c> segments (ICC.1 Annex B.4) after
     /// the EXIF and XMP segments: one per <see cref="MaxIccChunkBytes"/> bytes, each numbered, so a profile of
     /// any size up to <see cref="MaxIccProfileBytes"/> fits. Pass the decoded image's
-    /// <see cref="Abstractions.IDecodedImage.IccProfile"/> to keep a Display P3 or Adobe RGB photo's colour
+    /// <c>Metadata.Icc</c> to keep a Display P3 or Adobe RGB photo's colour
     /// space through a re-encode, whether or not it has one. The bytes are written as given, not validated as
     /// a profile; an oversized one is an <see cref="System.ArgumentException"/> from <see cref="JpegEncoder.Encode"/>.
     /// <c>null</c> (the default) or an empty profile writes no segment and leaves the output byte-identical

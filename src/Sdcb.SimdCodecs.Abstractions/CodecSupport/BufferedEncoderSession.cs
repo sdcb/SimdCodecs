@@ -3,7 +3,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Threading;
 
-namespace Sdcb.SimdCodecs.Abstractions;
+namespace Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 /// <summary>One frame a <see cref="BufferedEncoderSession"/> has collected: its pixels, tightly packed, in the format
 /// its rows arrived in.</summary>

@@ -466,6 +466,9 @@ public sealed class ImageDecoderSessionTests : IDisposable
         decoder.Metadata.Xmp.ToArray().ShouldBe(packet);
         decoder.Metadata.Icc.Length.ShouldBe(300);
         decoder.GetFrame(0).Metadata.Exif.ToArray().ShouldBe(exif);
+        // Read once per session: every frame and every read share one instance.
+        decoder.Metadata.ShouldBeSameAs(decoder.Metadata);
+        decoder.GetFrame(0).Metadata.ShouldBeSameAs(decoder.Metadata);
 
         SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
         decoder.GetFrame(0).Info.ShouldBe(info);
