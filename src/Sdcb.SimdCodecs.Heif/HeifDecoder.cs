@@ -177,7 +177,7 @@ public static class HeifDecoder
     /// Cancellation is checked per tile and per band of output rows.
     /// </summary>
     internal static unsafe int DecodeInto(ReadOnlySpan<byte> data, HeifContainer container, Span<byte> destination, int stride,
-        PixelFormat format, CancellationToken cancellationToken = default)
+        PixelFormat format, CancellationToken cancellationToken = default, PixelRect? region = null)
     {
         var payloads = ResolvePayloads(data, container);
         var configs = container.TileConfigs;
@@ -197,10 +197,13 @@ public static class HeifDecoder
 
         fixed (byte* pointer = destination)
         {
-            var canvas = new HeifCanvas(container, pointer, destination.Length, stride, format, coefficients, cancellationToken);
+            var canvas = new HeifCanvas(container, pointer, destination.Length, stride, format, coefficients, cancellationToken, region);
             var columns = container.GridColumns;
             ForEachTile(payloads.Length, i =>
             {
+                // A tile none of whose pixels reach the output (a region of a grid) is not decoded at all.
+                if (!canvas.Intersects(i % columns * tileW, i / columns * tileH, tileW, tileH))
+                    return;
                 // A single coded image is decoded alone, so its rows (WPP wavefront, filters, colour) go parallel instead.
                 var alone = payloads.Length == 1;
                 var picture = HevcImageDecoder.Decode(configs[i], payloads[i], pooled: true, parallel: alone);

@@ -57,7 +57,7 @@ internal sealed unsafe class HeifCanvas
     /// while tiles are written; it must hold the display size at <paramref name="stride"/> bytes per row.
     /// </summary>
     internal HeifCanvas(HeifContainer container, byte* destination, long length, int stride, PixelFormat format,
-        in HeifColor.Coefficients coefficients, CancellationToken cancellationToken = default)
+        in HeifColor.Coefficients coefficients, CancellationToken cancellationToken = default, PixelRect? region = null)
     {
         _destination = destination;
         _length = length;
@@ -107,6 +107,17 @@ internal sealed unsafe class HeifCanvas
                     break;
             }
         }
+        // A region of the displayed image is one more translation: output' = output − (X, Y), on a Width × Height
+        // rectangle. The preimage below then shrinks to the canvas pixels that land in it, so tiles outside it are
+        // skipped (Intersects) and only its pixels are converted.
+        if (region is { } r)
+        {
+            if (!r.FitsIn(width, height))
+                throw new ArgumentException($"The region {r} does not lie inside the {width}x{height} image.");
+            c -= r.X;
+            f -= r.Y;
+            (width, height) = (r.Width, r.Height);
+        }
         (_a, _b, _c, _d, _e, _f) = (a, b, c, d, e, f);
         Width = width;
         Height = height;
@@ -130,6 +141,10 @@ internal sealed unsafe class HeifCanvas
             throw new ArgumentException("The destination does not fit the image.");
         }
     }
+
+    /// <summary>True when canvas pixels [x, x + w) × [y, y + h) reach the output: a tile outside the region is skipped.</summary>
+    internal bool Intersects(int x, int y, int w, int h) =>
+        x < _regionX1 && x + w > _regionX0 && y < _regionY1 && y + h > _regionY0;
 
     /// <summary>Narrows [lo, hi) to the values v with 0 ≤ s·v + offset &lt; size (s = ±1).</summary>
     private static void Clip(int s, int offset, int size, ref int lo, ref int hi)

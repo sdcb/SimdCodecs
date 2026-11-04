@@ -114,7 +114,8 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
 
     /// <inheritdoc />
     /// <remarks>RGB, 3 channels, at the display size: 8-bit samples for an 8-bit image, 16-bit (bit depth 10) for a
-    /// Main 10 one. A region is decoded whole and cropped.</remarks>
+    /// Main 10 one. A region (in display coordinates) is decoded natively: only the grid tiles it touches are decoded,
+    /// and only its pixels converted.</remarks>
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -132,6 +133,9 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
             return false;
         }
         options?.Validate(size.Width, size.Height, supportsScale: false);
+        var region = options?.Region;
+        if (region is { } r)
+            size = (r.Width, r.Height);
 
         var wide = depth > 8;
         var raster = RasterImage.Create(size.Width, size.Height, 3, wide ? SampleFormat.UInt16 : SampleFormat.UInt8,
@@ -140,7 +144,7 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
         try
         {
             HeifDecoder.DecodeInto(data, container, raster.WritablePixels, size.Width * 3 * (wide ? 2 : 1),
-                wide ? PixelFormat.Rgb48 : PixelFormat.Rgb24, cancellationToken);
+                wide ? PixelFormat.Rgb48 : PixelFormat.Rgb24, cancellationToken, region);
         }
         catch (Exception e)
         {
@@ -149,7 +153,8 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
                 return false;
             throw;
         }
-        image = DecodeOptions.Apply(raster, options);
+        // The region is decoded natively: only the grid tiles it touches are decoded, only its pixels converted.
+        image = raster;
         return true;
     }
 
@@ -160,14 +165,12 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
     /// 16-bit conversion, both from the coded samples. <see cref="PixelFormat.Gray8"/> is the stored luma,
     /// range-mapped to 8 bits (see <see cref="IImageDecoder.TryDecodeInto"/> on codecs that store luma; the formula is
     /// frozen in <c>HeifColor</c>), except for an identity-matrix (GBR) image, which takes the luma of the RGB. A
-    /// region is decoded whole and cropped. False, without throwing, for malformed or unsupported data, a
+    /// region decodes only the tiles it touches. False, without throwing, for malformed or unsupported data, a
     /// destination that does not fit, and a PQ or HLG transfer function.
     /// </remarks>
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
-        if (options?.Region is not null)
-            return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
         if (!TryParse(data, out var container)) return false;
         (int Width, int Height) size;
         try
@@ -179,13 +182,16 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
             return false;
         }
         options?.Validate(size.Width, size.Height, supportsScale: false);
+        var region = options?.Region;
+        if (region is { } r)
+            size = (r.Width, r.Height);
         if (!PixelConverter.TryGetLayout(size.Width, size.Height, format, stride, destination.Length, out var rowStride)) return false;
         try
         {
             if (ColorEncodingOf(container).Transfer is TransferFunction.Pq or TransferFunction.Hlg) return false;
 
             // Every layout and stride is written straight into the destination, a tile at a time (HeifCanvas).
-            HeifDecoder.DecodeInto(data, container, destination, rowStride, format, cancellationToken);
+            HeifDecoder.DecodeInto(data, container, destination, rowStride, format, cancellationToken, region);
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or OverflowException)
