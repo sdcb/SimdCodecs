@@ -615,7 +615,17 @@ internal static class JpegIdct
     /// coefficients of an 8×8 block into a b×b downsampled sample tile
     /// (b ∈ {4, 2, 1}). Adds the +128 level shift and clamps.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IdctReduced(byte[] outPlane, int outOffset, int outStride, ReadOnlySpan<short> data, int b)
+    {
+        if (b == 4 && Vector128.IsHardwareAccelerated)
+            IdctReduced4V128(outPlane, outOffset, outStride, data);
+        else
+            IdctReducedScalar(outPlane, outOffset, outStride, data, b);
+    }
+
+    /// <summary>The reference reduced kernel; <see cref="IdctReduced4V128"/> must reproduce it bit for bit.</summary>
+    internal static void IdctReducedScalar(byte[] outPlane, int outOffset, int outStride, ReadOnlySpan<short> data, int b)
     {
         if (b == 1)
         {
@@ -630,7 +640,32 @@ internal static class JpegIdct
         // Separable: rows of `tmp` are partially-transformed along the horizontal
         // frequency axis; the second pass finishes the vertical axis.
         Span<float> tmp = stackalloc float[16]; // b*b, max 4*4
+        ReducedFirstPass(data, tmp, table, b);
+        for (var p = 0; p < b; p++)
+        {
+            var o = outOffset + p * outStride;
+            for (var q = 0; q < b; q++)
+                outPlane[o + q] = Clamp((int)MathF.Floor(ReducedSecondPass(tmp, table, b, p, q) + 128.5f));
+        }
+    }
 
+    /// <summary>Test hook: <see cref="IdctReducedScalar"/>'s b×b samples (b ∈ {4, 2}) before level shift and rounding, row-major.</summary>
+    internal static void TransformReducedScalar(ReadOnlySpan<short> data, Span<float> o, int b)
+    {
+        var table = b == 4 ? Table4 : Table2;
+        Span<float> tmp = stackalloc float[16];
+        ReducedFirstPass(data, tmp, table, b);
+        for (var p = 0; p < b; p++)
+        {
+            for (var q = 0; q < b; q++)
+                o[p * b + q] = ReducedSecondPass(tmp, table, b, p, q);
+        }
+    }
+
+    /// <summary>tmp[u, q] = Σv T[v, q] · X[u, v], summed from v = 0 starting at +0.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ReducedFirstPass(ReadOnlySpan<short> data, Span<float> tmp, float[] table, int b)
+    {
         for (var u = 0; u < b; u++)
         {
             for (var q = 0; q < b; q++)
@@ -641,17 +676,98 @@ internal static class JpegIdct
                 tmp[u * b + q] = acc;
             }
         }
+    }
 
-        for (var p = 0; p < b; p++)
+    /// <summary>Sample (p, q) before level shift: Σu T[u, p] · tmp[u, q], summed from u = 0 starting at +0.</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float ReducedSecondPass(ReadOnlySpan<float> tmp, float[] table, int b, int p, int q)
+    {
+        var acc = 0f;
+        for (var u = 0; u < b; u++)
+            acc += table[u * b + p] * tmp[u * b + q];
+        return acc;
+    }
+
+    /// <summary>
+    /// <see cref="IdctReducedScalar"/> for b = 4 (half-scale decode), one 4-lane vector per tile row. Each lane runs the
+    /// scalar kernel's sums in the same order — <c>((((0 + T·X) + T·X) + T·X) + T·X)</c>, products and sums rounded
+    /// separately — so the pre-rounding values are bit-identical. The output step
+    /// <c>trunc(min(max(s + 128.5, 0), 255))</c> equals the scalar <c>Clamp(floor(s + 128.5))</c>: on [0, 255) floor and
+    /// trunc agree, at or above 255 both give 255, and below 0 both give 0 (|s| &lt; 2^18, never NaN).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    internal static void IdctReduced4V128(byte[] outPlane, int outOffset, int outStride, ReadOnlySpan<short> data)
+    {
+        var (s0, s1, s2, s3) = TransformReduced4(data);
+        var lo = Vector128<float>.Zero;
+        var hi = Vector128.Create(Max);
+        var bias = Vector128.Create(Bias);
+        var i0 = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s0 + bias, lo), hi));
+        var i1 = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s1 + bias, lo), hi));
+        var i2 = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s2 + bias, lo), hi));
+        var i3 = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s3 + bias, lo), hi));
+
+        // Every lane is 0..255 here, so the truncating narrows are exact.
+        var bytes = Vector128.Narrow(Vector128.Narrow(i0, i1).AsUInt16(), Vector128.Narrow(i2, i3).AsUInt16()).AsUInt32();
+        MemoryMarshal.Write(outPlane.AsSpan(outOffset, 4), bytes.GetElement(0));
+        MemoryMarshal.Write(outPlane.AsSpan(outOffset + outStride, 4), bytes.GetElement(1));
+        MemoryMarshal.Write(outPlane.AsSpan(outOffset + 2 * outStride, 4), bytes.GetElement(2));
+        MemoryMarshal.Write(outPlane.AsSpan(outOffset + 3 * outStride, 4), bytes.GetElement(3));
+    }
+
+    /// <summary>Test hook: <see cref="IdctReduced4V128"/>'s samples before level shift and rounding, row-major.</summary>
+    internal static void TransformReduced4V128(ReadOnlySpan<short> data, Span<float> o)
+    {
+        var (s0, s1, s2, s3) = TransformReduced4(data);
+        s0.CopyTo(o);
+        s1.CopyTo(o[4..]);
+        s2.CopyTo(o[8..]);
+        s3.CopyTo(o[12..]);
+    }
+
+    /// <summary>Both passes of the 4×4 reduced transform, one vector per output row (lanes q).</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static (Vector128<float>, Vector128<float>, Vector128<float>, Vector128<float>) TransformReduced4(ReadOnlySpan<short> data)
+    {
+        // Table row u, lanes p: T[u * 4 + p]. Pass 1 uses row v as the q lanes; pass 2 broadcasts lane p of row u.
+        ReadOnlySpan<float> t = Table4;
+        var t0 = Vector128.Create(t);
+        var t1 = Vector128.Create(t[4..]);
+        var t2 = Vector128.Create(t[8..]);
+        var t3 = Vector128.Create(t[12..]);
+
+        // Pass 1: tmp[u, q] = Σv T[v, q] · X[u, v].
+        var r0 = Pass1(data[..8], t0, t1, t2, t3);
+        var r1 = Pass1(data.Slice(8, 8), t0, t1, t2, t3);
+        var r2 = Pass1(data.Slice(16, 8), t0, t1, t2, t3);
+        var r3 = Pass1(data.Slice(24, 8), t0, t1, t2, t3);
+
+        // Pass 2: out[p, q] = Σu T[u, p] · tmp[u, q].
+        return (Pass2(Vector128.Create(0), t0, t1, t2, t3, r0, r1, r2, r3),
+            Pass2(Vector128.Create(1), t0, t1, t2, t3, r0, r1, r2, r3),
+            Pass2(Vector128.Create(2), t0, t1, t2, t3, r0, r1, r2, r3),
+            Pass2(Vector128.Create(3), t0, t1, t2, t3, r0, r1, r2, r3));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static Vector128<float> Pass1(ReadOnlySpan<short> row, Vector128<float> t0, Vector128<float> t1, Vector128<float> t2, Vector128<float> t3)
         {
-            var o = outOffset + p * outStride;
-            for (var q = 0; q < b; q++)
-            {
-                var acc = 0f;
-                for (var u = 0; u < b; u++)
-                    acc += table[u * b + p] * tmp[u * b + q];
-                outPlane[o + q] = Clamp((int)MathF.Floor(acc + 128.5f));
-            }
+            var x = Vector128.ConvertToSingle(Vector128.WidenLower(Vector128.Create(row)));
+            var acc = Vector128<float>.Zero + t0 * Vector128.Shuffle(x, Vector128.Create(0));
+            acc += t1 * Vector128.Shuffle(x, Vector128.Create(1));
+            acc += t2 * Vector128.Shuffle(x, Vector128.Create(2));
+            acc += t3 * Vector128.Shuffle(x, Vector128.Create(3));
+            return acc;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static Vector128<float> Pass2(Vector128<int> p, Vector128<float> t0, Vector128<float> t1, Vector128<float> t2, Vector128<float> t3,
+            Vector128<float> r0, Vector128<float> r1, Vector128<float> r2, Vector128<float> r3)
+        {
+            var acc = Vector128<float>.Zero + Vector128.Shuffle(t0, p) * r0;
+            acc += Vector128.Shuffle(t1, p) * r1;
+            acc += Vector128.Shuffle(t2, p) * r2;
+            acc += Vector128.Shuffle(t3, p) * r3;
+            return acc;
         }
     }
 }

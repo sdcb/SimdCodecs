@@ -147,6 +147,70 @@ public sealed class JpegIdctEquivalenceTests
     }
 
     /// <summary>
+    /// The half-scale reduced IDCT (b = 4) has a <c>Vector128</c> kernel next to the scalar one; on every block both
+    /// must give the same pre-rounding floats bit for bit, write the same 4×4 bytes and nothing outside them (DC sweeps through both clamps, the corpus-like sparsity
+    /// mix, and full-range coefficients, written at an odd offset and stride).
+    /// </summary>
+    [Fact]
+    public void ReducedHalf_Vector128MatchesScalar()
+    {
+        const int stride = 37, offset = 11;
+        var rnd = new Random(2604);
+        var blocks = new List<short[]>();
+        for (var dc = -4200; dc <= 4200; dc += 7)
+        {
+            var block = new short[64];
+            block[0] = (short)dc;
+            block[1] = (short)(dc / 3);
+            block[8] = (short)(-dc / 5);
+            blocks.Add(block);
+        }
+
+        foreach (var lastNonZero in new[] { 0, 1, 3, 6, 12, 20, 32, 45, 63 })
+        {
+            for (var iter = 0; iter < 300; iter++)
+                blocks.Add(RandomBlock(rnd, lastNonZero, 400));
+        }
+
+        for (var iter = 0; iter < 300; iter++)
+        {
+            var block = new short[64];
+            for (var i = 0; i < 64; i++)
+                block[i] = (short)rnd.Next(short.MinValue, short.MaxValue + 1);
+            blocks.Add(block);
+        }
+
+        var scalar = new byte[stride * 4 + offset];
+        var vector = new byte[stride * 4 + offset];
+        var fs = new float[16];
+        var fv = new float[16];
+        foreach (var block in blocks)
+        {
+            Array.Fill(scalar, (byte)0xAB);
+            Array.Fill(vector, (byte)0xAB);
+            JpegIdct.IdctReducedScalar(scalar, offset, stride, block, 4);
+            JpegIdct.IdctReduced4V128(vector, offset, stride, block);
+            JpegIdct.TransformReducedScalar(block, fs, 4);
+            JpegIdct.TransformReduced4V128(block, fv);
+            for (var i = 0; i < 16; i++)
+            {
+                BitConverter.SingleToInt32Bits(fv[i]).ShouldBe(BitConverter.SingleToInt32Bits(fs[i]),
+                    $"Vector128 reduced transform differs at {i}: {fv[i]:R} vs scalar {fs[i]:R}");
+            }
+
+            vector.ShouldBe(scalar, $"block [{string.Join(",", block)}]");
+        }
+
+        // The window really is 4×4 at (offset, stride): the guard bytes stay untouched.
+        for (var i = 0; i < scalar.Length; i++)
+        {
+            var inside = i >= offset && (i - offset) % stride < 4 && (i - offset) / stride < 4;
+            if (!inside)
+                scalar[i].ShouldBe((byte)0xAB, $"byte {i} is outside the 4x4 window");
+        }
+    }
+
+    /// <summary>
     /// Accuracy against <c>round(s + 128)</c>, clamped, where s is the T.81 A.3.3 IDCT
     /// evaluated directly in double precision. Single-precision rounding can only flip a
     /// result whose exact value lies within ~1e-4 of a .5 boundary, so on 20 000
