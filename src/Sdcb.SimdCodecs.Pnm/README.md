@@ -14,7 +14,7 @@ PnmInfo info = PnmDecoder.ReadInfo(data);       // size, format, channels, maxim
 PnmImage image = PnmDecoder.Decode(data);       // 8-bit, 16-bit or float samples, as the file holds them
 
 var bgra = new byte[info.Width * info.Height * 4];
-PnmDecoder.DecodeTo(data, bgra, ImagePixelFormat.Bgra32);
+PnmDecoder.DecodeTo(data, bgra, PixelFormat.Bgra32);
 ```
 
 The decoder reads these formats:
@@ -34,15 +34,15 @@ allocates.
 ## Encoding
 
 ```csharp
-byte[] ppm = PnmEncoder.Encode(rgb, width, height, ImagePixelFormat.Rgb24);           // P6
-byte[] pam = PnmEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32);         // P7, RGB_ALPHA
-byte[] plain = PnmEncoder.Encode(rgb, width, height, ImagePixelFormat.Rgb24,
-    new PnmEncodeOptions { Format = PnmFormat.PlainGraymap, MaxValue = 1023 });       // P2
-byte[] deep = PnmEncoder.Encode(samples16, width, height, channels: 3);               // P6, maximum 65535
-byte[] pfm = PnmEncoder.EncodePfm(floats, width, height, channels: 3);                // PF
+byte[] ppm = PnmEncoder.Encode(rgb, width, height, PixelFormat.Rgb24);           // P6
+byte[] pam = PnmEncoder.Encode(rgba, width, height, PixelFormat.Rgba32);         // P7, RGB_ALPHA
+byte[] plain = PnmEncoder.Encode(rgb, width, height, PixelFormat.Rgb24,
+    new PnmEncodeOptions { Format = PnmFormat.PlainGraymap, MaxValue = 1023 });  // P2
+byte[] deep = PnmEncoder.Encode(samples16, width, height, channels: 3);          // P6, maximum 65535
+byte[] pfm = PnmEncoder.EncodePfm(floats, width, height, channels: 3);           // PF
 ```
 
-Every format can be written, plain or raw. The input can be any 8-bit layout at any stride, 8-bit or 16-bit samples
+Every format can be written, plain or raw. The input can be any pixel layout at any stride, 8-bit or 16-bit samples
 with 1 to 4 channels, or float samples for PFM.
 
 How the encoder converts the input to the chosen format:
@@ -60,7 +60,7 @@ The format pages leave these cases open. The table shows what this package does:
 
 | Case | This package |
 |---|---|
-| A maximum value `m` other than 255 or 65535 | Samples scale to the full range with rounding: `(v·255 + m/2) / m` for `m` up to 255, and `(v·65535 + m/2) / m` above, which gives 16-bit samples. An 8-bit layout takes a 16-bit sample's high byte, as `ImagePixelFormat` defines. |
+| A maximum value `m` other than 255 or 65535 | Samples scale to the full range with rounding: `(v·255 + m/2) / m` for `m` up to 255, and `(v·65535 + m/2) / m` above, which gives 16-bit samples. An 8-bit layout takes a 16-bit sample's high byte, as `PixelFormat` defines. |
 | A sample above the maximum | It counts as the maximum, in raw and plain rasters alike. |
 | A PAM tuple type | `DEPTH` alone decides the channels: 1 is grey, 2 grey + alpha, 3 RGB, 4 RGBA. The tuple type is reported (`PnmInfo.TupleType`), and unknown types are accepted. `BLACKANDWHITE` needs no special case, because at maximum 1 its 1 is already white. |
 | A PAM depth above 4 | Refused. |

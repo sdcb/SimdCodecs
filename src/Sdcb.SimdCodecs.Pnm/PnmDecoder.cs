@@ -42,19 +42,32 @@ public static class PnmDecoder
     /// <summary>
     /// Decodes into <paramref name="destination"/> as <paramref name="format"/>, top row first, rows
     /// <paramref name="stride"/> bytes apart (0: tightly packed). Size it with <see cref="ReadInfo"/>. Bytes
-    /// between rows are left untouched; nothing is allocated. 16-bit samples give their high byte.
+    /// between rows are left untouched; nothing is allocated. 16-bit samples give their high byte when decoding
+    /// to an 8-bit format.
     /// </summary>
+    /// <param name="data">The Netpbm file.</param>
+    /// <param name="destination">The pixels.</param>
+    /// <param name="format">The layout to write; any <see cref="PixelFormat"/> (null: <see cref="PixelFormat.Rgba32"/>).</param>
+    /// <param name="stride">Bytes from one row to the next; 0 means tightly packed.</param>
     /// <exception cref="InvalidDataException">The data is not a decodable Netpbm image.</exception>
-    /// <exception cref="NotSupportedException">The image is PFM, whose float samples have no 8-bit form without a
-    /// tone policy: use <see cref="Decode"/>.</exception>
+    /// <exception cref="NotSupportedException">The image is PFM, whose float samples have no integer projection
+    /// without an explicit tone policy; use <see cref="Decode"/>.</exception>
     /// <exception cref="ArgumentException">The destination is too small, or the stride shorter than a row.</exception>
-    public static void DecodeTo(ReadOnlySpan<byte> data, Span<byte> destination, ImagePixelFormat format = ImagePixelFormat.Rgba32, int stride = 0)
+    public static void DecodeTo(ReadOnlySpan<byte> data, Span<byte> destination, PixelFormat? format = null, int stride = 0)
     {
+        var target = format ?? PixelFormat.Rgba32;
         var info = PnmHeader.Read(data, out var offset, tupleType: false);
         if (info.SampleFormat == SampleFormat.Float32)
-            throw new NotSupportedException("PFM float samples have no 8-bit form without a tone policy; use Decode.");
-        if (!PixelConverter.TryGetLayout(info.Width, info.Height, format, stride, destination.Length, out var rowStride))
-            throw new ArgumentException($"The destination does not hold a {info.Width}x{info.Height} {format} image with stride {stride}.", nameof(destination));
-        PnmPixels.DecodeTo(data, info, offset, destination, rowStride, format);
+            throw new NotSupportedException("PFM float samples have no integer projection without an explicit tone policy; use Decode.");
+        if (!PixelConverter.TryGetLayout(info.Width, info.Height, target, stride, destination.Length, out var rowStride))
+            throw new ArgumentException($"The destination does not hold a {info.Width}x{info.Height} {target} image with stride {stride}.", nameof(destination));
+        if (info.SampleFormat == SampleFormat.UInt16 && target.Sample == SampleFormat.UInt16)
+        {
+            var pnm = new PnmImage(info, PnmPixels.Decode(data, info, offset));
+            using var raster = RasterImage.Wrap(pnm.Width, pnm.Height, pnm.Channels, pnm.SampleFormat, pnm.Pixels);
+            PixelConverter.TryConvert(raster, destination, stride, target);
+            return;
+        }
+        PnmPixels.DecodeTo(data, info, offset, destination, rowStride, target);
     }
 }
