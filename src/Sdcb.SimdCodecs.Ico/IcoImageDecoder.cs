@@ -11,6 +11,10 @@ namespace Sdcb.SimdCodecs.Ico;
 /// </summary>
 public sealed class IcoImageDecoder : IMultiFrameImageDecoder
 {
+    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Ico, CanDecode, TryReadInfo,
+        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail, TryOpenFrames);
+
     /// <inheritdoc />
     /// <remarks>The directory and its first entry.</remarks>
     public static int SignatureLength => 22;
@@ -22,12 +26,31 @@ public sealed class IcoImageDecoder : IMultiFrameImageDecoder
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info) => IcoAdapter.TryReadInfo(data, IcoKind.Icon, out info);
 
     /// <inheritdoc />
-    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image) =>
-        IcoAdapter.TryDecode(data, IcoKind.Icon, out image);
+    public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
+        out int width, out int height, out int scaleDenominator) =>
+        ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
 
     /// <inheritdoc />
-    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format) =>
-        IcoAdapter.TryDecodeInto(data, IcoKind.Icon, destination, stride, format);
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        IcoAdapter.TryDecode(data, IcoKind.Icon, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        options is { IsFullImage: false }
+            ? ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken)
+            : IcoAdapter.TryDecodeInto(data, IcoKind.Icon, destination, stride, format, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>The directory carries no metadata blocks: a readable file gives <see cref="ImageMetadata.Empty"/>.</remarks>
+    public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata) =>
+        ImageDecoderFallback.TryReadNoMetadata(TryReadInfo, data, out metadata);
+
+    /// <inheritdoc />
+    /// <remarks>Icons and cursors have no thumbnails: always false.</remarks>
+    public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail) =>
+        ImageDecoderFallback.NoThumbnail(out thumbnail);
 
     /// <inheritdoc />
     public static bool TryOpenFrames(ReadOnlyMemory<byte> data, [NotNullWhen(true)] out IImageFrameReader? reader) =>
@@ -40,6 +63,10 @@ public sealed class IcoImageDecoder : IMultiFrameImageDecoder
 /// </summary>
 public sealed class CurImageDecoder : IMultiFrameImageDecoder
 {
+    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Cur, CanDecode, TryReadInfo,
+        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail, TryOpenFrames);
+
     /// <inheritdoc />
     /// <remarks>The directory and its first entry.</remarks>
     public static int SignatureLength => 22;
@@ -51,12 +78,31 @@ public sealed class CurImageDecoder : IMultiFrameImageDecoder
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info) => IcoAdapter.TryReadInfo(data, IcoKind.Cursor, out info);
 
     /// <inheritdoc />
-    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image) =>
-        IcoAdapter.TryDecode(data, IcoKind.Cursor, out image);
+    public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
+        out int width, out int height, out int scaleDenominator) =>
+        ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
 
     /// <inheritdoc />
-    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format) =>
-        IcoAdapter.TryDecodeInto(data, IcoKind.Cursor, destination, stride, format);
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        IcoAdapter.TryDecode(data, IcoKind.Cursor, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        options is { IsFullImage: false }
+            ? ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken)
+            : IcoAdapter.TryDecodeInto(data, IcoKind.Cursor, destination, stride, format, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>The directory carries no metadata blocks: a readable file gives <see cref="ImageMetadata.Empty"/>.</remarks>
+    public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata) =>
+        ImageDecoderFallback.TryReadNoMetadata(TryReadInfo, data, out metadata);
+
+    /// <inheritdoc />
+    /// <remarks>Icons and cursors have no thumbnails: always false.</remarks>
+    public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail) =>
+        ImageDecoderFallback.NoThumbnail(out thumbnail);
 
     /// <inheritdoc />
     public static bool TryOpenFrames(ReadOnlyMemory<byte> data, [NotNullWhen(true)] out IImageFrameReader? reader) =>
@@ -96,26 +142,56 @@ internal static class IcoAdapter
         }
     }
 
-    public static bool TryDecode(ReadOnlySpan<byte> data, IcoKind kind, [NotNullWhen(true)] out IDecodedImage? image)
+    /// <summary>Decodes image <paramref name="index"/> to an 8-bit RGBA raster (checks the options first).</summary>
+    internal static IDecodedImage DecodeRaster(ReadOnlySpan<byte> data, IcoContainer container, int index,
+        DecodeOptions? options, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        var entry = container.Entries[index];
+        options?.Validate(entry.Width, entry.Height, supportsScale: false);
+        var raster = RasterImage.Create(entry.Width, entry.Height, 4, SampleFormat.UInt8, options?.Pool);
         try
         {
-            var container = Read(data, kind);
-            var decoded = container.Decode(data, container.Best);
-            image = new RasterImage(decoded.Width, decoded.Height, 4, SampleFormat.UInt8, decoded.Rgba);
+            container.DecodeInto(data, index, raster.WritablePixels, entry.Width * 4, PixelFormat.Rgba32);
+        }
+        catch
+        {
+            raster.Dispose();
+            throw;
+        }
+        return DecodeOptions.Apply(raster, options);
+    }
+
+    public static bool TryDecode(ReadOnlySpan<byte> data, IcoKind kind, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options, CancellationToken cancellationToken)
+    {
+        image = null;
+        IcoContainer container;
+        try
+        {
+            container = Read(data, kind);
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+        try
+        {
+            image = DecodeRaster(data, container, container.Best, options, cancellationToken);
             return true;
         }
         catch (InvalidDataException)
         {
-            image = null;
             return false;
         }
     }
 
-    public static bool TryDecodeInto(ReadOnlySpan<byte> data, IcoKind kind, Span<byte> destination, int stride, ImagePixelFormat format)
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, IcoKind kind, Span<byte> destination, int stride, PixelFormat format,
+        CancellationToken cancellationToken)
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var container = Read(data, kind);
             var entry = container.Entries[container.Best];
             if (!PixelConverter.TryGetLayout(entry.Width, entry.Height, format, stride, destination.Length, out var rowStride))
@@ -163,13 +239,13 @@ internal sealed class IcoFrameReader(ReadOnlyMemory<byte> data, IcoContainer con
         return true;
     }
 
-    public bool TryDecodeFrame(int index, [NotNullWhen(true)] out IDecodedImage? image)
+    public bool TryDecodeFrame(int index, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         Check(index);
         try
         {
-            var decoded = container.Decode(data.Span, index);
-            image = new RasterImage(decoded.Width, decoded.Height, 4, SampleFormat.UInt8, decoded.Rgba);
+            image = IcoAdapter.DecodeRaster(data.Span, container, index, options, cancellationToken);
             return true;
         }
         catch (InvalidDataException)
@@ -179,9 +255,13 @@ internal sealed class IcoFrameReader(ReadOnlyMemory<byte> data, IcoContainer con
         }
     }
 
-    public bool TryDecodeFrameInto(int index, Span<byte> destination, int stride, ImagePixelFormat format)
+    public bool TryDecodeFrameInto(int index, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         Check(index);
+        if (options is { IsFullImage: false })
+            return ImageDecoderFallback.TryDecodeFrameInto(this, index, destination, stride, format, options, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         var entry = container.Entries[index];
         if (!PixelConverter.TryGetLayout(entry.Width, entry.Height, format, stride, destination.Length, out var rowStride))
             return false;

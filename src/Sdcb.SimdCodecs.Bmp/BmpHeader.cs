@@ -49,6 +49,8 @@ internal readonly struct BmpHeader
     public int AndMaskOffset { get; private init; }
 
     /// <summary>An embedded ICC profile (V5, <c>PROFILE_EMBEDDED</c>): offset and length, or 0 length for none.</summary>
+    public int XPelsPerMeter { get; private init; }
+    public int YPelsPerMeter { get; private init; }
     public int IccOffset { get; private init; }
     public int IccLength { get; private init; }
 
@@ -119,6 +121,7 @@ internal readonly struct BmpHeader
         long width, height;
         int bitCount;
         uint compression = 0, colorsUsed = 0;
+        int xPels = 0, yPels = 0;
         if (size == 12)
         {
             kind = BmpHeaderKind.Core;
@@ -142,6 +145,11 @@ internal readonly struct BmpHeader
             height = BinaryPrimitives.ReadInt32LittleEndian(h[8..]);
             bitCount = BinaryPrimitives.ReadUInt16LittleEndian(h[14..]);
             if (size >= 20) compression = BinaryPrimitives.ReadUInt32LittleEndian(h[16..]);
+            if (size >= 32)
+            {
+                xPels = BinaryPrimitives.ReadInt32LittleEndian(h[24..]);
+                yPels = BinaryPrimitives.ReadInt32LittleEndian(h[28..]);
+            }
             if (size >= 36) colorsUsed = BinaryPrimitives.ReadUInt32LittleEndian(h[32..]);
         }
 
@@ -249,6 +257,8 @@ internal readonly struct BmpHeader
             PaletteEntrySize = entrySize,
             PixelOffset = (int)pixels,
             PixelLength = data.Length - (int)pixels,
+            XPelsPerMeter = xPels,
+            YPelsPerMeter = yPels,
             IconMask = iconMask,
             AndMaskOffset = -1,
         };
