@@ -183,7 +183,7 @@ public sealed class GifDecoderTests
             foreach (var i in Enumerable.Range(0, reader.FrameCount).Reverse().Concat([1, 1, 0, reader.FrameCount - 1]))
             {
                 var rgba = new byte[inOrder[0].Length];
-                reader.TryDecodeFrameInto(i, rgba, 0, PixelFormat.Rgba32).ShouldBeTrue();
+                reader.TryDecodeFrameInto(i, rgba, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
                 rgba.ShouldBe(inOrder[i], $"frame {i}");
             }
         }

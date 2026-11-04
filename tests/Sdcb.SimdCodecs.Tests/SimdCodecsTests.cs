@@ -37,7 +37,7 @@ public sealed class SimdCodecsTests
         byte[] garbage = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
         SimdCodecs.CanDecode(garbage).ShouldBeFalse();
-        SimdCodecs.TryDecode(garbage, out var img).ShouldBeFalse();
+        SimdCodecs.TryDecode(garbage, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         img.ShouldBeNull();
         SimdCodecs.TryReadInfo(garbage, out _).ShouldBeFalse();
         SimdCodecs.TryDecodeIntoRgba8(garbage, new byte[64]).ShouldBeFalse();
@@ -51,7 +51,7 @@ public sealed class SimdCodecsTests
         byte[] rgba = [10, 20, 30, 255, 40, 50, 60, 255, 70, 80, 90, 128, 100, 110, 120, 255];
         var png = PngWriter.Encode(rgba, 2, 2);
 
-        SimdCodecs.TryDecode(png, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img!.Width.ShouldBe(2);
         img.Height.ShouldBe(2);
         img.Channels.ShouldBe(4);
@@ -66,7 +66,7 @@ public sealed class SimdCodecsTests
         byte[] gray = [0, 64, 128, 255];
         var png = PngWriter.EncodeGray8(gray, 2, 2);
 
-        SimdCodecs.TryDecode(png, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img!.Channels.ShouldBe(1);
         img.SampleFormat.ShouldBe(SampleFormat.UInt8);
         img.Pixels.ToArray().ShouldBe(gray);
@@ -79,7 +79,7 @@ public sealed class SimdCodecsTests
         ushort[] gray = [0x1234, 0xABCD, 0x00FF, 0xFFFF];
         var png = PngWriter.EncodeGray16(gray, 2, 2);
 
-        SimdCodecs.TryDecode(png, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img!.Channels.ShouldBe(1);
         img.SampleFormat.ShouldBe(SampleFormat.UInt16);
         MemoryMarshal.Cast<byte, ushort>(img.Pixels).ToArray().ShouldBe(gray); // host-order round-trip
@@ -92,7 +92,7 @@ public sealed class SimdCodecsTests
         ushort[] rgba = [0x1111, 0x2222, 0x3333, 0xFFFF, 0x4444, 0x5555, 0x6666, 0x7777];
         var png = PngWriter.EncodeRgba16(rgba, 2, 1);
 
-        SimdCodecs.TryDecode(png, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img!.Channels.ShouldBe(4);
         img.SampleFormat.ShouldBe(SampleFormat.UInt16);
         MemoryMarshal.Cast<byte, ushort>(img.Pixels).ToArray().ShouldBe(rgba);
@@ -141,7 +141,7 @@ public sealed class SimdCodecsTests
         // JPEG has no alpha: a colour JPEG reports and decodes to 3 channels, the RGB of the RGBA decode.
         SimdCodecs.TryReadInfo(bytes, out var info).ShouldBeTrue();
         info.Channels.ShouldBe(3);
-        SimdCodecs.TryDecode(bytes, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(bytes, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img!.Width.ShouldBe(expected.Width);
         img.Height.ShouldBe(expected.Height);
         img.Channels.ShouldBe(3);

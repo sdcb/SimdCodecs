@@ -67,7 +67,7 @@ public sealed class TiffBilevelReadTests
         var black = Pattern(width, height);
         var tiff = WriteBilevel(black, width, height, method, fillOrder);
 
-        var page = TiffReader.ReadPage(tiff);
+        var page = TiffReader.ReadPage(tiff, cancellationToken: TestContext.Current.CancellationToken);
         page.Compression.ShouldBe(expectedCompression);
         page.BitsPerSample.ShouldBe(8);
         page.Width.ShouldBe(width);
@@ -79,7 +79,7 @@ public sealed class TiffBilevelReadTests
         AssertRaster(page.Pixels, black, width, blackSample);
 
         // The facade normalises to MinIsBlack grey whichever photometric was written.
-        TiffImageDecoder.TryDecode(tiff, out var image).ShouldBeTrue();
+        TiffImageDecoder.TryDecode(tiff, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image!.Channels.ShouldBe(1);
         AssertRaster(image.Pixels.ToArray(), black, width, blackSample: 0);
     }
@@ -158,7 +158,7 @@ public sealed class TiffBilevelReadTests
         var tiff = image.ToByteArray();
 
         TiffReader.ReadLayout(tiff).StoredBitsPerSample.ShouldBe(bits);
-        var page = TiffReader.ReadPage(tiff);
+        var page = TiffReader.ReadPage(tiff, cancellationToken: TestContext.Current.CancellationToken);
         page.Photometric.ShouldBe(TiffPhotometric.MinIsBlack);
         page.Pixels.ShouldBe(grey);
     }
@@ -176,7 +176,7 @@ public sealed class TiffBilevelReadTests
         Should.Throw<NotSupportedException>(() => TiffReader.Read(tiff));
         Should.Throw<NotSupportedException>(() => TiffReader.ReadPage(tiff, 1));
 
-        TiffImageDecoder.TryDecode(tiff, out var image).ShouldBeTrue();
+        TiffImageDecoder.TryDecode(tiff, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         AssertRaster(image!.Pixels.ToArray(), black, width, blackSample: 0);
     }
 
@@ -195,7 +195,7 @@ public sealed class TiffBilevelReadTests
         var coded = Pack(bits);
 
         var tiff = BuildFaxTiff(8, 3, TiffCompression.CcittT4, t4Options: 1, rowsPerStrip: 3, coded);
-        var page = TiffReader.ReadPage(tiff);
+        var page = TiffReader.ReadPage(tiff, cancellationToken: TestContext.Current.CancellationToken);
         page.Photometric.ShouldBe(TiffPhotometric.MinIsWhite);
 
         byte[] expected =
@@ -216,7 +216,7 @@ public sealed class TiffBilevelReadTests
         var coded = Pack(string.Concat("0111", "10", "1000", "000000", "00110101", "000101", "00"));
         var tiff = BuildFaxTiff(8, 2, TiffCompression.CcittRle, t4Options: 0, rowsPerStrip: 2, coded);
 
-        TiffReader.ReadPage(tiff).Pixels.ShouldBe(
+        TiffReader.ReadPage(tiff, cancellationToken: TestContext.Current.CancellationToken).Pixels.ShouldBe(
             [0, 0, 255, 255, 255, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255]);
     }
 
@@ -241,7 +241,7 @@ public sealed class TiffBilevelReadTests
 
         // Cut the strip's byte count in half; the page still has its declared size.
         PatchFirstStripByteCount(tiff, layout);
-        var page = TiffReader.ReadPage(tiff);
+        var page = TiffReader.ReadPage(tiff, cancellationToken: TestContext.Current.CancellationToken);
         page.Pixels.Length.ShouldBe(width * height);
     }
 

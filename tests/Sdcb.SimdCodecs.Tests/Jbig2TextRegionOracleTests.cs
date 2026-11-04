@@ -36,7 +36,7 @@ public sealed class Jbig2TextRegionOracleTests(ITestOutputHelper output)
         _out.WriteLine($"corner {(ReferenceCorner)corner} transposed {transposed}: {file.Length} bytes");
 
         ShouldMatch(raster.Bits, expected, $"corner {(ReferenceCorner)corner}, transposed {transposed}");
-        ShouldMatch(Jbig2Decoder.DecodeFile(file).Bits, expected, "our own decode");
+        ShouldMatch(Jbig2Decoder.DecodeFile(file, cancellationToken: TestContext.Current.CancellationToken).Bits, expected, "our own decode");
     }
 
     /// <summary>

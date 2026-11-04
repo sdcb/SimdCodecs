@@ -246,8 +246,8 @@ public sealed class WebpAnimationEncoderTests
             var canvas = new byte[96 * 64 * 4];
             for (int k = decoder.FrameCount - 1; k >= 0; k--)
             {
-                decoder.Seek(k);
-                decoder.TryDecodeNextFrame(canvas, out _).ShouldBeTrue();
+                decoder.Seek(k, cancellationToken: TestContext.Current.CancellationToken);
+                decoder.TryDecodeNextFrame(canvas, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
                 canvas.ShouldBe(sequential[k].Canvas, $"distance {distance} seek {k}");
             }
         }

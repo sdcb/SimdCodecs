@@ -65,7 +65,7 @@ public sealed class Jbig2EncoderFixtureTests
     [InlineData("s_tpgd.jb2")]    // jbig2 -d t.pbm         - standalone, TPGD typical prediction
     public void DecodeFile_JbigEncStandaloneOutput_MatchesTheSourcePattern(string name)
     {
-        var page = Jbig2Decoder.DecodeFile(Fixture(name));
+        var page = Jbig2Decoder.DecodeFile(Fixture(name), cancellationToken: TestContext.Current.CancellationToken);
 
         page.Width.ShouldBe(32);
         page.Height.ShouldBe(16);
@@ -80,7 +80,7 @@ public sealed class Jbig2EncoderFixtureTests
         // The PDF-shaped path: jbig2enc's -p output is exactly what a PDF
         // /JBIG2Decode stream carries, and the dimensions arrive out of band the
         // way an image dictionary supplies them.
-        var page = Jbig2Decoder.Decode(Fixture(name), 32, 16);
+        var page = Jbig2Decoder.Decode(Fixture(name), 32, 16, cancellationToken: TestContext.Current.CancellationToken);
 
         Jbig2StreamBuilder.ToRows(page.Width, page.Height, page.Bits).ShouldBe(Expected);
     }
@@ -119,7 +119,7 @@ public sealed class Jbig2EncoderFixtureTests
     [Fact]
     public void Facade_DecodesAJbigEncStandaloneFile()
     {
-        SimdCodecs.TryDecode(Fixture("s.jb2"), out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(Fixture("s.jb2"), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         image!.Width.ShouldBe(32);
         image.Height.ShouldBe(16);

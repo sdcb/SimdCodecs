@@ -41,7 +41,7 @@ public sealed class FrameReaderTests
                 frame.Duration.ShouldBe(TimeSpan.FromMilliseconds(durationMs));
                 frame.Info.ShouldBe(info with { FrameCount = 1 });
 
-                reader.TryDecodeFrameInto(index, rgba, 0, PixelFormat.Rgba32).ShouldBeTrue();
+                reader.TryDecodeFrameInto(index, rgba, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
                 WebpAnimationOracleTests.Sha256Hex(rgba).ShouldBe(sha256, $"frame {index}");
             }
         }
@@ -53,11 +53,11 @@ public sealed class FrameReaderTests
         foreach (var fixture in Directory.GetFiles(Path.GetDirectoryName(WebpFixture("x"))!, "anim-*.webp"))
         {
             var data = File.ReadAllBytes(fixture);
-            SimdCodecs.TryDecode(data, out var still).ShouldBeTrue();
+            SimdCodecs.TryDecode(data, out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
             SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
             using (reader)
             {
-                reader.TryDecodeFrame(0, out var first).ShouldBeTrue();
+                reader.TryDecodeFrame(0, out var first, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
                 (first.Width, first.Height, first.Channels, first.SampleFormat)
                     .ShouldBe((still.Width, still.Height, still.Channels, still.SampleFormat));
                 first.Pixels.ToArray().ShouldBe(still.Pixels.ToArray(), Path.GetFileName(fixture));
@@ -173,7 +173,7 @@ public sealed class FrameReaderTests
                 reader.TryGetFrameInfo(index, out var frame).ShouldBeTrue();
                 frame.Duration.ShouldBeNull();
                 (frame.Info.Width, frame.Info.Height, frame.Info.Channels).ShouldBe((w, h, channels));
-                reader.TryDecodeFrame(index, out var image).ShouldBeTrue();
+                reader.TryDecodeFrame(index, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
                 image.Pixels.ToArray().ShouldBe(pixels, $"page {index}");
             }
             for (var index = 0; index < 3; index++)
@@ -197,9 +197,9 @@ public sealed class FrameReaderTests
         {
             reader.FrameCount.ShouldBe(3);
             reader.TryGetFrameInfo(1, out _).ShouldBeFalse();
-            reader.TryDecodeFrame(1, out _).ShouldBeFalse();
-            reader.TryDecodeFrameInto(1, new byte[1 << 10], 0, PixelFormat.Rgba32).ShouldBeFalse();
-            reader.TryDecodeFrame(2, out var last).ShouldBeTrue();
+            reader.TryDecodeFrame(1, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+            reader.TryDecodeFrameInto(1, new byte[1 << 10], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+            reader.TryDecodeFrame(2, out var last, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
             (last.Width, last.Height).ShouldBe((2, 5));
         }
     }
@@ -220,7 +220,7 @@ public sealed class FrameReaderTests
             "gif" => new MagickImage(MagickColors.Orange, 5, 3).ToByteArray(MagickFormat.Gif),
             _ => new MagickImage(MagickColors.Teal, 6, 2).ToByteArray(MagickFormat.Tiff),
         };
-        SimdCodecs.TryDecode(data, out var still).ShouldBeTrue();
+        SimdCodecs.TryDecode(data, out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
         using (reader)
         {
@@ -228,7 +228,7 @@ public sealed class FrameReaderTests
             reader.LoopCount.ShouldBeNull();
             reader.TryGetFrameInfo(0, out var frame).ShouldBeTrue();
             frame.Duration.ShouldBeNull();
-            reader.TryDecodeFrame(0, out var image).ShouldBeTrue();
+            reader.TryDecodeFrame(0, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
             image.Pixels.ToArray().ShouldBe(still.Pixels.ToArray());
             CheckFrame(reader, 0, storedLuma: kind == "jpeg");
         }
@@ -300,7 +300,7 @@ public sealed class FrameReaderTests
                 step.Duration.ShouldBeNull();
                 var (w, h, _, _) = pages[step.Index];
                 var alone = new byte[w * h * 3];
-                reader.TryDecodeFrameInto(step.Index, alone, 0, PixelFormat.Bgr24).ShouldBeTrue();
+                reader.TryDecodeFrameInto(step.Index, alone, 0, PixelFormat.Bgr24, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
                 buffer[..alone.Length].ShouldBe(alone, $"page {step.Index}");
                 seen++;
             }

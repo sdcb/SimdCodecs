@@ -48,7 +48,7 @@ public sealed class Jbig2RefinementOracleTests(ITestOutputHelper output)
         ShouldMatch(raster.Bits, target.Data, w, h, $"{edit}/{template}/{tpgron}");
 
         // And our own decode of the same file, so the segment layer is covered too.
-        Jbig2Decoder.DecodeFile(file).Bits.ToArray().ShouldBe(target.Data);
+        Jbig2Decoder.DecodeFile(file, cancellationToken: TestContext.Current.CancellationToken).Bits.ToArray().ShouldBe(target.Data);
     }
 
     /// <summary>
@@ -72,7 +72,7 @@ public sealed class Jbig2RefinementOracleTests(ITestOutputHelper output)
         var file = PageRefinementFile(reference, target, template: 0, tpgron: false, at);
 
         Jbig2Oracle.Decode(file).Bits.ShouldBe(target.Data, $"AT ({a1x},{a1y}) ({a2x},{a2y})");
-        Jbig2Decoder.DecodeFile(file).Bits.ToArray().ShouldBe(target.Data);
+        Jbig2Decoder.DecodeFile(file, cancellationToken: TestContext.Current.CancellationToken).Bits.ToArray().ShouldBe(target.Data);
     }
 
     /// <summary>

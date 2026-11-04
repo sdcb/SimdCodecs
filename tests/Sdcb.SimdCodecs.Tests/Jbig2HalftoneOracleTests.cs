@@ -54,7 +54,7 @@ public sealed class Jbig2HalftoneOracleTests(ITestOutputHelper output)
                 "\nactual:\n" + string.Join('\n', Jbig2StreamBuilder.ToRows(expected.Width, expected.Height, raster.Bits)));
         }
 
-        Jbig2Decoder.DecodeFile(file).Bits.ToArray().ShouldBe(expected.Data);
+        Jbig2Decoder.DecodeFile(file, cancellationToken: TestContext.Current.CancellationToken).Bits.ToArray().ShouldBe(expected.Data);
     }
 
     private static (byte[][] Segments, Jbig2Bitmap Expected) BuildSegments(int levels, int vectorX, int vectorY)

@@ -440,7 +440,7 @@ public sealed class BmpDecoderTests
         var header = W.InfoHeader(124, width, height, 24, 0, colorSpace: 0x4D424544, profileOffset: (uint)(124 + pixels.Length), profileSize: 300);
         var bmp = W.File(header, [], W.Concat(pixels, profile));
         BmpDecoder.Decode(bmp).IccProfile.ShouldBe(profile);
-        BmpImageDecoder.TryDecode(bmp, out var image).ShouldBeTrue();
+        BmpImageDecoder.TryDecode(bmp, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image!.IccProfile.ToArray().ShouldBe(profile);
 
         // A profile that points outside the data is ignored, not fatal.
@@ -590,7 +590,7 @@ public sealed class BmpDecoderTests
     public void Unsupported_and_corrupt_bitmaps_are_refused(string name, byte[] bmp)
     {
         Should.Throw<InvalidDataException>(() => BmpDecoder.Decode(bmp), name);
-        BmpImageDecoder.TryDecode(bmp, out _).ShouldBeFalse(name);
-        BmpImageDecoder.TryDecodeInto(bmp, new byte[1 << 20], 0, PixelFormat.Rgba32).ShouldBeFalse(name);
+        BmpImageDecoder.TryDecode(bmp, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(name);
+        BmpImageDecoder.TryDecodeInto(bmp, new byte[1 << 20], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(name);
     }
 }

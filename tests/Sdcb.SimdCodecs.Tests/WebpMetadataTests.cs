@@ -14,12 +14,12 @@ public sealed class WebpMetadataTests
         byte[] xmp = File.ReadAllBytes(Path.Combine(directory, "metadata.xmp"));
         byte[] source = File.ReadAllBytes(Path.Combine(directory, "webp-metadata.webp"));
 
-        WebpImage image = WebpDecoder.Decode(source);
+        WebpImage image = WebpDecoder.Decode(source, cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(icc, image.IccProfile);
         Assert.Equal(exif, image.Exif);
         Assert.Equal(xmp, image.Xmp);
-        Assert.True(WebpImageDecoder.TryDecode(source, out IDecodedImage? decoded));
+        Assert.True(WebpImageDecoder.TryDecode(source, out IDecodedImage? decoded, cancellationToken: TestContext.Current.CancellationToken));
         Assert.NotNull(decoded);
         Assert.Equal(icc, decoded.IccProfile.ToArray());
         Assert.Equal(ColorEncoding.AssumedSrgb, decoded.ColorEncoding);
@@ -41,7 +41,7 @@ public sealed class WebpMetadataTests
         Assert.Equal(xmp, animation.Xmp);
 
         byte[] plain = File.ReadAllBytes(Path.Combine(directory, "flat-gray-16x16.webp"));
-        WebpImage imageWithoutMetadata = WebpDecoder.Decode(plain);
+        WebpImage imageWithoutMetadata = WebpDecoder.Decode(plain, cancellationToken: TestContext.Current.CancellationToken);
         WebpAnimation animationWithoutMetadata = WebpDecoder.DecodeAnimation(plain);
         Assert.Null(imageWithoutMetadata.IccProfile);
         Assert.Null(imageWithoutMetadata.Exif);

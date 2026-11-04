@@ -60,7 +60,7 @@ public sealed class PngWriterRgbTests
         const int height = 9;
         var (_, rgb) = Pixels8(width, height);
 
-        var decoded = PngReader.Decode(PngWriter.EncodeRgb8(rgb, width, height));
+        var decoded = PngReader.Decode(PngWriter.EncodeRgb8(rgb, width, height), cancellationToken: TestContext.Current.CancellationToken);
 
         decoded.ColorType.ShouldBe(2);
         decoded.BitDepth.ShouldBe(8);
@@ -76,7 +76,7 @@ public sealed class PngWriterRgbTests
         const int height = 9;
         var (_, rgb) = Pixels16(width, height);
 
-        var decoded = PngReader.Decode(PngWriter.EncodeRgb16(rgb, width, height));
+        var decoded = PngReader.Decode(PngWriter.EncodeRgb16(rgb, width, height), cancellationToken: TestContext.Current.CancellationToken);
 
         decoded.ColorType.ShouldBe(2);
         decoded.BitDepth.ShouldBe(16);
@@ -100,7 +100,7 @@ public sealed class PngWriterRgbTests
         // on a red pixel gives a blue one, but swapping R and A on it gives a red one back.
         ReadOnlySpan<byte> rgba = [10, 20, 30, 255, 40, 50, 60, 255, 70, 80, 90, 255];
 
-        var decoded = PngReader.Decode(PngWriter.Encode(rgba, 3, 1, new PngWriteOptions { DiscardAlpha = true }));
+        var decoded = PngReader.Decode(PngWriter.Encode(rgba, 3, 1, new PngWriteOptions { DiscardAlpha = true }), cancellationToken: TestContext.Current.CancellationToken);
 
         decoded.Pixels.ShouldBe(new byte[] { 10, 20, 30, 40, 50, 60, 70, 80, 90 });
     }
@@ -121,8 +121,8 @@ public sealed class PngWriterRgbTests
         smallest.Length.ShouldBeLessThan(fastest.Length);
 
         // ...and it must be a pure encoding choice, invisible on the way back out.
-        PngReader.Decode(fastest).Pixels.ShouldBe(rgb);
-        PngReader.Decode(smallest).Pixels.ShouldBe(rgb);
+        PngReader.Decode(fastest, cancellationToken: TestContext.Current.CancellationToken).Pixels.ShouldBe(rgb);
+        PngReader.Decode(smallest, cancellationToken: TestContext.Current.CancellationToken).Pixels.ShouldBe(rgb);
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public sealed class PngWriterRgbTests
         // The negative half of DiscardAlpha: the default must not have quietly become RGB.
         ReadOnlySpan<byte> rgba = [10, 20, 30, 44, 40, 50, 60, 88];
 
-        var decoded = PngReader.Decode(PngWriter.Encode(rgba, 2, 1, new PngWriteOptions()));
+        var decoded = PngReader.Decode(PngWriter.Encode(rgba, 2, 1, new PngWriteOptions()), cancellationToken: TestContext.Current.CancellationToken);
 
         decoded.ColorType.ShouldBe(6);
         decoded.Pixels.ShouldBe(new byte[] { 10, 20, 30, 44, 40, 50, 60, 88 });

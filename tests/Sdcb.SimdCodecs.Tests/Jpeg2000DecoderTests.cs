@@ -32,7 +32,7 @@ public class Jpeg2000DecoderTests
     public void EveryFixture_DecodesExactly(string name)
     {
         var expected = Pnm.Read(Jpeg2000FixtureTests.SourceRaster(name));
-        var decoded = Jpeg2000Decoder.Decode(File.ReadAllBytes(Path.Combine(FixtureDirectory, name + ".j2k")));
+        var decoded = Jpeg2000Decoder.Decode(File.ReadAllBytes(Path.Combine(FixtureDirectory, name + ".j2k")), cancellationToken: TestContext.Current.CancellationToken);
 
         decoded.Width.ShouldBe(expected.Width);
         decoded.Height.ShouldBe(expected.Height);
@@ -63,7 +63,7 @@ public class Jpeg2000DecoderTests
     [Fact]
     public void FlatImage_DecodesToTheConstantItWas()
     {
-        var decoded = Jpeg2000Decoder.Decode(File.ReadAllBytes(Path.Combine(FixtureDirectory, "flat64.j2k")));
+        var decoded = Jpeg2000Decoder.Decode(File.ReadAllBytes(Path.Combine(FixtureDirectory, "flat64.j2k")), cancellationToken: TestContext.Current.CancellationToken);
 
         decoded.Samples.ShouldAllBe(s => s == 128);
     }
@@ -92,7 +92,7 @@ public class Jpeg2000DecoderTests
         // from outside that contract.
         try
         {
-            Jpeg2000Decoder.Decode(truncated);
+            Jpeg2000Decoder.Decode(truncated, cancellationToken: TestContext.Current.CancellationToken);
         }
         catch (InvalidDataException)
         {

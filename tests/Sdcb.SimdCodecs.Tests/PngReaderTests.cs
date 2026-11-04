@@ -22,7 +22,7 @@ public sealed class PngReaderTests
         rng.NextBytes(src);
 
         var png = PngWriter.Encode(src, w, h);
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
 
         img.Width.ShouldBe(w);
         img.Height.ShouldBe(h);
@@ -39,7 +39,7 @@ public sealed class PngReaderTests
         for (var i = 0; i < src.Length; i++) src[i] = (byte)((i * 17 + 3) & 0xFF);
 
         var png = PngWriter.EncodeGray8(src, w, h);
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
 
         img.ColorType.ShouldBe(0);
         img.BitDepth.ShouldBe(8);
@@ -54,7 +54,7 @@ public sealed class PngReaderTests
         for (var i = 0; i < src.Length; i++) src[i] = (ushort)(i * 1031);
 
         var png = PngWriter.EncodeGray16(src, w, h);
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
 
         img.BitDepth.ShouldBe(16);
         img.ColorType.ShouldBe(0);
@@ -74,7 +74,7 @@ public sealed class PngReaderTests
         for (var i = 0; i < src.Length; i++) src[i] = (ushort)rng.Next(0, 65536);
 
         var png = PngWriter.EncodeRgba16(src, w, h);
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
 
         img.BitDepth.ShouldBe(16);
         img.ColorType.ShouldBe(6);
@@ -94,7 +94,7 @@ public sealed class PngReaderTests
         for (var i = 0; i < icc.Length; i++) icc[i] = (byte)(0xA0 + (i & 0x1F));
 
         var png = PngWriter.Encode(src, 4, 4, icc);
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
 
         img.IccProfile.ShouldNotBeNull();
         img.IccProfile!.ShouldBe(icc);
@@ -142,7 +142,7 @@ public sealed class PngReaderTests
             for (var i = 0; i < src.Length; i++) src[i] = (byte)((i * 37 + w + h) & 0xFF);
 
             var png = PngWriter.Encode(src, w, h);
-            var img = PngReader.Decode(png);
+            var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
 
             img.Width.ShouldBe(w);
             img.Height.ShouldBe(h);
@@ -161,7 +161,7 @@ public sealed class PngReaderTests
         byte[] indices = [0, 1, 2, 3, 1, 0]; // row-major, one index per pixel
 
         var png = BuildIndexedPng(w, h, palette, trns, indices);
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
 
         img.Width.ShouldBe(w);
         img.Height.ShouldBe(h);
@@ -187,7 +187,7 @@ public sealed class PngReaderTests
         var rng = new Random(unchecked((int)0xB0A7B0A7));
         rng.NextBytes(src);
 
-        var img = PngReader.Decode(PngWriter.Encode(src, w, h));
+        var img = PngReader.Decode(PngWriter.Encode(src, w, h), cancellationToken: TestContext.Current.CancellationToken);
 
         // Color type 6 is already RGBA8 — ToRgba8 is a faithful copy of the samples.
         img.ToRgba8().ShouldBe(src);
@@ -198,7 +198,7 @@ public sealed class PngReaderTests
     {
         const int w = 3, h = 2;
         byte[] grey = [0, 40, 80, 120, 160, 200];
-        var img = PngReader.Decode(PngWriter.EncodeGray8(grey, w, h));
+        var img = PngReader.Decode(PngWriter.EncodeGray8(grey, w, h), cancellationToken: TestContext.Current.CancellationToken);
 
         var rgba = img.ToRgba8();
         for (var i = 0; i < w * h; i++)
@@ -217,7 +217,7 @@ public sealed class PngReaderTests
         var src = new ushort[w * h];
         for (var i = 0; i < src.Length; i++) src[i] = (ushort)(i * 4113); // spread across the 16-bit range
 
-        var img = PngReader.Decode(PngWriter.EncodeGray16(src, w, h));
+        var img = PngReader.Decode(PngWriter.EncodeGray16(src, w, h), cancellationToken: TestContext.Current.CancellationToken);
 
         var rgba = img.ToRgba8();
         for (var i = 0; i < w * h; i++)
@@ -238,7 +238,7 @@ public sealed class PngReaderTests
         var rng = new Random(unchecked((int)0x16F0_16F0));
         for (var i = 0; i < src.Length; i++) src[i] = (ushort)rng.Next(0, 65536);
 
-        var img = PngReader.Decode(PngWriter.EncodeRgba16(src, w, h));
+        var img = PngReader.Decode(PngWriter.EncodeRgba16(src, w, h), cancellationToken: TestContext.Current.CancellationToken);
 
         var rgba = img.ToRgba8();
         for (var i = 0; i < src.Length; i++)
@@ -254,7 +254,7 @@ public sealed class PngReaderTests
         byte[] trns = [0, 255, 128]; // entry 3 absent -> opaque
         byte[] indices = [0, 1, 2, 3, 1, 0];
 
-        var img = PngReader.Decode(BuildIndexedPng(w, h, palette, trns, indices));
+        var img = PngReader.Decode(BuildIndexedPng(w, h, palette, trns, indices), cancellationToken: TestContext.Current.CancellationToken);
 
         byte[] expected =
         [
@@ -395,6 +395,6 @@ public sealed class PngReaderTests
         png[24] = (byte)bitDepth;
         png[25] = (byte)colorType;
         Sdcb.SimdCodecs.Png.PngImageDecoder.TryReadInfo(png, out _).ShouldBeFalse();
-        Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecodeInto(png, new byte[64], 0, Sdcb.SimdCodecs.Abstractions.PixelFormat.Rgba32).ShouldBeFalse();
+        Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecodeInto(png, new byte[64], 0, Sdcb.SimdCodecs.Abstractions.PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 }

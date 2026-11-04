@@ -40,8 +40,8 @@ public sealed class Vp8LPredictorEquivalenceTests
 
                 int[] scalar = (int[])source.Clone();
                 int[] vector = (int[])source.Clone();
-                Vp8LDecoder.ApplyPredictorScalar(scalar, transform);
-                Vp8LDecoder.ApplyPredictorVector(vector, transform);
+                Vp8LDecoder.ApplyPredictorScalar(scalar, transform, cancellationToken: TestContext.Current.CancellationToken);
+                Vp8LDecoder.ApplyPredictorVector(vector, transform, cancellationToken: TestContext.Current.CancellationToken);
                 Assert.Equal(scalar, vector);
             }
         }
@@ -77,8 +77,8 @@ public sealed class Vp8LPredictorEquivalenceTests
 
                 int[] scalar = (int[])source.Clone();
                 int[] vector = (int[])source.Clone();
-                Vp8LDecoder.ApplyColorTransformScalar(scalar, transform);
-                Vp8LDecoder.ApplyColorTransformVector(vector, transform);
+                Vp8LDecoder.ApplyColorTransformScalar(scalar, transform, cancellationToken: TestContext.Current.CancellationToken);
+                Vp8LDecoder.ApplyColorTransformVector(vector, transform, cancellationToken: TestContext.Current.CancellationToken);
                 Assert.Equal(scalar, vector);
             }
         }

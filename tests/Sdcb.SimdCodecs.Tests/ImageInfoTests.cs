@@ -40,7 +40,7 @@ public sealed class ImageInfoTests
         info.SwapsDimensions.ShouldBe(orientation >= ImageOrientation.Transpose);
         // Stored dimensions, stored pixels: nothing is turned.
         (info.Width, info.Height).ShouldBe((12, 5));
-        SimdCodecs.TryDecode(file, out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         (image.Width, image.Height).ShouldBe((12, 5));
     }
 
@@ -217,7 +217,7 @@ public sealed class ImageInfoTests
 
         SimdCodecs.TryReadInfo(bytes, out var info).ShouldBeTrue();
         info.FrameCount.ShouldBe(3);
-        SimdCodecs.TryDecode(bytes, out _).ShouldBeTrue();
+        SimdCodecs.TryDecode(bytes, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         // An acTL after the image data is not an APNG's.
         var late = new MemoryStream();
@@ -286,7 +286,7 @@ public sealed class ImageInfoTests
 
         SimdCodecs.TryReadInfo(file, out var info).ShouldBeTrue();
         (info.FrameCount, info.BitDepth).ShouldBe((2, 1));
-        SimdCodecs.TryDecode(file, out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         (image.Width, image.Height).ShouldBe((page.Width, page.Height));
     }
 

@@ -24,7 +24,7 @@ public sealed class HeifTransformTests
         plain.Transforms.Clear();
         int canvasW = plain.CanvasWidth, canvasH = plain.CanvasHeight;
         var canvas = new byte[canvasW * canvasH * 4];
-        HeifDecoder.DecodeInto(data, plain, canvas, canvasW * 4, PixelFormat.Rgba32);
+        HeifDecoder.DecodeInto(data, plain, canvas, canvasW * 4, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken);
 
         var rng = new Random(fixture.Length * 7919);
         var formats = PixelConverterTests.Formats;
@@ -81,12 +81,12 @@ public sealed class HeifTransformTests
             if (format == PixelFormat.Gray8 && HeifDecoder.MatrixCoefficients(container) != 0)
             {
                 var grayCanvas = new byte[canvasW * canvasH];
-                HeifDecoder.DecodeInto(data, plain, grayCanvas, canvasW, PixelFormat.Gray8);
+                HeifDecoder.DecodeInto(data, plain, grayCanvas, canvasW, PixelFormat.Gray8, cancellationToken: TestContext.Current.CancellationToken);
                 var (expectedGray, _, _) = ApplyTransforms(container.Transforms, grayCanvas, canvasW, canvasH, bytesPerPixel: 1);
                 for (var y = 0; y < eh; y++) expectedGray.AsSpan(y * ew, ew).CopyTo(expected.AsSpan(y * stride));
             }
 
-            HeifDecoder.DecodeInto(data, container, actual, stride, format);
+            HeifDecoder.DecodeInto(data, container, actual, stride, format, cancellationToken: TestContext.Current.CancellationToken);
             var label = $"iteration {iteration}: {string.Join(" ", container.Transforms.Select(Describe))} -> {format} stride {stride}";
             if (!actual.AsSpan().SequenceEqual(expected)) actual.ShouldBe(expected, label);
         }

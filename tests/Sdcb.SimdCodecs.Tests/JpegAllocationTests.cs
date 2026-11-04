@@ -45,7 +45,7 @@ public sealed class JpegAllocationTests
         for (var i = 0; i < 3; ++i)
         {
             JpegDecoder.DecodeTo(jpeg, rgba);
-            JpegDecoder.DecodeTo(jpeg, rgb, info.Width * 3, JpegPixelFormat.Rgb24);
+            JpegDecoder.DecodeTo(jpeg, rgb, info.Width * 3, JpegPixelFormat.Rgb24, JpegScale.Full, TestContext.Current.CancellationToken);
             JpegDecoder.DecodeTo(jpeg, rgba, JpegScale.Quarter);
         }
 
@@ -58,7 +58,7 @@ public sealed class JpegAllocationTests
         {
             var before = GC.GetAllocatedBytesForCurrentThread();
             JpegDecoder.DecodeTo(jpeg, rgba);
-            JpegDecoder.DecodeTo(jpeg, rgb, info.Width * 3, JpegPixelFormat.Rgb24);
+            JpegDecoder.DecodeTo(jpeg, rgb, info.Width * 3, JpegPixelFormat.Rgb24, JpegScale.Full, TestContext.Current.CancellationToken);
             JpegDecoder.DecodeTo(jpeg, rgba, JpegScale.Quarter);
             best = Math.Min(best, GC.GetAllocatedBytesForCurrentThread() - before);
         }

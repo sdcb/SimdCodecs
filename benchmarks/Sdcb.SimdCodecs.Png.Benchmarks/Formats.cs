@@ -82,12 +82,12 @@ internal static class Formats
     }
 
     // libpng's simplified-API format flags (alpha 1, colour 2, BGR 0x10), as its manual documents them.
-    private static uint? LibPngFormat(PixelFormat format) => format switch
+    private static uint? LibPngFormat(PixelFormat format) => format.Layout switch
     {
-        PixelFormat.Bgra32 => LibPng.FormatRgba | LibPng.FlagBgr,
-        PixelFormat.Rgb24 => LibPng.FormatRgb,
-        PixelFormat.Bgr24 => LibPng.FormatRgb | LibPng.FlagBgr,
-        PixelFormat.Gray8 => LibPng.FormatGray,
+        ChannelLayout.Bgra => LibPng.FormatRgba | LibPng.FlagBgr,
+        ChannelLayout.Rgb => LibPng.FormatRgb,
+        ChannelLayout.Bgr => LibPng.FormatRgb | LibPng.FlagBgr,
+        ChannelLayout.Gray => LibPng.FormatGray,
         _ => null,
     };
 

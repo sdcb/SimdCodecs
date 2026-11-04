@@ -93,7 +93,7 @@ internal sealed record Case(string Content, string Format)
     }
 
     /// <summary>ImageSharp's encoder for this case and an image of the input built beforehand, or null.</summary>
-    public (Image Image, IImageEncoder Encoder)? ImageSharpEncoder()
+    public (Image Image, SixLabors.ImageSharp.Formats.IImageEncoder Encoder)? ImageSharpEncoder()
     {
         if (!ImageSharpWrites) return null;
         var (pixels, _) = Input();
@@ -106,7 +106,7 @@ internal sealed record Case(string Content, string Format)
             "ppm16" => SixLabors.ImageSharp.Image.LoadPixelData<Rgb48>(config, pixels, w, h),
             _ => SixLabors.ImageSharp.Image.LoadPixelData<Rgb24>(config, pixels, w, h),
         };
-        IImageEncoder encoder = Format switch
+        SixLabors.ImageSharp.Formats.IImageEncoder encoder = Format switch
         {
             "qoi-rgba" => new IsQoiEncoder { Channels = IsQoiChannels.Rgba },
             "qoi-rgb" => new IsQoiEncoder { Channels = IsQoiChannels.Rgb },

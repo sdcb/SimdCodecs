@@ -24,8 +24,8 @@ public sealed class WebpAllocationTests
         byte[] rgba = new byte[(info.Height - 1) * stride + info.Width * 4];
         for (int i = 0; i < 3; i++)
         {
-            WebpDecoder.DecodeTo(file, rgba);
-            WebpDecoder.DecodeTo(file, rgba, stride);
+            WebpDecoder.DecodeTo(file, rgba, cancellationToken: TestContext.Current.CancellationToken);
+            WebpDecoder.DecodeTo(file, rgba, stride, cancellationToken: TestContext.Current.CancellationToken);
         }
 
         // ArrayPool.Shared keeps one array per size in a thread-local slot and the rest in
@@ -36,8 +36,8 @@ public sealed class WebpAllocationTests
         for (int attempt = 0; attempt < 8 && best != 0; attempt++)
         {
             long before = GC.GetAllocatedBytesForCurrentThread();
-            WebpDecoder.DecodeTo(file, rgba);
-            WebpDecoder.DecodeTo(file, rgba, stride);
+            WebpDecoder.DecodeTo(file, rgba, cancellationToken: TestContext.Current.CancellationToken);
+            WebpDecoder.DecodeTo(file, rgba, stride, cancellationToken: TestContext.Current.CancellationToken);
             best = Math.Min(best, GC.GetAllocatedBytesForCurrentThread() - before);
         }
 

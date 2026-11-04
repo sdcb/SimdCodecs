@@ -55,8 +55,8 @@ public sealed class PngAdam7Tests
         PngImageDecoder.TryDecodeRgba8(interlaced, out var allocated, out _, out _).ShouldBeTrue();
         allocated.ShouldBe(expected);
 
-        var fromInterlaced = PngReader.Decode(interlaced);
-        var fromPlain = PngReader.Decode(plain);
+        var fromInterlaced = PngReader.Decode(interlaced, cancellationToken: TestContext.Current.CancellationToken);
+        var fromPlain = PngReader.Decode(plain, cancellationToken: TestContext.Current.CancellationToken);
         fromInterlaced.ToRgba8().ShouldBe(expected);
         fromPlain.ToRgba8().ShouldBe(expected);
         (fromInterlaced.Width, fromInterlaced.Height, fromInterlaced.BitDepth, fromInterlaced.SourceBitDepth, fromInterlaced.ColorType)
@@ -94,7 +94,7 @@ public sealed class PngAdam7Tests
                 ((int)read[i]).ShouldBe(depth == 16 ? samples[i] : samples[i] * 65535 / ((1 << depth) - 1), $"sample {i}");
         }
 
-        var image = PngReader.Decode(png);
+        var image = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         for (var i = 0; i < samples.Length; i++)
         {
             var actual = depth == 16
@@ -136,7 +136,7 @@ public sealed class PngAdam7Tests
         FixCrc(png, 8); // IHDR: length at 8, type at 12
 
         PngImageDecoder.TryDecodeRgba8(png, out _, out _, out _).ShouldBeFalse();
-        PngReader.TryDecode(png, out _).ShouldBeFalse();
+        PngReader.TryDecode(png, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     // ---- a test-only Adam7 writer, from the specification (§8.2, §9) -----------------------------

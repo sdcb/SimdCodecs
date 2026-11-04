@@ -91,8 +91,8 @@ public sealed class PngTryDecodeRgba8Tests
             expected[4 * i + 3] = 255;
         }
 
-        PngReader.Decode(png).Pixels.ShouldBe(rgb);
-        PngReader.TryDecode(png, out var decoded).ShouldBeTrue();
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).Pixels.ShouldBe(rgb);
+        PngReader.TryDecode(png, out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         decoded.Interlaced.ShouldBeTrue();
         PngImageDecoder.TryDecodeRgba8(png, out var rgba, out _, out _).ShouldBeTrue();
         rgba.ShouldBe(expected);
@@ -110,7 +110,7 @@ public sealed class PngTryDecodeRgba8Tests
         rgba.ShouldBeNull();
 
         // The refusal belongs to the RGBA8 projection, not the reader: a float projection starts here.
-        PngReader.TryDecode(png, out var decoded).ShouldBeTrue();
+        PngReader.TryDecode(png, out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         decoded.Cicp.ShouldNotBeNull().TransferFunction.ShouldBe(TransferFunction.Pq);
     }
 }

@@ -53,7 +53,7 @@ public sealed class PngTransparentColorTests
         // The splice did what it should: the oracle sees transparency.
         expected.Where((_, i) => i % 4 == 3).ShouldContain((byte)0);
 
-        var decoded = PngReader.Decode(png);
+        var decoded = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         decoded.TransparentColor.ShouldBe(key);
         decoded.ToRgba8().ShouldBe(expected);
 
@@ -67,7 +67,7 @@ public sealed class PngTransparentColorTests
         var channels = colorType == 0 ? 2 : 4;
         PngImageDecoder.TryReadInfo(png, out var info).ShouldBeTrue();
         info.Channels.ShouldBe(channels);
-        PngImageDecoder.TryDecode(png, out var image).ShouldBeTrue();
+        PngImageDecoder.TryDecode(png, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.Channels.ShouldBe(channels);
         image.SampleFormat.ShouldBe(info.SampleFormat);
         var fidelity = depth == 16
@@ -96,7 +96,7 @@ public sealed class PngTransparentColorTests
         var expected = referencePixels.ToShortArray(PixelMapping.RGBA)!.Select(v => (byte)(v >> 8)).ToArray();
         expected.ShouldBe(new byte[] { 0x12, 0x12, 0x12, 0, 0x12, 0x12, 0x12, 255 });
 
-        PngReader.Decode(png).ToRgba8().ShouldBe(expected);
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).ToRgba8().ShouldBe(expected);
         var into = new byte[8];
         PngImageDecoder.TryDecodeIntoRgba8(png, into).ShouldBeTrue();
         into.ShouldBe(expected);
@@ -126,7 +126,7 @@ public sealed class PngTransparentColorTests
         using var referencePixels = reference.GetPixels();
         var expected = referencePixels.ToShortArray(PixelMapping.RGBA)!.Select(v => (byte)(v >> 8)).ToArray();
 
-        var decoded = PngReader.Decode(png);
+        var decoded = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         decoded.TransparentColor.ShouldBeNull();
         decoded.PaletteAlpha.ShouldBeNull();
         decoded.ToRgba8().ShouldBe(expected);
@@ -145,7 +145,7 @@ public sealed class PngTransparentColorTests
         BinaryPrimitives.WriteUInt32BigEndian(phys.AsSpan(4), 5906);  // 150 dpi
         phys[8] = 1;
 
-        var decoded = PngReader.Decode(WithChunk(StripChunk(plain, "pHYs"u8), "pHYs"u8, phys));
+        var decoded = PngReader.Decode(WithChunk(StripChunk(plain, "pHYs"u8), "pHYs"u8, phys), cancellationToken: TestContext.Current.CancellationToken);
 
         decoded.PhysicalDimensions.ShouldBe(new PngPhysicalDimensions(11811, 5906, true));
         decoded.PhysicalDimensions!.DpiX!.Value.ShouldBe(300, 0.01);

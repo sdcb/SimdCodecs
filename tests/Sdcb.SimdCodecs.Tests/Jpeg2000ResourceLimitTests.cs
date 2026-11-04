@@ -184,7 +184,7 @@ public class Jpeg2000ResourceLimitTests
 
                 try
                 {
-                    var image = Jpeg2000Decoder.Decode(mutated);
+                    var image = Jpeg2000Decoder.Decode(mutated, cancellationToken: TestContext.Current.CancellationToken);
 
                     // If it decoded, the result must at least be self-consistent.
                     image.Samples.Length.ShouldBe(image.Width * image.Height);

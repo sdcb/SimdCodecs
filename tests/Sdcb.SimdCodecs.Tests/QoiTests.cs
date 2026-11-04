@@ -238,9 +238,9 @@ public sealed class QoiTests
         linear[13].ShouldBe((byte)1);
         QoiDecoder.ReadInfo(linear).ColorSpace.ShouldBe(QoiColorSpace.Linear);
         QoiDecoder.Decode(linear).Pixels.ShouldBe(rgba);
-        QoiImageDecoder.TryDecode(linear, out var image).ShouldBeTrue();
+        QoiImageDecoder.TryDecode(linear, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.ColorEncoding.Transfer.ShouldBe(TransferFunction.Linear);
-        QoiImageDecoder.TryDecode(QoiEncoder.Encode(rgba, 5, 3, PixelFormat.Rgba32), out var srgb).ShouldBeTrue();
+        QoiImageDecoder.TryDecode(QoiEncoder.Encode(rgba, 5, 3, PixelFormat.Rgba32), out var srgb, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         srgb.ColorEncoding.ShouldBe(ColorEncoding.AssumedSrgb);
     }
 
@@ -263,8 +263,8 @@ public sealed class QoiTests
     public void Malformed_streams_are_refused(string name, byte[] data)
     {
         Should.Throw<InvalidDataException>(() => QoiDecoder.Decode(data), name);
-        QoiImageDecoder.TryDecode(data, out _).ShouldBeFalse(name);
-        QoiImageDecoder.TryDecodeInto(data, new byte[64], 0, PixelFormat.Rgba32).ShouldBeFalse(name);
+        QoiImageDecoder.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(name);
+        QoiImageDecoder.TryDecodeInto(data, new byte[64], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(name);
     }
 
     [Fact]

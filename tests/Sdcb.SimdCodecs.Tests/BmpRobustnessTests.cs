@@ -56,7 +56,7 @@ public sealed class BmpRobustnessTests
         foreach (var (name, data, icon) in Seeds())
         {
             if (icon) BmpDecoder.DecodeDib(data, iconImage: true).Width.ShouldBe(23, name);
-            else BmpImageDecoder.TryDecode(data, out _).ShouldBeTrue(name);
+            else BmpImageDecoder.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue(name);
         }
     }
 
@@ -188,13 +188,13 @@ public sealed class BmpRobustnessTests
             foreach (var target in PixelConverterTests.Formats)
             {
                 var destination = new byte[640 * 48 * 4];
-                for (var i = 0; i < 3; i++) BmpImageDecoder.TryDecodeInto(bmp, destination, 0, target).ShouldBeTrue();
+                for (var i = 0; i < 3; i++) BmpImageDecoder.TryDecodeInto(bmp, destination, 0, target, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
                 var best = long.MaxValue;
                 // Best of several: a pooled row can miss the pool under parallel test load.
                 for (var attempt = 0; attempt < 8 && best > 0; attempt++)
                 {
                     var before = GC.GetAllocatedBytesForCurrentThread();
-                    BmpImageDecoder.TryDecodeInto(bmp, destination, 0, target);
+                    BmpImageDecoder.TryDecodeInto(bmp, destination, 0, target, cancellationToken: TestContext.Current.CancellationToken);
                     best = Math.Min(best, GC.GetAllocatedBytesForCurrentThread() - before);
                 }
                 best.ShouldBe(0, $"{format}, RLE {rle} into {target}");

@@ -37,9 +37,9 @@ public sealed class PngWriterParallelDeflateTests
     {
         var rgb = Pixels8();
 
-        var serial = PngReader.Decode(PngWriter.EncodeRgb8(rgb, Width, Height, new PngWriteOptions()));
+        var serial = PngReader.Decode(PngWriter.EncodeRgb8(rgb, Width, Height, new PngWriteOptions()), cancellationToken: TestContext.Current.CancellationToken);
         var split = PngReader.Decode(PngWriter.EncodeRgb8(rgb, Width, Height,
-            new PngWriteOptions { ParallelFragments = fragments }));
+            new PngWriteOptions { ParallelFragments = fragments }), cancellationToken: TestContext.Current.CancellationToken);
 
         split.Width.ShouldBe(serial.Width);
         split.Height.ShouldBe(serial.Height);
@@ -56,9 +56,9 @@ public sealed class PngWriterParallelDeflateTests
     {
         var rgba = Pixels16();
 
-        var serial = PngReader.Decode(PngWriter.EncodeRgba16(rgba, Width, Height, new PngWriteOptions()));
+        var serial = PngReader.Decode(PngWriter.EncodeRgba16(rgba, Width, Height, new PngWriteOptions()), cancellationToken: TestContext.Current.CancellationToken);
         var split = PngReader.Decode(PngWriter.EncodeRgba16(rgba, Width, Height,
-            new PngWriteOptions { ParallelFragments = fragments }));
+            new PngWriteOptions { ParallelFragments = fragments }), cancellationToken: TestContext.Current.CancellationToken);
 
         split.Pixels.ShouldBe(serial.Pixels);
     }
@@ -78,7 +78,7 @@ public sealed class PngWriterParallelDeflateTests
         var split = PngWriter.EncodeRgb8(rgb, Width, Height,
             new PngWriteOptions { CompressionLevel = level, ParallelFragments = 4 });
 
-        PngReader.Decode(split).Pixels.ShouldBe(PngReader.Decode(serial).Pixels);
+        PngReader.Decode(split, cancellationToken: TestContext.Current.CancellationToken).Pixels.ShouldBe(PngReader.Decode(serial, cancellationToken: TestContext.Current.CancellationToken).Pixels);
     }
 
     /// <summary>
@@ -132,7 +132,7 @@ public sealed class PngWriterParallelDeflateTests
 
         var png = PngWriter.EncodeRgb8(rgb, 2, 2, new PngWriteOptions { ParallelFragments = 8 });
 
-        PngReader.Decode(png).Pixels.ShouldBe(rgb.ToArray());
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).Pixels.ShouldBe(rgb.ToArray());
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public sealed class PngWriterParallelDeflateTests
         for (var y = 0; y < Height; y++)
             rgb.AsSpan(y * Width * 3, Width * 3).CopyTo(expected.AsSpan(y * (Width * 3 + 1) + 1));
         raw.ToArray().ShouldBe(expected);
-        PngReader.Decode(png).Pixels.ShouldBe(rgb);
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).Pixels.ShouldBe(rgb);
     }
 
     /// <summary>The IDAT chunk's payload, which for our writer is the whole zlib stream.</summary>

@@ -45,7 +45,7 @@ public sealed class JpegPixelFormatTests
         var dest = new byte[stride * reference.Height + 5];
         Array.Fill(dest, (byte)0x5A);
 
-        var (w, h) = JpegDecoder.DecodeTo(jpeg, dest, stride, format, (JpegScale)scale);
+        var (w, h) = JpegDecoder.DecodeTo(jpeg, dest, stride, format, (JpegScale)scale, cancellationToken: TestContext.Current.CancellationToken);
         (w, h).ShouldBe((reference.Width, reference.Height));
 
         for (var y = 0; y < h; ++y)

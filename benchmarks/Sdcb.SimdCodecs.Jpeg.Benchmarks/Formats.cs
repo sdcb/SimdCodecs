@@ -67,7 +67,7 @@ internal static class Formats
                     ("turbo", () => turbo.Decode(jpeg, turboOut, turboFormat, bpp)),
                 };
                 // The last commit's decoder, for the layouts it already had (same process, interleaved).
-                int baselineFormat = format switch { PixelFormat.Bgra32 => 1, PixelFormat.Rgb24 => 2, _ => -1 };
+                int baselineFormat = format == PixelFormat.Bgra32 ? 1 : format == PixelFormat.Rgb24 ? 2 : -1;
                 if (BaselineDecoder.Description is not null && baselineFormat >= 0)
                 {
                     contestants.Add(("baseline", () => BaselineDecoder.DecodeTo(jpeg, baselineOut, info.Width * bpp, baselineFormat)));

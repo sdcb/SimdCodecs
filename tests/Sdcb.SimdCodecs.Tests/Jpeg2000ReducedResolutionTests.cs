@@ -39,7 +39,7 @@ public class Jpeg2000ReducedResolutionTests
         OpenJpegOracle.RequireOrSkip();
 
         var bytes = Fixture(name);
-        var decoded = Jpeg2000Decoder.Decode(bytes, reduce);
+        var decoded = Jpeg2000Decoder.Decode(bytes, reduce, cancellationToken: TestContext.Current.CancellationToken);
         var expected = OpenJpegOracle.Decode(bytes, decoded.Components == 1 ? ".pgm" : ".ppm", "-r", reduce.ToString());
 
         decoded.Width.ShouldBe(expected.Width);
@@ -62,7 +62,7 @@ public class Jpeg2000ReducedResolutionTests
         OpenJpegOracle.RequireOrSkip();
 
         var bytes = File.ReadAllBytes(Path.Combine(LossyDirectory, name + ".j2k"));
-        var decoded = Jpeg2000Decoder.Decode(bytes, reduce);
+        var decoded = Jpeg2000Decoder.Decode(bytes, reduce, cancellationToken: TestContext.Current.CancellationToken);
         var expected = OpenJpegOracle.Decode(bytes, decoded.Components == 1 ? ".pgm" : ".ppm", "-r", reduce.ToString());
 
         decoded.Width.ShouldBe(expected.Width);
@@ -88,7 +88,7 @@ public class Jpeg2000ReducedResolutionTests
     [InlineData("odd37x23", 2, 10, 6)]
     public void EachLevelLeftOut_HalvesEachSide(string name, int reduce, int width, int height)
     {
-        var decoded = Jpeg2000Decoder.Decode(Fixture(name), reduce);
+        var decoded = Jpeg2000Decoder.Decode(Fixture(name), reduce, cancellationToken: TestContext.Current.CancellationToken);
 
         decoded.Width.ShouldBe(width);
         decoded.Height.ShouldBe(height);
@@ -102,13 +102,13 @@ public class Jpeg2000ReducedResolutionTests
     public void AReductionPastTheLevelsThereAre_IsClamped()
     {
         // No decomposition at all: there is only the full image.
-        var flat = Jpeg2000Decoder.Decode(Fixture("nodwt-struct32"), 4);
+        var flat = Jpeg2000Decoder.Decode(Fixture("nodwt-struct32"), 4, cancellationToken: TestContext.Current.CancellationToken);
         flat.Width.ShouldBe(32);
-        flat.Samples.ShouldBe(Jpeg2000Decoder.Decode(Fixture("nodwt-struct32")).Samples);
+        flat.Samples.ShouldBe(Jpeg2000Decoder.Decode(Fixture("nodwt-struct32"), cancellationToken: TestContext.Current.CancellationToken).Samples);
 
         // Two levels: a reduction of 9 is a reduction of 2.
-        Jpeg2000Decoder.Decode(Fixture("odd37x23"), 9).Samples
-            .ShouldBe(Jpeg2000Decoder.Decode(Fixture("odd37x23"), 2).Samples);
+        Jpeg2000Decoder.Decode(Fixture("odd37x23"), 9, cancellationToken: TestContext.Current.CancellationToken).Samples
+            .ShouldBe(Jpeg2000Decoder.Decode(Fixture("odd37x23"), 2, cancellationToken: TestContext.Current.CancellationToken).Samples);
     }
 
     [Fact]
@@ -158,9 +158,9 @@ public class Jpeg2000ReducedResolutionTests
         }
 
         overwritten.ShouldBeGreaterThan(0, "the finest level carried no coded data, so this proves nothing");
-        Jpeg2000Decoder.Decode(corrupted).Samples.ShouldNotBe(Jpeg2000Decoder.Decode(bytes).Samples);
+        Jpeg2000Decoder.Decode(corrupted, cancellationToken: TestContext.Current.CancellationToken).Samples.ShouldNotBe(Jpeg2000Decoder.Decode(bytes, cancellationToken: TestContext.Current.CancellationToken).Samples);
 
-        Jpeg2000Decoder.Decode(corrupted, 1).Samples.ShouldBe(Jpeg2000Decoder.Decode(bytes, 1).Samples);
+        Jpeg2000Decoder.Decode(corrupted, 1, cancellationToken: TestContext.Current.CancellationToken).Samples.ShouldBe(Jpeg2000Decoder.Decode(bytes, 1, cancellationToken: TestContext.Current.CancellationToken).Samples);
     }
 
     /// <summary>
@@ -189,7 +189,7 @@ public class Jpeg2000ReducedResolutionTests
 
         for (var reduce = 0; reduce <= levels + 1; reduce++)
         {
-            var decoded = Jpeg2000Decoder.Decode(bytes, reduce);
+            var decoded = Jpeg2000Decoder.Decode(bytes, reduce, cancellationToken: TestContext.Current.CancellationToken);
             info.SizeAt(reduce).ShouldBe((decoded.Width, decoded.Height), $"reduce {reduce}");
         }
     }

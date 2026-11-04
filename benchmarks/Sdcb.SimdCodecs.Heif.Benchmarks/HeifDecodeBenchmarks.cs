@@ -16,7 +16,7 @@ namespace Sdcb.SimdCodecs.Heif.Benchmarks;
 /// <list type="bullet">
 /// <item><b>HEVC stage</b> — our per-tile <see cref="Tiles.Decode"/> against libde265's per-tile
 /// decode, both from the same NAL units, no container and no colour.</item>
-/// <item><b>Composed planes</b> — <see cref="HeifDecoder.DecodeYuv"/> against libheif's YCbCr output
+/// <item><b>Composed planes</b> — <see cref="HeifDecoder.DecodeYuv(ReadOnlySpan{byte})"/> against libheif's YCbCr output
 /// with transformations ignored.</item>
 /// <item><b>Full pipeline</b> — <see cref="HeifDecoder.Decode"/> to RGBA8 against libheif's
 /// interleaved-RGBA output and against Magick.NET (libheif through ImageMagick's Q16 HDRI pipeline).</item>

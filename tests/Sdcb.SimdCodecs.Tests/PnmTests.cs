@@ -234,7 +234,7 @@ public sealed class PnmTests
         {
             // Every 8-bit layout through the adapter agrees with the native samples.
             var grey = new byte[image.Width * image.Height];
-            PnmImageDecoder.TryDecodeInto(data, grey, 0, PixelFormat.Gray8).ShouldBeTrue(name);
+            PnmImageDecoder.TryDecodeInto(data, grey, 0, PixelFormat.Gray8, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue(name);
             if (channels == 1) grey.ShouldBe(expected, name);
         }
     }
@@ -269,11 +269,11 @@ public sealed class PnmTests
         var image = PnmDecoder.Decode(data);
         image.Info.Scale.ShouldBe(2.5f);
         System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(image.Pixels).ToArray().ShouldBe([.. top, .. bottom]);
-        PfmImageDecoder.TryDecode(data, out var decoded).ShouldBeTrue();
+        PfmImageDecoder.TryDecode(data, out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         decoded.ColorEncoding.Transfer.ShouldBe(TransferFunction.Linear);
-        PfmImageDecoder.TryDecodeInto(data, new byte[8], 0, PixelFormat.Rgba32).ShouldBeFalse();
+        PfmImageDecoder.TryDecodeInto(data, new byte[8], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         Should.Throw<NotSupportedException>(() => PnmDecoder.DecodeTo(data, new byte[8]));
-        PnmImageDecoder.TryDecode(data, out _).ShouldBeFalse("PFM has its own adapter");
+        PnmImageDecoder.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse("PFM has its own adapter");
     }
 
     public static TheoryData<string, byte[]> Malformed() => new()
@@ -309,9 +309,9 @@ public sealed class PnmTests
     public void Malformed_files_are_refused(string name, byte[] data)
     {
         Should.Throw<InvalidDataException>(() => PnmDecoder.Decode(data), name);
-        PnmImageDecoder.TryDecode(data, out _).ShouldBeFalse(name);
-        PfmImageDecoder.TryDecode(data, out _).ShouldBeFalse(name);
-        PnmImageDecoder.TryDecodeInto(data, new byte[64], 0, PixelFormat.Rgba32).ShouldBeFalse(name);
+        PnmImageDecoder.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(name);
+        PfmImageDecoder.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(name);
+        PnmImageDecoder.TryDecodeInto(data, new byte[64], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(name);
     }
 
     [Fact]

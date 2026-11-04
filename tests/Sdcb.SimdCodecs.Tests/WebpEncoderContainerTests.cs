@@ -72,7 +72,7 @@ public sealed class WebpEncoderContainerTests
         (webp[chunks[0].Offset + 7] | webp[chunks[0].Offset + 8] << 8 | webp[chunks[0].Offset + 9] << 16).ShouldBe(20);
 
         // Our decoder: pixels and every metadata block, byte for byte.
-        WebpImage decoded = WebpDecoder.Decode(webp);
+        WebpImage decoded = WebpDecoder.Decode(webp, cancellationToken: TestContext.Current.CancellationToken);
         decoded.Rgba.ShouldBe(source);
         decoded.IccProfile.ShouldBe(icc ? iccBytes : null);
         decoded.Exif.ShouldBe(exif ? Exif : null);

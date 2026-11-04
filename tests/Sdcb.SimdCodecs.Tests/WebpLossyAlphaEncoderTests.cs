@@ -73,7 +73,7 @@ public sealed class WebpLossyAlphaEncoderTests
                 info.Format.ShouldBe(WebpFormat.Lossy, because);
                 info.HasAlpha.ShouldBeTrue(because);
                 var ours = new byte[w * h * 4];
-                WebpDecoder.DecodeTo(webp, ours);
+                WebpDecoder.DecodeTo(webp, ours, cancellationToken: TestContext.Current.CancellationToken);
                 Alpha(ours).ShouldBe(Alpha(source), because);
                 WebpLossyEncoderTests.MagickRgba(webp).ShouldBe(ours, because);
             }
@@ -105,7 +105,7 @@ public sealed class WebpLossyAlphaEncoderTests
                     try
                     {
                         var ours = new byte[w * h * 4];
-                        WebpDecoder.DecodeTo(webp, ours);
+                        WebpDecoder.DecodeTo(webp, ours, cancellationToken: TestContext.Current.CancellationToken);
                         Alpha(ours).ShouldBe(Alpha(source), because);
                         WebpOracleTests.RunDwebp(dwebp, file, yuv: false, noFancy: false).ShouldBe(ours, because);
                         (int exit, string output) = WebpEncoderContainerTests.Run(webpinfo, "-diag", file);
@@ -170,7 +170,7 @@ public sealed class WebpLossyAlphaEncoderTests
             webp.Length.ShouldBeLessThan(exact.Length, $"alpha quality {alphaQuality}");
 
             var decoded = new byte[w * h * 4];
-            WebpDecoder.DecodeTo(webp, decoded);
+            WebpDecoder.DecodeTo(webp, decoded, cancellationToken: TestContext.Current.CancellationToken);
             byte[] a = Alpha(decoded), s = Alpha(source);
             int levels = 4 + (alphaQuality * 252 + 50) / 100;
             int halfStep = (255 + levels - 2) / (levels - 1) / 2 + 1;
@@ -196,7 +196,7 @@ public sealed class WebpLossyAlphaEncoderTests
         lean.Length.ShouldBeLessThan(exact.Length * 9 / 10, "noise under alpha 0 is not coded by default");
 
         var decoded = new byte[w * h * 4];
-        WebpDecoder.DecodeTo(exact, decoded);
+        WebpDecoder.DecodeTo(exact, decoded, cancellationToken: TestContext.Current.CancellationToken);
         Alpha(decoded).ShouldBe(Alpha(source));
         double invisibleError = 0, sourceSpread = 0;
         int count = 0;

@@ -116,7 +116,7 @@ public sealed class WebpLosslessEncoderTests
                     WebpInfo info = WebpDecoder.ReadInfo(webp);
                     info.Format.ShouldBe(WebpFormat.Lossless, because);
                     var ours = new byte[source.Length];
-                    WebpDecoder.DecodeTo(webp, ours);
+                    WebpDecoder.DecodeTo(webp, ours, cancellationToken: TestContext.Current.CancellationToken);
                     ShouldMatch(ours, source, exact, because);
                 }
             }

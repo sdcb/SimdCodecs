@@ -53,7 +53,7 @@ public class Jpeg2000FacadeTests
     {
         var expected = Pnm.Read(Path.Combine(FixtureDirectory, source));
 
-        SimdCodecs.TryDecode(File(file), out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(File(file), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         image.Channels.ShouldBe(expected.Components);
         image.SampleFormat.ShouldBe(SampleFormat.UInt8);
@@ -71,7 +71,7 @@ public class Jpeg2000FacadeTests
         var expected = Pnm.Read(Path.Combine(FixtureDirectory, "deep12-ramp64.pgm"));
         expected.MaxValue.ShouldBe(4095);
 
-        SimdCodecs.TryDecode(File("deep12-ramp64.j2k"), out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(File("deep12-ramp64.j2k"), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         var samples = MemoryMarshal.Cast<byte, ushort>(image.Pixels).ToArray();
         samples.Length.ShouldBe(expected.Samples.Length);
@@ -106,7 +106,7 @@ public class Jpeg2000FacadeTests
         byte[] profile = [0x10, 0x20, 0x30, 0x40];
         var jp2 = WithColour(File("jp2-rgb-struct64.jp2"), [2, 0, 0, .. profile]);
 
-        SimdCodecs.TryDecode(jp2, out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(jp2, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         image.IccProfile.ToArray().ShouldBe(profile);
     }
@@ -120,9 +120,9 @@ public class Jpeg2000FacadeTests
     {
         var sycc = WithColour(File("jp2-rgb-struct64.jp2"), [1, 0, 0, 0, 0, 0, 18]);
 
-        SimdCodecs.TryDecode(sycc, out _).ShouldBeFalse();
+        SimdCodecs.TryDecode(sycc, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         SimdCodecs.TryReadInfo(sycc, out _).ShouldBeFalse();
-        Jpeg2000Decoder.Decode(sycc).Colour!.EnumeratedColourSpace.ShouldBe(Jp2EnumeratedColourSpace.Sycc);
+        Jpeg2000Decoder.Decode(sycc, cancellationToken: TestContext.Current.CancellationToken).Colour!.EnumeratedColourSpace.ShouldBe(Jp2EnumeratedColourSpace.Sycc);
     }
 
     /// <summary>
@@ -138,9 +138,9 @@ public class Jpeg2000FacadeTests
         var planar = System.IO.File.ReadAllBytes(Path.Combine(directory, "cmyk16.raw"));
 
         SimdCodecs.CanDecode(codestream).ShouldBeTrue();
-        SimdCodecs.TryDecode(codestream, out _).ShouldBeFalse();
+        SimdCodecs.TryDecode(codestream, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
 
-        var decoded = Jpeg2000Decoder.Decode(codestream);
+        var decoded = Jpeg2000Decoder.Decode(codestream, cancellationToken: TestContext.Current.CancellationToken);
         decoded.Components.ShouldBe(4);
         const int pixels = 16 * 16;
         for (var i = 0; i < pixels; i++)

@@ -22,7 +22,7 @@ public sealed class PngTextTests
             Text = [new PngText("Software", "tianwen-fits"), new PngText("Source", "master_SculptorGalaxy.fits")],
         });
 
-        var text = PngReader.Decode(png).Text;
+        var text = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).Text;
         text.Count.ShouldBe(2);
         text[0].ShouldBe(new PngText("Software", "tianwen-fits"));
         text[1].ShouldBe(new PngText("Source", "master_SculptorGalaxy.fits"));
@@ -37,7 +37,7 @@ public sealed class PngTextTests
 
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Text = [new PngText("TianWen:Rendition", json)] });
 
-        PngReader.Decode(png).Text.Single().Text.ShouldBe(json);
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).Text.Single().Text.ShouldBe(json);
         png.Length.ShouldBeLessThan(json.Length, "the text went in deflated");
     }
 
@@ -46,7 +46,7 @@ public sealed class PngTextTests
     {
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Text = [new PngText("Comment", "Sculptor, −25° 17′, ★ 1000")] });
 
-        PngReader.Decode(png).Text.Single().Text.ShouldBe("Sculptor, −25° 17′, ★ 1000");
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).Text.Single().Text.ShouldBe("Sculptor, −25° 17′, ★ 1000");
     }
 
     [Theory]
@@ -78,7 +78,7 @@ public sealed class PngTextTests
             ("tEXt", [.. Encoding.Latin1.GetBytes("Title"), 0, .. Encoding.Latin1.GetBytes("Café")]),
             ("zTXt", [.. Encoding.Latin1.GetBytes("Comment"), 0, 0, .. deflated]));
 
-        var text = PngReader.Decode(png).Text;
+        var text = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).Text;
         text.ShouldBe([new PngText("Title", "Café"), new PngText("Comment", "a compressed comment")]);
     }
 
@@ -88,7 +88,7 @@ public sealed class PngTextTests
         // No keyword terminator at all: the chunk is dropped and the image still decodes.
         var png = InsertBeforeIend(PngWriter.Encode(TinyRgba, 4, 4), ("tEXt", Encoding.Latin1.GetBytes("no separator here")));
 
-        var image = PngReader.Decode(png);
+        var image = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         image.Text.ShouldBeEmpty();
         image.Width.ShouldBe(4);
     }
@@ -105,7 +105,7 @@ public sealed class PngTextTests
             .. Encoding.ASCII.GetBytes("en"), 0, .. Encoding.UTF8.GetBytes("Titel"), 0, .. compressed ? Deflate(utf8) : utf8];
         var png = InsertBeforeIend(PngWriter.Encode(TinyRgba, 4, 4), ("iTXt", itxt));
 
-        PngReader.Decode(png).Text.ShouldBe([new PngText("Title", "Sculptor Galaxy ★")]);
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).Text.ShouldBe([new PngText("Title", "Sculptor Galaxy ★")]);
     }
 
     [Theory]
@@ -120,7 +120,7 @@ public sealed class PngTextTests
             : [.. Encoding.Latin1.GetBytes("Comment"), 0, 1, 0, 0, 0, .. bomb];
         var png = InsertBeforeIend(PngWriter.Encode(TinyRgba, 4, 4), (type, data));
 
-        var image = PngReader.Decode(png);
+        var image = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         image.Text.ShouldBeEmpty();
         image.Width.ShouldBe(4);
     }
@@ -131,7 +131,7 @@ public sealed class PngTextTests
         var png = InsertBeforeIend(PngWriter.Encode(TinyRgba, 4, 4),
             ("zTXt", [.. Encoding.Latin1.GetBytes("Comment"), 0, 0, .. Deflate(new byte[PngReader.MaxInflatedTextBytes])]));
 
-        PngReader.Decode(png).Text.Single().Text.Length.ShouldBe(PngReader.MaxInflatedTextBytes);
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).Text.Single().Text.Length.ShouldBe(PngReader.MaxInflatedTextBytes);
     }
 
     [Fact]
@@ -152,13 +152,13 @@ public sealed class PngTextTests
         var png = InsertBeforeIend(PngWriter.Encode(TinyRgba, 4, 4),
             ("iTXt", [.. Encoding.Latin1.GetBytes("Comment"), 0, flag, 0, 0, 0, .. Encoding.UTF8.GetBytes("plain")]));
 
-        PngReader.Decode(png).Text.ShouldBeEmpty();
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).Text.ShouldBeEmpty();
     }
 
     [Fact]
     public void APngWithNoTextHasAnEmptyList()
     {
-        PngReader.Decode(PngWriter.Encode(TinyRgba, 4, 4)).Text.ShouldBeEmpty();
+        PngReader.Decode(PngWriter.Encode(TinyRgba, 4, 4), cancellationToken: TestContext.Current.CancellationToken).Text.ShouldBeEmpty();
     }
 
     private static byte[] Deflate(byte[] data)

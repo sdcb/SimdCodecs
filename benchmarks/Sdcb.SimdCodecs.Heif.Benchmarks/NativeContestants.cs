@@ -79,7 +79,7 @@ internal static unsafe class NativeContestants
 
     /// <summary>
     /// libheif → the three planes of the primary image, geometric transforms ignored, the peer of
-    /// <see cref="HeifDecoder.DecodeYuv"/> (which is also pre-transform).
+    /// <see cref="HeifDecoder.DecodeYuv(ReadOnlySpan{byte})"/> (which is also pre-transform).
     /// </summary>
     public static PlaneSet DecodeYuv(byte[] data, int maxThreads)
     {

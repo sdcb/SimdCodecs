@@ -27,7 +27,7 @@ public sealed class CodecAdapterTests
         // The test file writes the TIFF 6.0 baseline resolution, 96 dpi, which 2.0 reports.
         info.ShouldBe(new ImageInfo(2, 2, 1, SampleFormat.UInt16) { Format = ImageFormat.Tiff, Resolution = Resolution.FromDpi(96, 96) });
 
-        SimdCodecs.TryDecode(tiff, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(tiff, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.ShouldBe(ColorEncoding.AssumedSrgb);
         var f = img.ToFloats();
@@ -42,7 +42,7 @@ public sealed class CodecAdapterTests
         float[] y = [0f, 0.5f, 2.5f, -0.25f];
         var tiff = HdrTiff.Float32Gray(2, 2, y);
 
-        SimdCodecs.TryDecode(tiff, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(tiff, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.SampleFormat.ShouldBe(SampleFormat.Float32);
         img.ColorEncoding.Transfer.ShouldBe(TransferFunction.Linear);
@@ -62,7 +62,7 @@ public sealed class CodecAdapterTests
         Half[] y = [(Half)0.5f, (Half)1.5f, (Half)(-2f), (Half)0f];
         var tiff = HdrTiff.HalfGray(2, 2, y);
 
-        SimdCodecs.TryDecode(tiff, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(tiff, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.SampleFormat.ShouldBe(SampleFormat.Float32);
 

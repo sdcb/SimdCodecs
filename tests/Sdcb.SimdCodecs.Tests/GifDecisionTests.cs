@@ -412,8 +412,8 @@ public sealed class GifDecisionTests
     {
         var gif = new GifStream(1, 1, Palette(4)).Image(0, 0, 1, 1, [], minCodeSize: minCodeSize, codes: [0, 0]).Trailer();
         SimdCodecs.TryReadInfo(gif, out _).ShouldBeTrue(); // the structure is fine
-        SimdCodecs.TryDecode(gif, out _).ShouldBeFalse();
-        SimdCodecs.TryDecodeInto(gif, new byte[16], 0, PixelFormat.Rgba32).ShouldBeFalse();
+        SimdCodecs.TryDecode(gif, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        SimdCodecs.TryDecodeInto(gif, new byte[16], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Fact]

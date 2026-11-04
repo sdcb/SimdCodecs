@@ -43,9 +43,9 @@ public sealed class HeifFacadeTests : IDisposable
         SimdCodecs.IsDecodable(ImageFormat.Heif).ShouldBeFalse();
         SimdCodecs.CanDecode(data).ShouldBeFalse();
         SimdCodecs.TryReadInfo(data, out _).ShouldBeFalse();
-        SimdCodecs.TryDecode(data, out var image).ShouldBeFalse();
+        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         image.ShouldBeNull();
-        SimdCodecs.TryDecodeInto(data, new byte[1599 * 1199 * 4], 0, PixelFormat.Rgba32).ShouldBeFalse();
+        SimdCodecs.TryDecodeInto(data, new byte[1599 * 1199 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeFalse();
         reader.ShouldBeNull();
     }
@@ -65,8 +65,8 @@ public sealed class HeifFacadeTests : IDisposable
         info.ShouldBe(expectedInfo);
         (info.Width, info.Height).ShouldBe((1599, 1199));
 
-        HeifImageDecoder.TryDecode(data, out var expected).ShouldBeTrue();
-        SimdCodecs.TryDecode(data, out var image).ShouldBeTrue();
+        HeifImageDecoder.TryDecode(data, out var expected, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.Pixels.SequenceEqual(expected.Pixels).ShouldBeTrue();
         image.ColorEncoding.ShouldBe(expected.ColorEncoding);
 
@@ -74,8 +74,8 @@ public sealed class HeifFacadeTests : IDisposable
         {
             int bytes = info.Width * info.Height * format.BytesPerPixel;
             byte[] mine = new byte[bytes], theirs = new byte[bytes];
-            HeifImageDecoder.TryDecodeInto(data, theirs, 0, format).ShouldBeTrue();
-            SimdCodecs.TryDecodeInto(data, mine, 0, format).ShouldBeTrue($"{format}");
+            HeifImageDecoder.TryDecodeInto(data, theirs, 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+            SimdCodecs.TryDecodeInto(data, mine, 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue($"{format}");
             mine.ShouldBe(theirs, $"{format}");
         }
 
@@ -90,10 +90,10 @@ public sealed class HeifFacadeTests : IDisposable
             reader.LoopCount.ShouldBeNull();
             reader.TryGetFrameInfo(0, out var frame).ShouldBeTrue();
             frame.Info.ShouldBe(info);
-            reader.TryDecodeFrame(0, out var first).ShouldBeTrue();
+            reader.TryDecodeFrame(0, out var first, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
             first.Pixels.SequenceEqual(expected.Pixels).ShouldBeTrue();
             var into = new byte[rgba.Length];
-            reader.TryDecodeFrameInto(0, into, 0, PixelFormat.Rgba32).ShouldBeTrue();
+            reader.TryDecodeFrameInto(0, into, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
             into.ShouldBe(rgba);
             Should.Throw<ArgumentOutOfRangeException>(() => reader.TryDecodeFrame(1, out _));
         }
@@ -107,14 +107,14 @@ public sealed class HeifFacadeTests : IDisposable
         {
             byte[] data = HeifTests.ReadFixture(fixture);
             SimdCodecs.DetectFormat(data).ShouldBe(ImageFormat.Heif);
-            SimdCodecs.TryDecode(data, out _).ShouldBeFalse(fixture);
-            SimdCodecs.TryDecodeInto(data, new byte[1280 * 720 * 4], 0, PixelFormat.Rgba32).ShouldBeFalse(fixture);
+            SimdCodecs.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(fixture);
+            SimdCodecs.TryDecodeInto(data, new byte[1280 * 720 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(fixture);
         }
 
         byte[] pq = HeifTests.ReadFixture("synth-screen-testsrc2-640x360-pq-vui.heic");
-        SimdCodecs.TryDecode(pq, out var hdr).ShouldBeTrue();
+        SimdCodecs.TryDecode(pq, out var hdr, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         hdr.ColorEncoding.Transfer.ShouldBe(TransferFunction.Pq);
-        SimdCodecs.TryDecodeInto(pq, new byte[640 * 360 * 4], 0, PixelFormat.Rgba32).ShouldBeFalse();
+        SimdCodecs.TryDecodeInto(pq, new byte[640 * 360 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public sealed class HeifFacadeTests : IDisposable
         byte[] heif = HeifTests.ReadFixture("synth-screen-testsrc2-1280x720-main8.heic");
         byte[] png = PngWriter.Encode(Enumerable.Range(0, 16 * 16 * 4).Select(i => (byte)i).ToArray(), 16, 16);
         SimdCodecs.Register(HeifImageDecoder.Registration);
-        HeifImageDecoder.TryDecode(heif, out var expected).ShouldBeTrue();
+        HeifImageDecoder.TryDecode(heif, out var expected, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         byte[] expectedPixels = expected.Pixels.ToArray();
         int before = SimdCodecs.RegisteredCount;
 

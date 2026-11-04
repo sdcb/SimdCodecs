@@ -71,7 +71,7 @@ public sealed class WebpAnimationOracleTests
         {
             try
             {
-                if (!decoder.TryDecodeNextFrame(canvas, out frame))
+                if (!decoder.TryDecodeNextFrame(canvas, out frame, cancellationToken: TestContext.Current.CancellationToken))
                 {
                     throw new InvalidDataException($"{fixture} ended before frame {frameIndex}.");
                 }
@@ -107,7 +107,7 @@ public sealed class WebpAnimationOracleTests
             bool decoded;
             try
             {
-                decoded = decoder.TryDecodeNextFrame(canvas, out _);
+                decoded = decoder.TryDecodeNextFrame(canvas, out _, cancellationToken: TestContext.Current.CancellationToken);
             }
             catch (Exception exception)
             {
@@ -191,7 +191,7 @@ public sealed class WebpAnimationOracleTests
         var sequentialDecoder = new WebpAnimationDecoder(source);
         byte[] sequentialCanvas = new byte[sequentialDecoder.CanvasWidth * sequentialDecoder.CanvasHeight * 4];
         var sequential = new List<(byte[] Rgba, WebpFrameInfo Info)>();
-        while (sequentialDecoder.TryDecodeNextFrame(sequentialCanvas, out WebpFrameInfo info))
+        while (sequentialDecoder.TryDecodeNextFrame(sequentialCanvas, out WebpFrameInfo info, cancellationToken: TestContext.Current.CancellationToken))
         {
             sequential.Add((sequentialCanvas.ToArray(), info));
         }
@@ -208,15 +208,15 @@ public sealed class WebpAnimationOracleTests
         byte[] canvas = new byte[decoder.CanvasWidth * decoder.CanvasHeight * 4];
         foreach (int index in Enumerable.Range(0, sequential.Count).Concat(shuffled))
         {
-            decoder.Seek(index);
+            decoder.Seek(index, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(index, decoder.NextFrameIndex);
-            Assert.True(decoder.TryDecodeNextFrame(canvas, out WebpFrameInfo info));
+            Assert.True(decoder.TryDecodeNextFrame(canvas, out WebpFrameInfo info, cancellationToken: TestContext.Current.CancellationToken));
             Assert.Equal(sequential[index].Info, info);
             Assert.Equal(sequential[index].Rgba, canvas);
             Assert.Equal(index + 1, decoder.NextFrameIndex);
             if (index == sequential.Count - 1)
             {
-                Assert.False(decoder.TryDecodeNextFrame(canvas, out _));
+                Assert.False(decoder.TryDecodeNextFrame(canvas, out _, cancellationToken: TestContext.Current.CancellationToken));
             }
         }
 
@@ -258,15 +258,15 @@ public sealed class WebpAnimationOracleTests
         WebpAnimation animation = WebpDecoder.DecodeAnimation(source);
         byte[] expected = animation.Frames[0].Rgba;
 
-        WebpImage decoded = WebpDecoder.Decode(source);
+        WebpImage decoded = WebpDecoder.Decode(source, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(expected, decoded.Rgba);
         byte[] destination = new byte[expected.Length];
-        WebpDecoder.DecodeTo(source, destination);
+        WebpDecoder.DecodeTo(source, destination, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(expected, destination);
 
         Assert.True(WebpImageDecoder.TryReadInfo(source, out ImageInfo info));
         Assert.Equal(decoded.HasAlpha ? 4 : 3, info.Channels);
-        Assert.True(WebpImageDecoder.TryDecode(source, out IDecodedImage? facadeImage));
+        Assert.True(WebpImageDecoder.TryDecode(source, out IDecodedImage? facadeImage, cancellationToken: TestContext.Current.CancellationToken));
         Assert.NotNull(facadeImage);
         Assert.Equal(decoded.HasAlpha ? 4 : 3, facadeImage.Channels);
         Assert.Equal(expected, facadeImage.ToRgba8());
@@ -279,7 +279,7 @@ public sealed class WebpAnimationOracleTests
     public void StillImageIsExposedAsOneAnimationFrame()
     {
         byte[] source = File.ReadAllBytes(Path.Combine(FixtureDirectory(), "tiny.webp"));
-        WebpImage image = WebpDecoder.Decode(source);
+        WebpImage image = WebpDecoder.Decode(source, cancellationToken: TestContext.Current.CancellationToken);
         WebpAnimation animation = WebpDecoder.DecodeAnimation(source);
 
         WebpFrame frame = Assert.Single(animation.Frames);
@@ -334,7 +334,7 @@ public sealed class WebpAnimationOracleTests
             frame.Format,
             ReadOnlySpan<byte>.Empty,
             frame.Width,
-            frame.Height);
+            frame.Height, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal((byte)0, sourceRgba[3]);
         Assert.Contains(
             Enumerable.Range(0, sourceRgba.Length)
@@ -357,9 +357,9 @@ public sealed class WebpAnimationOracleTests
 
         Assert.Throws<ArgumentException>(() => decoder.TryDecodeNextFrame(
             new byte[decoder.CanvasWidth * decoder.CanvasHeight * 4 - 1],
-            out _));
-        Assert.Throws<ArgumentOutOfRangeException>(() => decoder.Seek(-1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => decoder.Seek(decoder.FrameCount));
+            out _, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Throws<ArgumentOutOfRangeException>(() => decoder.Seek(-1, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Throws<ArgumentOutOfRangeException>(() => decoder.Seek(decoder.FrameCount, cancellationToken: TestContext.Current.CancellationToken));
     }
 
     internal static byte[][] RunAnimDump(string animDump, string input, int width, int height)

@@ -42,7 +42,7 @@ public sealed class ColorEncodingTests
     {
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Cicp = CicpChunk.Hdr10Pq });
 
-        SimdCodecs.TryDecode(png, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.Primaries.ShouldBe(ColorPrimaries.BT2020);
         img.ColorEncoding.Transfer.ShouldBe(TransferFunction.Pq);
@@ -54,7 +54,7 @@ public sealed class ColorEncodingTests
     {
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions());
 
-        SimdCodecs.TryDecode(png, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.ShouldBe(ColorEncoding.AssumedSrgb);
     }
@@ -66,7 +66,7 @@ public sealed class ColorEncodingTests
         // linear-light astro master stored as 16-bit PNG).
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Gamma = 1.0 });
 
-        SimdCodecs.TryDecode(png, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.Transfer.ShouldBe(TransferFunction.Linear);
         img.ColorEncoding.Primaries.ShouldBe(ColorPrimaries.BT709);
@@ -81,7 +81,7 @@ public sealed class ColorEncodingTests
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Cicp = CicpChunk.Hdr10Pq });
 
         SimdCodecs.TryDecodeIntoRgba8(png, new byte[4 * 4 * 4]).ShouldBeFalse();
-        SimdCodecs.TryDecode(png, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.Transfer.ShouldBe(TransferFunction.Pq);
     }
@@ -110,7 +110,7 @@ public sealed class ColorEncodingTests
             Gamma = 1.0,
         });
 
-        SimdCodecs.TryDecode(png, out var img).ShouldBeTrue();
+        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.Transfer.ShouldBe(TransferFunction.Hlg);
         img.ColorEncoding.Primaries.ShouldBe(ColorPrimaries.BT2020);

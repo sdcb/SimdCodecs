@@ -186,12 +186,12 @@ public sealed class DecodeIntoTests
     public void EveryFormatIsTheConvertedImage(string name)
     {
         var data = Corpus()[name];
-        if (!SimdCodecs.TryDecode(data, out var image))
+        if (!SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken))
         {
             // Not every fixture is a still the facade presents (a broken or unsupported one): then the
             // display path refuses it too.
             foreach (var format in PixelConverterTests.Formats)
-                SimdCodecs.TryDecodeInto(data, new byte[1 << 20], 0, format).ShouldBeFalse();
+                SimdCodecs.TryDecodeInto(data, new byte[1 << 20], 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
             return;
         }
 
@@ -231,7 +231,7 @@ public sealed class DecodeIntoTests
                 var destination = new byte[step * (height - 1) + rowBytes + 13];
                 Array.Fill(destination, Sentinel);
 
-                SimdCodecs.TryDecodeInto(data, destination, stride, format).ShouldBeTrue($"{format} stride {stride}");
+                SimdCodecs.TryDecodeInto(data, destination, stride, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue($"{format} stride {stride}");
 
                 for (var y = 0; y < height; y++)
                 {
@@ -245,7 +245,7 @@ public sealed class DecodeIntoTests
 
             // One byte short is refused, not written past.
             var tight = new byte[width * height * format.BytesPerPixel - 1];
-            SimdCodecs.TryDecodeInto(data, tight, 0, format).ShouldBeFalse($"{format} short destination");
+            SimdCodecs.TryDecodeInto(data, tight, 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse($"{format} short destination");
         }
 
         // The RGBA entry point is the Rgba32 layout.
@@ -259,7 +259,7 @@ public sealed class DecodeIntoTests
     public void InfoDescribesTheDecodedImage(string name)
     {
         var data = Corpus()[name];
-        if (!SimdCodecs.TryDecode(data, out var image))
+        if (!SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken))
             return;
 
         SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
@@ -319,7 +319,7 @@ public sealed class DecodeIntoTests
     public void AStrideShorterThanARowIsRefused()
     {
         var data = Corpus()["jpeg 4:2:0 37x19"];
-        SimdCodecs.TryDecodeInto(data, new byte[1 << 16], 37 * 3 - 1, PixelFormat.Bgr24).ShouldBeFalse();
-        SimdCodecs.TryDecodeInto(data, new byte[1 << 16], -1, PixelFormat.Bgr24).ShouldBeFalse();
+        SimdCodecs.TryDecodeInto(data, new byte[1 << 16], 37 * 3 - 1, PixelFormat.Bgr24, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        SimdCodecs.TryDecodeInto(data, new byte[1 << 16], -1, PixelFormat.Bgr24, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 }

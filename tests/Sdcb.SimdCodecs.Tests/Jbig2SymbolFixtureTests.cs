@@ -53,7 +53,7 @@ public sealed class Jbig2SymbolFixtureTests(ITestOutputHelper output)
         width.ShouldBe(expected.Width);
         height.ShouldBe(expected.Height);
 
-        var image = Jbig2Decoder.DecodeFile(file);
+        var image = Jbig2Decoder.DecodeFile(file, cancellationToken: TestContext.Current.CancellationToken);
         _out.WriteLine($"{name}: {file.Length} bytes -> {width}x{height}");
 
         ShouldMatch(image.Bits, expected.Bits, width, height, name);
@@ -112,7 +112,7 @@ public sealed class Jbig2SymbolFixtureTests(ITestOutputHelper output)
 
         globals.Count.ShouldBeGreaterThan(0, "the fixture should contain a symbol dictionary");
 
-        var image = Jbig2Decoder.Decode([.. embedded], [.. globals], expected.Width, expected.Height);
+        var image = Jbig2Decoder.Decode([.. embedded], [.. globals], expected.Width, expected.Height, cancellationToken: TestContext.Current.CancellationToken);
         ShouldMatch(image.Bits, expected.Bits, expected.Width, expected.Height, $"{name} (split)");
     }
 

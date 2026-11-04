@@ -59,7 +59,7 @@ public sealed class Jbig2TextRegionTests
     {
         var (stream, expected) = Build((ReferenceCorner)corner, transposed);
 
-        var image = Jbig2Decoder.Decode(stream, expected.Width, expected.Height);
+        var image = Jbig2Decoder.Decode(stream, expected.Width, expected.Height, cancellationToken: TestContext.Current.CancellationToken);
         Jbig2StreamBuilder.ToRows(expected.Width, expected.Height, image.Bits)
             .ShouldBe(Jbig2StreamBuilder.ToRows(expected.Width, expected.Height, expected.Data));
     }
@@ -78,7 +78,7 @@ public sealed class Jbig2TextRegionTests
     {
         var (segments, expected) = BuildSegments(ReferenceCorner.TopLeft, false, logStrips);
 
-        var image = Jbig2Decoder.Decode(Jbig2StreamBuilder.Stream(segments), expected.Width, expected.Height);
+        var image = Jbig2Decoder.Decode(Jbig2StreamBuilder.Stream(segments), expected.Width, expected.Height, cancellationToken: TestContext.Current.CancellationToken);
         image.Bits.ToArray().ShouldBe(expected.Data);
     }
 
@@ -97,7 +97,7 @@ public sealed class Jbig2TextRegionTests
     {
         var (segments, expected) = BuildSegments(ReferenceCorner.TopLeft, false, dsOffset: dsOffset);
 
-        var image = Jbig2Decoder.Decode(Jbig2StreamBuilder.Stream(segments), expected.Width, expected.Height);
+        var image = Jbig2Decoder.Decode(Jbig2StreamBuilder.Stream(segments), expected.Width, expected.Height, cancellationToken: TestContext.Current.CancellationToken);
         image.Bits.ToArray().ShouldBe(expected.Data);
     }
 
@@ -180,7 +180,7 @@ public sealed class Jbig2TextRegionTests
         var expected = new Jbig2Bitmap(40, 12);
         expected.Combine(second[0], 2, 2, CombinationOperator.Or);
 
-        Jbig2Decoder.Decode(stream, 40, 12).Bits.ToArray().ShouldBe(expected.Data);
+        Jbig2Decoder.Decode(stream, 40, 12, cancellationToken: TestContext.Current.CancellationToken).Bits.ToArray().ShouldBe(expected.Data);
     }
 
     // ---- helpers -----------------------------------------------------------------

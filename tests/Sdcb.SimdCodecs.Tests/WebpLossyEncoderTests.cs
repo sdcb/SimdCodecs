@@ -85,7 +85,7 @@ public sealed class WebpLossyEncoderTests
                         new WebpLossyEncodeOptions { Effort = effort, Quality = quality });
                     WebpDecoder.ReadInfo(webp).Format.ShouldBe(WebpFormat.Lossy, because);
                     var ours = new byte[w * h * 4];
-                    WebpDecoder.DecodeTo(webp, ours);
+                    WebpDecoder.DecodeTo(webp, ours, cancellationToken: TestContext.Current.CancellationToken);
                     MagickRgba(webp).ShouldBe(ours, because);
                 }
             }
@@ -108,7 +108,7 @@ public sealed class WebpLossyEncoderTests
             try
             {
                 var ours = new byte[source.Length];
-                WebpDecoder.DecodeTo(webp, ours);
+                WebpDecoder.DecodeTo(webp, ours, cancellationToken: TestContext.Current.CancellationToken);
                 WebpOracleTests.RunDwebp(dwebp, input, yuv: false, noFancy: false).ShouldBe(ours, $"{kind} effort {effort}");
             }
             finally
@@ -143,7 +143,7 @@ public sealed class WebpLossyEncoderTests
                     try
                     {
                         var ours = new byte[source.Length];
-                        WebpDecoder.DecodeTo(webp, ours);
+                        WebpDecoder.DecodeTo(webp, ours, cancellationToken: TestContext.Current.CancellationToken);
                         WebpOracleTests.RunDwebp(dwebp, input, yuv: false, noFancy: false).ShouldBe(ours, $"{w}x{h} q{quality}");
                     }
                     finally
@@ -172,7 +172,7 @@ public sealed class WebpLossyEncoderTests
                 using var encoder = new Vp8Encoder(w, h, Vp8EncoderConfig.For(60, effort));
                 encoder.SetArgb(argb);
                 byte[] frame = encoder.Encode();
-                using Vp8Yuv decoded = Vp8Decoder.Decode(frame, w, h, applyLoopFilter: false);
+                using Vp8Yuv decoded = Vp8Decoder.Decode(frame, w, h, applyLoopFilter: false, cancellationToken: TestContext.Current.CancellationToken);
                 encoder.Reconstruction(out byte[] y, out byte[] u, out byte[] v);
                 y.ShouldBe(decoded.Y, $"{w}x{h} effort {effort} luma");
                 u.ShouldBe(decoded.U, $"{w}x{h} effort {effort} U");
@@ -202,7 +202,7 @@ public sealed class WebpLossyEncoderTests
         {
             byte[] webp = WebpEncoder.EncodeLossy(source, w, h, PixelFormat.Rgba32, new WebpLossyEncodeOptions { Quality = quality });
             var decoded = new byte[source.Length];
-            WebpDecoder.DecodeTo(webp, decoded);
+            WebpDecoder.DecodeTo(webp, decoded, cancellationToken: TestContext.Current.CancellationToken);
             double se = 0;
             for (int i = 0; i < source.Length; i++)
             {

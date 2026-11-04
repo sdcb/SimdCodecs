@@ -86,7 +86,7 @@ public sealed class Jbig2MmrOracleTests(ITestOutputHelper output)
             Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
                 Jbig2StreamBuilder.MmrGenericRegionSegment(width, height, encoded.Coded)));
 
-        var image = Jbig2Decoder.Decode(stream, width, height);
+        var image = Jbig2Decoder.Decode(stream, width, height, cancellationToken: TestContext.Current.CancellationToken);
         ShouldMatch(image.Bits.ToArray(), expected, width, height);
     }
 
@@ -119,7 +119,7 @@ public sealed class Jbig2MmrOracleTests(ITestOutputHelper output)
         // libtiff and would decode fine out of a broken wrapper. Us against
         // jbig2dec is what makes this an oracle at all.
         ShouldMatch(reference.Bits, expected, width, height);
-        ShouldMatch(Jbig2Decoder.DecodeFile(file).Bits, reference.Bits, width, height);
+        ShouldMatch(Jbig2Decoder.DecodeFile(file, cancellationToken: TestContext.Current.CancellationToken).Bits, reference.Bits, width, height);
     }
 
     /// <summary>
