@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 
 namespace Sdcb.SimdCodecs.Jbig2;
 
@@ -9,7 +10,7 @@ namespace Sdcb.SimdCodecs.Jbig2;
 /// JBIG2 (ITU-T T.88) bilevel decoder, written clean-room from the
 /// specification.
 /// <para>
-/// The primary entry point is <see cref="Decode(ReadOnlySpan{byte}, ReadOnlySpan{byte}, int, int)"/>,
+/// The primary entry point is <see cref="Decode(ReadOnlySpan{byte}, ReadOnlySpan{byte}, int, int, CancellationToken)"/>,
 /// shaped for PDF's <c>/JBIG2Decode</c> filter rather than for the facade. A
 /// PDF-embedded JBIG2 stream is not a file: T.88 §D.3's "embedded stream"
 /// organization has no file header (so there is nothing for
@@ -54,6 +55,7 @@ public static class Jbig2Decoder
     /// </param>
     /// <param name="width">Page width, from the image dictionary's <c>/Width</c>.</param>
     /// <param name="height">Page height, from the image dictionary's <c>/Height</c>.</param>
+    /// <param name="cancellationToken">A cancellation token to monitor for cancellation requests.</param>
     /// <exception cref="InvalidDataException">The stream is malformed or truncated.</exception>
     /// <exception cref="NotSupportedException">The stream needs a JBIG2 feature this decoder does not implement yet.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
@@ -62,7 +64,8 @@ public static class Jbig2Decoder
     /// a PDF image dictionary, so they are no more trustworthy than the codestream
     /// and are checked rather than multiplied out.
     /// </exception>
-    public static Jbig2Image Decode(ReadOnlySpan<byte> embedded, ReadOnlySpan<byte> globals, int width, int height)
+    public static Jbig2Image Decode(ReadOnlySpan<byte> embedded, ReadOnlySpan<byte> globals, int width, int height,
+        CancellationToken cancellationToken = default)
     {
         if (width <= 0 || height <= 0)
             throw new ArgumentOutOfRangeException(nameof(width), "Width and height must be positive.");
@@ -71,6 +74,8 @@ public static class Jbig2Decoder
                 nameof(width),
                 $"A {width}x{height} page is {(long)width * height:N0} pixels, past the " +
                 $"{Jbig2Limits.MaxBitmapPixels:N0} this decoder will allocate for one bitmap.");
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         var state = new DecodingState(new Jbig2Bitmap(width, height));
 
@@ -81,9 +86,9 @@ public static class Jbig2Decoder
         // as-is, since a globals stream conventionally uses page 0 ("applies to
         // every page").
         if (!globals.IsEmpty)
-            ProcessStream(globals, ReadSequential(globals), state, targetPage: 0);
+            ProcessStream(globals, ReadSequential(globals), state, targetPage: 0, cancellationToken);
 
-        ProcessStream(embedded, ReadSequential(embedded), state, targetPage: 0);
+        ProcessStream(embedded, ReadSequential(embedded), state, targetPage: 0, cancellationToken);
 
         return new Jbig2Image(width, height, state.Page.Data);
     }
@@ -92,23 +97,32 @@ public static class Jbig2Decoder
     /// Decodes a PDF-embedded JBIG2 image stream that has no
     /// <c>/JBIG2Globals</c>.
     /// </summary>
-    public static Jbig2Image Decode(ReadOnlySpan<byte> embedded, int width, int height) =>
-        Decode(embedded, default, width, height);
+    /// <param name="embedded">The image XObject's stream data, after any outer filters.</param>
+    /// <param name="width">Page width, from the image dictionary's <c>/Width</c>.</param>
+    /// <param name="height">Page height, from the image dictionary's <c>/Height</c>.</param>
+    /// <param name="cancellationToken">A cancellation token to monitor for cancellation requests.</param>
+    public static Jbig2Image Decode(ReadOnlySpan<byte> embedded, int width, int height,
+        CancellationToken cancellationToken = default) =>
+        Decode(embedded, default, width, height, cancellationToken);
 
     /// <summary>
     /// Decodes page 1 of a standalone <c>.jb2</c> file (T.88 Annex D), in either
     /// the sequential or the random-access organization.
     /// </summary>
+    /// <param name="file">The standalone JBIG2 file bytes.</param>
+    /// <param name="cancellationToken">A cancellation token to monitor for cancellation requests.</param>
     /// <exception cref="InvalidDataException">The file header or a segment is malformed.</exception>
     /// <exception cref="NotSupportedException">The file needs a JBIG2 feature this decoder does not implement yet.</exception>
-    public static Jbig2Image DecodeFile(ReadOnlySpan<byte> file)
+    public static Jbig2Image DecodeFile(ReadOnlySpan<byte> file, CancellationToken cancellationToken = default)
     {
         var segments = ReadFile(file, out var body);
         if (!TryFindPageSize(body, segments, out var width, out var height))
             throw new InvalidDataException("JBIG2: file has no page information segment for page 1, or its height is indeterminate.");
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         var state = new DecodingState(new Jbig2Bitmap(width, height));
-        ProcessStream(body, segments, state, targetPage: 1);
+        ProcessStream(body, segments, state, targetPage: 1, cancellationToken);
 
         return new Jbig2Image(width, height, state.Page.Data);
     }
@@ -358,7 +372,8 @@ public static class Jbig2Decoder
         ReadOnlySpan<byte> stream,
         List<SegmentHeader> segments,
         DecodingState state,
-        uint targetPage)
+        uint targetPage,
+        CancellationToken cancellationToken = default)
     {
         foreach (var segment in segments)
         {
@@ -368,9 +383,29 @@ public static class Jbig2Decoder
             // construction and encoders are inconsistent about the field.
             if (targetPage != 0 && segment.Page != 0 && segment.Page != targetPage) continue;
 
+            if (segment.Type == SegmentType.PageInformation || IsRegionSegment(segment.Type))
+                cancellationToken.ThrowIfCancellationRequested();
+
             ProcessSegment(segment, stream.Slice(segment.DataStart, segment.DataLength), state);
         }
     }
+
+    private static bool IsRegionSegment(SegmentType type) => type switch
+    {
+        SegmentType.IntermediateTextRegion or
+        SegmentType.ImmediateTextRegion or
+        SegmentType.ImmediateLosslessTextRegion or
+        SegmentType.IntermediateHalftoneRegion or
+        SegmentType.ImmediateHalftoneRegion or
+        SegmentType.ImmediateLosslessHalftoneRegion or
+        SegmentType.IntermediateGenericRegion or
+        SegmentType.ImmediateGenericRegion or
+        SegmentType.ImmediateLosslessGenericRegion or
+        SegmentType.IntermediateRefinementRegion or
+        SegmentType.ImmediateRefinementRegion or
+        SegmentType.ImmediateLosslessRefinementRegion => true,
+        _ => false,
+    };
 
     private static void ProcessSegment(SegmentHeader segment, ReadOnlySpan<byte> data, DecodingState state)
     {

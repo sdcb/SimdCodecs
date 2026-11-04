@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using Sdcb.SimdCodecs.Abstractions;
 
 namespace Sdcb.SimdCodecs.Jbig2;
@@ -78,6 +79,14 @@ public sealed class Jbig2Image
     /// (1 channel, <see cref="SampleFormat.UInt8"/>) for the
     /// <c>Sdcb.SimdCodecs</c> facade's fidelity tier.
     /// </summary>
-    public RasterImage ToRaster() =>
-        new(Width, Height, 1, SampleFormat.UInt8, ToGray8());
+    /// <param name="pool">The array pool to rent memory from, or null to allocate a new byte array.</param>
+    public RasterImage ToRaster(ArrayPool<byte>? pool = null)
+    {
+        if (pool is null)
+            return RasterImage.Wrap(Width, Height, 1, SampleFormat.UInt8, ToGray8(), bitDepth: 1);
+
+        var raster = RasterImage.Rent(Width, Height, 1, SampleFormat.UInt8, pool, bitDepth: 1);
+        ExpandToGray8(raster.WritablePixels);
+        return raster;
+    }
 }
