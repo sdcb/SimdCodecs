@@ -91,3 +91,23 @@ read it first and follow its pattern.
 - Build one package: `dotnet build src/Sdcb.SimdCodecs.<Pkg> -c Release` (it builds its dependencies too).
 - The test project and facade will not compile until every package is ported; your task says which build is
   your acceptance gate.
+
+## Encoder adapters (milestone M4)
+
+Reference: `src/Sdcb.SimdCodecs.Png/PngImageEncoder.cs`. Abstractions: `IImageEncoder.cs`, `BufferedEncoderSession.cs`.
+
+- One public sealed class `<Codec>ImageEncoder : IImageEncoder` per format, in the codec's package, with a public static
+  `Registration` (`new(ImageFormat.X, GetClosestInputFormat, Create)` — method groups, never generic).
+- `GetClosestInputFormat`: the format the encoder stores without converting. 8-bit-only formats (JPEG, WebP, GIF, BMP,
+  QOI, ICO): `requested.To8Bit()` then mapped to a layout the encoder takes natively (BGR/BGRA count as native when the
+  existing encoder API takes them; premultiplied input is native only if the encoder handles it — otherwise return the
+  straight format).
+- `Create(output, options)`: `options as <Codec>EncodeOptions ?? new()`. Derive the session from `BufferedEncoderSession`
+  unless the encoder genuinely streams rows; `MaxFrames` = 1 for stills, `int.MaxValue` (or the format limit) for
+  animations/multi-page; override `MaxDimension` with the format's limit.
+- In `Encode(frames, ct)`: `frame.PixelsAs(nativeFormat)` (PixelConverter does 16→8 `>>8`, unpremultiply, BGR, grey),
+  then call the codec's existing public encode API, then `WriteOutput(bytes)`. Map `frame.Metadata` (Exif/XMP/ICC) and
+  `frame.Color` onto the codec's options where the format can carry them (and leave them out where it cannot).
+- **Acceptance**: the session's output must equal, byte for byte, calling the codec's existing encoder on the
+  `PixelConverter`-converted pixels with the same options (lossless and lossy alike, since the session literally does
+  that). Existing encoder APIs and their output must not change.
