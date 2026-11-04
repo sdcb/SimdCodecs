@@ -71,17 +71,20 @@ static double Fastest(Action decode)
 
 const int Thumb = 6; // show every 6th pixel: 512x682 for a 3072x4096 photo
 
+/// <summary>
+/// Shows a BGRA buffer with row padding: picks every <see cref="Thumb"/>-th pixel of every <see cref="Thumb"/>-th row
+/// (rows found through the stride), then swaps B and R with PixelConverter.ConvertRow to get the RGBA that PNG takes.
+/// Bgra32 output swaps channels 0 and 2 of its input, so the same call turns BGRA back into RGBA, here in place.
+/// </summary>
 static object ShowBgra(byte[] bgra, int stride, int width, int height)
 {
 	int tw = width / Thumb, th = height / Thumb;
-	var rgba = new byte[tw * th * 4];
+	var pixels = new byte[tw * th * 4];
 	for (int y = 0; y < th; y++)
 	for (int x = 0; x < tw; x++)
-	{
-		int s = y * Thumb * stride + x * Thumb * 4, d = (y * tw + x) * 4;
-		rgba[d] = bgra[s + 2]; rgba[d + 1] = bgra[s + 1]; rgba[d + 2] = bgra[s]; rgba[d + 3] = bgra[s + 3];
-	}
-	return Util.Image(PngWriter.Encode(rgba, tw, th, new PngWriteOptions { CompressionLevel = CompressionLevel.Fastest }));
+		bgra.AsSpan(y * Thumb * stride + x * Thumb * 4, 4).CopyTo(pixels.AsSpan((y * tw + x) * 4));
+	PixelConverter.ConvertRow(pixels, 4, SampleFormat.UInt8, pixels, ImagePixelFormat.Bgra32, tw * th);
+	return Util.Image(PngWriter.Encode(pixels, tw, th, new PngWriteOptions { CompressionLevel = CompressionLevel.Fastest }));
 }
 
 static object ShowGray(byte[] gray, int width, int height)
