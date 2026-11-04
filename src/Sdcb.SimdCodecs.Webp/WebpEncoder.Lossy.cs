@@ -4,7 +4,7 @@ using Sdcb.SimdCodecs.Abstractions;
 namespace Sdcb.SimdCodecs.Webp;
 
 /// <summary>Options for <see cref="WebpEncoder.EncodeLossy(ReadOnlySpan{byte}, int, int, PixelFormat, WebpLossyEncodeOptions?, int)"/>.</summary>
-public sealed record WebpLossyEncodeOptions
+public sealed record WebpLossyEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
     /// <summary>
     /// Quality, 0 (smallest) to 100 (best). The scale is this encoder's own, calibrated so that a

@@ -6,7 +6,7 @@ using Sdcb.SimdCodecs.Abstractions;
 namespace Sdcb.SimdCodecs.Webp;
 
 /// <summary>Options for <see cref="WebpEncoder.EncodeLossless(ReadOnlySpan{byte}, int, int, PixelFormat, WebpLosslessEncodeOptions?, int)"/>.</summary>
-public sealed record WebpLosslessEncodeOptions
+public sealed record WebpLosslessEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
     /// <summary>
     /// Compression effort, 0 (fastest, largest) to 9 (slowest, smallest). The default, 6, is a

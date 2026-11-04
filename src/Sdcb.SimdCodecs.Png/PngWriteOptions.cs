@@ -10,7 +10,7 @@ namespace Sdcb.SimdCodecs.Png;
 /// PNG spec §5.6 requires (most ancillary chunks before IDAT; eXIf may be
 /// before or after IDAT, we emit before).
 /// </summary>
-public sealed record PngWriteOptions
+public sealed record PngWriteOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
     /// <summary>
     /// Raw ICC profile bytes. When non-null, an <c>iCCP</c> chunk is

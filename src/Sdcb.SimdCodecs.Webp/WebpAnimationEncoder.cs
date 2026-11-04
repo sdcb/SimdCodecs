@@ -19,7 +19,7 @@ public enum WebpAnimationMode
 }
 
 /// <summary>Options for <see cref="WebpAnimationEncoder"/> and <see cref="WebpEncoder.EncodeAnimation(IReadOnlyList{WebpAnimationCanvasFrame}, int, int, PixelFormat, WebpAnimationEncodeOptions?)"/>.</summary>
-public sealed record WebpAnimationEncodeOptions
+public sealed record WebpAnimationEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
     /// <summary>Lossy (the default), lossless, or the smaller of the two per frame.</summary>
     public WebpAnimationMode Mode { get; init; }

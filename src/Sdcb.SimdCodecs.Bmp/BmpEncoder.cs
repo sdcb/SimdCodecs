@@ -59,7 +59,7 @@ public enum BmpHeaderVersion
 }
 
 /// <summary>Options for <see cref="BmpEncoder"/>.</summary>
-public sealed record BmpEncodeOptions
+public sealed record BmpEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
     /// <summary>The pixel layout. A palette layout is exact when the colours fit it, otherwise built by Wu's
     /// quantizer (with <see cref="Dither"/>).</summary>

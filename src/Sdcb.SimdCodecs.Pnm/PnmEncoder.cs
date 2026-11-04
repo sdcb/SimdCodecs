@@ -7,7 +7,7 @@ using Sdcb.SimdCodecs.Abstractions;
 namespace Sdcb.SimdCodecs.Pnm;
 
 /// <summary>How <see cref="PnmEncoder"/> writes an image.</summary>
-public sealed record PnmEncodeOptions
+public sealed record PnmEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
     /// <summary>The magic number. <see cref="PnmFormat.Auto"/> picks P5 for 1 channel, P6 for 3, P7 for 2 or 4.
     /// A PBM or PGM format takes the input's luma (a PBM: black below 128), a PPM drops alpha. The float formats

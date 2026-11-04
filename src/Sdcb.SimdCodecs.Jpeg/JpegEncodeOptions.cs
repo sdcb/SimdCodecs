@@ -20,7 +20,7 @@ public enum JpegSubsampling : byte
 /// <see cref="Progressive"/> trade encode time for smaller files with identical pixels.
 /// Restart intervals are not written.
 /// </summary>
-public sealed record JpegEncodeOptions
+public sealed record JpegEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
     /// <summary>Quality 1..100 (libjpeg-style scaling of the Annex K quantisation tables).
     /// Higher is larger and closer to the source. The default, 90, is the highest quality
