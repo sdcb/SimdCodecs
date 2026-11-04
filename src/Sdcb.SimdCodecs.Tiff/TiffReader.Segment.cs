@@ -22,9 +22,10 @@ public sealed class TiffPageLayout
     internal readonly uint[] Offsets;
     internal readonly uint[] ByteCounts;
 
-    internal TiffPageLayout(int pageIndex, bool fileIsLittleEndian, ParsedIfd ifd)
+    internal TiffPageLayout(int pageIndex, bool fileIsLittleEndian, ParsedIfd ifd, long ifdOffset)
     {
         PageIndex = pageIndex;
+        IfdOffset = ifdOffset;
         FileIsLittleEndian = fileIsLittleEndian;
         _geometry = ifd.Geometry;
         Offsets = ifd.SegmentOffsets;
@@ -56,6 +57,9 @@ public sealed class TiffPageLayout
 
     /// <summary>The raw XMP packet (tag 700), or null.</summary>
     internal byte[]? Xmp { get; }
+
+    /// <summary>The file offset of the page's IFD.</summary>
+    internal long IfdOffset { get; }
 
     /// <summary>XResolution (tag 282) in pixels per <see cref="ResolutionUnit"/>; 0 when absent or unusable.</summary>
     internal double XResolution { get; }
@@ -254,7 +258,7 @@ public static partial class TiffReader
         if (ifdOffset == 0 || visited.Contains(ifdOffset))
             throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
 
-        return new TiffPageLayout(pageIndex, fileIsLE, TiffIfdParser.Parse(ref src, ifdOffset, fileIsLE));
+        return new TiffPageLayout(pageIndex, fileIsLE, TiffIfdParser.Parse(ref src, ifdOffset, fileIsLE), ifdOffset);
     }
 
     private static TiffSegmentRect ReadSegmentCore<T>(ref T src, TiffPageLayout layout, int segmentIndex,

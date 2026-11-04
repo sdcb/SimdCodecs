@@ -56,5 +56,25 @@ public sealed record TiffPageOptions
     /// </summary>
     public ReadOnlyMemory<byte> IccProfile { get; init; }
 
+    /// <summary>
+    /// An Exif block: the TIFF-structured bytes themselves (<c>II*\0</c> or <c>MM\0*</c> onwards; a leading
+    /// <c>Exif\0\0</c> is skipped), as <c>Sdcb.SimdCodecs.Exif</c>'s <c>ExifWriter.Build</c> makes and
+    /// <see cref="Abstractions.ImageMetadata.Exif"/> carries. Empty (the default) = none.
+    /// <para>
+    /// A TIFF page's own IFD is the Exif IFD0, so the block is merged into the page rather than embedded whole: IFD0's
+    /// descriptive tags (Make, Model, Orientation, DateTime, Copyright, ...) join the page's IFD, and the Exif IFD
+    /// (tag 34665), its Interoperability IFD (tag 40965) and the GPS IFD (tag 34853) are written as sub-IFDs with their
+    /// offsets relocated. Not carried: IFD1 (the thumbnail), tags that describe image data (the page sets its own),
+    /// pointers to any other IFD, entries of unknown type and entries whose value lies outside the block. Values are
+    /// copied as they are, so a MakerNote whose own offsets count from the block's header points elsewhere afterwards.
+    /// Resolution, and <see cref="Artist"/> and <see cref="Software"/> when set, replace the block's.
+    /// </para>
+    /// A block without a TIFF header is an <see cref="InvalidDataException"/>, thrown before the page is written.
+    /// </summary>
+    public ReadOnlyMemory<byte> Exif { get; init; }
+
+    /// <summary>The raw XMP packet (UTF-8), written as tag 700. Empty (the default) = none.</summary>
+    public ReadOnlyMemory<byte> Xmp { get; init; }
+
     public static TiffPageOptions Default { get; } = new();
 }

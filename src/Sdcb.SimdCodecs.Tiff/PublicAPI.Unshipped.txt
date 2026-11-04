@@ -1,1 +1,5 @@
 #nullable enable
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Exif.get -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Exif.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Xmp.get -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Xmp.init -> void

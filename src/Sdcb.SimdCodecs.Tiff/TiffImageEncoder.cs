@@ -10,8 +10,10 @@ namespace Sdcb.SimdCodecs.Tiff;
 /// extra samples), so <see cref="GetClosestInputFormat"/> only reorders BGR to RGB and unpremultiplies.
 /// <para>
 /// Pages take their compression, layout and resolution from <see cref="TiffEncodeOptions.Page"/>; the frame sets the sample
-/// layout. A frame's ICC profile becomes the page's ICC tag. Exif and XMP are not written (the writer has no tags for them)
-/// and a frame's <see cref="ColorEncoding"/> is ignored.
+/// layout. A frame's <see cref="ImageMetadata"/> overrides the template's: its ICC profile becomes the page's ICC tag
+/// (34675), its XMP packet tag 700, and its Exif block is merged into the page as <see cref="TiffPageOptions.Exif"/>
+/// describes. An Exif block that is not a TIFF structure is dropped, not an error. A frame's <see cref="ColorEncoding"/>
+/// is ignored.
 /// </para>
 /// </summary>
 public sealed class TiffImageEncoder : IImageEncoder
@@ -82,8 +84,15 @@ public sealed class TiffImageEncoder : IImageEncoder
                 Photometric = gray ? TiffPhotometric.MinIsBlack : TiffPhotometric.Rgb,
                 ExtraSamples = alpha ? TiffExtraSamples.UnassociatedAlpha : null,
             };
-            if (frame.Metadata is { } m && !m.Icc.IsEmpty)
-                o = o with { IccProfile = m.Icc };
+            if (frame.Metadata is { } m)
+            {
+                if (!m.Icc.IsEmpty)
+                    o = o with { IccProfile = m.Icc };
+                if (!m.Xmp.IsEmpty)
+                    o = o with { Xmp = m.Xmp };
+                if (!m.Exif.IsEmpty && TiffExif.ParseBlock(m.Exif.Span) is not null)
+                    o = o with { Exif = m.Exif };
+            }
             return o;
         }
     }

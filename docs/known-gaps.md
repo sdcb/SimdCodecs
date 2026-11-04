@@ -58,7 +58,8 @@ HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmar
   需要时可以按各帧的 `Duration` 自己累加。
 - **`IImageFrameReader` 和 `ImageDecoder` 会话都不是线程安全的**（动画需要在调用之间保留画布状态），每个线程各开一个。
 - **元数据只透传、不解析。** `ImageMetadata` 是原始的 Exif / XMP / ICC 块；解析 Exif 用 `Sdcb.SimdCodecs.Exif`。TIFF
-  的 Exif 字段留空（整个文件就是 TIFF 结构）；JPEG 的扩展 XMP（跨多个 APP1 段）没有拼接。HEIF 转码到别的格式时，
+  页面自己的 IFD 就是 Exif 的 IFD0，所以读出的 Exif 块是重组的（见 [TIFF](known-gaps/tiff.md)），字节布局与源文件不同；
+  JPEG 的扩展 XMP（跨多个 APP1 段）没有拼接。HEIF 转码到别的格式时，
   像素已按 `irot` / `imir` 转正，Exif 方向标签原样透传，调用方需要自己改写为 1。
 - **一次性解码所有帧不在接口里**，是有意的：全部帧的内存是帧数 × 画布大小。需要时对索引循环即可；WebP 包的
   `WebpDecoder.DecodeAnimation` 带总像素上限。

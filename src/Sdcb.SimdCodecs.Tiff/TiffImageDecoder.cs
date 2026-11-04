@@ -137,17 +137,17 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
 
     /// <inheritdoc />
-    /// <remarks>The ICC profile (tag 34675) and the XMP packet (tag 700, raw bytes) of the first page.
-    /// <see cref="ImageMetadata.Exif"/> is always empty: a TIFF file is itself a TIFF structure, so its tags
-    /// (and the Exif IFD behind tag 34665) are read from the file by <c>Sdcb.SimdCodecs.Exif</c> directly rather than
-    /// repackaged as an Exif block.</remarks>
+    /// <remarks>The ICC profile (tag 34675), the XMP packet (tag 700, raw bytes) and the Exif block of the first page.
+    /// A TIFF page's own IFD is the Exif IFD0, so the block is assembled from the file, in host byte order: the page's
+    /// descriptive tags (everything but the tags that describe image data, XMP and ICC) as IFD0, plus the Exif IFD
+    /// (tag 34665) with its Interoperability IFD and the GPS IFD (tag 34853). A page with neither an Exif nor a GPS IFD
+    /// has no Exif block; entries of unknown type or outside the file are left out.</remarks>
     public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata)
     {
         metadata = null;
         try
         {
-            var layout = TiffReader.ReadLayout(data, 0);
-            metadata = new ImageMetadata { Xmp = layout.Xmp, Icc = layout.IccProfile };
+            metadata = MetadataOf(data, TiffReader.ReadLayout(data, 0));
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
@@ -223,7 +223,17 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         var fullBits = format switch { SampleFormat.UInt8 => 8, SampleFormat.UInt16 => 16, _ => 32 };
         var bitDepth = page.StoredBitsPerSample > 0 && page.StoredBitsPerSample < fullBits ? page.StoredBitsPerSample : 0;
 
-        var metadata = page.IccProfile is null ? null : new ImageMetadata { Icc = page.IccProfile };
+        ImageMetadata? metadata;
+        try
+        {
+            metadata = MetadataOf(data, TiffReader.ReadLayout(data, pageIndex));
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            metadata = null; // the page decoded, so this cannot happen; metadata never fails a decode
+        }
+        if (metadata is { IsEmpty: true })
+            metadata = null;
         RasterImage raster;
         if (page.BitsPerSample == 16 && page.SampleFormat == TiffSampleFormat.IeeeFloat)
         {
@@ -241,6 +251,14 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         image = DecodeOptions.Apply(raster, options);
         return true;
     }
+
+    /// <summary>The ICC profile, XMP packet and Exif block of the page <paramref name="layout"/> describes.</summary>
+    private static ImageMetadata MetadataOf(ReadOnlySpan<byte> data, TiffPageLayout layout) => new()
+    {
+        Icc = layout.IccProfile,
+        Xmp = layout.Xmp,
+        Exif = TiffExif.Extract(data, layout.FileIsLittleEndian, layout.IfdOffset),
+    };
 
     private static ColorEncoding ColorOf(TiffSampleFormat sampleFormat) =>
         sampleFormat == TiffSampleFormat.IeeeFloat

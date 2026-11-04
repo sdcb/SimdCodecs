@@ -8,7 +8,7 @@ public sealed record TiffEncodeOptions : EncodeOptions
     /// <summary>
     /// The template for every page: compression, layout (strips or tiles), resolution, artist and software.
     /// The adapter overrides what the frame decides — samples per pixel, bits per sample, photometric, extra samples and
-    /// sample format — and the ICC profile when the frame has one. Null uses <see cref="TiffPageOptions.Default"/>.
+    /// sample format — and the ICC profile, XMP packet and Exif block when the frame has them. Null uses <see cref="TiffPageOptions.Default"/>.
     /// </summary>
     public TiffPageOptions? Page { get; init; }
 }

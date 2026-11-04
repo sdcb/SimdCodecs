@@ -76,6 +76,17 @@ internal sealed class IfdBuilder
         _entries[tag] = (TiffFieldType.Undefined, (uint)data.Length, data);
     }
 
+    public void SetBytes(ushort tag, byte[] data)
+    {
+        _entries[tag] = (TiffFieldType.Byte, (uint)data.Length, data);
+    }
+
+    /// <summary>An entry copied from another TIFF structure; its value bytes are already in host byte order.</summary>
+    public void Set(TiffExifEntry entry)
+    {
+        _entries[entry.Tag] = (entry.Type, entry.Count, entry.Value);
+    }
+
     /// <summary>
     /// Writes the IFD to the target. Returns the file offset of the NextIFD pointer field.
     /// </summary>

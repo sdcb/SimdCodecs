@@ -20,7 +20,7 @@ async Task Main()
 	using IDecodedImage photo = decoded;
 
 	// 1. Transcode a decoded image to every built-in encoder. Its Exif, XMP and ICC go along wherever the format
-	//    and encoder store them (PNG, JPEG, WebP here), so the capture time, GPS position and colour profile survive.
+	//    and encoder store them (PNG, JPEG, WebP, TIFF here), so the capture time, GPS position and colour profile survive.
 	//    The options type picks a codec's settings (none: its defaults); GetClosestInputFormat says what the encoder
 	//    stores a 16-bit RGBA image as, before any precision is lost.
 	(ImageFormat Format, EncodeOptions? Options)[] targets =

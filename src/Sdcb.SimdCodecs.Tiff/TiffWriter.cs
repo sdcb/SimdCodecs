@@ -32,8 +32,15 @@ public sealed class TiffWriter : IAsyncDisposable
     public async Task AddPageAsync(IImageSource source, TiffPageOptions? options = null,
         CancellationToken ct = default)
     {
-        await EnsureHeaderAsync(ct).ConfigureAwait(false);
         options ??= TiffPageOptions.Default;
+        // Checked before a byte is written, so a block without a TIFF header leaves the file as it was.
+        TiffExifDirectories? exif = null;
+        if (!options.Exif.IsEmpty)
+        {
+            exif = TiffExif.ParseBlock(options.Exif.Span)
+                ?? throw new InvalidDataException("TiffPageOptions.Exif is not a TIFF structure (no II*\\0 or MM\\0* header)");
+        }
+        await EnsureHeaderAsync(ct).ConfigureAwait(false);
 
         // Write segment data
         var offsets = new uint[source.SegmentCount];
@@ -78,8 +85,24 @@ public sealed class TiffWriter : IAsyncDisposable
             byteCounts[i] = (uint)(_target.Position - offsets[i]);
         }
 
+        // The Exif block's IFDs go before the page's, so the page IFD can point at them (TIFF 6.0 only asks that an
+        // offset be a word boundary, not that it follow the IFD that holds it).
+        long? exifIfdOffset = null, gpsIfdOffset = null;
+        if (exif is not null)
+        {
+            long? interopOffset = exif.HasExifIfd && exif.Interop.Count > 0
+                ? await WriteSubIfdAsync(exif.Interop, null, ct).ConfigureAwait(false)
+                : null;
+            if (exif.HasExifIfd)
+                exifIfdOffset = await WriteSubIfdAsync(exif.Exif, interopOffset, ct).ConfigureAwait(false);
+            if (exif.HasGpsIfd)
+                gpsIfdOffset = await WriteSubIfdAsync(exif.Gps, null, ct).ConfigureAwait(false);
+        }
+
         // Build IFD
-        var ifd = BuildIfd(source, options, offsets, byteCounts);
+        var ifd = BuildIfd(source, options, offsets, byteCounts, exif?.Ifd0);
+        if (exifIfdOffset is { } e) ifd.SetLong(TiffTag.ExifIfd, (uint)e);
+        if (gpsIfdOffset is { } g) ifd.SetLong(TiffTag.GpsInfoIfd, (uint)g);
 
         // Capture IFD start position
         await _target.AlignAsync(ct).ConfigureAwait(false);
@@ -98,10 +121,29 @@ public sealed class TiffWriter : IAsyncDisposable
         _pageCount++;
     }
 
+    /// <summary>Writes one Exif sub-IFD (Exif, GPS or Interoperability); returns its offset.</summary>
+    private async Task<long> WriteSubIfdAsync(List<TiffExifEntry> entries, long? interopOffset, CancellationToken ct)
+    {
+        var builder = new IfdBuilder();
+        foreach (var entry in entries)
+            builder.Set(entry);
+        if (interopOffset is { } i)
+            builder.SetLong(TiffExif.InteropIfd, (uint)i);
+        await _target.AlignAsync(ct).ConfigureAwait(false);
+        var at = _target.Position;
+        await builder.WriteAsync(_target, ct).ConfigureAwait(false);
+        return at;
+    }
+
     private static IfdBuilder BuildIfd(IImageSource source, TiffPageOptions options,
-        uint[] offsets, uint[] byteCounts)
+        uint[] offsets, uint[] byteCounts, List<TiffExifEntry>? exifIfd0 = null)
     {
         var ifd = new IfdBuilder();
+        // The Exif block's IFD0 tags first, so every tag the page sets below (resolution, and Artist / Software when the
+        // options give them) replaces the block's. TiffExif has already left out the tags that describe image data.
+        if (exifIfd0 is not null)
+            foreach (var entry in exifIfd0)
+                ifd.Set(entry);
 
         ifd.SetLong(TiffTag.ImageWidth, (uint)source.Width);
         ifd.SetLong(TiffTag.ImageLength, (uint)source.Height);
@@ -160,6 +202,8 @@ public sealed class TiffWriter : IAsyncDisposable
             ifd.SetAscii(TiffTag.Software, options.Software);
         if (!options.IccProfile.IsEmpty)
             ifd.SetUndefined(TiffTag.IccProfile, options.IccProfile.ToArray());
+        if (!options.Xmp.IsEmpty)
+            ifd.SetBytes(TiffTag.XmpPacket, options.Xmp.ToArray()); // XMP Specification Part 3: tag 700, type BYTE
 
         return ifd;
     }
