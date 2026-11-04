@@ -127,9 +127,19 @@ public sealed class HeifFacadeTests : IDisposable
         SimdCodecs.RegisteredCount.ShouldBe(before + 1);
 
         // A second registration object built from the same method groups is the same codec.
-        SimdCodecs.Register(new ImageDecoderRegistration(ImageFormat.Heif, HeifImageDecoder.CanDecode, HeifImageDecoder.TryReadInfo,
-            HeifImageDecoder.TryGetClosestSize, HeifImageDecoder.TryDecode, HeifImageDecoder.TryDecodeInto, HeifImageDecoder.TryReadMetadata, HeifImageDecoder.TryDecodeThumbnail,
-            tryReadPlanarInfo: HeifImageDecoder.TryReadPlanarInfo, tryDecodePlanes: HeifImageDecoder.TryDecodePlanes));
+        SimdCodecs.Register(new ImageDecoderRegistration
+        {
+            Format = ImageFormat.Heif,
+            CanDecode = HeifImageDecoder.CanDecode,
+            TryReadInfo = HeifImageDecoder.TryReadInfo,
+            TryGetClosestSize = HeifImageDecoder.TryGetClosestSize,
+            TryDecode = HeifImageDecoder.TryDecode,
+            TryDecodeInto = HeifImageDecoder.TryDecodeInto,
+            TryReadMetadata = HeifImageDecoder.TryReadMetadata,
+            TryDecodeThumbnail = HeifImageDecoder.TryDecodeThumbnail,
+            TryReadPlanarInfo = HeifImageDecoder.TryReadPlanarInfo,
+            TryDecodePlanes = HeifImageDecoder.TryDecodePlanes,
+        });
         SimdCodecs.RegisteredCount.ShouldBe(before + 1);
 
         // A different codec is not.
@@ -162,15 +172,38 @@ public sealed class HeifFacadeTests : IDisposable
     public void Register_ValidatesItsArgument()
     {
         Should.Throw<ArgumentNullException>(() => SimdCodecs.Register(null!));
-        Should.Throw<ArgumentOutOfRangeException>(() => new ImageDecoderRegistration(ImageFormat.Unknown, HeifImageDecoder.CanDecode,
-            HeifImageDecoder.TryReadInfo, HeifImageDecoder.TryGetClosestSize, HeifImageDecoder.TryDecode, HeifImageDecoder.TryDecodeInto, HeifImageDecoder.TryReadMetadata, HeifImageDecoder.TryDecodeThumbnail));
-        Should.Throw<ArgumentOutOfRangeException>(() => new ImageDecoderRegistration((ImageFormat)200, HeifImageDecoder.CanDecode,
-            HeifImageDecoder.TryReadInfo, HeifImageDecoder.TryGetClosestSize, HeifImageDecoder.TryDecode, HeifImageDecoder.TryDecodeInto, HeifImageDecoder.TryReadMetadata, HeifImageDecoder.TryDecodeThumbnail));
-        Should.Throw<ArgumentNullException>(() => new ImageDecoderRegistration(ImageFormat.Heif, null!,
-            HeifImageDecoder.TryReadInfo, HeifImageDecoder.TryGetClosestSize, HeifImageDecoder.TryDecode, HeifImageDecoder.TryDecodeInto, HeifImageDecoder.TryReadMetadata, HeifImageDecoder.TryDecodeThumbnail));
-        Should.Throw<ArgumentNullException>(() => new ImageDecoderRegistration(ImageFormat.Heif, HeifImageDecoder.CanDecode,
-            HeifImageDecoder.TryReadInfo, HeifImageDecoder.TryGetClosestSize, HeifImageDecoder.TryDecode, null!, HeifImageDecoder.TryReadMetadata, HeifImageDecoder.TryDecodeThumbnail));
+        Should.Throw<ArgumentOutOfRangeException>(() => HeifLike(ImageFormat.Unknown));
+        Should.Throw<ArgumentOutOfRangeException>(() => HeifLike((ImageFormat)200));
+        Should.Throw<ArgumentNullException>(() => HeifLike(ImageFormat.Heif, nullCanDecode: true));
+        Should.Throw<ArgumentNullException>(() => HeifLike(ImageFormat.Heif, nullDecodeInto: true));
+
+        // Only one planar delegate: the initializer cannot see the pair, so Register checks it.
+        var halfPlanar = new ImageDecoderRegistration
+        {
+            Format = ImageFormat.Heif,
+            CanDecode = HeifImageDecoder.CanDecode,
+            TryReadInfo = HeifImageDecoder.TryReadInfo,
+            TryGetClosestSize = HeifImageDecoder.TryGetClosestSize,
+            TryDecode = HeifImageDecoder.TryDecode,
+            TryDecodeInto = HeifImageDecoder.TryDecodeInto,
+            TryReadMetadata = HeifImageDecoder.TryReadMetadata,
+            TryDecodeThumbnail = HeifImageDecoder.TryDecodeThumbnail,
+            TryReadPlanarInfo = HeifImageDecoder.TryReadPlanarInfo,
+        };
+        Should.Throw<ArgumentException>(() => SimdCodecs.Register(halfPlanar));
     }
+
+    private static ImageDecoderRegistration HeifLike(ImageFormat format, bool nullCanDecode = false, bool nullDecodeInto = false) => new()
+    {
+        Format = format,
+        CanDecode = nullCanDecode ? null! : HeifImageDecoder.CanDecode,
+        TryReadInfo = HeifImageDecoder.TryReadInfo,
+        TryGetClosestSize = HeifImageDecoder.TryGetClosestSize,
+        TryDecode = HeifImageDecoder.TryDecode,
+        TryDecodeInto = nullDecodeInto ? null! : HeifImageDecoder.TryDecodeInto,
+        TryReadMetadata = HeifImageDecoder.TryReadMetadata,
+        TryDecodeThumbnail = HeifImageDecoder.TryDecodeThumbnail,
+    };
 
     /// <summary>Registration while other threads decode: no decode fails or sees a torn registry, and every
     /// distinct codec ends up registered exactly once.</summary>
@@ -224,8 +257,17 @@ public sealed class HeifFacadeTests : IDisposable
     /// <summary>A stand-in codec that claims streams starting with <paramref name="magic"/> and reports a 1×1
     /// AVIF; its signature test captures <paramref name="magic"/>, so each call is a distinct codec.</summary>
     private static ImageDecoderRegistration Fake(byte[] magic) =>
-        new(ImageFormat.Avif, header => header.StartsWith(magic), FakeInfo, FakeClosestSize, FakeDecode, (_, _, _, _, _, _) => false,
-            FakeMetadata, FakeThumbnail);
+        new()
+        {
+            Format = ImageFormat.Avif,
+            CanDecode = header => header.StartsWith(magic),
+            TryReadInfo = FakeInfo,
+            TryGetClosestSize = FakeClosestSize,
+            TryDecode = FakeDecode,
+            TryDecodeInto = (_, _, _, _, _, _) => false,
+            TryReadMetadata = FakeMetadata,
+            TryDecodeThumbnail = FakeThumbnail,
+        };
 
     private static bool FakeClosestSize(ReadOnlySpan<byte> data, int w, int h, out int width, out int height, out int scale)
     {

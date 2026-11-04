@@ -36,7 +36,7 @@ internal static class HeifMetadata
             else if (item.Type == ItemMime && xmp.IsEmpty && IsXmp(item.ContentType))
                 xmp = ReadItem(data, items, item) ?? default;
         }
-        return new ImageMetadata(exif, xmp, container.IccProfile ?? default(ReadOnlyMemory<byte>));
+        return new ImageMetadata { Exif = exif, Xmp = xmp, Icc = container.IccProfile };
     }
 
     /// <summary>The first <c>hvc1</c> thumbnail item of the primary image, if any.</summary>

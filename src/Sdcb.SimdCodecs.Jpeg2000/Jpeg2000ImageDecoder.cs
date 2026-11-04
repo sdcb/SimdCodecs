@@ -33,8 +33,17 @@ namespace Sdcb.SimdCodecs.Jpeg2000;
 public sealed class Jpeg2000ImageDecoder : IImageDecoder
 {
     /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
-    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Jpeg2000, CanDecode, TryReadInfo,
-        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail);
+    public static ImageDecoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Jpeg2000,
+        CanDecode = CanDecode,
+        TryReadInfo = TryReadInfo,
+        TryGetClosestSize = TryGetClosestSize,
+        TryDecode = TryDecode,
+        TryDecodeInto = TryDecodeInto,
+        TryReadMetadata = TryReadMetadata,
+        TryDecodeThumbnail = TryDecodeThumbnail,
+    };
 
     /// <inheritdoc />
     public static int SignatureLength => 12;
@@ -134,7 +143,7 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
                 var layout = Jp2Reader.Read(data);
                 if (layout.Colour is { Method: 2, IccProfile: { } profile })
                 {
-                    metadata = ImageMetadata.Empty.WithIcc(profile);
+                    metadata = new ImageMetadata { Icc = profile };
                     return true;
                 }
             }
@@ -180,8 +189,8 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
             image.Components,
             format,
             pool,
-            iccProfile: icc,
-            bitDepth: bitDepth);
+            bitDepth: bitDepth,
+            metadata: icc is null ? null : new ImageMetadata { Icc = icc });
 
         if (format == SampleFormat.UInt8)
         {

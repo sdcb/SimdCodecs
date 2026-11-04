@@ -26,8 +26,17 @@ public sealed class JpegImageDecoder : IImageDecoder
     private static ReadOnlySpan<byte> Signature => [0xFF, 0xD8, 0xFF];
 
     /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
-    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Jpeg, CanDecode, TryReadInfo,
-        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail);
+    public static ImageDecoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Jpeg,
+        CanDecode = CanDecode,
+        TryReadInfo = TryReadInfo,
+        TryGetClosestSize = TryGetClosestSize,
+        TryDecode = TryDecode,
+        TryDecodeInto = TryDecodeInto,
+        TryReadMetadata = TryReadMetadata,
+        TryDecodeThumbnail = TryDecodeThumbnail,
+    };
 
     /// <inheritdoc />
     public static int SignatureLength => 3;
@@ -84,7 +93,7 @@ public sealed class JpegImageDecoder : IImageDecoder
         // every other frame is colour, written as RGB since JPEG carries no alpha.
         var (channels, format) = info.Components == 1 ? (1, JpegPixelFormat.Gray8) : (3, JpegPixelFormat.Rgb24);
         var raster = RasterImage.Create(width, height, channels, SampleFormat.UInt8, options?.Pool,
-            JpegDecoder.TryReadIccProfile(data, out var icc) ? icc : null, metadata: ReadMetadata(data));
+            metadata: ReadMetadata(data));
         try
         {
             _ = JpegDecoder.DecodeTo(data, raster.WritablePixels, width * channels, format, scale, cancellationToken);
@@ -167,8 +176,6 @@ public sealed class JpegImageDecoder : IImageDecoder
         if (!JpegDecoder.TryReadInfo(data, out _))
             return false;
         metadata = ReadMetadata(data);
-        if (JpegDecoder.TryReadIccProfile(data, out var icc))
-            metadata = metadata.WithIcc(icc);
         return true;
     }
 
@@ -203,8 +210,12 @@ public sealed class JpegImageDecoder : IImageDecoder
         format == PixelFormat.Gray8 ? JpegPixelFormat.Gray8 :
         throw new ArgumentOutOfRangeException(nameof(format), format, "JPEG decodes natively to the five basic 8-bit formats only.");
 
-    private static ImageMetadata ReadMetadata(ReadOnlySpan<byte> data) =>
-        new(JpegMetadata.ReadExif(data), JpegMetadata.ReadXmp(data));
+    private static ImageMetadata ReadMetadata(ReadOnlySpan<byte> data) => new()
+    {
+        Exif = JpegMetadata.ReadExif(data),
+        Xmp = JpegMetadata.ReadXmp(data),
+        Icc = JpegDecoder.TryReadIccProfile(data, out var icc) ? icc : default,
+    };
 
     private static RasterImage Crop(RasterImage raster, PixelRect region, System.Buffers.ArrayPool<byte>? pool)
     {

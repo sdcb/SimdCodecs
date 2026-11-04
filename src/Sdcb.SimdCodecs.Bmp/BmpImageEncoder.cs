@@ -13,7 +13,12 @@ namespace Sdcb.SimdCodecs.Bmp;
 public sealed class BmpImageEncoder : IImageEncoder
 {
     /// <summary>The registration for the facade's encoder registry, built from this type's method groups.</summary>
-    public static ImageEncoderRegistration Registration { get; } = new(ImageFormat.Bmp, GetClosestInputFormat, Create);
+    public static ImageEncoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Bmp,
+        GetClosestInputFormat = GetClosestInputFormat,
+        Create = Create,
+    };
 
     /// <inheritdoc />
     public static ImageFormat Format => ImageFormat.Bmp;

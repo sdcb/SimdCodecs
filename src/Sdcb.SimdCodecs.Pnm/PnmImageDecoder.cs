@@ -13,8 +13,17 @@ namespace Sdcb.SimdCodecs.Pnm;
 public sealed class PnmImageDecoder : IImageDecoder
 {
     /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
-    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Pnm, CanDecode, TryReadInfo,
-        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail);
+    public static ImageDecoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Pnm,
+        CanDecode = CanDecode,
+        TryReadInfo = TryReadInfo,
+        TryGetClosestSize = TryGetClosestSize,
+        TryDecode = TryDecode,
+        TryDecodeInto = TryDecodeInto,
+        TryReadMetadata = TryReadMetadata,
+        TryDecodeThumbnail = TryDecodeThumbnail,
+    };
 
     /// <inheritdoc />
     /// <remarks><c>P1</c> to <c>P7</c> and a whitespace byte.</remarks>
@@ -69,8 +78,17 @@ public sealed class PnmImageDecoder : IImageDecoder
 public sealed class PfmImageDecoder : IImageDecoder
 {
     /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
-    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Pfm, CanDecode, TryReadInfo,
-        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail);
+    public static ImageDecoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Pfm,
+        CanDecode = CanDecode,
+        TryReadInfo = TryReadInfo,
+        TryGetClosestSize = TryGetClosestSize,
+        TryDecode = TryDecode,
+        TryDecodeInto = TryDecodeInto,
+        TryReadMetadata = TryReadMetadata,
+        TryDecodeThumbnail = TryDecodeThumbnail,
+    };
 
     /// <inheritdoc />
     /// <remarks><c>Pf</c> or <c>PF</c> and a whitespace byte.</remarks>

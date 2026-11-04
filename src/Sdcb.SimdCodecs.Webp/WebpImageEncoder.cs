@@ -26,7 +26,12 @@ public sealed class WebpImageEncoder : IImageEncoder
     private static readonly TimeSpan DefaultDuration = TimeSpan.FromMilliseconds(100);
 
     /// <summary>The registration for the facade's encoder registry, built from this type's method groups.</summary>
-    public static ImageEncoderRegistration Registration { get; } = new(ImageFormat.Webp, GetClosestInputFormat, Create);
+    public static ImageEncoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Webp,
+        GetClosestInputFormat = GetClosestInputFormat,
+        Create = Create,
+    };
 
     /// <inheritdoc />
     public static ImageFormat Format => ImageFormat.Webp;

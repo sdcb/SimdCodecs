@@ -131,7 +131,7 @@ public sealed class MetadataTests
             image.Metadata.Exif.ToArray().ShouldBe(exif);
             image.Metadata.Xmp.ToArray().ShouldBe(xmp.BuildPacket());
             image.Metadata.Icc.ToArray().ShouldBe(icc);
-            image.IccProfile.ToArray().ShouldBe(icc);
+            image.Metadata.Icc.Span.ToArray().ShouldBe(icc);
         }
 
         // The Exif package reads the same bytes the metadata carries.
@@ -170,7 +170,7 @@ public sealed class MetadataTests
         using (image)
         {
             image.Metadata.IsEmpty.ShouldBeTrue();
-            image.IccProfile.IsEmpty.ShouldBeTrue();
+            image.Metadata.Icc.Span.IsEmpty.ShouldBeTrue();
         }
     }
 
@@ -200,7 +200,7 @@ public sealed class MetadataTests
             image.Metadata.Exif.ToArray().ShouldBe(exif);
             image.Metadata.Xmp.ToArray().ShouldBe(packet);
             image.Metadata.Icc.ToArray().ShouldBe(icc);
-            image.IccProfile.ToArray().ShouldBe(icc);
+            image.Metadata.Icc.Span.ToArray().ShouldBe(icc);
         }
     }
 
@@ -241,7 +241,7 @@ public sealed class MetadataTests
             image.Metadata.Exif.ToArray().ShouldBe(exif);
             image.Metadata.Xmp.ToArray().ShouldBe(packet);
             image.Metadata.Icc.ToArray().ShouldBe(icc);
-            image.IccProfile.ToArray().ShouldBe(icc);
+            image.Metadata.Icc.Span.ToArray().ShouldBe(icc);
         }
     }
 

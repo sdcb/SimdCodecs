@@ -54,12 +54,6 @@ public interface IDecodedImage : IDisposable
     ReadOnlySpan<byte> Pixels { get; }
 
     /// <summary>
-    /// The embedded ICC colour profile, or an empty span when the source carried
-    /// none. Informational for a colour-managed consumer; never rescales pixels.
-    /// </summary>
-    ReadOnlySpan<byte> IccProfile { get; }
-
-    /// <summary>
     /// How the sample values encode colour: H.273 primaries + transfer, code
     /// range, and (for float rasters) what the values are referenced to.
     /// Informational like <see cref="IccProfile"/> — never rescales pixels.

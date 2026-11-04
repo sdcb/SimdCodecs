@@ -22,8 +22,17 @@ namespace Sdcb.SimdCodecs.Jpeg;
 public sealed class GainMapImageDecoder : IImageDecoder
 {
     /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
-    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Jpeg, CanDecode, TryReadInfo,
-        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail);
+    public static ImageDecoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Jpeg,
+        CanDecode = CanDecode,
+        TryReadInfo = TryReadInfo,
+        TryGetClosestSize = TryGetClosestSize,
+        TryDecode = TryDecode,
+        TryDecodeInto = TryDecodeInto,
+        TryReadMetadata = TryReadMetadata,
+        TryDecodeThumbnail = TryDecodeThumbnail,
+    };
 
     /// <inheritdoc />
     public static int SignatureLength => 3;

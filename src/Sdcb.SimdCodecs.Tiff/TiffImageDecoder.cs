@@ -39,8 +39,18 @@ namespace Sdcb.SimdCodecs.Tiff;
 public sealed class TiffImageDecoder : IMultiFrameImageDecoder
 {
     /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
-    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Tiff, CanDecode, TryReadInfo,
-        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail, TryOpenFrames);
+    public static ImageDecoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Tiff,
+        CanDecode = CanDecode,
+        TryReadInfo = TryReadInfo,
+        TryGetClosestSize = TryGetClosestSize,
+        TryDecode = TryDecode,
+        TryDecodeInto = TryDecodeInto,
+        TryReadMetadata = TryReadMetadata,
+        TryDecodeThumbnail = TryDecodeThumbnail,
+        TryOpenFrames = TryOpenFrames,
+    };
 
     /// <inheritdoc />
     public static int SignatureLength => 4;
@@ -136,7 +146,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         try
         {
             var layout = TiffReader.ReadLayout(data, 0);
-            metadata = new ImageMetadata(xmp: layout.Xmp ?? default, icc: layout.IccProfile ?? default);
+            metadata = new ImageMetadata { Xmp = layout.Xmp, Icc = layout.IccProfile };
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
@@ -212,6 +222,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         var fullBits = format switch { SampleFormat.UInt8 => 8, SampleFormat.UInt16 => 16, _ => 32 };
         var bitDepth = page.StoredBitsPerSample > 0 && page.StoredBitsPerSample < fullBits ? page.StoredBitsPerSample : 0;
 
+        var metadata = page.IccProfile is null ? null : new ImageMetadata { Icc = page.IccProfile };
         RasterImage raster;
         if (page.BitsPerSample == 16 && page.SampleFormat == TiffSampleFormat.IeeeFloat)
         {
@@ -220,11 +231,11 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
             var widened = new float[halves.Length];
             for (var i = 0; i < halves.Length; i++) widened[i] = (float)halves[i];
             raster = RasterImage.Wrap(page.Width, page.Height, channels, SampleFormat.Float32,
-                MemoryMarshal.AsBytes(widened.AsSpan()).ToArray(), page.IccProfile, color, bitDepth);
+                MemoryMarshal.AsBytes(widened.AsSpan()).ToArray(), color, bitDepth, metadata);
         }
         else
         {
-            raster = RasterImage.Wrap(page.Width, page.Height, channels, format, page.Pixels, page.IccProfile, color, bitDepth);
+            raster = RasterImage.Wrap(page.Width, page.Height, channels, format, page.Pixels, color, bitDepth, metadata);
         }
         image = DecodeOptions.Apply(raster, options);
         return true;

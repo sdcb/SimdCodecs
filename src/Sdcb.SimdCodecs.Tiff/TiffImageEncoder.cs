@@ -16,7 +16,12 @@ namespace Sdcb.SimdCodecs.Tiff;
 public sealed class TiffImageEncoder : IImageEncoder
 {
     /// <summary>The registration for the facade's encoder registry, built from this type's method groups.</summary>
-    public static ImageEncoderRegistration Registration { get; } = new(ImageFormat.Tiff, GetClosestInputFormat, Create);
+    public static ImageEncoderRegistration Registration { get; } = new()
+    {
+        Format = ImageFormat.Tiff,
+        GetClosestInputFormat = GetClosestInputFormat,
+        Create = Create,
+    };
 
     /// <inheritdoc />
     public static ImageFormat Format => ImageFormat.Tiff;

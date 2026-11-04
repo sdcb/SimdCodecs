@@ -36,7 +36,7 @@ public sealed class RasterImageV2Tests
         image.BitDepth.ShouldBe(8);
         image.ColorEncoding.ShouldBe(ColorEncoding.AssumedSrgb);
         image.Metadata.ShouldBeSameAs(ImageMetadata.Empty);
-        image.IccProfile.IsEmpty.ShouldBeTrue();
+        image.Metadata.Icc.Span.IsEmpty.ShouldBeTrue();
     }
 
     [Fact]
@@ -209,37 +209,33 @@ public sealed class RasterImageV2Tests
     public void MetadataAndColourEncodingAreCarried()
     {
         var encoding = new ColorEncoding { Primaries = ColorPrimaries.BT2020, Transfer = TransferFunction.Pq };
-        var metadata = new ImageMetadata(exif: new byte[] { 1, 2, 3 }, xmp: new byte[] { 4, 5 });
+        var metadata = new ImageMetadata { Exif = new byte[] { 1, 2, 3 }, Xmp = new byte[] { 4, 5 } };
         using var image = RasterImage.Wrap(1, 1, 3, SampleFormat.UInt8, new byte[3], colorEncoding: encoding, metadata: metadata);
         image.ColorEncoding.ShouldBe(encoding);
         image.Metadata.ShouldBeSameAs(metadata);
         image.Metadata.Exif.ToArray().ShouldBe([1, 2, 3]);
-        image.IccProfile.IsEmpty.ShouldBeTrue();
+        image.Metadata.Icc.Span.IsEmpty.ShouldBeTrue();
     }
 
     [Fact]
-    public void AnIccProfileArgumentFillsTheMetadataAndTheMetadatasOwnWins()
+    public void TheIccProfileTravelsInTheMetadata()
     {
         byte[] icc = [9, 8, 7, 6];
-        using (var image = RasterImage.Allocate(1, 1, 3, SampleFormat.UInt8, iccProfile: icc))
+        var metadata = new ImageMetadata { Exif = new byte[] { 1, 1, 1, 1, 1, 1, 1, 1 }, Icc = icc };
+        using (var image = RasterImage.Allocate(1, 1, 3, SampleFormat.UInt8, metadata: metadata))
         {
-            image.IccProfile.ToArray().ShouldBe(icc);
             image.Metadata.Icc.ToArray().ShouldBe(icc);
+            image.Metadata.Exif.Length.ShouldBe(8);
         }
 
-        using (var withMetadata = RasterImage.Allocate(1, 1, 3, SampleFormat.UInt8, iccProfile: icc,
-            metadata: new ImageMetadata(exif: new byte[] { 1, 1, 1, 1, 1, 1, 1, 1 })))
-        {
-            withMetadata.Metadata.Icc.ToArray().ShouldBe(icc);
-            withMetadata.Metadata.Exif.Length.ShouldBe(8);
-        }
+        using (var none = RasterImage.Allocate(1, 1, 3, SampleFormat.UInt8))
+            none.Metadata.ShouldBeSameAs(ImageMetadata.Empty);
 
-        byte[] own = [1, 2];
-        using (var both = RasterImage.Allocate(1, 1, 3, SampleFormat.UInt8, iccProfile: icc, metadata: new ImageMetadata(icc: own)))
-            both.IccProfile.ToArray().ShouldBe(own);
-
-        using (var empty = RasterImage.Allocate(1, 1, 3, SampleFormat.UInt8, iccProfile: []))
-            empty.Metadata.ShouldBeSameAs(ImageMetadata.Empty);
+        // ImageMetadata is a record: `with` replaces one block and keeps the others.
+        var replaced = metadata with { Icc = new byte[] { 1, 2 } };
+        replaced.Icc.ToArray().ShouldBe([1, 2]);
+        replaced.Exif.ShouldBe(metadata.Exif);
+        metadata.Icc.ToArray().ShouldBe(icc);
     }
 
     // ---- Crop --------------------------------------------------------------------------------------------------
@@ -248,7 +244,7 @@ public sealed class RasterImageV2Tests
     public void CropCopiesTheRegionAndKeepsTheDescription()
     {
         var encoding = new ColorEncoding { Primaries = ColorPrimaries.BT2020, Transfer = TransferFunction.Hlg };
-        var metadata = new ImageMetadata(exif: new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 }, icc: new byte[] { 1, 2, 3 });
+        var metadata = new ImageMetadata { Exif = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 }, Icc = new byte[] { 1, 2, 3 } };
         var pixels = Counting(6 * 5 * 2 * 3);
         using var source = RasterImage.Wrap(6, 5, 3, SampleFormat.UInt16, pixels, colorEncoding: encoding, bitDepth: 12, metadata: metadata);
 
@@ -256,7 +252,7 @@ public sealed class RasterImageV2Tests
         (crop.Width, crop.Height, crop.Channels, crop.SampleFormat, crop.BitDepth).ShouldBe((3, 2, 3, SampleFormat.UInt16, 12));
         crop.ColorEncoding.ShouldBe(encoding);
         crop.Metadata.Exif.ToArray().ShouldBe(metadata.Exif.ToArray());
-        crop.IccProfile.ToArray().ShouldBe([1, 2, 3]);
+        crop.Metadata.Icc.Span.ToArray().ShouldBe([1, 2, 3]);
 
         var expected = new List<byte>();
         for (var y = 1; y < 3; y++)

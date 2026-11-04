@@ -139,7 +139,7 @@ public sealed class HeifImageDecoderTests
             .ShouldBe((info.Width, info.Height, 3, sample, native.BitDepth));
 
         (native.Width, native.Height).ShouldBe((info.Width, info.Height));
-        image.IccProfile.ToArray().ShouldBe(native.IccProfile ?? []);
+        image.Metadata.Icc.Span.ToArray().ShouldBe(native.IccProfile ?? []);
         image.ColorEncoding.FullRange.ShouldBeTrue();
     }
 
@@ -268,7 +268,7 @@ public sealed class HeifImageDecoderTests
         byte[] data = HeifTests.ReadFixture(fixture);
         HeifImageDecoder.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.ColorEncoding.ShouldBe(new ColorEncoding { Primaries = primaries, Transfer = transfer, FullRange = true });
-        if (image.IccProfile.Length > 0) image.ColorEncoding.ShouldBeSameAs(ColorEncoding.AssumedSrgb);
+        if (image.Metadata.Icc.Span.Length > 0) image.ColorEncoding.ShouldBeSameAs(ColorEncoding.AssumedSrgb);
     }
 
     /// <summary>Rewrites the nclx box in memory: each code point is reported as is, the transfer decides the refusal.</summary>
