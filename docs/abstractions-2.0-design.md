@@ -92,6 +92,8 @@ public readonly record struct PixelFormat
 | 16 位 → 8 位 | **保留 1.x 的取高字节（`v >> 8`），已决定。** 它和 `round(v × 255 / 65535)` 最多差 1 个码值，不值得为此改动所有 16 位源的 8 位输出和 golden |
 | N 位源（10、12 位）→ 16 位 | `round(v × 65535 / (2^N − 1))`，满量程线性映射，不是左移补零 |
 | 预乘 | `round(c × a / max)`；只在输出时预乘，解码器内部和 `IDecodedImage.Pixels` 始终是非预乘的 |
+| 反预乘（编码器输入） | `a = 0` 时颜色取 0；否则 `min(max, round(c × max / a))`。编码器收到预乘输入时先反预乘，再按非预乘输入处理 |
+| 编码器丢弃 alpha | 不合成，直接丢掉（沿用 1.x `PixelConverter` 的约定）。预乘输入先反预乘再丢 alpha，所以它和对应的非预乘输入编码出相同的结果，而不是隐式合成到黑底上。需要合成到某个底色的，由调用方在编码前自己做 |
 
 **影响范围。** Abstractions（`PixelConverter` 全部重写，新增 16 位和预乘的 SIMD 内核及其标量版本）；12 个
 `IImageDecoder` 适配器和 4 个多帧读取器的 `TryDecodeInto` 签名；门面；JPEG、PNG、WebP 写入调用方缓冲区的原生
@@ -431,6 +433,17 @@ SimdCodecs.Encode(IDecodedImage image, ImageFormat format, Stream destination, E
 | WebP 有损 | 按宏块行，需要缓冲 16 行 |
 
 不能逐行的编码器在会话内部缓冲，对调用方的契约不变，只是没有内存收益。
+
+**原生输入格式。** 每个编码器至少原生接收 5 种 8 位布局：`Rgba32`、`Bgra32`、`Rgb24`、`Bgr24`、`Gray8`，以及
+`Rgba32Premultiplied`、`Bgra32Premultiplied`（按第 3 节的反预乘约定处理）。对这些格式，`GetClosestInputFormat`
+原样返回；只有编码器存不下的精度（例如 JPEG 收到 16 位格式）才会改成别的格式。这条要求的目的是让 UI 框架的
+帧缓冲直接进编码器，调用方不用自己转换：Avalonia、WPF、WinUI、System.Drawing、Direct2D 的位图大多是 BGRA，
+而且往往是预乘的。
+
+对 JPEG 来说成本很低：通道顺序只是 RGB→YCbCr 那一步（`JpegEncoderKernels.ConvertRow` 及 4:2:0 的下采样路径）
+从哪个字节取 R 和 B，解码端的 `JpegColor` 已经用 `bgr` 开关做同样的事。`stride` 由 `WriteRows` 带进来，按行读取，
+不要求调用方把帧缓冲先拷成紧密排列。在此之前（1.x），`JpegEncoder.Encode` 只接收紧密排列的 RGB(A)，BGRA 帧缓冲
+要先逐行用 `PixelConverter.ConvertRow` 换成 RGBA：R/B 互换是对称的，把 BGRA 当作 RGBA 转成 `Bgra32` 得到的就是 RGBA。
 
 **影响范围。** 9 个编码器各写一个适配器；门面；Mono AOT 冒烟测试要覆盖每个编码入口（AGENTS.md：触及门面后必须
 跑 wasm 冒烟）。JPEG 编码的契约是质量而不是字节，适配器输出必须通过 `encode --gate`，渐进式和优化流仍要解码出与
