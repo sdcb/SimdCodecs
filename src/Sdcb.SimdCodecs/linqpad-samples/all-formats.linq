@@ -9,7 +9,8 @@
 </Query>
 
 // One code path for every format the facade knows: the same three calls decode a JPEG, a 16-bit
-// PNG, a palette PNG, lossy / lossless / animated WebP, tiled and float TIFF, JPEG 2000 and JBIG2.
+// PNG, a palette PNG, lossy / lossless / animated WebP, GIF, tiled and float TIFF, JPEG 2000 and
+// JBIG2 (BMP, ICO / CUR, QOI and Netpbm go through the same calls; see their packages' samples).
 async Task Main()
 {
 	string[] files =
@@ -65,7 +66,8 @@ async Task Main()
 
 static bool DecodeFloatStretched(byte[] data, byte[] rgba)
 {
-	if (!SimdCodecs.TryDecode(data, out IDecodedImage? image)) return false;
+	if (!SimdCodecs.TryDecode(data, out IDecodedImage? decoded)) return false;
+	using IDecodedImage image = decoded;
 	float[] f = image.ToFloats();   // RGBA floats, alpha = 1
 	float min = float.MaxValue, max = float.MinValue;
 	for (int i = 0; i < f.Length; i++)

@@ -263,7 +263,7 @@ Each package ships runnable samples in `linqpad-samples/`, which LINQPad lists i
 
 | Package | Samples |
 |---|---|
-| `Sdcb.SimdCodecs` | `quick-start`, `all-formats`, `skiasharp`, `opencvsharp` |
+| `Sdcb.SimdCodecs` | `quick-start`, `all-formats`, `decode-options` (metadata, thumbnail, scaled / region / pooled decode, 16-bit and premultiplied output, `ImageDecoder` sessions), `encode` (`SimdCodecs.Encode` to every format, streamed and animated encoder sessions), `skiasharp`, `opencvsharp` |
 | `Sdcb.SimdCodecs.Jpeg` | `encode` (quality, subsampling, progressive, EXIF/XMP), `scaled-decode` |
 | `Sdcb.SimdCodecs.Jpeg.GainMap` | `ultrahdr` (write and read an Ultra HDR JPEG) |
 | `Sdcb.SimdCodecs.Png` | `read-write` |

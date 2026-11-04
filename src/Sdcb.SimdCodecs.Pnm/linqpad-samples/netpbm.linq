@@ -109,8 +109,9 @@ void Main()
 	}.Dump("PFM (a negative scale means little-endian samples)");
 
 	// Floats need a tone choice before they can be shown: stretch the range to 8 bits and apply the sRGB curve.
-	PfmImageDecoder.TryDecode(pfm, out IDecodedImage? image);
-	Util.Image(PngWriter.Encode(PixelConverter.StretchToRgba8(image!, 0, 4, srgbEncode: true), width, height)).Dump("PFM, stretched for display");
+	if (!PfmImageDecoder.TryDecode(pfm, out IDecodedImage? image)) throw new InvalidDataException("Decode failed");
+	using (image)
+		Util.Image(PngWriter.Encode(PixelConverter.StretchToRgba8(image, 0, 4, srgbEncode: true), width, height)).Dump("PFM, stretched for display");
 }
 
 static byte[] Opaque(byte[] rgba)

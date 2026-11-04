@@ -51,8 +51,9 @@ async Task Main()
 	// The fidelity view: 8-bit RGB with the ICC profile passed through and the colour encoding from the file.
 	if (SimdCodecs.TryDecode(heic, out IDecodedImage? image))
 	{
-		new { image.Width, image.Height, image.Channels, image.SampleFormat, IccBytes = image.Metadata.Icc.Length, image.ColorEncoding }
-			.Dump("SimdCodecs.TryDecode");
+		using (image)
+			new { image.Width, image.Height, image.Channels, image.SampleFormat, IccBytes = image.Metadata.Icc.Length, image.ColorEncoding }
+				.Dump("SimdCodecs.TryDecode");
 	}
 }
 
@@ -83,7 +84,7 @@ static object ShowBgra(byte[] bgra, int stride, int width, int height)
 	for (int y = 0; y < th; y++)
 	for (int x = 0; x < tw; x++)
 		bgra.AsSpan(y * Thumb * stride + x * Thumb * 4, 4).CopyTo(pixels.AsSpan((y * tw + x) * 4));
-	PixelConverter.ConvertRow(pixels, 4, SampleFormat.UInt8, pixels, PixelFormat.Bgra32, tw * th);
+	PixelConverter.ConvertRow(pixels, PixelFormat.Bgra32, pixels, PixelFormat.Rgba32, tw * th);   // in place
 	return Util.Image(PngWriter.Encode(pixels, tw, th, new PngWriteOptions { CompressionLevel = CompressionLevel.Fastest }));
 }
 

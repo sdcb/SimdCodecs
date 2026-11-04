@@ -251,7 +251,7 @@ MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BM
 
 | 包 | 样例 |
 |---|---|
-| `Sdcb.SimdCodecs` | `quick-start`、`all-formats`、`skiasharp`、`opencvsharp` |
+| `Sdcb.SimdCodecs` | `quick-start`、`all-formats`、`decode-options`（元数据、内嵌缩略图、缩放 / 区域 / 池化解码、16 位和预乘输出、`ImageDecoder` 会话）、`encode`（`SimdCodecs.Encode` 编码到各格式，按行带流式写入和动画的编码会话）、`skiasharp`、`opencvsharp` |
 | `Sdcb.SimdCodecs.Jpeg` | `encode`（质量、采样、progressive、EXIF/XMP）、`scaled-decode` |
 | `Sdcb.SimdCodecs.Jpeg.GainMap` | `ultrahdr`（写入并读取 Ultra HDR JPEG） |
 | `Sdcb.SimdCodecs.Png` | `read-write` |

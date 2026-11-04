@@ -8,8 +8,9 @@
   <Namespace>System.Threading.Tasks</Namespace>
 </Query>
 
-// Quick start: hand the facade any image file's bytes. It sniffs the format from the magic
-// bytes (JPEG, PNG, TIFF, WebP, JPEG 2000, JBIG2) and decodes to RGBA -- no format switch needed.
+// Quick start: hand the facade any image file's bytes. It sniffs the format from the magic bytes
+// (JPEG, PNG, TIFF, WebP, GIF, BMP, ICO / CUR, QOI, Netpbm, JPEG 2000, JBIG2) and decodes to RGBA --
+// no format switch needed.
 async Task Main()
 {
 	using HttpClient http = new();
@@ -28,10 +29,12 @@ async Task Main()
 	Show(rgba, info.Width, info.Height).Dump("photo.jpg, decoded by Sdcb.SimdCodecs");
 
 	// Or keep the decoder's native layout (channels, 8/16-bit or float samples, ICC profile).
+	// A decoded image is IDisposable: it returns pooled memory (DecodeOptions.Pool) when disposed.
 	if (SimdCodecs.TryDecode(data, out IDecodedImage? image))
 	{
-		new { image.Width, image.Height, image.Channels, image.SampleFormat, IccBytes = image.Metadata.Icc.Length, image.ColorEncoding }
-			.Dump("SimdCodecs.TryDecode");
+		using (image)
+			new { image.Width, image.Height, image.Channels, image.SampleFormat, IccBytes = image.Metadata.Icc.Length, image.ColorEncoding }
+				.Dump("SimdCodecs.TryDecode");
 	}
 }
 
