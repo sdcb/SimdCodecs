@@ -61,7 +61,7 @@ Premultiplied，只对 Rgba / Bgra 有意义）。构造函数拒绝无意义的
 Abstractions 不依赖它。提取：JPEG（APP1 Exif / XMP、APP2 ICC）、PNG（eXIf、iTXt XMP、iCCP）、WebP（EXIF、XMP、ICCP）、
 TIFF（XMP 标签 700、ICC）、HEIF（`cdsc` 关联的 Exif item 和 `mime` XMP item、`colr` ICC）。缩略图：JPEG Exif IFD1、
 HEIF `thmb`。编码器把帧的 `ImageMetadata` 写进各自格式的位置。ICC 只有这一个入口（`IDecodedImage.Metadata.Icc`）。
-`ImageMetadata` 是 record，用初始化器构造、`with` 修改，以后加块（IPTC、文本、HDR 静态元数据）不破坏兼容。
+`ImageMetadata` 是 record，用初始化器构造、`with` 修改，以后加块（IPTC、文本、HDR 静态元数据）不必破坏兼容。
 
 ## 会话：`ImageDecoder` / `ImageFrame`
 
@@ -98,11 +98,12 @@ duration)` → `WriteRows(rows, count, stride)` → `Commit()`。
 
 ## 兼容性
 
-2.0 之后不再破坏兼容，形状按这个目标定：
+公开 API 的变动要看得见，但不冻结：所有包同时发布，值得时可以改、可以删，在发布说明里写明即可。形状尽量让常见的
+扩展不必破坏兼容：
 
 - 注册类和 `ImageMetadata` 用 `init` 属性（门面需要的标 `required`），不用位置参数的构造函数：加成员不会让已编译的
   调用方在运行时找不到方法。只有成对出现的平面委托由 `SimdCodecs.Register` 调 `Validate()` 检查。
 - 每个包都有 `PublicAPI.Shipped.txt` / `PublicAPI.Unshipped.txt`（`Microsoft.CodeAnalysis.PublicApiAnalyzers`）。
-  Shipped 记的是 2.0 的公开 API；之后的变动写进 Unshipped，不写就编译报错（RS0016 / RS0017）；发布一个版本时把
-  Unshipped 并进 Shipped。同一分析器里关于可选参数重载形状的 RS0026 / RS0027 在 `.editorconfig` 里关闭：codec 有意
+  Shipped 记的是上一次发布的公开 API；之后的变动写进 Unshipped，不写就编译报错（RS0016 / RS0017），这样每处变动都会
+  出现在评审的 diff 里。破坏性改动照常可以做，只要它值得、并在发布说明里写明。发布一个版本时把 Unshipped 并进 Shipped。同一分析器里关于可选参数重载形状的 RS0026 / RS0027 在 `.editorconfig` 里关闭：codec 有意
   同时提供 `byte[]` 和 `ReadOnlySpan<byte>` 重载并带相同的可选参数。

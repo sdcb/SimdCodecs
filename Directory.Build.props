@@ -37,7 +37,8 @@
   </PropertyGroup>
 
   <!-- Every shipped package (src/*) tracks its public API: a change that is not in PublicAPI.Shipped.txt or
-       PublicAPI.Unshipped.txt fails the build (RS0016 / RS0017). On a release, Unshipped moves into Shipped. -->
+       PublicAPI.Unshipped.txt fails the build (RS0016 / RS0017), so every API change shows up in review; changes,
+       breaking ones included, are fine once written there. On a release, Unshipped moves into Shipped. -->
   <ItemGroup Condition="$([System.String]::Copy('$(MSBuildProjectDirectory)').Replace('\', '/').Contains('/src/'))">
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />

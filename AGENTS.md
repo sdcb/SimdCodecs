@@ -84,10 +84,11 @@ bash tests/Sdcb.SimdCodecs.WasmSmoke/run.sh                         # Mono AOT (
   locally after touching the facade or a codec's `IImageDecoder` adapter.
 - **No new warnings.** The build stays at its current set (pre-existing XML-doc warnings only); fix
   what you introduce, never suppress it.
-- **The public API is a baseline.** Every package under `src/` lists its public API in `PublicAPI.Shipped.txt`
-  (the 2.0 surface) and `PublicAPI.Unshipped.txt` (changes since the last release); an API change that is not
-  written there is a build error (RS0016 / RS0017). A removal or a changed signature after 2.0 is a breaking change:
-  make it only in a major version. On a release, Unshipped moves into Shipped.
+- **Public API changes are visible, not frozen.** Every package under `src/` lists its public API in
+  `PublicAPI.Shipped.txt` (what the last release shipped) and `PublicAPI.Unshipped.txt` (changes since); a change
+  not written there is a build error (RS0016 / RS0017), so every change shows up in review. Changing or removing an
+  API is allowed when it is worth it (all packages ship together): update the files, and name the break in the
+  release notes. On a release, Unshipped moves into Shipped.
 - **A skipped oracle is not a passing oracle.** Oracle tests skip when their tool is missing; read the
   skip messages, or run with `REQUIRE_ORACLES=1`.
 - Every vector kernel has a scalar twin and must produce identical output on every tier

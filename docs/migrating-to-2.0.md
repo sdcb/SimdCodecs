@@ -1,7 +1,7 @@
 # Migrating to 2.0
 
-2.0 makes all its breaking changes to `Sdcb.SimdCodecs.Abstractions` and the facade at once, so that 2.x can add
-without breaking again. Most code needs a rename and nothing else. Every 8-bit decode output is byte-for-byte what
+2.0 makes its breaking changes to `Sdcb.SimdCodecs.Abstractions` and the facade at once, and shapes the API so that
+the usual additions in 2.x need no further break. Most code needs a rename and nothing else. Every 8-bit decode output is byte-for-byte what
 1.x produced; the decoded pixels change only where 2.0 keeps precision 1.x threw away (HEIF Main 10, see below).
 
 ## Renames

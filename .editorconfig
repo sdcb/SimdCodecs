@@ -2,7 +2,8 @@ root = true
 
 [*.cs]
 # Public API baseline (Microsoft.CodeAnalysis.PublicApiAnalyzers, see Directory.Build.props): an API that is not in
-# PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt, or one listed there that no longer exists, fails the build.
+# PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt, or one listed there that no longer exists, fails the build. This makes
+# API changes visible in review; it does not forbid them: update the files (and the release notes for a break).
 dotnet_diagnostic.RS0016.severity = error
 dotnet_diagnostic.RS0017.severity = error
 
