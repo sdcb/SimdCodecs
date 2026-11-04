@@ -34,6 +34,7 @@ internal sealed partial class HevcFrameDecoder
     private readonly int _zscanShift;
     private readonly int _qpBdOffsetY, _qpBdOffsetC;
     private readonly int _log2MinCuQpDeltaSize;
+    private readonly bool _parallelFilters; // the picture is decoded alone: CTB rows and filter passes may run in parallel
 
     // Current slice / CTU / CU state.
     private HevcSliceHeader _slice = null!;
@@ -87,7 +88,7 @@ internal sealed partial class HevcFrameDecoder
         }
     }
 
-    internal HevcFrameDecoder(HevcSps sps, HevcPps pps, bool pooled = false)
+    internal HevcFrameDecoder(HevcSps sps, HevcPps pps, bool pooled = false, bool parallel = false)
     {
         if (pps.TilesEnabled) throw new InvalidDataException("HEVC tiles are not supported.");
         if (sps.PcmEnabled) throw new InvalidDataException("HEVC PCM coding is not supported.");
@@ -96,6 +97,7 @@ internal sealed partial class HevcFrameDecoder
 
         _sps = sps;
         _pps = pps;
+        _parallelFilters = parallel;
         _pic = new HevcPicture(sps.Width, sps.Height, sps.ChromaFormatIdc, sps.BitDepthY, sps.BitDepthC, pooled)
         {
             CropLeft = sps.ConfLeft,
@@ -184,9 +186,23 @@ internal sealed partial class HevcFrameDecoder
             throw new InvalidDataException("The picture's slices do not cover every CTB.");
         }
 
+        FilterPicture();
+        return _pic;
+    }
+
+    /// <summary>The in-loop filters over the whole picture: deblocking, then SAO (8.7).</summary>
+    private void FilterPicture()
+    {
         if (!HeifDiagnostics.Skips(HeifAblation.SkipDeblock)) Deblock();
         if (!HeifDiagnostics.Skips(HeifAblation.SkipSao)) ApplySao();
-        return _pic;
+    }
+
+    /// <summary>Runs <paramref name="body"/> for each CTB row, in parallel when the picture is decoded alone.</summary>
+    private void ForEachCtbRow(Action<int> body)
+    {
+        var rows = _sps.PicHeightInCtbs;
+        if (_parallelFilters && rows > 1 && Environment.ProcessorCount > 1) Parallel.For(0, rows, body);
+        else for (var r = 0; r < rows; r++) body(r);
     }
 
     // ───────────────────────────── slice data (7.3.8.1) ─────────────────────────────

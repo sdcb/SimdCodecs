@@ -129,6 +129,57 @@ internal static class Nal
         return written;
     }
 
+    /// <summary>
+    /// <see cref="UnescapeToArray(ReadOnlySpan{byte})"/> that also returns the positions, in
+    /// <paramref name="source"/>, of the emulation_prevention_three_bytes it removed (ascending): slice header entry
+    /// points count escaped bytes (§7.4.7.1), the decoder reads the unescaped ones.
+    /// </summary>
+    internal static byte[] UnescapeToArray(ReadOnlySpan<byte> source, out int[] removed)
+    {
+        var positions = new List<int>();
+        var buffer = new byte[source.Length];
+        var written = 0;
+        var zeros = 0;
+        for (var i = 0; i < source.Length; i++)
+        {
+            var b = source[i];
+            if (zeros >= 2 && b == 3)
+            {
+                zeros = 0;
+                positions.Add(i);
+                continue;
+            }
+            buffer[written++] = b;
+            zeros = b == 0 ? zeros + 1 : 0;
+        }
+        removed = [.. positions];
+        return written == buffer.Length ? buffer : buffer.AsSpan(0, written).ToArray();
+    }
+
+    /// <summary>
+    /// The unescaped position of the escaped byte <paramref name="escaped"/>, given the removed positions of
+    /// <see cref="UnescapeToArray(ReadOnlySpan{byte}, out int[])"/>; −1 when that byte is itself a removed one.
+    /// </summary>
+    internal static long ToUnescaped(long escaped, int[] removed)
+    {
+        var before = 0;
+        while (before < removed.Length && removed[before] < escaped) before++;
+        if (before < removed.Length && removed[before] == escaped) return -1;
+        return escaped - before;
+    }
+
+    /// <summary>The escaped position of the unescaped byte <paramref name="unescaped"/> (the inverse of <see cref="ToUnescaped"/>).</summary>
+    internal static long ToEscaped(long unescaped, int[] removed)
+    {
+        var escaped = unescaped;
+        foreach (var position in removed)
+        {
+            if (position <= escaped) escaped++;
+            else break;
+        }
+        return escaped;
+    }
+
     internal static byte[] UnescapeToArray(ReadOnlySpan<byte> source)
     {
         var buffer = new byte[source.Length];

@@ -59,11 +59,15 @@ internal static class HevcImageDecoder
     private const int MaxNalUnits = 4096;
 
     /// <summary>Decodes the item; with <paramref name="pooled"/> the picture's planes are rented (see <see cref="HevcPicture.Release"/>).</summary>
-    internal static HevcPicture Decode(HevcDecoderConfiguration config, ReadOnlySpan<byte> data, bool pooled = false)
+    /// <remarks>
+    /// With <paramref name="parallel"/> (the item is decoded alone, not as one of many grid tiles) the CTB rows of a
+    /// WPP picture are decoded as a wavefront and the in-loop filters run CTB rows in parallel.
+    /// </remarks>
+    internal static HevcPicture Decode(HevcDecoderConfiguration config, ReadOnlySpan<byte> data, bool pooled = false, bool parallel = false)
     {
         HevcSps? sps = null;
         HevcPps? pps = null;
-        var slices = new List<(int, byte[])>();
+        var slices = new List<(int NalType, byte[] Rbsp, int[] Removed)>();
 
         void Accept(ReadOnlySpan<byte> nal)
         {
@@ -82,7 +86,7 @@ internal static class HevcImageDecoder
                     break;
                 case <= 21 when type is <= 9 or >= 16:
                     // VCL NAL units: TRAIL/TSA/STSA/RADL/RASL (0..9) and IRAP (16..21).
-                    slices.Add((type, Nal.UnescapeToArray(nal)));
+                    slices.Add((type, Nal.UnescapeToArray(nal, out var removed), removed));
                     break;
             }
         }
@@ -115,10 +119,18 @@ internal static class HevcImageDecoder
         {
             throw new InvalidDataException("An in-band SPS changes the picture size declared in 'hvcC'.");
         }
-        var decoder = new HevcFrameDecoder(sps, pps, pooled);
+        var decoder = new HevcFrameDecoder(sps, pps, pooled, parallel);
         try
         {
-            return decoder.Decode(slices);
+            if (decoder.CanDecodeWavefront(slices))
+            {
+                if (decoder.TryDecodeWavefront(slices[0], out var picture)) return picture!;
+                // Abandoned: decode serially from scratch, so the output and any failure are the serial decoder's.
+                decoder.ReleaseScratch();
+                decoder.Picture.Release();
+                decoder = new HevcFrameDecoder(sps, pps, pooled, parallel);
+            }
+            return decoder.Decode(slices.ConvertAll(static s => (s.NalType, s.Rbsp)));
         }
         finally
         {

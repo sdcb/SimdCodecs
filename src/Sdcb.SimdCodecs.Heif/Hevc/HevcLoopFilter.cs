@@ -30,18 +30,23 @@ internal sealed partial class HevcFrameDecoder
         // All vertical edges of the picture first, then all horizontal edges on the result (8.7.2.1).
         // Edges are 8 samples apart and a filter reads at most 4 and writes at most 3 samples per side, so the
         // edges of one direction are independent and their order does not matter.
-        DeblockDirection(vertical: true);
-        DeblockDirection(vertical: false);
+        // Split into CTB rows (multiples of 16 luma rows), the bands are independent too: a vertical edge filters
+        // along its own rows, and the horizontal edges of one band (8 apart, starting at its first row) write luma
+        // rows y0 − 3 .. y1 − 6 and chroma rows y0 / 2 − 1 .. y1 / 2 − 8 and read one row further each way, which
+        // another band's edges never write.
+        var ctbSize = _sps.CtbSizeY;
+        var height = _sps.Height;
+        ForEachCtbRow(r => DeblockDirection(vertical: true, r * ctbSize, Math.Min((r + 1) * ctbSize, height)));
+        ForEachCtbRow(r => DeblockDirection(vertical: false, r * ctbSize, Math.Min((r + 1) * ctbSize, height)));
     }
 
-    private void DeblockDirection(bool vertical)
+    private void DeblockDirection(bool vertical, int yFrom, int yTo)
     {
         var edges = vertical ? _edgeVer : _edgeHor;
         var width = _sps.Width;
-        var height = _sps.Height;
         var luma = _pic.Planes[0];
 
-        for (var y = 0; y < height; y += 4)
+        for (var y = yFrom; y < yTo; y += 4)
         {
             for (var x = 0; x < width; x += 4)
             {
@@ -196,73 +201,91 @@ internal sealed partial class HevcFrameDecoder
         // Transquant-bypass CUs are not filtered (8.7.3.1): with any in the picture, every CTB takes the
         // per-sample path that checks for them.
         var anyNoFilter = _noFilter.AsSpan(0, _blocks).IndexOf((byte)1) >= 0;
-        Span<int> offsets = stackalloc int[4];
         for (var c = 0; c < 3; c++)
         {
             // SAO reads the deblocked picture and writes a new one (8.7.3.1). Edge offset reads at most one sample
-            // beyond its CTB, so the deblocked samples it needs while the plane is rewritten in place, CTB row by CTB
-            // row, are a strip: the row above the CTB row (saved before the previous strip rewrote it), the CTB row
-            // itself and the row below. strip row r holds plane row y0 − 1 + r.
+            // beyond its CTB, so while the plane is rewritten in place, CTB row by CTB row, each row needs a strip of
+            // deblocked samples: the row above it, its own rows and the row below. Those two outer rows belong to the
+            // neighbouring CTB rows, which may already be rewritten, so they are saved first; a CTB row's own rows are
+            // copied before it rewrites them. CTB rows are then independent and run in parallel when allowed.
             var plane = _pic.Planes[c];
             var width = _pic.PlaneWidth(c);
             var height = _pic.PlaneHeight(c);
             var ctbSize = c == 0 ? _sps.CtbSizeY : _sps.CtbSizeY >> 1;
             var bitDepth = c == 0 ? _sps.BitDepthY : _sps.BitDepthC;
-            var strip = System.Buffers.ArrayPool<ushort>.Shared.Rent((ctbSize + 2) * width);
-            var above = System.Buffers.ArrayPool<ushort>.Shared.Rent(width);
+            var rows = _sps.PicHeightInCtbs;
+            var borders = System.Buffers.ArrayPool<ushort>.Shared.Rent(2 * rows * width); // [2r]: above row r, [2r + 1]: below
             try
             {
-                for (var ry = 0; ry < _sps.PicHeightInCtbs; ry++)
+                for (var r = 0; r < rows; r++)
                 {
-                    var y0 = ry * ctbSize;
-                    var yEnd = Math.Min(y0 + ctbSize + 1, height); // through the row below the strip
-                    if (ry > 0) above.AsSpan(0, width).CopyTo(strip);
-                    plane.AsSpan(y0 * width, (yEnd - y0) * width).CopyTo(strip.AsSpan(width));
-                    if (y0 + ctbSize - 1 < height) strip.AsSpan(ctbSize * width, width).CopyTo(above); // deblocked last row
-                    var stripOffset = -(y0 - 1) * width; // strip[stripOffset + y * width + x] = deblocked (x, y)
-
-                    for (var rx = 0; rx < _sps.PicWidthInCtbs; rx++)
-                    {
-                        var ctbAddr = ry * _sps.PicWidthInCtbs + rx;
-                        var slice = _ctbSlice[ctbAddr]!;
-                        if (c == 0 ? !slice.SaoLuma : !slice.SaoChroma) continue;
-                        var p = _sao[ctbAddr];
-                        var type = p.Type(c);
-                        if (type == 0) continue;
-                        var x0 = rx * ctbSize;
-                        var x1 = Math.Min(x0 + ctbSize, width);
-                        var y1 = Math.Min(y0 + ctbSize, height);
-                        for (var i = 0; i < 4; i++) offsets[i] = p.Offset(c, i);
-                        if (type == 1)
-                        {
-                            // Band offset reads only the sample it writes: in place.
-                            if (anyNoFilter)
-                            {
-                                SaoBand(c, plane, width, x0, y0, x1, y1, p, bitDepth);
-                                continue;
-                            }
-                            for (var y = y0; y < y1; y++)
-                            {
-                                var row = plane.AsSpan(y * width + x0, x1 - x0);
-                                HevcSao.BandRow(row, row, x1 - x0, p.Band(c), bitDepth, offsets);
-                            }
-                        }
-                        else if (anyNoFilter || !SaoNeighboursUsable(rx, ry, ctbAddr, slice))
-                        {
-                            SaoEdge(c, strip, stripOffset, width, height, x0, y0, x1, y1, p, bitDepth, ctbAddr);
-                        }
-                        else
-                        {
-                            SaoEdgeFast(strip, stripOffset, plane, width, height, x0, y0, x1, y1, p.Class(c), bitDepth, offsets);
-                        }
-                    }
+                    var y0 = r * ctbSize;
+                    if (y0 > 0) plane.AsSpan((y0 - 1) * width, width).CopyTo(borders.AsSpan(2 * r * width));
+                    if (y0 + ctbSize < height) plane.AsSpan((y0 + ctbSize) * width, width).CopyTo(borders.AsSpan((2 * r + 1) * width));
                 }
+                var component = c;
+                ForEachCtbRow(r => SaoCtbRow(component, r, plane, width, height, ctbSize, bitDepth, borders, anyNoFilter));
             }
             finally
             {
-                System.Buffers.ArrayPool<ushort>.Shared.Return(strip);
-                System.Buffers.ArrayPool<ushort>.Shared.Return(above);
+                System.Buffers.ArrayPool<ushort>.Shared.Return(borders);
             }
+        }
+    }
+
+    /// <summary>SAO of component <paramref name="c"/> in CTB row <paramref name="ry"/> (see <see cref="ApplySao"/>).</summary>
+    private void SaoCtbRow(int c, int ry, ushort[] plane, int width, int height, int ctbSize, int bitDepth, ushort[] borders, bool anyNoFilter)
+    {
+        Span<int> offsets = stackalloc int[4];
+        var y0 = ry * ctbSize;
+        var y1 = Math.Min(y0 + ctbSize, height);
+        // strip row k holds plane row y0 − 1 + k: the saved row above, the CTB row's own rows, the saved row below.
+        var strip = System.Buffers.ArrayPool<ushort>.Shared.Rent((ctbSize + 2) * width);
+        try
+        {
+            if (y0 > 0) borders.AsSpan(2 * ry * width, width).CopyTo(strip);
+            plane.AsSpan(y0 * width, (y1 - y0) * width).CopyTo(strip.AsSpan(width));
+            if (y1 < height) borders.AsSpan((2 * ry + 1) * width, width).CopyTo(strip.AsSpan((y1 - y0 + 1) * width));
+            var stripOffset = -(y0 - 1) * width; // strip[stripOffset + y * width + x] = deblocked (x, y)
+
+            for (var rx = 0; rx < _sps.PicWidthInCtbs; rx++)
+            {
+                var ctbAddr = ry * _sps.PicWidthInCtbs + rx;
+                var slice = _ctbSlice[ctbAddr]!;
+                if (c == 0 ? !slice.SaoLuma : !slice.SaoChroma) continue;
+                var p = _sao[ctbAddr];
+                var type = p.Type(c);
+                if (type == 0) continue;
+                var x0 = rx * ctbSize;
+                var x1 = Math.Min(x0 + ctbSize, width);
+                for (var i = 0; i < 4; i++) offsets[i] = p.Offset(c, i);
+                if (type == 1)
+                {
+                    // Band offset reads only the sample it writes: in place.
+                    if (anyNoFilter)
+                    {
+                        SaoBand(c, plane, width, x0, y0, x1, y1, p, bitDepth);
+                        continue;
+                    }
+                    for (var y = y0; y < y1; y++)
+                    {
+                        var row = plane.AsSpan(y * width + x0, x1 - x0);
+                        HevcSao.BandRow(row, row, x1 - x0, p.Band(c), bitDepth, offsets);
+                    }
+                }
+                else if (anyNoFilter || !SaoNeighboursUsable(rx, ry, ctbAddr, slice))
+                {
+                    SaoEdge(c, strip, stripOffset, width, height, x0, y0, x1, y1, p, bitDepth, ctbAddr);
+                }
+                else
+                {
+                    SaoEdgeFast(strip, stripOffset, plane, width, height, x0, y0, x1, y1, p.Class(c), bitDepth, offsets);
+                }
+            }
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<ushort>.Shared.Return(strip);
         }
     }
 

@@ -135,7 +135,7 @@ public static class HeifDecoder
         var payloads = ResolvePayloads(data, container);
         var configs = container.TileConfigs;
         var pictures = new HevcPicture[payloads.Length];
-        ForEachTile(payloads.Length, i => pictures[i] = HevcImageDecoder.Decode(configs[i], payloads[i]));
+        ForEachTile(payloads.Length, i => pictures[i] = HevcImageDecoder.Decode(configs[i], payloads[i], parallel: payloads.Length == 1));
         return pictures;
     }
 
@@ -195,7 +195,9 @@ public static class HeifDecoder
             var columns = container.GridColumns;
             ForEachTile(payloads.Length, i =>
             {
-                var picture = HevcImageDecoder.Decode(configs[i], payloads[i], pooled: true);
+                // A single coded image is decoded alone, so its rows (WPP wavefront, filters, colour) go parallel instead.
+                var alone = payloads.Length == 1;
+                var picture = HevcImageDecoder.Decode(configs[i], payloads[i], pooled: true, parallel: alone);
                 try
                 {
                     if (picture.OutputWidth != tileW || picture.OutputHeight != tileH || picture.BitDepthY != sps.BitDepthY ||
@@ -205,7 +207,7 @@ public static class HeifDecoder
                     }
                     if (!HeifDiagnostics.Skips(HeifAblation.SkipColor))
                     {
-                        canvas.WriteTile(picture, i % columns * tileW, i / columns * tileH, tileW, tileH);
+                        canvas.WriteTile(picture, i % columns * tileW, i / columns * tileH, tileW, tileH, parallel: alone);
                     }
                 }
                 finally

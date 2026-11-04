@@ -28,6 +28,9 @@ internal sealed class HevcSliceHeader
     /// <summary>Byte offset of slice_segment_data() in the unescaped RBSP.</summary>
     internal int DataOffset;
 
+    /// <summary>entry_point_offset_minus1[ i ] + 1: the byte sizes, in the escaped NAL unit, of every substream but the last.</summary>
+    internal long[] EntryPointOffsets = [];
+
     /// <summary>
     /// Parses a slice segment header. <paramref name="previous"/> is the header of the preceding slice segment
     /// of the same picture, whose fields a dependent slice segment inherits.
@@ -147,13 +150,19 @@ internal sealed class HevcSliceHeader
 
         if (pps.TilesEnabled || pps.EntropyCodingSyncEnabled)
         {
-            // Entry points are not needed: substreams follow each other byte-aligned, and the CABAC engine
-            // tracks its exact bit position (see HevcCabac).
+            // The serial decoder does not need entry points (substreams follow each other byte-aligned and the CABAC
+            // engine tracks its bit position); the WPP wavefront starts each CTB row at one, and checks it.
             var count = r.ReadUe(picSizeInCtbs, "num_entry_point_offsets");
             if (count > 0)
             {
                 var offsetBits = r.ReadUe(31, "offset_len_minus1") + 1;
-                for (var i = 0; i < count; i++) r.Skip(offsetBits);
+                h.EntryPointOffsets = new long[count];
+                for (var i = 0; i < count; i++)
+                {
+                    long value = 0;
+                    for (var bit = 0; bit < offsetBits; bit++) value = (value << 1) | (uint)r.ReadBit();
+                    h.EntryPointOffsets[i] = value + 1;
+                }
             }
         }
         if (pps.SliceHeaderExtensionPresent)

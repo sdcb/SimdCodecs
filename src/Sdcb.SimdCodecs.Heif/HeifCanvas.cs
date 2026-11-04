@@ -149,12 +149,25 @@ internal sealed unsafe class HeifCanvas
     /// at canvas (<paramref name="canvasX"/>, <paramref name="canvasY"/>) and which covers <paramref name="tileW"/> ×
     /// <paramref name="tileH"/> canvas pixels, into the output.
     /// </summary>
-    internal void WriteTile(HevcPicture picture, int canvasX, int canvasY, int tileW, int tileH)
+    internal void WriteTile(HevcPicture picture, int canvasX, int canvasY, int tileW, int tileH, bool parallel = false)
+    {
+        var ys = Math.Max(canvasY, _regionY0);
+        var ye = Math.Min(canvasY + tileH, _regionY1);
+        const int Band = 64;
+        if (!parallel || ye - ys <= Band || Environment.ProcessorCount < 2)
+        {
+            WriteTileRows(picture, canvasX, canvasY, tileW, ys, ye);
+            return;
+        }
+        // Bands of rows write disjoint output pixels.
+        Parallel.For(0, (ye - ys + Band - 1) / Band, band =>
+            WriteTileRows(picture, canvasX, canvasY, tileW, ys + band * Band, Math.Min(ys + (band + 1) * Band, ye)));
+    }
+
+    private void WriteTileRows(HevcPicture picture, int canvasX, int canvasY, int tileW, int ys, int ye)
     {
         var xs = Math.Max(canvasX, _regionX0);
         var xe = Math.Min(canvasX + tileW, _regionX1);
-        var ys = Math.Max(canvasY, _regionY0);
-        var ye = Math.Min(canvasY + tileH, _regionY1);
         if (xs >= xe || ys >= ye) return;
         var n = xe - xs;
         var direct = _a == 1 && _d == 0; // a canvas row lands on one output row, left to right
