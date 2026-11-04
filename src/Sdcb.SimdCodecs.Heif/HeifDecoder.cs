@@ -179,7 +179,7 @@ public static class HeifDecoder
             var p = pictures[i];
             var x0 = i % container.GridColumns * tileW;
             var y0 = i / container.GridColumns * tileH;
-            if (x0 >= canvasW || y0 >= canvasH) continue;
+            if (x0 >= canvasW || y0 >= canvasH || HeifDiagnostics.Skips(HeifAblation.SkipColor)) continue;
             var w = Math.Min(tileW, canvasW - x0);
             var h = Math.Min(tileH, canvasH - y0);
             var lumaOffset = p.CropTop * p.Width + p.CropLeft;

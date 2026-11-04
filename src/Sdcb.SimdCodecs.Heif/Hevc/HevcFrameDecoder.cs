@@ -158,8 +158,8 @@ internal sealed partial class HevcFrameDecoder
             throw new InvalidDataException("The picture's slices do not cover every CTB.");
         }
 
-        Deblock();
-        ApplySao();
+        if (!HeifDiagnostics.Skips(HeifAblation.SkipDeblock)) Deblock();
+        if (!HeifDiagnostics.Skips(HeifAblation.SkipSao)) ApplySao();
         return _pic;
     }
 
@@ -674,6 +674,7 @@ internal sealed partial class HevcFrameDecoder
     /// <summary>Predicts the block of component <paramref name="cIdx"/> at (xTb, yTb) in that component's samples.</summary>
     private void PredictIntra(int cIdx, int xTb, int yTb, int log2Size, int mode, int xTbY, int yTbY)
     {
+        if (HeifDiagnostics.Skips(HeifAblation.SkipIntraPred)) return;
         var n = 1 << log2Size;
         var plane = _pic.Planes[cIdx];
         var stride = _pic.PlaneWidth(cIdx);
@@ -728,39 +729,35 @@ internal sealed partial class HevcFrameDecoder
     private void ResidualAndReconstruct(int cIdx, int xTb, int yTb, int log2Size, int predModeIntra)
     {
         var n = 1 << log2Size;
+        // _coeffs is all zero between blocks: each block clears the rectangle it wrote.
         var coeffs = _coeffs.AsSpan(0, n * n);
-        coeffs.Clear();
-        var transformSkip = ResidualCoding(cIdx, log2Size, predModeIntra, coeffs);
+        var packed = ResidualCoding(cIdx, log2Size, predModeIntra, coeffs);
+        var transformSkip = (packed & 1) != 0;
+        var maxX = (packed >> 8) & 0xFF;
+        var maxY = packed >> 16;
 
-        var bitDepth = cIdx == 0 ? _sps.BitDepthY : _sps.BitDepthC;
-        var residual = _residual.AsSpan(0, n * n);
-        if (_cuTransquantBypass)
+        if (!HeifDiagnostics.Skips(HeifAblation.SkipResidual))
         {
-            coeffs.CopyTo(residual);
-        }
-        else
-        {
-            var qp = ComponentQp(cIdx);
-            ReadOnlySpan<byte> factors = default;
-            var scalingList = _pps.ScalingList ?? _sps.ScalingList;
-            if (_sps.ScalingListEnabled && scalingList is not null && !(transformSkip && n > 4))
+            var bitDepth = cIdx == 0 ? _sps.BitDepthY : _sps.BitDepthC;
+            var stride = _pic.PlaneWidth(cIdx);
+            var dst = _pic.Planes[cIdx].AsSpan(yTb * stride + xTb);
+            if (_cuTransquantBypass)
             {
-                factors = scalingList.Factors[log2Size - 2][cIdx];
+                HevcTransform.AddResidual(coeffs, log2Size, bitDepth, dst, stride);
             }
-            HevcTransform.Dequantize(coeffs, log2Size, qp, bitDepth, factors);
-            if (transformSkip) HevcTransform.TransformSkip(coeffs, log2Size, bitDepth, residual);
-            else HevcTransform.Inverse(coeffs, log2Size, cIdx == 0 && n == 4, bitDepth, residual);
+            else if (transformSkip)
+            {
+                HevcTransform.TransformSkip(coeffs, log2Size, bitDepth);
+                HevcTransform.AddResidual(coeffs, log2Size, bitDepth, dst, stride);
+            }
+            else
+            {
+                HevcTransform.InverseAdd(coeffs, _residual, log2Size, cIdx == 0 && n == 4, maxX, maxY, bitDepth, dst, stride);
+            }
         }
 
-        var plane = _pic.Planes[cIdx];
-        var stride = _pic.PlaneWidth(cIdx);
-        var max = (1 << bitDepth) - 1;
-        for (var y = 0; y < n; y++)
-        {
-            var row = plane.AsSpan((yTb + y) * stride + xTb, n);
-            var res = residual.Slice(y * n, n);
-            for (var x = 0; x < n; x++) row[x] = (ushort)Math.Clamp(row[x] + res[x], 0, max);
-        }
+        // Transform skip maps zero to zero, so only the rectangle of coded coefficients is non-zero.
+        for (var y = 0; y <= maxY; y++) coeffs.Slice(y * n, maxX + 1).Clear();
     }
 
     /// <summary>qP of (8-291 .. 8-293) for the current CU.</summary>
@@ -783,8 +780,12 @@ internal sealed partial class HevcFrameDecoder
 
     private static ReadOnlySpan<byte> CtxIdxMap => [0, 1, 4, 5, 2, 3, 4, 5, 6, 6, 8, 8, 7, 7, 8, 8];
 
-    /// <summary>Parses residual_coding() into <paramref name="coeffs"/> (row-major N×N); returns transform_skip_flag.</summary>
-    private bool ResidualCoding(int cIdx, int log2Size, int predModeIntra, Span<int> coeffs)
+    /// <summary>
+    /// Parses residual_coding() into <paramref name="coeffs"/> (row-major N×N), scaled per (8-309) unless the CU
+    /// is transquant-bypassed. Returns transform_skip_flag in bit 0 and the largest x and y of a non-zero
+    /// coefficient in bits 8..15 and 16..23.
+    /// </summary>
+    private int ResidualCoding(int cIdx, int log2Size, int predModeIntra, Span<int> coeffs)
     {
         var n = 1 << log2Size;
         var cabac = _cabac;
@@ -793,6 +794,23 @@ internal sealed partial class HevcFrameDecoder
         {
             transformSkip = cabac.DecodeBin(HevcCabacTables.TransformSkip + (cIdx > 0 ? 1 : 0)) == 1;
         }
+
+        // Scaling (8.6.3), applied as each coefficient is decoded.
+        var bypass = _cuTransquantBypass;
+        HevcTransform.Scaler scaler = default;
+        ReadOnlySpan<byte> factors = default;
+        if (!bypass)
+        {
+            var bitDepth = cIdx == 0 ? _sps.BitDepthY : _sps.BitDepthC;
+            scaler = new HevcTransform.Scaler(log2Size, ComponentQp(cIdx), bitDepth);
+            var scalingList = _pps.ScalingList ?? _sps.ScalingList;
+            if (_sps.ScalingListEnabled && scalingList is not null && !(transformSkip && n > 4))
+            {
+                factors = scalingList.Factors[log2Size - 2][cIdx];
+            }
+        }
+        var maxX = 0;
+        var maxY = 0;
 
         // last_sig_coeff_{x,y}_prefix (9.3.4.2.3), then the suffixes.
         int ctxOffset, ctxShift;
@@ -1003,10 +1021,13 @@ internal sealed partial class HevcFrameDecoder
                     value = (signs & 0x8000_0000u) != 0 ? -level : level;
                     signs <<= 1;
                 }
-                coeffs[yC * n + xC] = value;
+                var index = yC * n + xC;
+                coeffs[index] = bypass ? value : scaler.Scale(value, factors.IsEmpty ? 16 : factors[index]);
+                maxX = Math.Max(maxX, xC);
+                maxY = Math.Max(maxY, yC);
             }
         }
-        return transformSkip;
+        return (transformSkip ? 1 : 0) | (maxX << 8) | (maxY << 16);
     }
 
     /// <summary>coeff_abs_level_remaining with Rice parameter k (9.3.3.11): TR prefix (cMax 4 &lt;&lt; k), then EG(k + 1).</summary>

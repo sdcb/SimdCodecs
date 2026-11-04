@@ -1,8 +1,29 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+
 namespace Sdcb.SimdCodecs.Heif.Hevc;
 
 /// <summary>
-/// Scaling (§8.6.3) and inverse transformation (§8.6.2, §8.6.4) of one transform block.
+/// Scaling (§8.6.3) and inverse transformation (§8.6.2, §8.6.4) of one transform block, and the addition of the
+/// residual to the prediction (§8.6.7).
 /// </summary>
+/// <remarks>
+/// <para>
+/// The inverse transform is the two matrix products of (8-314) and (8-316): a vertical pass
+/// e[x][y] = Σj transMatrix[j][y] · d[x][j], clipped to 16 bits after (e + 64) &gt;&gt; 7, then a horizontal
+/// pass with the final (r + 2^(bdShift − 1)) &gt;&gt; bdShift of (8-299). Every sum is exact in 32-bit integers
+/// (|d| ≤ 2^15, |transMatrix| ≤ 90, at most 32 terms), so the order of the additions cannot change a result
+/// and every tier computes the same residuals.
+/// </para>
+/// <para>
+/// Two exact shortcuts keep the work proportional to the coded coefficients: the products only run over the
+/// rows and columns up to the last non-zero coefficient of the block (<c>maxX</c>, <c>maxY</c>; the rest of
+/// each sum is zero), and the vertical pass uses the symmetry of the DCT basis,
+/// transMatrix[j][N − 1 − y] = (−1)^j · transMatrix[j][y]: the even-j and odd-j partial sums E and O give
+/// output y as E + O and output N − 1 − y as E − O.
+/// </para>
+/// </remarks>
 internal static class HevcTransform
 {
     private static readonly int[] LevelScale = [40, 45, 51, 57, 64, 72];
@@ -22,6 +43,11 @@ internal static class HevcTransform
         84, -29, -74, 55,
         55, -84, 74, -29,
     ];
+
+    /// <summary>The N-point DCT matrices for N = 4, 8, 16, 32 as <c>int</c>: <c>[log2N - 2][k * N + n]</c>.</summary>
+    private static readonly int[][] DctN = [BuildDctN(2), BuildDctN(3), BuildDctN(4), BuildDctN(5)];
+
+    private static readonly int[] DstN = Array.ConvertAll(Dst, v => (int)v);
 
     private static sbyte[] BuildDct()
     {
@@ -44,77 +70,260 @@ internal static class HevcTransform
         return result;
     }
 
-    /// <summary>
-    /// Scales the quantized levels in <paramref name="coeffs"/> (row-major N×N, index y * N + x) in place, per (8-309).
-    /// <paramref name="scalingFactors"/> is the m[x][y] array of the block (row-major) or empty for the flat m = 16.
-    /// </summary>
-    internal static void Dequantize(Span<int> coeffs, int log2Size, int qp, int bitDepth, ReadOnlySpan<byte> scalingFactors)
+    /// <summary>transMatrix for an N-point transform: rows 0, 32/N, 2·32/N, … of the 32-point one (8-319 .. 8-321).</summary>
+    private static int[] BuildDctN(int log2Size)
     {
-        var bdShift = bitDepth + log2Size - 5;
-        var scale = (long)LevelScale[qp % 6] << (qp / 6);
-        var round = 1L << (bdShift - 1);
-        var count = 1 << (2 * log2Size);
-        for (var i = 0; i < count; i++)
+        var n = 1 << log2Size;
+        var step = 32 >> log2Size;
+        var result = new int[n * n];
+        for (var k = 0; k < n; k++)
         {
-            var level = coeffs[i];
-            if (level == 0) continue;
-            var m = scalingFactors.IsEmpty ? 16 : scalingFactors[i];
-            var value = (level * m * scale + round) >> bdShift;
-            coeffs[i] = (int)Math.Clamp(value, short.MinValue, short.MaxValue);
+            for (var x = 0; x < n; x++) result[k * n + x] = Dct[k * step * 32 + x];
         }
+        return result;
+    }
+
+    /// <summary>The scaling of (8-309) for one block: TransCoeffLevel → d.</summary>
+    internal readonly struct Scaler
+    {
+        private readonly long _scale;
+        private readonly long _round;
+        private readonly int _bdShift;
+
+        internal Scaler(int log2Size, int qp, int bitDepth)
+        {
+            _bdShift = bitDepth + log2Size - 5;
+            _scale = (long)LevelScale[qp % 6] << (qp / 6);
+            _round = 1L << (_bdShift - 1);
+        }
+
+        /// <summary>d = Clip3(−32768, 32767, (level · m · levelScale[qP % 6] &lt;&lt; (qP / 6) + round) &gt;&gt; bdShift).</summary>
+        internal int Scale(int level, int m) =>
+            (int)Math.Clamp((level * m * _scale + _round) >> _bdShift, short.MinValue, short.MaxValue);
     }
 
     /// <summary>
-    /// Inverse transform of the scaled coefficients <paramref name="d"/> into residuals (8-299, 8-314):
-    /// columns first, a clip to 16 bits after the first stage, then rows, then the final bdShift rounding.
-    /// <paramref name="residual"/> must not overlap <paramref name="d"/>.
+    /// Inverse-transforms the scaled coefficients <paramref name="coeffs"/> (row-major N×N, zero beyond column
+    /// <paramref name="maxX"/> and row <paramref name="maxY"/>) and adds the residual to the prediction in
+    /// <paramref name="dst"/> (row stride <paramref name="stride"/>), clipping to the sample range.
+    /// <paramref name="scratch"/> holds the intermediate N×N block.
     /// </summary>
-    internal static void Inverse(ReadOnlySpan<int> d, int log2Size, bool dst4, int bitDepth, Span<int> residual)
+    internal static void InverseAdd(ReadOnlySpan<int> coeffs, Span<int> scratch, int log2Size, bool dst4, int maxX, int maxY,
+        int bitDepth, Span<ushort> dst, int stride)
+    {
+        if (Vector256.IsHardwareAccelerated && log2Size >= 3)
+            InverseAddVector256(coeffs, scratch, log2Size, maxX, maxY, bitDepth, dst, stride);
+        else if (Vector128.IsHardwareAccelerated)
+            InverseAddVector128(coeffs, scratch, log2Size, dst4, maxX, maxY, bitDepth, dst, stride);
+        else
+            InverseAddScalar(coeffs, scratch, log2Size, dst4, maxX, maxY, bitDepth, dst, stride);
+    }
+
+    /// <summary>Checks every index the kernels touch: the proof for their unchecked accesses.</summary>
+    private static void CheckBlock(ReadOnlySpan<int> coeffs, Span<int> scratch, int n, int maxX, int maxY, Span<ushort> dst, int stride)
+    {
+        if (coeffs.Length < n * n || scratch.Length < n * n || (uint)maxX >= (uint)n || (uint)maxY >= (uint)n ||
+            stride < n || dst.Length < (n - 1) * stride + n)
+        {
+            throw new ArgumentException("The transform block does not fit its buffers.");
+        }
+    }
+
+    /// <summary>The scalar definition: the same passes and shortcuts as the vector tiers, one sample at a time.</summary>
+    internal static void InverseAddScalar(ReadOnlySpan<int> coeffs, Span<int> scratch, int log2Size, bool dst4, int maxX, int maxY,
+        int bitDepth, Span<ushort> dst, int stride)
     {
         var n = 1 << log2Size;
-        Span<int> g = stackalloc int[n * n];
-        ReadOnlySpan<sbyte> matrix = dst4 ? Dst : Dct;
-        var matrixStride = dst4 ? 4 : 32;
-        var step = dst4 ? 1 : 32 >> log2Size;
+        CheckBlock(coeffs, scratch, n, maxX, maxY, dst, stride);
+        ReadOnlySpan<int> m = dst4 ? DstN : DctN[log2Size - 2];
+        var g = scratch;
 
-        // Stage 1 (vertical): e[x][y] = Σj M[j][y] · d[x][j]; g = Clip3(-32768, 32767, (e + 64) >> 7).
-        for (var x = 0; x < n; x++)
+        // Vertical pass over the columns 0..maxX.
+        if (dst4)
         {
-            // Highest non-zero row in this column, so zero tails cost nothing.
-            var last = n - 1;
-            while (last >= 0 && d[last * n + x] == 0) last--;
             for (var y = 0; y < n; y++)
             {
-                var sum = 0;
-                for (var j = 0; j <= last; j++) sum += matrix[j * step * matrixStride + y] * d[j * n + x];
-                g[y * n + x] = Math.Clamp((sum + 64) >> 7, short.MinValue, short.MaxValue);
+                for (var x = 0; x <= maxX; x++)
+                {
+                    var sum = 0;
+                    for (var j = 0; j <= maxY; j++) sum += m[j * n + y] * coeffs[j * n + x];
+                    g[y * n + x] = Math.Clamp((sum + 64) >> 7, short.MinValue, short.MaxValue);
+                }
+            }
+        }
+        else
+        {
+            var lastRow = maxY | 1; // the row after an even maxY is zero, so the odd sums may include it
+            for (var y = 0; y < n / 2; y++)
+            {
+                for (var x = 0; x <= maxX; x++)
+                {
+                    int even = 0, odd = 0;
+                    for (var j = 0; j <= lastRow; j += 2)
+                    {
+                        even += m[j * n + y] * coeffs[j * n + x];
+                        odd += m[(j + 1) * n + y] * coeffs[(j + 1) * n + x];
+                    }
+                    g[y * n + x] = Math.Clamp((even + odd + 64) >> 7, short.MinValue, short.MaxValue);
+                    g[(n - 1 - y) * n + x] = Math.Clamp((even - odd + 64) >> 7, short.MinValue, short.MaxValue);
+                }
             }
         }
 
-        // Stage 2 (horizontal) and the final shift (8-299) with bdShift = 20 - bitDepth.
+        // Horizontal pass over the terms 0..maxX, the final shift (8-299) and the reconstruction (8-325).
         var bdShift = 20 - bitDepth;
         var round = 1 << (bdShift - 1);
+        var max = (1 << bitDepth) - 1;
         for (var y = 0; y < n; y++)
         {
-            var row = g.Slice(y * n, n);
-            var last = n - 1;
-            while (last >= 0 && row[last] == 0) last--;
+            var row = dst.Slice(y * stride, n);
             for (var x = 0; x < n; x++)
             {
                 var sum = 0;
-                for (var j = 0; j <= last; j++) sum += matrix[j * step * matrixStride + x] * row[j];
-                residual[y * n + x] = (sum + round) >> bdShift;
+                for (var j = 0; j <= maxX; j++) sum += g[y * n + j] * m[j * n + x];
+                row[x] = (ushort)Math.Clamp(row[x] + ((sum + round) >> bdShift), 0, max);
             }
         }
     }
 
-    /// <summary>Transform skip (8-298, 8-299): r = (d &lt;&lt; tsShift + round) &gt;&gt; bdShift.</summary>
-    internal static void TransformSkip(ReadOnlySpan<int> d, int log2Size, int bitDepth, Span<int> residual)
+    /// <summary>The Vector128 tier: four columns per vector.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    internal static void InverseAddVector128(ReadOnlySpan<int> coeffs, Span<int> scratch, int log2Size, bool dst4, int maxX, int maxY,
+        int bitDepth, Span<ushort> dst, int stride)
+    {
+        var n = 1 << log2Size;
+        CheckBlock(coeffs, scratch, n, maxX, maxY, dst, stride);
+        // Every access below is at j * n + c * 4 + (0..3) with j < n and c * 4 + 4 <= n (n is a multiple of 4), or at
+        // y * stride + c * 4 + (0..3) with y < n: in range by CheckBlock and the n × n matrices.
+        ref var d = ref MemoryMarshal.GetReference(coeffs);
+        ref var g = ref MemoryMarshal.GetReference(scratch);
+        ref var m = ref MemoryMarshal.GetArrayDataReference(dst4 ? DstN : DctN[log2Size - 2]);
+        var chunks = (maxX >> 2) + 1;
+        var lo16 = Vector128.Create((int)short.MinValue);
+        var hi16 = Vector128.Create((int)short.MaxValue);
+        var r64 = Vector128.Create(64);
+
+        if (dst4)
+        {
+            for (var y = 0; y < 4; y++)
+            {
+                var sum = Vector128<int>.Zero;
+                for (var j = 0; j <= maxY; j++) sum += Vector128.Create(Unsafe.Add(ref m, j * 4 + y)) * Vector128.LoadUnsafe(ref d, (nuint)(j * 4));
+                Vector128.Min(Vector128.Max((sum + r64) >> 7, lo16), hi16).StoreUnsafe(ref g, (nuint)(y * 4));
+            }
+        }
+        else
+        {
+            var lastRow = maxY | 1;
+            for (var y = 0; y < n / 2; y++)
+            {
+                for (var c = 0; c < chunks; c++)
+                {
+                    var even = Vector128<int>.Zero;
+                    var odd = Vector128<int>.Zero;
+                    for (var j = 0; j <= lastRow; j += 2)
+                    {
+                        even += Vector128.Create(Unsafe.Add(ref m, j * n + y)) * Vector128.LoadUnsafe(ref d, (nuint)(j * n + c * 4));
+                        odd += Vector128.Create(Unsafe.Add(ref m, (j + 1) * n + y)) * Vector128.LoadUnsafe(ref d, (nuint)((j + 1) * n + c * 4));
+                    }
+                    Vector128.Min(Vector128.Max((even + odd + r64) >> 7, lo16), hi16).StoreUnsafe(ref g, (nuint)(y * n + c * 4));
+                    Vector128.Min(Vector128.Max((even - odd + r64) >> 7, lo16), hi16).StoreUnsafe(ref g, (nuint)((n - 1 - y) * n + c * 4));
+                }
+            }
+        }
+
+        var bdShift = 20 - bitDepth;
+        var round = Vector128.Create(1 << (bdShift - 1));
+        var max = Vector128.Create((1 << bitDepth) - 1);
+        ref var p = ref MemoryMarshal.GetReference(dst);
+        for (var y = 0; y < n; y++)
+        {
+            for (var c = 0; c < n >> 2; c++)
+            {
+                var sum = Vector128<int>.Zero;
+                for (var j = 0; j <= maxX; j++) sum += Vector128.Create(Unsafe.Add(ref g, y * n + j)) * Vector128.LoadUnsafe(ref m, (nuint)(j * n + c * 4));
+                ref var target = ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref p, y * stride + c * 4));
+                var pred = Vector128.WidenLower(Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref target)).AsUInt16()).AsInt32();
+                var value = Vector128.Min(Vector128.Max(pred + ((sum + round) >> bdShift), Vector128<int>.Zero), max).AsUInt32();
+                Unsafe.WriteUnaligned(ref target, Vector128.Narrow(value, value).AsUInt64().ToScalar());
+            }
+        }
+    }
+
+    /// <summary>The Vector256 tier (N ≥ 8): eight columns per vector.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    internal static void InverseAddVector256(ReadOnlySpan<int> coeffs, Span<int> scratch, int log2Size, int maxX, int maxY,
+        int bitDepth, Span<ushort> dst, int stride)
+    {
+        var n = 1 << log2Size;
+        if (n < 8) throw new ArgumentOutOfRangeException(nameof(log2Size));
+        CheckBlock(coeffs, scratch, n, maxX, maxY, dst, stride);
+        // Every access below is at j * n + c * 8 + (0..7) with j < n and c * 8 + 8 <= n (n is a multiple of 8), or at
+        // y * stride + c * 8 + (0..7) with y < n: in range by CheckBlock and the n × n matrices.
+        ref var d = ref MemoryMarshal.GetReference(coeffs);
+        ref var g = ref MemoryMarshal.GetReference(scratch);
+        ref var m = ref MemoryMarshal.GetArrayDataReference(DctN[log2Size - 2]);
+        var chunks = (maxX >> 3) + 1;
+        var lo16 = Vector256.Create((int)short.MinValue);
+        var hi16 = Vector256.Create((int)short.MaxValue);
+        var r64 = Vector256.Create(64);
+
+        var lastRow = maxY | 1;
+        for (var y = 0; y < n / 2; y++)
+        {
+            for (var c = 0; c < chunks; c++)
+            {
+                var even = Vector256<int>.Zero;
+                var odd = Vector256<int>.Zero;
+                for (var j = 0; j <= lastRow; j += 2)
+                {
+                    even += Vector256.Create(Unsafe.Add(ref m, j * n + y)) * Vector256.LoadUnsafe(ref d, (nuint)(j * n + c * 8));
+                    odd += Vector256.Create(Unsafe.Add(ref m, (j + 1) * n + y)) * Vector256.LoadUnsafe(ref d, (nuint)((j + 1) * n + c * 8));
+                }
+                Vector256.Min(Vector256.Max((even + odd + r64) >> 7, lo16), hi16).StoreUnsafe(ref g, (nuint)(y * n + c * 8));
+                Vector256.Min(Vector256.Max((even - odd + r64) >> 7, lo16), hi16).StoreUnsafe(ref g, (nuint)((n - 1 - y) * n + c * 8));
+            }
+        }
+
+        var bdShift = 20 - bitDepth;
+        var round = Vector256.Create(1 << (bdShift - 1));
+        var max = Vector256.Create((1 << bitDepth) - 1);
+        ref var p = ref MemoryMarshal.GetReference(dst);
+        for (var y = 0; y < n; y++)
+        {
+            for (var c = 0; c < n >> 3; c++)
+            {
+                var sum = Vector256<int>.Zero;
+                for (var j = 0; j <= maxX; j++) sum += Vector256.Create(Unsafe.Add(ref g, y * n + j)) * Vector256.LoadUnsafe(ref m, (nuint)(j * n + c * 8));
+                ref var target = ref Unsafe.Add(ref p, y * stride + c * 8);
+                var (predLo, predHi) = Vector128.Widen(Vector128.LoadUnsafe(ref target));
+                var pred = Vector256.Create(predLo, predHi).AsInt32();
+                var value = Vector256.Min(Vector256.Max(pred + ((sum + round) >> bdShift), Vector256<int>.Zero), max).AsUInt32();
+                Vector128.Narrow(value.GetLower(), value.GetUpper()).StoreUnsafe(ref target);
+            }
+        }
+    }
+
+    /// <summary>Transform skip (8-298, 8-299): r = (d &lt;&lt; tsShift + round) &gt;&gt; bdShift, in place.</summary>
+    internal static void TransformSkip(Span<int> d, int log2Size, int bitDepth)
     {
         var tsShift = 5 + log2Size;
         var bdShift = 20 - bitDepth;
         var round = 1 << (bdShift - 1);
         var count = 1 << (2 * log2Size);
-        for (var i = 0; i < count; i++) residual[i] = ((d[i] << tsShift) + round) >> bdShift;
+        for (var i = 0; i < count; i++) d[i] = ((d[i] << tsShift) + round) >> bdShift;
+    }
+
+    /// <summary>The reconstruction of (8-325) for a residual that is already in sample units (transform skip, bypass).</summary>
+    internal static void AddResidual(ReadOnlySpan<int> residual, int log2Size, int bitDepth, Span<ushort> dst, int stride)
+    {
+        var n = 1 << log2Size;
+        var max = (1 << bitDepth) - 1;
+        for (var y = 0; y < n; y++)
+        {
+            var row = dst.Slice(y * stride, n);
+            var res = residual.Slice(y * n, n);
+            for (var x = 0; x < n; x++) row[x] = (ushort)Math.Clamp(row[x] + res[x], 0, max);
+        }
     }
 }

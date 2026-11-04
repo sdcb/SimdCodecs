@@ -10,6 +10,8 @@ const string Usage = """
                                    multi-core decode speed and allocation, ours vs libheif vs Magick
       single [--reps N] [--fixtures RE]
                                    one logical CPU for the whole process, tile parallelism off on every side
+      ablate [--reps N] [--fixtures RE]
+                                   single-core time with one decode stage switched off at a time
       peakmem [--reps N] [--fixtures RE]
                                    peak working set per decode, one fresh process each (ours, libheif, magick)
       [--filter ...] [BDN args]    BenchmarkDotNet (HeifDecodeBenchmarks)
@@ -45,6 +47,9 @@ switch (command)
         return 0;
     case "multi":
         Console.WriteLine(MultiCore.Run(Select(defaultAll: true), Reps()));
+        return 0;
+    case "ablate":
+        Console.WriteLine(Ablation.Run(Select(defaultAll: true), Reps()));
         return 0;
     case "peakmem":
         Console.WriteLine(PeakMemory.Run(Select(defaultAll: true), Reps()));
