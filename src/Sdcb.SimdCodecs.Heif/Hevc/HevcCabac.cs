@@ -23,52 +23,58 @@ internal sealed class HevcCabac
     private const int NumContexts = HevcCabacTables.Count;
 
     private readonly byte[] _input;
-    private long _bit;
     private readonly byte[] _ctx = new byte[NumContexts];
     private uint _range;
-    private uint _offset;
+
+    // The 9-bit ivlOffset of the spec followed by _bits bits of look-ahead: _value = ivlOffset · 2^_bits + the
+    // next _bits bits of the stream. Comparing ivlOffset with ivlCurrRange is comparing _value with
+    // ivlCurrRange · 2^_bits, subtracting from it is subtracting that, and read_bits( 1 ) in renormalisation is
+    // _bits − 1, so the engine computes exactly the spec's ivlOffset while touching memory once per few bytes.
+    private ulong _value;
+    private int _bits;
+    private int _next; // index of the next byte of _input to load; bytes past the end read as 0
 
     /// <summary>Initialises the engine over the slice's unescaped RBSP starting at <paramref name="byteOffset"/>.</summary>
     internal HevcCabac(byte[] rbsp, int byteOffset)
     {
         _input = rbsp;
-        _bit = (long)byteOffset * 8;
-        InitEngine();
+        InitEngine(byteOffset);
     }
 
-    /// <summary>Current bit position of the slice data.</summary>
-    internal long BitPosition => _bit;
+    /// <summary>Current bit position of the slice data: the bits the spec's engine has read.</summary>
+    internal long BitPosition => (long)_next * 8 - _bits;
 
     /// <summary>Restarts the arithmetic engine at <paramref name="byteOffset"/> (clause 9.3.2.6).</summary>
     internal void InitEngine(int byteOffset)
     {
-        _bit = (long)byteOffset * 8;
-        InitEngine();
-    }
-
-    private void InitEngine()
-    {
         // 9.3.2.6: ivlCurrRange = 510, ivlOffset = read_bits( 9 ).
         _range = 510;
-        _offset = ReadBits(9);
+        _next = Math.Max(byteOffset, 0);
+        _value = 0;
+        _bits = -9;
+        Refill();
     }
 
-    /// <summary>Reads <paramref name="count"/> raw bits from the bitstream (bit 0 is the MSB of the first byte).</summary>
-    private uint ReadBits(int count)
+    /// <summary>Loads whole bytes until 47..54 look-ahead bits are buffered (ivlOffset's 9 bits on top fit in 64).</summary>
+    private void Refill()
     {
-        uint value = 0;
-        for (var i = 0; i < count; i++)
+        var count = (54 - _bits) >> 3;
+        var next = _next;
+        if (next <= _input.Length - 8)
         {
-            if (_bit >= (long)_input.Length * 8)
-            {
-                // The stream may legally end just before the last alignment bits; past the end reads as 0.
-                value <<= 1;
-                continue;
-            }
-            value = (value << 1) | (uint)((_input[(int)(_bit >> 3)] >> (7 - (int)(_bit & 7))) & 1);
-            _bit++;
+            var word = System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(_input.AsSpan(next, 8));
+            _value = (_value << (count * 8)) | (word >> (64 - count * 8));
         }
-        return value;
+        else
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var at = next + i;
+                _value = (_value << 8) | ((uint)at < (uint)_input.Length ? _input[at] : 0u);
+            }
+        }
+        _next = next + count;
+        _bits += count * 8;
     }
 
     /// <summary>
@@ -94,42 +100,42 @@ internal sealed class HevcCabac
     /// <summary>DecodeDecision (clause 9.3.4.3.2): one regular bin against context <paramref name="ctxIdx"/>.</summary>
     internal uint DecodeBin(int ctxIdx)
     {
+        if (_bits < 8) Refill(); // a decision reads at most 7 bits
         var state = _ctx[ctxIdx];
-        var stateIdx = state >> 1;
-        var mps = (uint)(state & 1);
-        uint lpsRange = HevcCabacTables.RangeTabLps[(stateIdx << 2) | (int)((_range >> 6) & 3)];
-        _range -= lpsRange;
-
-        uint bin;
-        if (_offset >= _range)
+        uint lpsRange = HevcCabacTables.RangeTabLps[((state >> 1) << 2) | (int)((_range >> 6) & 3)];
+        var range = _range - lpsRange;
+        var scaled = (ulong)range << _bits;
+        if (_value < scaled)
         {
-            _offset -= _range;
-            _range = lpsRange;
-            bin = 1 - mps;
-            // LPS transition: at state 0 the MPS flips, otherwise pStateIdx moves along transIdxLps.
-            uint newState = (uint)HevcCabacTables.TransIdxLps[stateIdx];
-            if (stateIdx == 0) mps ^= 1;
-            _ctx[ctxIdx] = (byte)((newState << 1) | mps);
-        }
-        else
-        {
-            bin = mps;
-            // transIdxMps (Table 9-53): +1 up to 62; 62 and 63 stay.
-            var newState = (uint)(stateIdx >= 62 ? stateIdx : stateIdx + 1);
-            _ctx[ctxIdx] = (byte)((newState << 1) | mps);
+            // MPS: ivlCurrRange stays ≥ 128, so renormalisation reads at most one bit.
+            _ctx[ctxIdx] = HevcCabacTables.TransMps[state];
+            if (range < 256)
+            {
+                range <<= 1;
+                _bits--;
+            }
+            _range = range;
+            return (uint)(state & 1);
         }
 
-        Renormalize();
-        return bin;
+        _value -= scaled;
+        // LPS: ivlCurrRange = rangeLps (≥ 6), renormalised to ≥ 256 in one step.
+        var shift = System.Numerics.BitOperations.LeadingZeroCount(lpsRange) - 23;
+        _range = lpsRange << shift;
+        _bits -= shift;
+        _ctx[ctxIdx] = HevcCabacTables.TransLps[state];
+        return (uint)(state & 1) ^ 1;
     }
 
     /// <summary>DecodeBypass (clause 9.3.4.3.4).</summary>
     internal uint DecodeBypass()
     {
-        _offset = (_offset << 1) | ReadBits(1);
-        if (_offset >= _range)
+        if (_bits < 1) Refill();
+        _bits--;
+        var scaled = (ulong)_range << _bits;
+        if (_value >= scaled)
         {
-            _offset -= _range;
+            _value -= scaled;
             return 1;
         }
         return 0;
@@ -138,19 +144,15 @@ internal sealed class HevcCabac
     /// <summary>DecodeTerminate (clause 9.3.4.3.5): used for end_of_slice_segment_flag and end_of_subset_one_bit.</summary>
     internal uint DecodeTerminate()
     {
+        if (_bits < 8) Refill();
         _range -= 2;
-        if (_offset >= _range) return 1; // decoding terminates; no renormalisation
-        Renormalize();
-        return 0;
-    }
-
-    private void Renormalize()
-    {
-        while (_range < 256)
+        if (_value >= (ulong)_range << _bits) return 1; // decoding terminates; no renormalisation
+        if (_range < 256)
         {
             _range <<= 1;
-            _offset = (_offset << 1) | ReadBits(1);
+            _bits--;
         }
+        return 0;
     }
 
     /// <summary>The binarization of §9.3.3 and its mapping onto bypass / terminate / context bins (§9.3.4.1).</summary>
@@ -258,6 +260,38 @@ internal static class HevcCabacTables
         24, 25, 26, 26, 27, 27, 28, 29, 29, 30, 30, 30, 31, 32, 32, 33,
         33, 33, 34, 34, 35, 35, 35, 36, 36, 36, 37, 37, 37, 38, 38, 63,
     ];
+
+    /// <summary>
+    /// The state transitions of clause 9.3.4.3.2.2 on the packed context byte <c>pStateIdx &lt;&lt; 1 | valMps</c>:
+    /// after an MPS, pStateIdx follows transIdxMps (+1 up to 62); after an LPS it follows transIdxLps, and valMps
+    /// flips at pStateIdx 0.
+    /// </summary>
+    internal static readonly byte[] TransMps = BuildTransitions(mps: true);
+
+    /// <inheritdoc cref="TransMps"/>
+    internal static readonly byte[] TransLps = BuildTransitions(mps: false);
+
+    private static byte[] BuildTransitions(bool mps)
+    {
+        var table = new byte[128];
+        for (var state = 0; state < 128; state++)
+        {
+            var stateIdx = state >> 1;
+            var valMps = state & 1;
+            int next;
+            if (mps)
+            {
+                next = stateIdx >= 62 ? stateIdx : stateIdx + 1;
+            }
+            else
+            {
+                next = TransIdxLps[stateIdx];
+                if (stateIdx == 0) valMps ^= 1;
+            }
+            table[state] = (byte)((next << 1) | valMps);
+        }
+        return table;
+    }
 
     // Context layout for I slices (initType 0). Each syntax element's ctxIdx 0.. of its Table 9-x maps to
     // Offset + ctxInc; the values are the initType-0 columns of Tables 9-5 .. 9-31, selected by Table 9-4.
