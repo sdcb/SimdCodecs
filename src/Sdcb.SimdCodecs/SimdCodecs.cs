@@ -71,7 +71,7 @@ namespace Sdcb.SimdCodecs;
 /// are unaffected.
 /// </para>
 /// </summary>
-public static class SimdCodecs
+public static partial class SimdCodecs
 {
     // Explicit registry: IImageDecoder's static-abstract members are not enumerable
     // and reflection-scanning for implementors is not AOT-safe, so each codec is
