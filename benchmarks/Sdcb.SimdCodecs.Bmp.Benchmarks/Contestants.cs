@@ -51,21 +51,21 @@ internal sealed class DecodeSetup
         var icon = c.Icon;
         var best = icon ? IcoDecoder.ReadInfo(data).Best : 0;
 
-        bool Current(byte[] into, ImagePixelFormat format) => icon
+        bool Current(byte[] into, PixelFormat format) => icon
             ? IcoImageDecoder.TryDecodeInto(data, into, 0, format)
             : BmpImageDecoder.TryDecodeInto(data, into, 0, format);
 
         if (only is null)
         {
-            if (!Current(rgba, ImagePixelFormat.Rgba32)) throw new InvalidOperationException($"{c.Name}: current does not decode it");
-            Current(bgra, ImagePixelFormat.Bgra32);
+            if (!Current(rgba, PixelFormat.Rgba32)) throw new InvalidOperationException($"{c.Name}: current does not decode it");
+            Current(bgra, PixelFormat.Bgra32);
             if (c.Lossless && !rgba.AsSpan().SequenceEqual(c.Source()))
                 throw new InvalidOperationException($"{c.Name}: current does not give the source back; refusing to benchmark.");
         }
 
         var agreed = c.Lossless;
-        if (Want(Names.Current)) setup.Contestants.Add(new(Names.Current, () => Current(rgba, ImagePixelFormat.Rgba32)));
-        if (Want(Names.CurrentBgra)) setup.Contestants.Add(new(Names.CurrentBgra, () => Current(bgra, ImagePixelFormat.Bgra32)));
+        if (Want(Names.Current)) setup.Contestants.Add(new(Names.Current, () => Current(rgba, PixelFormat.Rgba32)));
+        if (Want(Names.CurrentBgra)) setup.Contestants.Add(new(Names.CurrentBgra, () => Current(bgra, PixelFormat.Bgra32)));
 
         if (Baseline.IsBuilt && Want(Names.Baseline) && Baseline.CanDecode(icon))
         {
@@ -159,7 +159,7 @@ internal sealed class EncodeSetup
             setup.Sizes[name] = bmp.Length;
             if (only is not null) return;
             var back = new byte[w * h * 4];
-            if (!BmpImageDecoder.TryDecodeInto(bmp, back, 0, ImagePixelFormat.Rgba32))
+            if (!BmpImageDecoder.TryDecodeInto(bmp, back, 0, PixelFormat.Rgba32))
                 throw new InvalidOperationException($"{c.Name}: {name}'s output does not decode");
             if (c.Lossless && !back.AsSpan().SequenceEqual(rgba))
                 throw new InvalidOperationException($"{c.Name}: {name}'s output does not give the source back (pixel {DecodeSetup.FirstDifference(back, rgba)})");
@@ -167,20 +167,20 @@ internal sealed class EncodeSetup
 
         if (Want(Names.Current))
         {
-            Check(Names.Current, BmpEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, options));
-            setup.Contestants.Add(new(Names.Current, () => BmpEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, options)));
+            Check(Names.Current, BmpEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, options));
+            setup.Contestants.Add(new(Names.Current, () => BmpEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, options)));
         }
 
         // The same into a reused stream, as ImageSharp and WIC write.
         if (Want(Names.CurrentStream))
         {
             var stream = new MemoryStream();
-            BmpEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, stream, options);
+            BmpEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, stream, options);
             Check(Names.CurrentStream, stream.ToArray());
             setup.Contestants.Add(new(Names.CurrentStream, () =>
             {
                 stream.SetLength(0);
-                BmpEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, stream, options);
+                BmpEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, stream, options);
             }));
         }
 
@@ -191,7 +191,7 @@ internal sealed class EncodeSetup
             "argb32" => Swizzle(rgba, 4),
             _ => null,
         };
-        var nativeFormat = c.Format == "rgb24" ? ImagePixelFormat.Bgr24 : ImagePixelFormat.Bgra32;
+        var nativeFormat = c.Format == "rgb24" ? PixelFormat.Bgr24 : PixelFormat.Bgra32;
         if (native is not null && Want(Names.CurrentBgra))
         {
             var stream = new MemoryStream();

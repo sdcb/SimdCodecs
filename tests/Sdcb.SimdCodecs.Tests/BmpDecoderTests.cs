@@ -9,7 +9,7 @@ namespace Sdcb.SimdCodecs.Tests;
 /// <summary>
 /// BMP decoding of hand-assembled streams (<see cref="TestBmpWriter"/>): every header, depth, mask and
 /// compression, with expected pixels from the test's own model of the documented layouts. Each case is also
-/// decoded into every <see cref="ImagePixelFormat"/> with a padded stride (<see cref="CheckEveryFormat"/>), and
+/// decoded into every <see cref="PixelFormat"/> with a padded stride (<see cref="CheckEveryFormat"/>), and
 /// through the facade.
 /// </summary>
 public sealed class BmpDecoderTests
@@ -91,9 +91,9 @@ public sealed class BmpDecoderTests
         BmpImageDecoder.TryReadInfo(bmp, out var info).ShouldBeTrue(because);
         (info.Width, info.Height, info.Channels, info.Format).ShouldBe((image!.Width, image.Height, image.Channels, ImageFormat.Bmp), because);
         int width = image.Width, height = image.Height;
-        foreach (var format in Enum.GetValues<ImagePixelFormat>())
+        foreach (var format in PixelConverterTests.Formats)
         {
-            var bpp = PixelConverter.BytesPerPixel(format);
+            var bpp = format.BytesPerPixel;
             var stride = width * bpp + 3;
             var expected = Enumerable.Repeat((byte)0xCD, stride * height).ToArray();
             for (var y = 0; y < height; y++)
@@ -502,9 +502,9 @@ public sealed class BmpDecoderTests
         BmpDecoder.ReadDibInfo(dib).ShouldBe(BmpDecoder.ReadInfo(bmp));
         BmpDecoder.DecodeDib(dib).Pixels.ShouldBe(BmpDecoder.Decode(bmp).Pixels);
         var into = new byte[21 * 4 * 3];
-        BmpDecoder.DecodeDibTo(dib, into, ImagePixelFormat.Bgr24);
+        BmpDecoder.DecodeDibTo(dib, into, PixelFormat.Bgr24);
         var expected = new byte[into.Length];
-        BmpDecoder.DecodeTo(bmp, expected, ImagePixelFormat.Bgr24);
+        BmpDecoder.DecodeTo(bmp, expected, PixelFormat.Bgr24);
         into.ShouldBe(expected);
     }
 
@@ -591,6 +591,6 @@ public sealed class BmpDecoderTests
     {
         Should.Throw<InvalidDataException>(() => BmpDecoder.Decode(bmp), name);
         BmpImageDecoder.TryDecode(bmp, out _).ShouldBeFalse(name);
-        BmpImageDecoder.TryDecodeInto(bmp, new byte[1 << 20], 0, ImagePixelFormat.Rgba32).ShouldBeFalse(name);
+        BmpImageDecoder.TryDecodeInto(bmp, new byte[1 << 20], 0, PixelFormat.Rgba32).ShouldBeFalse(name);
     }
 }

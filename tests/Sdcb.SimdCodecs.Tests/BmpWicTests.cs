@@ -108,7 +108,7 @@ public sealed class BmpWicTests
             const int width = 37, height = 5;
             var rgba = new byte[width * height * 4];
             random.NextBytes(rgba);
-            var bmp = BmpEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32,
+            var bmp = BmpEncoder.Encode(rgba, width, height, PixelFormat.Rgba32,
                 new BmpEncodeOptions { Format = format, Header = header, Rle = rle, Dither = true });
             var argbAsBiRgb = format == BmpEncodeFormat.Argb32 && header <= BmpHeaderVersion.Info
                 || format == BmpEncodeFormat.Auto && header == BmpHeaderVersion.Info;

@@ -7,31 +7,31 @@ namespace Sdcb.SimdCodecs.Png.Benchmarks;
 
 /// <summary>
 /// The display layouts of <see cref="PngImageDecoder.TryDecodeInto"/>: for each case and each
-/// <see cref="ImagePixelFormat"/> other than RGBA, the native path (rows converted as they are
+/// <see cref="PixelFormat"/> other than RGBA, the native path (rows converted as they are
 /// unfiltered) against the two-step path a caller of an RGBA-only API takes (decode to RGBA, then
 /// <see cref="PixelConverter"/> over the frame), with RGBA itself and libpng's simplified API in the
 /// same layout for scale. The two of ours must produce identical bytes, checked before timing.
 /// </summary>
 internal static class Formats
 {
-    private static readonly ImagePixelFormat[] Targets =
-        [ImagePixelFormat.Bgra32, ImagePixelFormat.Rgb24, ImagePixelFormat.Bgr24, ImagePixelFormat.Gray8];
+    private static readonly PixelFormat[] Targets =
+        [PixelFormat.Bgra32, PixelFormat.Rgb24, PixelFormat.Bgr24, PixelFormat.Gray8];
 
     /// <summary>Without <c>--cases</c>: the common colour types, plain and Adam7.</summary>
     public const string DefaultCases = "^(photo|screen)-(g8|rgb8|p8|rgba8|rgb16)(-adam7)?$";
 
     public static string Run(int rounds)
     {
-        var rows = new List<(string Case, ImagePixelFormat Format, double Rgba, double Native, double TwoStep, double? LibPng)>();
+        var rows = new List<(string Case, PixelFormat Format, double Rgba, double Native, double TwoStep, double? LibPng)>();
         foreach (DecodeCase c in DecodeCase.Selected)
         {
             byte[] png = c.Read();
             int width = BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16)), height = BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20));
             int pixels = width * height;
             var rgba = new byte[pixels * 4];
-            foreach (ImagePixelFormat format in Targets)
+            foreach (PixelFormat format in Targets)
             {
-                int bpp = PixelConverter.BytesPerPixel(format);
+                int bpp = format.BytesPerPixel;
                 var native = new byte[pixels * bpp];
                 var twoStep = new byte[pixels * bpp];
                 var contestants = new List<Contestant>
@@ -82,12 +82,12 @@ internal static class Formats
     }
 
     // libpng's simplified-API format flags (alpha 1, colour 2, BGR 0x10), as its manual documents them.
-    private static uint? LibPngFormat(ImagePixelFormat format) => format switch
+    private static uint? LibPngFormat(PixelFormat format) => format switch
     {
-        ImagePixelFormat.Bgra32 => LibPng.FormatRgba | LibPng.FlagBgr,
-        ImagePixelFormat.Rgb24 => LibPng.FormatRgb,
-        ImagePixelFormat.Bgr24 => LibPng.FormatRgb | LibPng.FlagBgr,
-        ImagePixelFormat.Gray8 => LibPng.FormatGray,
+        PixelFormat.Bgra32 => LibPng.FormatRgba | LibPng.FlagBgr,
+        PixelFormat.Rgb24 => LibPng.FormatRgb,
+        PixelFormat.Bgr24 => LibPng.FormatRgb | LibPng.FlagBgr,
+        PixelFormat.Gray8 => LibPng.FormatGray,
         _ => null,
     };
 

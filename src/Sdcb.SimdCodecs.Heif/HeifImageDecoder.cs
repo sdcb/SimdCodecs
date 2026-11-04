@@ -16,7 +16,10 @@ namespace Sdcb.SimdCodecs.Heif;
 /// <see cref="ImageOrientation.Normal"/>. Alpha, depth and gain-map auxiliary images are not decoded, so the
 /// raster has 3 channels. An 8-bit (Main) image decodes to 8-bit samples; a Main 10 image to 16-bit samples
 /// with <see cref="IDecodedImage.BitDepth"/> 10 (the full 10 bits of precision, scaled to 0..65535 by the 16-bit
-/// conversion). <see cref="TryDecodeInto"/> converts straight from the coded samples in either depth.
+/// conversion). <see cref="TryDecodeInto"/> converts straight from the coded samples in either depth, so its 8-bit
+/// formats keep the frozen 1.x conversion (one rounding from 10 bits): for a Main 10 image they can differ by one code
+/// value from narrowing the 16-bit image (<c>v &gt;&gt; 8</c>), the one exception besides stored-luma grey to
+/// <see cref="IImageDecoder.TryDecodeInto"/>'s "the converted <see cref="IDecodedImage.Pixels"/>" rule.
 /// </para>
 /// <para>
 /// Metadata: the <c>Exif</c> and XMP (<c>mime</c>) items describing the primary image are passed through

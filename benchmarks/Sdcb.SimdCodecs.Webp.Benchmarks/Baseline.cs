@@ -159,7 +159,7 @@ internal static unsafe class BaselineDecoder
 internal static unsafe class BaselineEncoder
 {
     /// <summary>
-    /// <c>WebpEncoder.&lt;method&gt;(ReadOnlySpan&lt;byte&gt;, int, int, ImagePixelFormat, &lt;options&gt;?, int stride)</c>
+    /// <c>WebpEncoder.&lt;method&gt;(ReadOnlySpan&lt;byte&gt;, int, int, PixelFormat, &lt;options&gt;?, int stride)</c>
     /// with an options object whose init properties are set from <paramref name="properties"/>; null when
     /// the baseline has no such method or option.
     /// </summary>
@@ -193,7 +193,7 @@ internal static unsafe class BaselineEncoder
             prop.SetValue(opts, value);
         }
 
-        // ImagePixelFormat is an int enum in the baseline's own Abstractions; Rgba32 is 0.
+        // PixelFormat is an int enum in the baseline's own Abstractions; Rgba32 is 0.
         var fn = (delegate*<ReadOnlySpan<byte>, int, int, int, object, int, byte[]>)m.MethodHandle.GetFunctionPointer();
         return img => fn(img.Rgba, img.Width, img.Height, 0, opts, 0);
     }

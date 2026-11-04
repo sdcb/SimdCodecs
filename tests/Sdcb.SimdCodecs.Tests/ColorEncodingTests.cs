@@ -19,7 +19,7 @@ public sealed class ColorEncodingTests
     [Fact]
     public void RasterImage_defaults_to_the_assumed_srgb_encoding()
     {
-        var img = new RasterImage(1, 1, 3, SampleFormat.UInt8, [0, 0, 0]);
+        var img = RasterImage.Wrap(1, 1, 3, SampleFormat.UInt8, [0, 0, 0]);
 
         img.ColorEncoding.ShouldBe(ColorEncoding.AssumedSrgb);
         img.ColorEncoding.Primaries.ShouldBe(ColorPrimaries.BT709);
@@ -32,7 +32,7 @@ public sealed class ColorEncodingTests
     public void RasterImage_carries_an_explicit_encoding_verbatim()
     {
         var pq = new ColorEncoding { Primaries = ColorPrimaries.BT2020, Transfer = TransferFunction.Pq };
-        var img = new RasterImage(1, 1, 3, SampleFormat.UInt8, [0, 0, 0], iccProfile: null, colorEncoding: pq);
+        var img = RasterImage.Wrap(1, 1, 3, SampleFormat.UInt8, [0, 0, 0], iccProfile: null, colorEncoding: pq);
 
         img.ColorEncoding.ShouldBeSameAs(pq);
     }

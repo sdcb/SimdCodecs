@@ -169,8 +169,8 @@ public sealed class HeifFuzzTests
             if (SimdCodecs.TryReadInfo(data, out var info))
             {
                 info.Format.ShouldBe(ImageFormat.Heif, context);
-                var format = (ImagePixelFormat)layout;
-                var destination = new byte[(long)info.Width * info.Height * PixelConverter.BytesPerPixel(format)];
+                var format = PixelConverterTests.Formats[layout];
+                var destination = new byte[(long)info.Width * info.Height * format.BytesPerPixel];
                 if (SimdCodecs.TryDecodeInto(data, destination, 0, format) && SimdCodecs.TryDecode(data, out var decoded))
                 {
                     (decoded.Width, decoded.Height).ShouldBe((info.Width, info.Height), context);

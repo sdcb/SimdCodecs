@@ -109,7 +109,7 @@ public sealed class WebpLosslessEncoderTests
                 foreach (bool exact in new[] { false, true })
                 {
                     string because = $"{kind} {width}x{height} effort {effort} exact {exact}";
-                    byte[] webp = WebpEncoder.EncodeLossless(source, width, height, ImagePixelFormat.Rgba32,
+                    byte[] webp = WebpEncoder.EncodeLossless(source, width, height, PixelFormat.Rgba32,
                         new WebpLosslessEncodeOptions { Effort = effort, Exact = exact });
                     ShouldMatch(MagickRgba(webp), source, exact, because);
 
@@ -133,7 +133,7 @@ public sealed class WebpLosslessEncoderTests
         foreach (int effort in new[] { 0, 6, 9 })
         {
             byte[] source = Content(kind, 129, 67, effort + kind.Length);
-            byte[] webp = WebpEncoder.EncodeLossless(source, 129, 67, ImagePixelFormat.Rgba32,
+            byte[] webp = WebpEncoder.EncodeLossless(source, 129, 67, PixelFormat.Rgba32,
                 new WebpLosslessEncodeOptions { Effort = effort, Exact = true });
             string input = Path.Combine(directory, $"{Guid.NewGuid():N}.webp");
             File.WriteAllBytes(input, webp);
@@ -171,22 +171,23 @@ public sealed class WebpLosslessEncoderTests
 
         foreach (int effort in Efforts)
         {
-            byte[] webp = WebpEncoder.EncodeLossless(rgba, width, height, ImagePixelFormat.Rgba32,
+            byte[] webp = WebpEncoder.EncodeLossless(rgba, width, height, PixelFormat.Rgba32,
                 new WebpLosslessEncodeOptions { Effort = effort, Exact = true });
             MagickRgba(webp).ShouldBe(rgba, $"effort {effort}");
         }
     }
 
     [Theory]
-    [InlineData(ImagePixelFormat.Bgra32)]
-    [InlineData(ImagePixelFormat.Rgb24)]
-    [InlineData(ImagePixelFormat.Bgr24)]
-    [InlineData(ImagePixelFormat.Gray8)]
-    public void Every_input_layout_is_read_with_its_own_channel_order(ImagePixelFormat format)
+    [InlineData("Bgra32")]
+    [InlineData("Rgb24")]
+    [InlineData("Bgr24")]
+    [InlineData("Gray8")]
+    public void Every_input_layout_is_read_with_its_own_channel_order(string formatName)
     {
+        var format = PixelFormatByName(formatName);
         const int width = 37, height = 11, stride = 37 * 4 + 5;
         byte[] rgba = Content("pattern-alpha", width, height, 3);
-        int bpp = PixelConverter.BytesPerPixel(format);
+        int bpp = format.BytesPerPixel;
         var input = new byte[stride * height];
         var expected = new byte[width * height * 4];
         for (int y = 0; y < height; y++)
@@ -195,11 +196,11 @@ public sealed class WebpLosslessEncoderTests
             {
                 int s = 4 * (y * width + x), d = y * stride + x * bpp;
                 byte r = rgba[s], g = rgba[s + 1], b = rgba[s + 2], a = rgba[s + 3];
-                switch (format)
+                switch (format.Layout)
                 {
-                    case ImagePixelFormat.Bgra32: input[d] = b; input[d + 1] = g; input[d + 2] = r; input[d + 3] = a; break;
-                    case ImagePixelFormat.Rgb24: input[d] = r; input[d + 1] = g; input[d + 2] = b; a = 255; break;
-                    case ImagePixelFormat.Bgr24: input[d] = b; input[d + 1] = g; input[d + 2] = r; a = 255; break;
+                    case ChannelLayout.Bgra: input[d] = b; input[d + 1] = g; input[d + 2] = r; input[d + 3] = a; break;
+                    case ChannelLayout.Rgb: input[d] = r; input[d + 1] = g; input[d + 2] = b; a = 255; break;
+                    case ChannelLayout.Bgr: input[d] = b; input[d + 1] = g; input[d + 2] = r; a = 255; break;
                     default: input[d] = g; r = b = g; a = 255; break;
                 }
 
@@ -224,8 +225,8 @@ public sealed class WebpLosslessEncoderTests
             source[4 * i + 3] = 0; // a fully transparent first row with arbitrary colour
         }
 
-        byte[] loose = WebpEncoder.EncodeLossless(source, 64, 9, ImagePixelFormat.Rgba32);
-        byte[] exact = WebpEncoder.EncodeLossless(source, 64, 9, ImagePixelFormat.Rgba32, new WebpLosslessEncodeOptions { Exact = true });
+        byte[] loose = WebpEncoder.EncodeLossless(source, 64, 9, PixelFormat.Rgba32);
+        byte[] exact = WebpEncoder.EncodeLossless(source, 64, 9, PixelFormat.Rgba32, new WebpLosslessEncodeOptions { Exact = true });
         ShouldMatch(MagickRgba(loose), source, exact: false, "loose");
         MagickRgba(exact).ShouldBe(source);
         loose.Length.ShouldBeLessThanOrEqualTo(exact.Length);
@@ -235,10 +236,13 @@ public sealed class WebpLosslessEncoderTests
     public void Bad_arguments_are_rejected()
     {
         var pixels = new byte[16 * 4];
-        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeLossless(pixels, 0, 4, ImagePixelFormat.Rgba32));
-        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeLossless(pixels, 16385, 1, ImagePixelFormat.Rgba32));
-        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeLossless(pixels, 5, 4, ImagePixelFormat.Rgba32));
-        Should.Throw<ArgumentOutOfRangeException>(() => WebpEncoder.EncodeLossless(pixels, 4, 4, ImagePixelFormat.Rgba32,
+        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeLossless(pixels, 0, 4, PixelFormat.Rgba32));
+        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeLossless(pixels, 16385, 1, PixelFormat.Rgba32));
+        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeLossless(pixels, 5, 4, PixelFormat.Rgba32));
+        Should.Throw<ArgumentOutOfRangeException>(() => WebpEncoder.EncodeLossless(pixels, 4, 4, PixelFormat.Rgba32,
             new WebpLosslessEncodeOptions { Effort = 10 }));
     }
+
+    private static PixelFormat PixelFormatByName(string name) =>
+        (PixelFormat)typeof(PixelFormat).GetProperty(name)!.GetValue(null)!;
 }

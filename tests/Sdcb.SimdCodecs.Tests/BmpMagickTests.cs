@@ -121,11 +121,11 @@ public sealed class BmpMagickTests
                 for (var i = 3; i < rgba.Length; i += 4) rgba[i] = 255;
             }
             var options = new BmpEncodeOptions { Format = format, Header = header, Rle = rle, TopDown = topDown };
-            var bmp = BmpEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32, options);
+            var bmp = BmpEncoder.Encode(rgba, width, height, PixelFormat.Rgba32, options);
             var because = $"{format}, {header}, RLE {rle}, top-down {topDown}, width {width}";
             var streamed = new MemoryStream();
             streamed.Write([1, 2, 3]); // written from the stream's position on
-            BmpEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32, streamed, options);
+            BmpEncoder.Encode(rgba, width, height, PixelFormat.Rgba32, streamed, options);
             streamed.ToArray()[3..].ShouldBe(bmp, because);
             var info = BmpDecoder.ReadInfo(bmp);
             info.HeaderKind.ShouldBe(header switch

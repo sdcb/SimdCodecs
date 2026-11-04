@@ -69,17 +69,18 @@ public sealed class QoiTests
     }
 
     [Theory]
-    [InlineData(ImagePixelFormat.Rgba32)]
-    [InlineData(ImagePixelFormat.Bgra32)]
-    [InlineData(ImagePixelFormat.Rgb24)]
-    [InlineData(ImagePixelFormat.Bgr24)]
-    [InlineData(ImagePixelFormat.Gray8)]
-    public void Encoded_images_read_back_in_imagemagick_as_the_source(ImagePixelFormat format)
+    [InlineData("Rgba32")]
+    [InlineData("Bgra32")]
+    [InlineData("Rgb24")]
+    [InlineData("Bgr24")]
+    [InlineData("Gray8")]
+    public void Encoded_images_read_back_in_imagemagick_as_the_source(string formatName)
     {
+        var format = PixelFormatByName(formatName);
         foreach (var width in Widths)
         {
             var rgba = Pattern(width, 6, alpha: true, seed: width * 7);
-            var bpp = PixelConverter.BytesPerPixel(format);
+            var bpp = format.BytesPerPixel;
             // A padded stride, to show rows are read where the stride says.
             var stride = width * bpp + 3;
             var input = new byte[stride * 6];
@@ -93,9 +94,9 @@ public sealed class QoiTests
                 // What the input holds, as RGBA: a 3-channel or grey input is opaque.
                 var row = new byte[width * 4];
                 PixelConverter.ConvertRow(rgba.AsSpan(y * width * 4, width * 4), 4, SampleFormat.UInt8, row, format, width);
-                var back = format switch
+                var back = format.Layout switch
                 {
-                    ImagePixelFormat.Bgra32 or ImagePixelFormat.Bgr24 => SwapToRgba(row, format == ImagePixelFormat.Bgra32 ? 4 : 3, width),
+                    ChannelLayout.Bgra or ChannelLayout.Bgr => SwapToRgba(row, format == PixelFormat.Bgra32 ? 4 : 3, width),
                     _ => Widen(row, bpp, width),
                 };
                 back.CopyTo(expected, y * width * 4);
@@ -190,11 +191,11 @@ public sealed class QoiTests
     public void Every_layout_and_stride_is_the_converted_image()
     {
         var rgba = Pattern(37, 9, alpha: true, seed: 3);
-        var qoi = QoiEncoder.Encode(rgba, 37, 9, ImagePixelFormat.Rgba32);
+        var qoi = QoiEncoder.Encode(rgba, 37, 9, PixelFormat.Rgba32);
         QoiDecoder.Decode(qoi).Pixels.ShouldBe(rgba);
-        foreach (var format in Enum.GetValues<ImagePixelFormat>())
+        foreach (var format in PixelConverterTests.Formats)
         {
-            var bpp = PixelConverter.BytesPerPixel(format);
+            var bpp = format.BytesPerPixel;
             foreach (var stride in new[] { 0, 37 * bpp + 5 })
             {
                 var rowStride = stride == 0 ? 37 * bpp : stride;
@@ -233,13 +234,13 @@ public sealed class QoiTests
     public void The_colour_space_is_reported_not_applied()
     {
         var rgba = Pattern(5, 3, alpha: false, seed: 1);
-        var linear = QoiEncoder.Encode(rgba, 5, 3, ImagePixelFormat.Rgba32, QoiColorSpace.Linear);
+        var linear = QoiEncoder.Encode(rgba, 5, 3, PixelFormat.Rgba32, QoiColorSpace.Linear);
         linear[13].ShouldBe((byte)1);
         QoiDecoder.ReadInfo(linear).ColorSpace.ShouldBe(QoiColorSpace.Linear);
         QoiDecoder.Decode(linear).Pixels.ShouldBe(rgba);
         QoiImageDecoder.TryDecode(linear, out var image).ShouldBeTrue();
         image.ColorEncoding.Transfer.ShouldBe(TransferFunction.Linear);
-        QoiImageDecoder.TryDecode(QoiEncoder.Encode(rgba, 5, 3, ImagePixelFormat.Rgba32), out var srgb).ShouldBeTrue();
+        QoiImageDecoder.TryDecode(QoiEncoder.Encode(rgba, 5, 3, PixelFormat.Rgba32), out var srgb).ShouldBeTrue();
         srgb.ColorEncoding.ShouldBe(ColorEncoding.AssumedSrgb);
     }
 
@@ -263,14 +264,17 @@ public sealed class QoiTests
     {
         Should.Throw<InvalidDataException>(() => QoiDecoder.Decode(data), name);
         QoiImageDecoder.TryDecode(data, out _).ShouldBeFalse(name);
-        QoiImageDecoder.TryDecodeInto(data, new byte[64], 0, ImagePixelFormat.Rgba32).ShouldBeFalse(name);
+        QoiImageDecoder.TryDecodeInto(data, new byte[64], 0, PixelFormat.Rgba32).ShouldBeFalse(name);
     }
 
     [Fact]
     public void Encoder_arguments_are_checked()
     {
-        Should.Throw<ArgumentException>(() => QoiEncoder.Encode(new byte[16], 0, 4, ImagePixelFormat.Gray8));
-        Should.Throw<ArgumentException>(() => QoiEncoder.Encode(new byte[15], 4, 4, ImagePixelFormat.Gray8));
-        Should.Throw<ArgumentException>(() => QoiEncoder.Encode(new byte[16], 4, 4, ImagePixelFormat.Gray8, (QoiColorSpace)2));
+        Should.Throw<ArgumentException>(() => QoiEncoder.Encode(new byte[16], 0, 4, PixelFormat.Gray8));
+        Should.Throw<ArgumentException>(() => QoiEncoder.Encode(new byte[15], 4, 4, PixelFormat.Gray8));
+        Should.Throw<ArgumentException>(() => QoiEncoder.Encode(new byte[16], 4, 4, PixelFormat.Gray8, (QoiColorSpace)2));
     }
+
+    private static PixelFormat PixelFormatByName(string name) =>
+        (PixelFormat)typeof(PixelFormat).GetProperty(name)!.GetValue(null)!;
 }

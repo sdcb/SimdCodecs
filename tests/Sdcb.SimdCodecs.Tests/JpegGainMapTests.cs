@@ -57,7 +57,7 @@ public sealed class JpegGainMapTests
         encoded <= 0.04045 ? encoded / 12.92 : Math.Pow((encoded + 0.055) / 1.055, 2.4);
 
     private static RasterImage Raster(byte[] pixels, int width, int height, int channels) =>
-        new(width, height, channels, SampleFormat.UInt8, pixels);
+        RasterImage.Wrap(width, height, channels, SampleFormat.UInt8, pixels);
 
     // --------------------------------------------- reconstruction properties
 

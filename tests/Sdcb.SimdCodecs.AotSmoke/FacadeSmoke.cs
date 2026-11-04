@@ -80,9 +80,9 @@ internal static class FacadeSmoke
 
         Check(SimdCodecs.TryReadInfo(heic, out var info), "heif", "TryReadInfo");
         var formats = new List<string>();
-        foreach (var format in new[] { ImagePixelFormat.Rgba32, ImagePixelFormat.Bgra32, ImagePixelFormat.Rgb24, ImagePixelFormat.Bgr24, ImagePixelFormat.Gray8 })
+        foreach (var format in new[] { PixelFormat.Rgba32, PixelFormat.Bgra32, PixelFormat.Rgb24, PixelFormat.Bgr24, PixelFormat.Gray8 })
         {
-            var bpp = PixelConverter.BytesPerPixel(format);
+            var bpp = format.BytesPerPixel;
             var stride = info.Width * bpp + 3; // padded rows: the stride path
             var pixels = new byte[stride * info.Height];
             Check(SimdCodecs.TryDecodeInto(heic, pixels, stride, format), "heif", $"TryDecodeInto {format}");
@@ -128,12 +128,12 @@ internal static class FacadeSmoke
             ("webp-lossy", Fixture("astronaut-192-q20-normal.webp")),
             ("webp-lossless", Fixture("lossless-palette-16.webp")),
             ("webp-anim", Fixture("anim-img2webp-mixed.webp")),
-            ("webp-enc-lossless", WebpEncoder.EncodeLossless(rgba, w, h, ImagePixelFormat.Rgba32)),
-            ("webp-enc-lossy", WebpEncoder.EncodeLossy(rgb, w, h, ImagePixelFormat.Rgb24, new WebpLossyEncodeOptions { Quality = 60, Effort = 6 })),
-            ("webp-enc-lossy-alpha", WebpEncoder.EncodeLossy(rgba, w, h, ImagePixelFormat.Rgba32, new WebpLossyEncodeOptions { Quality = 60, Effort = 6 })),
+            ("webp-enc-lossless", WebpEncoder.EncodeLossless(rgba, w, h, PixelFormat.Rgba32)),
+            ("webp-enc-lossy", WebpEncoder.EncodeLossy(rgb, w, h, PixelFormat.Rgb24, new WebpLossyEncodeOptions { Quality = 60, Effort = 6 })),
+            ("webp-enc-lossy-alpha", WebpEncoder.EncodeLossy(rgba, w, h, PixelFormat.Rgba32, new WebpLossyEncodeOptions { Quality = 60, Effort = 6 })),
             ("webp-enc-anim", WebpEncoder.EncodeAnimation(
                 [new WebpAnimationCanvasFrame(rgba, TimeSpan.FromMilliseconds(50)), new WebpAnimationCanvasFrame(rgba.Reverse().ToArray(), TimeSpan.FromMilliseconds(50))],
-                w, h, ImagePixelFormat.Rgba32, new WebpAnimationEncodeOptions { Mode = WebpAnimationMode.Mixed })),
+                w, h, PixelFormat.Rgba32, new WebpAnimationEncodeOptions { Mode = WebpAnimationMode.Mixed })),
             ("gif", GifEncoder.Encode(rgb, w, h, 3)),
             ("gif-anim", GifEncoder.EncodeAnimation(
                 [new GifAnimationFrame(rgb, TimeSpan.FromMilliseconds(50)), new GifAnimationFrame(rgb.Reverse().ToArray(), TimeSpan.FromMilliseconds(50))],
@@ -143,14 +143,14 @@ internal static class FacadeSmoke
             ("bmp-rle8", BmpEncoder.Encode(rgb, w, h, 3, new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed8, Rle = true })),
             ("bmp-565", BmpEncoder.Encode(rgb, w, h, 3, new BmpEncodeOptions { Format = BmpEncodeFormat.Rgb565 })),
             ("ico", IcoEncoder.Encode(
-                [new IcoFrame(rgba, w, h), new IcoFrame(rgba, w, h, Encoding: IcoImageEncoding.Png), new IcoFrame(rgb, w, h, ImagePixelFormat.Rgb24, IcoImageEncoding.Bmp4)])),
+                [new IcoFrame(rgba, w, h), new IcoFrame(rgba, w, h, Encoding: IcoImageEncoding.Png), new IcoFrame(rgb, w, h, PixelFormat.Rgb24, IcoImageEncoding.Bmp4)])),
             ("cur", IcoEncoder.EncodeCursor([new IcoFrame(rgba, w, h, HotspotX: 3, HotspotY: 4)])),
-            ("qoi", QoiEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32)),
-            ("qoi-rgb", QoiEncoder.Encode(rgb, w, h, ImagePixelFormat.Rgb24)),
-            ("ppm", PnmEncoder.Encode(rgb, w, h, ImagePixelFormat.Rgb24)),
-            ("pgm-plain-16", PnmEncoder.Encode(rgb, w, h, ImagePixelFormat.Rgb24, new PnmEncodeOptions { Format = PnmFormat.PlainGraymap, MaxValue = 1000 })),
-            ("pbm", PnmEncoder.Encode(rgb, w, h, ImagePixelFormat.Rgb24, new PnmEncodeOptions { Format = PnmFormat.Bitmap })),
-            ("pam", PnmEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32)),
+            ("qoi", QoiEncoder.Encode(rgba, w, h, PixelFormat.Rgba32)),
+            ("qoi-rgb", QoiEncoder.Encode(rgb, w, h, PixelFormat.Rgb24)),
+            ("ppm", PnmEncoder.Encode(rgb, w, h, PixelFormat.Rgb24)),
+            ("pgm-plain-16", PnmEncoder.Encode(rgb, w, h, PixelFormat.Rgb24, new PnmEncodeOptions { Format = PnmFormat.PlainGraymap, MaxValue = 1000 })),
+            ("pbm", PnmEncoder.Encode(rgb, w, h, PixelFormat.Rgb24, new PnmEncodeOptions { Format = PnmFormat.Bitmap })),
+            ("pam", PnmEncoder.Encode(rgba, w, h, PixelFormat.Rgba32)),
             ("pfm", PnmEncoder.EncodePfm([.. rgb.Select(v => v / 255f)], w, h, 3)),
         ];
     }

@@ -6,13 +6,13 @@ namespace Sdcb.SimdCodecs.Tests;
 
 /// <summary>
 /// The <see cref="IImageDecoder.TryDecodeInto"/> contract, through the facade, for every codec: in every
-/// <see cref="ImagePixelFormat"/>, at a padded stride and tightly packed, the pixels are
+/// <see cref="PixelFormat"/>, at a padded stride and tightly packed, the pixels are
 /// <see cref="IDecodedImage.ToRgba8"/> of <see cref="SimdCodecs.TryDecode"/>'s image converted by
 /// <see cref="PixelConverterTests.Reference"/> (and, for integer images, the same as converting
 /// <see cref="IDecodedImage.Pixels"/> directly), and the bytes between and after rows are untouched.
 /// The native paths (JPEG writing BGR from its colour conversion, PNG converting a row at a time, WebP
 /// swapping to BGRA in place) are what this pins against the generic definition. The exception the
-/// contract makes: <see cref="ImagePixelFormat.Gray8"/> from a YCbCr JPEG is its Y plane, checked
+/// contract makes: <see cref="PixelFormat.Gray8"/> from a YCbCr JPEG is its Y plane, checked
 /// against the plane the full colour decode reconstructs (<c>JpegDiagnostics.DecodePlanes</c>) and
 /// held to within <see cref="MaxLumaDrift"/> of the RGB's luma where no channel clips.
 /// </summary>
@@ -123,15 +123,15 @@ public sealed class DecodeIntoTests
         var bmpSource = Enumerable.Range(0, 19 * 7 * 3).Select(i => (byte)(i * 13 % 7 * 30)).ToArray();
         corpus["bmp 565 19x7"] = Bmp.BmpEncoder.Encode(bmpSource, 19, 7, 3, new Bmp.BmpEncodeOptions { Format = Bmp.BmpEncodeFormat.Rgb565 });
         corpus["bmp rle4 19x7"] = Bmp.BmpEncoder.Encode(bmpSource, 19, 7, 3, new Bmp.BmpEncodeOptions { Format = Bmp.BmpEncodeFormat.Indexed4, Rle = true });
-        corpus["ico 3 images"] = Ico.IcoEncoder.Encode([new Ico.IcoFrame(bmpSource, 19, 7, ImagePixelFormat.Rgb24),
-            new Ico.IcoFrame(bmpSource, 7, 19, ImagePixelFormat.Rgb24, Ico.IcoImageEncoding.Png), new Ico.IcoFrame(bmpSource, 11, 3, ImagePixelFormat.Rgb24, Ico.IcoImageEncoding.Bmp8)]);
+        corpus["ico 3 images"] = Ico.IcoEncoder.Encode([new Ico.IcoFrame(bmpSource, 19, 7, PixelFormat.Rgb24),
+            new Ico.IcoFrame(bmpSource, 7, 19, PixelFormat.Rgb24, Ico.IcoImageEncoding.Png), new Ico.IcoFrame(bmpSource, 11, 3, PixelFormat.Rgb24, Ico.IcoImageEncoding.Bmp8)]);
         corpus["qoi rgba 31x9"] = MagickRgba(31, 9, MagickFormat.Qoi);
-        corpus["qoi rgb 19x7"] = Qoi.QoiEncoder.Encode(bmpSource, 19, 7, ImagePixelFormat.Rgb24);
+        corpus["qoi rgb 19x7"] = Qoi.QoiEncoder.Encode(bmpSource, 19, 7, PixelFormat.Rgb24);
         corpus["pnm ppm 37x19"] = MagickRgba(37, 19, MagickFormat.Ppm);
         corpus["pnm pam rgba 31x6"] = MagickRgba(31, 6, MagickFormat.Pam);
-        corpus["pnm pgm16 19x7"] = Sdcb.SimdCodecs.Pnm.PnmEncoder.Encode(bmpSource, 19, 7, ImagePixelFormat.Rgb24, new Sdcb.SimdCodecs.Pnm.PnmEncodeOptions { Format = Sdcb.SimdCodecs.Pnm.PnmFormat.Graymap, MaxValue = 4095 });
-        corpus["pnm pbm plain 19x7"] = Sdcb.SimdCodecs.Pnm.PnmEncoder.Encode(bmpSource, 19, 7, ImagePixelFormat.Rgb24, new Sdcb.SimdCodecs.Pnm.PnmEncodeOptions { Format = Sdcb.SimdCodecs.Pnm.PnmFormat.PlainBitmap });
-        corpus["cur 1 image"] = Ico.IcoEncoder.EncodeCursor([new Ico.IcoFrame(bmpSource, 19, 7, ImagePixelFormat.Rgb24, HotspotX: 2, HotspotY: 3)]);
+        corpus["pnm pgm16 19x7"] = Sdcb.SimdCodecs.Pnm.PnmEncoder.Encode(bmpSource, 19, 7, PixelFormat.Rgb24, new Sdcb.SimdCodecs.Pnm.PnmEncodeOptions { Format = Sdcb.SimdCodecs.Pnm.PnmFormat.Graymap, MaxValue = 4095 });
+        corpus["pnm pbm plain 19x7"] = Sdcb.SimdCodecs.Pnm.PnmEncoder.Encode(bmpSource, 19, 7, PixelFormat.Rgb24, new Sdcb.SimdCodecs.Pnm.PnmEncodeOptions { Format = Sdcb.SimdCodecs.Pnm.PnmFormat.PlainBitmap });
+        corpus["cur 1 image"] = Ico.IcoEncoder.EncodeCursor([new Ico.IcoFrame(bmpSource, 19, 7, PixelFormat.Rgb24, HotspotX: 2, HotspotY: 3)]);
 
         var fixtures = Path.Combine(AppContext.BaseDirectory, "Fixtures");
         foreach (var file in Directory.GetFiles(Path.Combine(fixtures, "webp"), "*.webp").Order())
@@ -207,7 +207,7 @@ public sealed class DecodeIntoTests
                     .ShouldBe(expected, $"{format}: converting Pixels differs from converting ToRgba8");
             }
 
-            if (format == ImagePixelFormat.Gray8 && yPlane is not null)
+            if (format == PixelFormat.Gray8 && yPlane is not null)
             {
                 long total = 0;
                 for (var i = 0; i < expected.Length; i++)
@@ -224,7 +224,7 @@ public sealed class DecodeIntoTests
                 expected = yPlane;
             }
 
-            var rowBytes = width * PixelConverter.BytesPerPixel(format);
+            var rowBytes = width * format.BytesPerPixel;
             foreach (var stride in new[] { 0, rowBytes + 7 })
             {
                 var step = stride == 0 ? rowBytes : stride;
@@ -244,7 +244,7 @@ public sealed class DecodeIntoTests
             }
 
             // One byte short is refused, not written past.
-            var tight = new byte[width * height * PixelConverter.BytesPerPixel(format) - 1];
+            var tight = new byte[width * height * format.BytesPerPixel - 1];
             SimdCodecs.TryDecodeInto(data, tight, 0, format).ShouldBeFalse($"{format} short destination");
         }
 
@@ -319,7 +319,7 @@ public sealed class DecodeIntoTests
     public void AStrideShorterThanARowIsRefused()
     {
         var data = Corpus()["jpeg 4:2:0 37x19"];
-        SimdCodecs.TryDecodeInto(data, new byte[1 << 16], 37 * 3 - 1, ImagePixelFormat.Bgr24).ShouldBeFalse();
-        SimdCodecs.TryDecodeInto(data, new byte[1 << 16], -1, ImagePixelFormat.Bgr24).ShouldBeFalse();
+        SimdCodecs.TryDecodeInto(data, new byte[1 << 16], 37 * 3 - 1, PixelFormat.Bgr24).ShouldBeFalse();
+        SimdCodecs.TryDecodeInto(data, new byte[1 << 16], -1, PixelFormat.Bgr24).ShouldBeFalse();
     }
 }

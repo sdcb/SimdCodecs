@@ -41,7 +41,7 @@ public sealed class FrameReaderTests
                 frame.Duration.ShouldBe(TimeSpan.FromMilliseconds(durationMs));
                 frame.Info.ShouldBe(info with { FrameCount = 1 });
 
-                reader.TryDecodeFrameInto(index, rgba, 0, ImagePixelFormat.Rgba32).ShouldBeTrue();
+                reader.TryDecodeFrameInto(index, rgba, 0, PixelFormat.Rgba32).ShouldBeTrue();
                 WebpAnimationOracleTests.Sha256Hex(rgba).ShouldBe(sha256, $"frame {index}");
             }
         }
@@ -114,9 +114,9 @@ public sealed class FrameReaderTests
         var rgba = image.ToRgba8();
         foreach (var format in PixelConverterTests.Formats)
         {
-            if (storedLuma && format == ImagePixelFormat.Gray8) continue;
+            if (storedLuma && format == PixelFormat.Gray8) continue;
             var expected = PixelConverterTests.Reference(rgba, 4, SampleFormat.UInt8, format, width * height);
-            var rowBytes = width * PixelConverter.BytesPerPixel(format);
+            var rowBytes = width * format.BytesPerPixel;
             foreach (var stride in new[] { 0, rowBytes + 5 })
             {
                 var step = stride == 0 ? rowBytes : stride;
@@ -131,7 +131,7 @@ public sealed class FrameReaderTests
                         destination.AsSpan(y * step + rowBytes, step - rowBytes).ToArray().ShouldAllBe(v => v == Sentinel);
                 }
             }
-            reader.TryDecodeFrameInto(index, new byte[width * height * PixelConverter.BytesPerPixel(format) - 1], 0, format)
+            reader.TryDecodeFrameInto(index, new byte[width * height * format.BytesPerPixel - 1], 0, format)
                 .ShouldBeFalse("a destination one byte short");
         }
     }
@@ -198,7 +198,7 @@ public sealed class FrameReaderTests
             reader.FrameCount.ShouldBe(3);
             reader.TryGetFrameInfo(1, out _).ShouldBeFalse();
             reader.TryDecodeFrame(1, out _).ShouldBeFalse();
-            reader.TryDecodeFrameInto(1, new byte[1 << 10], 0, ImagePixelFormat.Rgba32).ShouldBeFalse();
+            reader.TryDecodeFrameInto(1, new byte[1 << 10], 0, PixelFormat.Rgba32).ShouldBeFalse();
             reader.TryDecodeFrame(2, out var last).ShouldBeTrue();
             (last.Width, last.Height).ShouldBe((2, 5));
         }
@@ -272,7 +272,7 @@ public sealed class FrameReaderTests
             for (var pass = 0; pass < 2; pass++)
             {
                 var expected = 0;
-                foreach (var step in reader.EnumerateFramesInto(buffer, 0, ImagePixelFormat.Rgba32))
+                foreach (var step in reader.EnumerateFramesInto(buffer, 0, PixelFormat.Rgba32))
                 {
                     step.Index.ShouldBe(expected);
                     var (durationMs, sha256) = WebpAnimationOracleTests.GoldenFrame(fixture, step.Index);
@@ -295,12 +295,12 @@ public sealed class FrameReaderTests
             var largest = pages.Max(p => p.Width * p.Height * 3);
             var buffer = new byte[largest];
             var seen = 0;
-            foreach (var step in reader.EnumerateFramesInto(buffer, 0, ImagePixelFormat.Bgr24))
+            foreach (var step in reader.EnumerateFramesInto(buffer, 0, PixelFormat.Bgr24))
             {
                 step.Duration.ShouldBeNull();
                 var (w, h, _, _) = pages[step.Index];
                 var alone = new byte[w * h * 3];
-                reader.TryDecodeFrameInto(step.Index, alone, 0, ImagePixelFormat.Bgr24).ShouldBeTrue();
+                reader.TryDecodeFrameInto(step.Index, alone, 0, PixelFormat.Bgr24).ShouldBeTrue();
                 buffer[..alone.Length].ShouldBe(alone, $"page {step.Index}");
                 seen++;
             }
@@ -312,7 +312,7 @@ public sealed class FrameReaderTests
             var played = new List<int>();
             Should.Throw<ArgumentException>(() =>
             {
-                foreach (var step in reader.EnumerateFramesInto(small, 0, ImagePixelFormat.Bgr24))
+                foreach (var step in reader.EnumerateFramesInto(small, 0, PixelFormat.Bgr24))
                     played.Add(step.Index);
             });
             played.ShouldBe([0, 1]);
@@ -333,7 +333,7 @@ public sealed class FrameReaderTests
             var played = new List<int>();
             Should.Throw<InvalidDataException>(() =>
             {
-                foreach (var step in reader.EnumerateFramesInto(new byte[1 << 10], 0, ImagePixelFormat.Rgba32))
+                foreach (var step in reader.EnumerateFramesInto(new byte[1 << 10], 0, PixelFormat.Rgba32))
                     played.Add(step.Index);
             }).Message.ShouldContain("Frame 1");
             played.ShouldBe([0]);
@@ -342,7 +342,7 @@ public sealed class FrameReaderTests
         // Float pages have no 8-bit projection.
         SimdCodecs.TryOpenFrames(HdrTiff.Float32Gray(3, 2, new float[6]), out var floats).ShouldBeTrue();
         using (floats)
-            Should.Throw<NotSupportedException>(() => floats.EnumerateFramesInto(new byte[64], 0, ImagePixelFormat.Gray8).ToList());
+            Should.Throw<NotSupportedException>(() => floats.EnumerateFramesInto(new byte[64], 0, PixelFormat.Gray8).ToList());
     }
 
     [Fact]
@@ -352,9 +352,8 @@ public sealed class FrameReaderTests
         using (reader)
         {
             // Thrown by the call itself, before anything is enumerated.
-            Should.Throw<ArgumentOutOfRangeException>(() => reader.EnumerateFramesInto(new byte[64], -1, ImagePixelFormat.Rgba32));
-            Should.Throw<ArgumentOutOfRangeException>(() => reader.EnumerateFramesInto(new byte[64], 0, (ImagePixelFormat)99));
-            Should.Throw<ArgumentNullException>(() => ((IImageFrameReader)null!).EnumerateFramesInto(new byte[64], 0, ImagePixelFormat.Rgba32));
+            Should.Throw<ArgumentOutOfRangeException>(() => reader.EnumerateFramesInto(new byte[64], -1, PixelFormat.Rgba32));
+            Should.Throw<ArgumentNullException>(() => ((IImageFrameReader)null!).EnumerateFramesInto(new byte[64], 0, PixelFormat.Rgba32));
         }
     }
 
@@ -368,7 +367,7 @@ public sealed class FrameReaderTests
             Should.Throw<ArgumentOutOfRangeException>(() => reader.TryGetFrameInfo(reader.FrameCount, out _));
             reader.Dispose();
             Should.Throw<ObjectDisposedException>(() => reader.TryDecodeFrame(0, out _));
-            Should.Throw<ObjectDisposedException>(() => reader.TryDecodeFrameInto(0, new byte[64], 0, ImagePixelFormat.Gray8));
+            Should.Throw<ObjectDisposedException>(() => reader.TryDecodeFrameInto(0, new byte[64], 0, PixelFormat.Gray8));
         }
 
         SimdCodecs.TryOpenFrames(new byte[64], out _).ShouldBeFalse();

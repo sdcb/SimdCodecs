@@ -100,7 +100,7 @@ internal static class EncodeAblate
         for (int i = 0; i < 3; i++)
         {
             WebpEncoder.EncodeLossless(images[^1].Rgba, images[^1].Width, images[^1].Height,
-                ImagePixelFormat.Rgba32, null, 0, ablation);
+                PixelFormat.Rgba32, null, 0, ablation);
         }
 
         long totalBytes = 0;
@@ -112,7 +112,7 @@ internal static class EncodeAblate
             {
                 long t = Stopwatch.GetTimestamp();
                 WebpEncoder.EncodeLossless(image.Rgba, image.Width, image.Height,
-                    ImagePixelFormat.Rgba32, null, 0, ablation);
+                    PixelFormat.Rgba32, null, 0, ablation);
                 times[r] = Stopwatch.GetElapsedTime(t).TotalSeconds;
             }
 
@@ -127,5 +127,5 @@ internal static class EncodeAblate
 
     private static long MeasureOne(EncodeImage image, Vp8LAblation ablation) =>
         WebpEncoder.EncodeLossless(image.Rgba, image.Width, image.Height,
-            ImagePixelFormat.Rgba32, null, 0, ablation).Length;
+            PixelFormat.Rgba32, null, 0, ablation).Length;
 }

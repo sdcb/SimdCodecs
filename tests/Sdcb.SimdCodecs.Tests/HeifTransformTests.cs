@@ -24,10 +24,10 @@ public sealed class HeifTransformTests
         plain.Transforms.Clear();
         int canvasW = plain.CanvasWidth, canvasH = plain.CanvasHeight;
         var canvas = new byte[canvasW * canvasH * 4];
-        HeifDecoder.DecodeInto(data, plain, canvas, canvasW * 4, ImagePixelFormat.Rgba32);
+        HeifDecoder.DecodeInto(data, plain, canvas, canvasW * 4, PixelFormat.Rgba32);
 
         var rng = new Random(fixture.Length * 7919);
-        var formats = Enum.GetValues<ImagePixelFormat>();
+        var formats = PixelConverterTests.Formats;
         for (var iteration = 0; iteration < 24; iteration++)
         {
             var container = HeifContainer.Parse(data);
@@ -62,7 +62,7 @@ public sealed class HeifTransformTests
             var (expectedRgba, ew, eh) = ApplyTransforms(container.Transforms, canvas, canvasW, canvasH);
             container.DisplaySize().ShouldBe((ew, eh));
             var format = formats[rng.Next(formats.Length)];
-            var bpp = PixelConverter.BytesPerPixel(format);
+            var bpp = format.BytesPerPixel;
             var stride = ew * bpp + rng.Next(2) * 5;
             var expected = new byte[(eh - 1) * stride + ew * bpp];
             var actual = new byte[expected.Length];
@@ -70,7 +70,7 @@ public sealed class HeifTransformTests
             Array.Fill(actual, (byte)0x5A);
             for (var y = 0; y < eh; y++)
             {
-                if (format == ImagePixelFormat.Gray8 && HeifDecoder.MatrixCoefficients(container) != 0)
+                if (format == PixelFormat.Gray8 && HeifDecoder.MatrixCoefficients(container) != 0)
                 {
                     // Gray8 is the stored luma, not the luma of the RGB: decode it the same way and transform it.
                     continue;
@@ -78,10 +78,10 @@ public sealed class HeifTransformTests
                 PixelConverter.ConvertRow(expectedRgba.AsSpan(y * ew * 4, ew * 4), 4, SampleFormat.UInt8,
                     expected.AsSpan(y * stride, ew * bpp), format, ew);
             }
-            if (format == ImagePixelFormat.Gray8 && HeifDecoder.MatrixCoefficients(container) != 0)
+            if (format == PixelFormat.Gray8 && HeifDecoder.MatrixCoefficients(container) != 0)
             {
                 var grayCanvas = new byte[canvasW * canvasH];
-                HeifDecoder.DecodeInto(data, plain, grayCanvas, canvasW, ImagePixelFormat.Gray8);
+                HeifDecoder.DecodeInto(data, plain, grayCanvas, canvasW, PixelFormat.Gray8);
                 var (expectedGray, _, _) = ApplyTransforms(container.Transforms, grayCanvas, canvasW, canvasH, bytesPerPixel: 1);
                 for (var y = 0; y < eh; y++) expectedGray.AsSpan(y * ew, ew).CopyTo(expected.AsSpan(y * stride));
             }

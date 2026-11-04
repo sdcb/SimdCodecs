@@ -211,10 +211,10 @@ public sealed class IcoTests
                     (frame.Info.Width, frame.Info.Height, frame.Info.Format, frame.Duration).ShouldBe(
                         (frames[i].Width, frames[i].Height, cursor ? ImageFormat.Cur : ImageFormat.Ico, (TimeSpan?)null));
                     var bgra = new byte[frames[i].Width * frames[i].Height * 4 + 7];
-                    reader.TryDecodeFrameInto(i, bgra, 0, ImagePixelFormat.Bgra32).ShouldBeTrue();
+                    reader.TryDecodeFrameInto(i, bgra, 0, PixelFormat.Bgra32).ShouldBeTrue();
                     reader.TryDecodeFrame(i, out var decoded).ShouldBeTrue();
                     var expected = new byte[bgra.Length];
-                    PixelConverter.TryConvert(decoded!, expected, 0, ImagePixelFormat.Bgra32).ShouldBeTrue();
+                    PixelConverter.TryConvert(decoded!, expected, 0, PixelFormat.Bgra32).ShouldBeTrue();
                     bgra.ShouldBe(expected, $"frame {i}");
                 }
             }

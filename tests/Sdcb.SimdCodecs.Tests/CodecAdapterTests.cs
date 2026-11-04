@@ -24,7 +24,8 @@ public sealed class CodecAdapterTests
 
         SimdCodecs.CanDecode(tiff).ShouldBeTrue();
         SimdCodecs.TryReadInfo(tiff, out var info).ShouldBeTrue();
-        info.ShouldBe(new ImageInfo(2, 2, 1, SampleFormat.UInt16) { Format = ImageFormat.Tiff });
+        // The test file writes the TIFF 6.0 baseline resolution, 96 dpi, which 2.0 reports.
+        info.ShouldBe(new ImageInfo(2, 2, 1, SampleFormat.UInt16) { Format = ImageFormat.Tiff, Resolution = Resolution.FromDpi(96, 96) });
 
         SimdCodecs.TryDecode(tiff, out var img).ShouldBeTrue();
         img.ShouldNotBeNull();

@@ -7,7 +7,7 @@ namespace Sdcb.SimdCodecs.Jpeg.Benchmarks;
 
 /// <summary>
 /// The display layouts of <see cref="JpegImageDecoder.TryDecodeInto"/>: for each case and each
-/// <see cref="ImagePixelFormat"/> other than RGBA, the native path (the colour conversion writes the
+/// <see cref="PixelFormat"/> other than RGBA, the native path (the colour conversion writes the
 /// layout; grey frames copy their samples) against the two-step path a caller of an RGBA-only API takes
 /// (decode to RGBA, then <see cref="PixelConverter"/> over the frame), with RGBA itself and
 /// libjpeg-turbo's <c>tj3Decompress8</c> in the same layout for scale. The two of ours must produce
@@ -16,10 +16,10 @@ namespace Sdcb.SimdCodecs.Jpeg.Benchmarks;
 /// </summary>
 internal static class Formats
 {
-    private static readonly (ImagePixelFormat Format, int Turbo)[] Targets =
+    private static readonly (PixelFormat Format, int Turbo)[] Targets =
     [
-        (ImagePixelFormat.Bgra32, TurboJpeg.PfBgra), (ImagePixelFormat.Rgb24, TurboJpeg.PfRgb),
-        (ImagePixelFormat.Bgr24, TurboJpeg.PfBgr), (ImagePixelFormat.Gray8, TurboJpeg.PfGray),
+        (PixelFormat.Bgra32, TurboJpeg.PfBgra), (PixelFormat.Rgb24, TurboJpeg.PfRgb),
+        (PixelFormat.Bgr24, TurboJpeg.PfBgr), (PixelFormat.Gray8, TurboJpeg.PfGray),
     ];
 
     public static int Run(IReadOnlyList<string> cases, int rounds)
@@ -48,9 +48,9 @@ internal static class Formats
             JpegInfo info = JpegDecoder.ReadInfo(jpeg);
             int pixels = info.Width * info.Height;
             var rgba = new byte[pixels * 4];
-            foreach ((ImagePixelFormat format, int turboFormat) in Targets)
+            foreach ((PixelFormat format, int turboFormat) in Targets)
             {
-                int bpp = PixelConverter.BytesPerPixel(format);
+                int bpp = format.BytesPerPixel;
                 var native = new byte[pixels * bpp];
                 var twoStep = new byte[pixels * bpp];
                 var turboOut = new byte[pixels * bpp];
@@ -67,7 +67,7 @@ internal static class Formats
                     ("turbo", () => turbo.Decode(jpeg, turboOut, turboFormat, bpp)),
                 };
                 // The last commit's decoder, for the layouts it already had (same process, interleaved).
-                int baselineFormat = format switch { ImagePixelFormat.Bgra32 => 1, ImagePixelFormat.Rgb24 => 2, _ => -1 };
+                int baselineFormat = format switch { PixelFormat.Bgra32 => 1, PixelFormat.Rgb24 => 2, _ => -1 };
                 if (BaselineDecoder.Description is not null && baselineFormat >= 0)
                 {
                     contestants.Add(("baseline", () => BaselineDecoder.DecodeTo(jpeg, baselineOut, info.Width * bpp, baselineFormat)));
@@ -78,7 +78,7 @@ internal static class Formats
                 foreach (var c in contestants)
                     c.Run();
                 // The contract: the converted RGBA, except grey from a YCbCr frame, which is its Y plane.
-                var planes = format == ImagePixelFormat.Gray8 ? JpegDiagnostics.DecodePlanes(jpeg) : null;
+                var planes = format == PixelFormat.Gray8 ? JpegDiagnostics.DecodePlanes(jpeg) : null;
                 bool yPlane = planes is { Length: 3 } && planes[0].Width == info.Width && planes[0].Height == info.Height;
                 if (!native.AsSpan().SequenceEqual(yPlane ? planes![0].Samples : twoStep))
                     throw new InvalidOperationException($"{id} {format}: the native path differs from {(yPlane ? "the Y plane" : "decode + convert")}");

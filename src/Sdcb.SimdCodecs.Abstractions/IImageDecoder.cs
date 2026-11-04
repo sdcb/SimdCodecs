@@ -77,7 +77,9 @@ public interface IImageDecoder
     /// with a native path for a layout (JPEG writing BGR from its colour conversion, PNG expanding a row at a time)
     /// produces those bytes without the intermediate full-frame image. The one exception is
     /// <see cref="ChannelLayout.Gray"/> from a codec that stores luma: it returns the stored luma (a YCbCr JPEG's Y
-    /// plane), which may differ by a code value or two from the luma of the RGB.
+    /// plane), which may differ by a code value or two from the luma of the RGB. A codec may also convert colour
+    /// straight from coded samples deeper than its 8-bit output (HEIF Main 10 to an 8-bit format), rounding once
+    /// instead of narrowing its 16-bit image; it then states so, and differs by at most one code value.
     /// </para>
     /// </summary>
     /// <param name="data">The complete encoded image.</param>

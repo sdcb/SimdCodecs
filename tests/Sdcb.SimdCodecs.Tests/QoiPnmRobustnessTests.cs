@@ -29,8 +29,8 @@ public sealed class QoiPnmRobustnessTests
         {
             return
             [
-                ("rgba", QoiEncoder.Encode(rgba, 23, 9, ImagePixelFormat.Rgba32)),
-                ("rgb", QoiEncoder.Encode([.. rgba.Where((_, i) => i % 4 != 3)], 23, 9, ImagePixelFormat.Rgb24)),
+                ("rgba", QoiEncoder.Encode(rgba, 23, 9, PixelFormat.Rgba32)),
+                ("rgb", QoiEncoder.Encode([.. rgba.Where((_, i) => i % 4 != 3)], 23, 9, PixelFormat.Rgb24)),
                 ("hand", QoiTests.HandStream().Stream),
             ];
         }
@@ -38,7 +38,7 @@ public sealed class QoiPnmRobustnessTests
         var seeds = new List<(string, byte[])>();
         foreach (var format in new[] { PnmFormat.PlainBitmap, PnmFormat.PlainGraymap, PnmFormat.PlainPixmap, PnmFormat.Bitmap, PnmFormat.Graymap, PnmFormat.Pixmap, PnmFormat.Arbitrary })
         foreach (var max in new[] { 0, 7, 1000 })
-            seeds.Add(($"{format} max {max}", PnmEncoder.Encode(rgba, 23, 9, ImagePixelFormat.Rgba32, new PnmEncodeOptions { Format = format, MaxValue = max })));
+            seeds.Add(($"{format} max {max}", PnmEncoder.Encode(rgba, 23, 9, PixelFormat.Rgba32, new PnmEncodeOptions { Format = format, MaxValue = max })));
         seeds.Add(("pfm", PnmEncoder.EncodePfm([.. rgba.Take(23 * 9 * 3).Select(v => v / 7f)], 23, 9, 3)));
         seeds.Add(("pam comments", "P7\n# c\nWIDTH 2\nHEIGHT 1\nDEPTH 2\nMAXVAL 255\nTUPLTYPE GRAYSCALE_ALPHA\nENDHDR\n\u0001\u0002\u0003\u0004"u8.ToArray()));
         return seeds;
@@ -139,9 +139,9 @@ public sealed class QoiPnmRobustnessTests
                 if ((long)info.Width * info.Height > MaxPixels) return;
                 QoiImageDecoder.TryDecode(data, out _);
                 var rgba = new byte[info.Width * info.Height * 4];
-                QoiImageDecoder.TryDecodeInto(data, rgba, 0, ImagePixelFormat.Rgba32);
+                QoiImageDecoder.TryDecodeInto(data, rgba, 0, PixelFormat.Rgba32);
                 var gray = new byte[info.Width * info.Height];
-                QoiImageDecoder.TryDecodeInto(data, gray, 0, ImagePixelFormat.Gray8);
+                QoiImageDecoder.TryDecodeInto(data, gray, 0, PixelFormat.Gray8);
             }
             else
             {
@@ -150,9 +150,9 @@ public sealed class QoiPnmRobustnessTests
                 PnmImageDecoder.TryDecode(data, out _);
                 PfmImageDecoder.TryDecode(data, out _);
                 var rgba = new byte[info.Width * info.Height * 4];
-                PnmImageDecoder.TryDecodeInto(data, rgba, 0, ImagePixelFormat.Rgba32);
+                PnmImageDecoder.TryDecodeInto(data, rgba, 0, PixelFormat.Rgba32);
                 var gray = new byte[info.Width * info.Height];
-                PnmImageDecoder.TryDecodeInto(data, gray, 0, ImagePixelFormat.Gray8);
+                PnmImageDecoder.TryDecodeInto(data, gray, 0, PixelFormat.Gray8);
             }
         }
         catch (InvalidDataException)
@@ -169,21 +169,21 @@ public sealed class QoiPnmRobustnessTests
     public void DecodeInto_allocates_nothing()
     {
         var rgba = QoiTests.Pattern(640, 48, alpha: true, seed: 9);
-        var files = new List<(string, byte[], Func<byte[], byte[], ImagePixelFormat, bool>)>
+        var files = new List<(string, byte[], Func<byte[], byte[], PixelFormat, bool>)>
         {
-            ("qoi rgba", QoiEncoder.Encode(rgba, 640, 48, ImagePixelFormat.Rgba32), (d, o, f) => QoiImageDecoder.TryDecodeInto(d, o, 0, f)),
-            ("qoi rgb", QoiEncoder.Encode([.. rgba.Where((_, i) => i % 4 != 3)], 640, 48, ImagePixelFormat.Rgb24), (d, o, f) => QoiImageDecoder.TryDecodeInto(d, o, 0, f)),
+            ("qoi rgba", QoiEncoder.Encode(rgba, 640, 48, PixelFormat.Rgba32), (d, o, f) => QoiImageDecoder.TryDecodeInto(d, o, 0, f)),
+            ("qoi rgb", QoiEncoder.Encode([.. rgba.Where((_, i) => i % 4 != 3)], 640, 48, PixelFormat.Rgb24), (d, o, f) => QoiImageDecoder.TryDecodeInto(d, o, 0, f)),
         };
         foreach (var format in new[] { PnmFormat.PlainBitmap, PnmFormat.PlainPixmap, PnmFormat.Bitmap, PnmFormat.Graymap, PnmFormat.Pixmap, PnmFormat.Arbitrary })
         foreach (var max in new[] { 0, 7, 1000, 65535 })
         {
             if (max != 0 && format is PnmFormat.Bitmap or PnmFormat.PlainBitmap) continue;
-            files.Add(($"{format} max {max}", PnmEncoder.Encode(rgba, 640, 48, ImagePixelFormat.Rgba32, new PnmEncodeOptions { Format = format, MaxValue = max }),
+            files.Add(($"{format} max {max}", PnmEncoder.Encode(rgba, 640, 48, PixelFormat.Rgba32, new PnmEncodeOptions { Format = format, MaxValue = max }),
                 (d, o, f) => PnmImageDecoder.TryDecodeInto(d, o, 0, f)));
         }
 
         foreach (var (name, data, decode) in files)
-        foreach (var target in Enum.GetValues<ImagePixelFormat>())
+        foreach (var target in PixelConverterTests.Formats)
         {
             var destination = new byte[640 * 48 * 4];
             for (var i = 0; i < 3; i++) decode(data, destination, target).ShouldBeTrue(name);

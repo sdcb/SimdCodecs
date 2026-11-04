@@ -395,6 +395,6 @@ public sealed class PngReaderTests
         png[24] = (byte)bitDepth;
         png[25] = (byte)colorType;
         Sdcb.SimdCodecs.Png.PngImageDecoder.TryReadInfo(png, out _).ShouldBeFalse();
-        Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecodeInto(png, new byte[64], 0, Sdcb.SimdCodecs.Abstractions.ImagePixelFormat.Rgba32).ShouldBeFalse();
+        Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecodeInto(png, new byte[64], 0, Sdcb.SimdCodecs.Abstractions.PixelFormat.Rgba32).ShouldBeFalse();
     }
 }
