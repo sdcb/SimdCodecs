@@ -113,4 +113,134 @@ public sealed class HeifEquivalenceTests
     [Fact]
     public void InverseTransform_dispatch_matches_the_definition() =>
         RunInverse((c, s, l, d4, mx, my, b, dst, o, st) => HevcTransform.InverseAdd(c, s, l, d4, mx, my, b, dst.AsSpan(o), st), v256Only: false);
+
+    /// <summary>SAO edge offset of (8-411 .. 8-413), straight from the formulas, sample by sample.</summary>
+    private static ushort ReferenceEdge(int v, int a, int b, int[] offsets, int max)
+    {
+        var edgeIdx = 2 + Math.Sign(v - a) + Math.Sign(v - b);
+        if (edgeIdx is 0 or 1 or 2) edgeIdx = edgeIdx == 2 ? 0 : edgeIdx + 1;
+        return edgeIdx == 0 ? (ushort)v : (ushort)Math.Clamp(v + offsets[edgeIdx - 1], 0, max);
+    }
+
+    private static ushort ReferenceBand(int v, int band, int bitDepth, int[] offsets)
+    {
+        var bandTable = new int[32];
+        for (var k = 0; k < 4; k++) bandTable[(k + band) & 31] = k + 1;
+        var bandIdx = bandTable[v >> (bitDepth - 5)];
+        return bandIdx == 0 ? (ushort)v : (ushort)Math.Clamp(v + offsets[bandIdx - 1], 0, (1 << bitDepth) - 1);
+    }
+
+    private delegate int EdgeKernel(ushort[] cur, ushort[] a, ushort[] b, ushort[] dst, int count, int[] offsets, int max);
+    private delegate int BandKernel(ushort[] cur, ushort[] dst, int count, int band, int bitDepth, int[] offsets);
+
+    private static ushort[] Samples(Random rng, int count, int bitDepth, int mode)
+    {
+        var max = (1 << bitDepth) - 1;
+        var result = new ushort[count];
+        for (var i = 0; i < count; i++)
+        {
+            result[i] = mode switch
+            {
+                0 => (ushort)rng.Next(max + 1),
+                1 => (ushort)(rng.Next(2) == 0 ? rng.Next(3) : max - rng.Next(3)), // the clamps
+                _ => (ushort)((max >> 1) + rng.Next(3)), // flat, so all five edge categories occur
+            };
+        }
+        return result;
+    }
+
+    private static int[] SaoOffsets(Random rng, int bitDepth)
+    {
+        var cMax = (1 << (Math.Min(bitDepth, 10) - 5)) - 1;
+        return [rng.Next(-cMax, cMax + 1), rng.Next(-cMax, cMax + 1), rng.Next(-cMax, cMax + 1), rng.Next(-cMax, cMax + 1)];
+    }
+
+    private static void RunEdge(EdgeKernel kernel, int granule)
+    {
+        var rng = new Random(411);
+        for (var iteration = 0; iteration < 2000; iteration++)
+        {
+            var count = rng.Next(0, 80);
+            var bitDepth = rng.Next(2) == 0 ? 8 : 10;
+            var mode = rng.Next(3);
+            var cur = Samples(rng, count, bitDepth, mode);
+            var a = Samples(rng, count, bitDepth, mode);
+            var b = Samples(rng, count, bitDepth, mode);
+            var offsets = SaoOffsets(rng, bitDepth);
+            var max = (1 << bitDepth) - 1;
+            var expected = new ushort[count + 4];
+            var actual = new ushort[count + 4];
+            Array.Fill(actual, (ushort)0xBEEF);
+            Array.Fill(expected, (ushort)0xBEEF);
+            for (var i = 0; i < count; i++) expected[i] = ReferenceEdge(cur[i], a[i], b[i], offsets, max);
+            var done = kernel(cur, a, b, actual, count, offsets, max);
+            (done % granule).ShouldBe(0);
+            HevcSao.EdgeRowScalar(cur, a, b, actual, done, count, offsets, max);
+            actual.ShouldBe(expected, $"iteration {iteration}: count={count} done={done}");
+        }
+    }
+
+    private static void RunBand(BandKernel kernel, int granule)
+    {
+        var rng = new Random(413);
+        for (var iteration = 0; iteration < 2000; iteration++)
+        {
+            var count = rng.Next(0, 80);
+            var bitDepth = rng.Next(2) == 0 ? 8 : 10;
+            var cur = Samples(rng, count, bitDepth, rng.Next(2));
+            var offsets = SaoOffsets(rng, bitDepth);
+            var band = rng.Next(32);
+            var expected = new ushort[count + 4];
+            var actual = new ushort[count + 4];
+            Array.Fill(actual, (ushort)0xBEEF);
+            Array.Fill(expected, (ushort)0xBEEF);
+            for (var i = 0; i < count; i++) expected[i] = ReferenceBand(cur[i], band, bitDepth, offsets);
+            var done = kernel(cur, actual, count, band, bitDepth, offsets);
+            (done % granule).ShouldBe(0);
+            HevcSao.BandRowScalar(cur, actual, done, count, band, bitDepth, offsets);
+            actual.ShouldBe(expected, $"iteration {iteration}: count={count} band={band}");
+        }
+    }
+
+    [Fact]
+    public void SaoEdge_scalar_matches_the_definition() => RunEdge((c, a, b, d, n, o, m) => 0, 1);
+
+    [Fact]
+    public void SaoEdge_Vector128_matches_the_definition()
+    {
+        if (!HasV128) return;
+        RunEdge((c, a, b, d, n, o, m) => n < 8 ? 0 : HevcSao.EdgeRowVector128(c, a, b, d, n, o, m), 8);
+    }
+
+    [Fact]
+    public void SaoEdge_Vector256_matches_the_definition()
+    {
+        if (!HasV256) return;
+        RunEdge((c, a, b, d, n, o, m) => n < 16 ? 0 : HevcSao.EdgeRowVector256(c, a, b, d, n, o, m), 16);
+    }
+
+    [Fact]
+    public void SaoEdge_dispatch_matches_the_definition() =>
+        RunEdge((c, a, b, d, n, o, m) => { HevcSao.EdgeRow(c, a, b, d, n, o, m); return n; }, 1);
+
+    [Fact]
+    public void SaoBand_scalar_matches_the_definition() => RunBand((c, d, n, band, bd, o) => 0, 1);
+
+    [Fact]
+    public void SaoBand_Vector128_matches_the_definition()
+    {
+        if (!HasV128) return;
+        RunBand((c, d, n, band, bd, o) => n < 8 ? 0 : HevcSao.BandRowVector128(c, d, n, band, bd, o), 8);
+    }
+
+    [Fact]
+    public void SaoBand_Vector256_matches_the_definition()
+    {
+        if (!HasV256) return;
+        RunBand((c, d, n, band, bd, o) => n < 16 ? 0 : HevcSao.BandRowVector256(c, d, n, band, bd, o), 16);
+    }
+
+    [Fact]
+    public void SaoBand_dispatch_matches_the_definition() =>
+        RunBand((c, d, n, band, bd, o) => { HevcSao.BandRow(c, d, n, band, bd, o); return n; }, 1);
 }

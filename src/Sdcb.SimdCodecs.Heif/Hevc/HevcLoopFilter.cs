@@ -193,32 +193,116 @@ internal sealed partial class HevcFrameDecoder
         }
         if (!anySao) return;
 
+        // Transquant-bypass CUs are not filtered (8.7.3.1): with any in the picture, every CTB takes the
+        // per-sample path that checks for them.
+        var anyNoFilter = Array.IndexOf(_noFilter, (byte)1) >= 0;
+        Span<int> offsets = stackalloc int[4];
         for (var c = 0; c < 3; c++)
         {
             // SAO reads the deblocked picture and writes a new one (8.7.3.1).
-            var source = (ushort[])_pic.Planes[c].Clone();
-            var width = _pic.PlaneWidth(c);
-            var height = _pic.PlaneHeight(c);
-            var ctbSize = c == 0 ? _sps.CtbSizeY : _sps.CtbSizeY >> 1;
-            var bitDepth = c == 0 ? _sps.BitDepthY : _sps.BitDepthC;
-            for (var ry = 0; ry < _sps.PicHeightInCtbs; ry++)
+            var plane = _pic.Planes[c];
+            var source = System.Buffers.ArrayPool<ushort>.Shared.Rent(plane.Length);
+            try
             {
-                for (var rx = 0; rx < _sps.PicWidthInCtbs; rx++)
+                plane.CopyTo(source, 0);
+                var width = _pic.PlaneWidth(c);
+                var height = _pic.PlaneHeight(c);
+                var ctbSize = c == 0 ? _sps.CtbSizeY : _sps.CtbSizeY >> 1;
+                var bitDepth = c == 0 ? _sps.BitDepthY : _sps.BitDepthC;
+                for (var ry = 0; ry < _sps.PicHeightInCtbs; ry++)
                 {
-                    var ctbAddr = ry * _sps.PicWidthInCtbs + rx;
-                    var slice = _ctbSlice[ctbAddr]!;
-                    if (c == 0 ? !slice.SaoLuma : !slice.SaoChroma) continue;
-                    var p = _sao[ctbAddr];
-                    var type = p.Type(c);
-                    if (type == 0) continue;
-                    var x0 = rx * ctbSize;
-                    var y0 = ry * ctbSize;
-                    var x1 = Math.Min(x0 + ctbSize, width);
-                    var y1 = Math.Min(y0 + ctbSize, height);
-                    if (type == 1) SaoBand(c, source, width, x0, y0, x1, y1, p, bitDepth);
-                    else SaoEdge(c, source, width, height, x0, y0, x1, y1, p, bitDepth, ctbAddr);
+                    for (var rx = 0; rx < _sps.PicWidthInCtbs; rx++)
+                    {
+                        var ctbAddr = ry * _sps.PicWidthInCtbs + rx;
+                        var slice = _ctbSlice[ctbAddr]!;
+                        if (c == 0 ? !slice.SaoLuma : !slice.SaoChroma) continue;
+                        var p = _sao[ctbAddr];
+                        var type = p.Type(c);
+                        if (type == 0) continue;
+                        var x0 = rx * ctbSize;
+                        var y0 = ry * ctbSize;
+                        var x1 = Math.Min(x0 + ctbSize, width);
+                        var y1 = Math.Min(y0 + ctbSize, height);
+                        for (var i = 0; i < 4; i++) offsets[i] = p.Offset(c, i);
+                        if (type == 1)
+                        {
+                            if (anyNoFilter)
+                            {
+                                SaoBand(c, source, width, x0, y0, x1, y1, p, bitDepth);
+                                continue;
+                            }
+                            for (var y = y0; y < y1; y++)
+                            {
+                                HevcSao.BandRow(source.AsSpan(y * width + x0, x1 - x0), plane.AsSpan(y * width + x0, x1 - x0),
+                                    x1 - x0, p.Band(c), bitDepth, offsets);
+                            }
+                        }
+                        else if (anyNoFilter || !SaoNeighboursUsable(rx, ry, ctbAddr, slice))
+                        {
+                            SaoEdge(c, source, width, height, x0, y0, x1, y1, p, bitDepth, ctbAddr);
+                        }
+                        else
+                        {
+                            SaoEdgeFast(source, plane, width, height, x0, y0, x1, y1, p.Class(c), bitDepth, offsets);
+                        }
+                    }
                 }
             }
+            finally
+            {
+                System.Buffers.ArrayPool<ushort>.Shared.Return(source);
+            }
+        }
+    }
+
+    /// <summary>
+    /// True when every CTB around <paramref name="ctbAddr"/> that exists may be read by its edge offset (the slice
+    /// conditions of 8.7.3.2 depend only on the neighbouring sample's CTB).
+    /// </summary>
+    private bool SaoNeighboursUsable(int rx, int ry, int ctbAddr, HevcSliceHeader slice)
+    {
+        var ctbLog2 = _sps.CtbLog2SizeY;
+        for (var dy = -1; dy <= 1; dy++)
+        {
+            for (var dx = -1; dx <= 1; dx++)
+            {
+                int nx = rx + dx, ny = ry + dy;
+                if ((dx | dy) == 0 || nx < 0 || ny < 0 || nx >= _sps.PicWidthInCtbs || ny >= _sps.PicHeightInCtbs) continue;
+                if (!SaoNeighbourUsable(nx << ctbLog2, ny << ctbLog2, ctbAddr, slice, ctbLog2)) return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Edge offset of one CTB whose neighbours are all usable: only the picture boundary excludes samples (8.7.3.2),
+    /// so each row is one run for <see cref="HevcSao.EdgeRow"/>.
+    /// </summary>
+    private static void SaoEdgeFast(ushort[] source, ushort[] dst, int width, int height, int x0, int y0, int x1, int y1,
+        int eoClass, int bitDepth, ReadOnlySpan<int> offsets)
+    {
+        // Table 8-13; hPos[1] = −hPos[0] and vPos[1] = −vPos[0].
+        var (hPos, vPos) = eoClass switch { 0 => (-1, 0), 1 => (0, -1), 2 => (-1, -1), _ => (1, -1) };
+        int xs = x0, xe = x1, ys = y0, ye = y1;
+        if (hPos != 0)
+        {
+            if (xs == 0) xs = 1;
+            if (xe == width) xe = width - 1;
+        }
+        if (vPos != 0)
+        {
+            if (ys == 0) ys = 1;
+            if (ye == height) ye = height - 1;
+        }
+        var count = xe - xs;
+        if (count <= 0) return;
+        var max = (1 << bitDepth) - 1;
+        for (var y = ys; y < ye; y++)
+        {
+            var at = y * width + xs;
+            var neighbour = vPos * width + hPos;
+            HevcSao.EdgeRow(source.AsSpan(at, count), source.AsSpan(at + neighbour, count), source.AsSpan(at - neighbour, count),
+                dst.AsSpan(at, count), count, offsets, max);
         }
     }
 
