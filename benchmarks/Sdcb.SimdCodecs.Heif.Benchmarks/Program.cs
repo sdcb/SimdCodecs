@@ -6,6 +6,8 @@ const string Usage = """
 
       verify                       every contestant against us, before any timing; exit 1 on a difference
       equivalence                  serial and parallel tile decode produce the identical RGBA buffer
+      quick [--reps N] [--fixtures RE]
+                                   ours only, one CPU (HEIF_BENCH_CPU, default 2): HEVC stage and RGBA, for A/B rounds
       multi [--reps N] [--fixtures RE]
                                    multi-core decode speed and allocation, ours vs libheif vs Magick
       single [--reps N] [--fixtures RE]
@@ -44,6 +46,9 @@ switch (command)
     }
     case "single":
         Console.WriteLine(SingleCore.Run(Select(defaultAll: true), Reps(), verify: true));
+        return 0;
+    case "quick":
+        Console.WriteLine(Quick.Run(Select(defaultAll: true), Reps()));
         return 0;
     case "multi":
         Console.WriteLine(MultiCore.Run(Select(defaultAll: true), Reps()));
