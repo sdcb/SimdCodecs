@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <!-- JPEG decode timing on browser-wasm (Mono AOT + SIMD, single thread), run under Node.js by
+       run.sh next to the same code on the desktop JIT (desktop/). Not in SimdCodecs.slnx: it needs
+       the wasm-tools workload. Release emscripten flags (the shipped-app default) on purpose. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <WasmEnableSIMD>true</WasmEnableSIMD>
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <CompressionEnabled>false</CompressionEnabled>
+    <WasmNativeDebugSymbols>false</WasmNativeDebugSymbols>
+    <!-- `-p:WasmProbe=true` compiles Probe.cs, for reading the AOT output of single Vector128 calls. -->
+    <DefineConstants Condition="'$(WasmProbe)' == 'true'">$(DefineConstants);WASM_PROBE</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="desktop\**" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs\Sdcb.SimdCodecs.csproj" />
+  </ItemGroup>
+
+  <Import Project="Images.props" />
+
+</Project>

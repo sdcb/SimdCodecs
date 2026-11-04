@@ -1,0 +1,7 @@
+<Project>
+  <!-- The images Stages times, embedded under their file names (browser-wasm has no file system).
+       run.sh fetches photo.jpg and prepares the variants into the git-ignored .cache/images. -->
+  <ItemGroup>
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory).cache\images\*.jpg" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>
