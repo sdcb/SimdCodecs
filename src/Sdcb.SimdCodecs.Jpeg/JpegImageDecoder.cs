@@ -105,13 +105,15 @@ public sealed class JpegImageDecoder : IImageDecoder
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
-        if (!format.IsBasic8 || options?.Region is not null)
+        if (!format.IsBasic8)
             return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
         if (!JpegDecoder.TryReadInfo(data, out var info))
             return false;
         options?.Validate(info.Width, info.Height, supportsScale: true);
         var scale = (JpegScale)(options?.ScaleDenominator ?? 1);
         var (width, height) = info.ScaledSize(scale);
+        if (options?.Region is { } region)
+            return TryDecodeRegionInto(data, destination, stride, format, scale, width, height, region, cancellationToken);
         if (!PixelConverter.TryGetLayout(width, height, format, stride, destination.Length, out var rowStride))
             return false;
         try
@@ -122,6 +124,37 @@ public sealed class JpegImageDecoder : IImageDecoder
         catch (Exception e) when (e is InvalidDataException or ArgumentException)
         {
             return false;
+        }
+    }
+
+    // A region: the native path for the format into a pooled full-size buffer, then the region copied out — so its
+    // pixels are exactly those of the whole decode, Gray8 included (still the stored Y plane). The whole frame is
+    // decoded: skipping MCU rows and columns outside the region is a 2.x performance item (known-gaps).
+    private static bool TryDecodeRegionInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        JpegScale scale, int width, int height, PixelRect region, CancellationToken cancellationToken)
+    {
+        if (!PixelConverter.TryGetLayout(region.Width, region.Height, format, stride, destination.Length, out var rowStride))
+            return false;
+        var bpp = format.BytesPerPixel;
+        var rowBytes = width * bpp;
+        var band = System.Buffers.ArrayPool<byte>.Shared.Rent(checked(rowBytes * height));
+        try
+        {
+            _ = JpegDecoder.DecodeTo(data, band.AsSpan(0, rowBytes * height), rowBytes, ToJpegFormat(format), scale, cancellationToken);
+            for (var y = 0; y < region.Height; y++)
+            {
+                band.AsSpan((region.Y + y) * rowBytes + region.X * bpp, region.Width * bpp)
+                    .CopyTo(destination.Slice(y * rowStride, region.Width * bpp));
+            }
+            return true;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException)
+        {
+            return false;
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<byte>.Shared.Return(band);
         }
     }
 

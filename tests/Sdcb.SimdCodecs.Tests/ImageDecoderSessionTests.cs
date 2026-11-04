@@ -354,14 +354,13 @@ public sealed class ImageDecoderSessionTests : IDisposable
         foreach (var format in PixelFormat.All)
         {
             var converted = PixelConverterTests.ReferenceConvert(full, native, format, width * height);
-            // The stored-luma exception: a YCbCr JPEG's Gray8 is its Y plane when the whole image is asked for. (With a
-            // region the codec decodes RGB and crops, so the luma is the RGB's: see JpegGray8WithARegionIsTheStoredLuma.)
+            // The stored-luma exception: a YCbCr JPEG's Gray8 is its Y plane, for the whole image and for a region of it.
             var stored = name == "jpeg" && format == PixelFormat.Gray8 ? Jpeg.JpegDiagnostics.DecodePlanes(data)[0].Samples : null;
 
             foreach (var region in regions)
             {
                 var r = region ?? new PixelRect(0, 0, width, height);
-                var expected = Crop(region is null && stored is not null ? stored : converted, width, format.BytesPerPixel, r);
+                var expected = Crop(stored ?? converted, width, format.BytesPerPixel, r);
                 var rowBytes = r.Width * format.BytesPerPixel;
                 foreach (var stride in new[] { 0, rowBytes + 5 })
                 {
@@ -382,7 +381,7 @@ public sealed class ImageDecoderSessionTests : IDisposable
         }
     }
 
-    [Fact(Skip = "BUG: JPEG Gray8 with a Region is the luma of the decoded RGB, but without a Region it is the stored Y plane (PixelFormat.Gray8 contract)")]
+    [Fact]
     public void JpegGray8WithARegionIsTheStoredLuma()
     {
         using var decoder = ImageDecoder.Open(JpegData.AsMemory());
