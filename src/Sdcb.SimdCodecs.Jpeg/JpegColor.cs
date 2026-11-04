@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.Wasm;
 using System.Runtime.Intrinsics.X86;
 
 namespace Sdcb.SimdCodecs.Jpeg;
@@ -222,6 +223,31 @@ internal static class JpegColor
             Vector256.Create((byte)0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15, 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15));
     }
 
+    /// <summary>
+    /// Four pixels' pre-rounding r, g, b → 16 packed bytes. With PackedSimd the clamp is the
+    /// saturating narrows after trunc(v + 0.5), as in <see cref="PackSaturate"/> (same bytes as
+    /// <see cref="ToByte(Vector128{float})"/>): wasm's f32x4.min / max carry NaN and ±0 rules
+    /// that cost several instructions each, the narrows one. One byte shuffle interleaves.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void StoreYcc(ref byte d, int i, Vector128<float> r, Vector128<float> g, Vector128<float> b, bool bgr)
+    {
+        if (PackedSimd.IsSupported)
+        {
+            var half = Vector128.Create(0.5f);
+            var ri = PackedSimd.ConvertToInt32Saturate(r + half);
+            var gi = PackedSimd.ConvertToInt32Saturate(g + half);
+            var bi = PackedSimd.ConvertToInt32Saturate(b + half);
+            var lo = PackedSimd.ConvertNarrowingSaturateSigned(bgr ? bi : ri, gi);
+            var hi = PackedSimd.ConvertNarrowingSaturateSigned(bgr ? ri : bi, Vector128.Create(255));
+            var px = PackedSimd.ConvertNarrowingSaturateUnsigned(lo, hi); // R0–3 G0–3 B0–3 A0–3
+            Vector128.Shuffle(px, Vector128.Create((byte)0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15)).StoreUnsafe(ref d, (nuint)(i * 4));
+            return;
+        }
+
+        Store(ref d, i, Pack(ToByte(r), ToByte(g), ToByte(b), bgr));
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int Blinn(int x, int k)
     {
@@ -320,8 +346,8 @@ internal static class JpegColor
             Load8(ref crp, i, out var cr0, out var cr1);
             Ycc(V128.ConvertToSingle(y0), V128.ConvertToSingle(cb0 - bias), V128.ConvertToSingle(cr0 - bias), out var r0, out var g0, out var b0);
             Ycc(V128.ConvertToSingle(y1), V128.ConvertToSingle(cb1 - bias), V128.ConvertToSingle(cr1 - bias), out var r1, out var g1, out var b1);
-            Store(ref d, i, Pack(ToByte(r0), ToByte(g0), ToByte(b0), bgr));
-            Store(ref d, i + 4, Pack(ToByte(r1), ToByte(g1), ToByte(b1), bgr));
+            StoreYcc(ref d, i, r0, g0, b0, bgr);
+            StoreYcc(ref d, i + 4, r1, g1, b1, bgr);
         }
 
         return i;
@@ -375,8 +401,8 @@ internal static class JpegColor
                 V128.ConvertToSingle(V128.ShiftLeft(cr0, 4) - bias), out var r0, out var g0, out var b0);
             Ycc(V128.ConvertToSingle(y1), V128.ConvertToSingle(V128.ShiftLeft(cb1, 4) - bias),
                 V128.ConvertToSingle(V128.ShiftLeft(cr1, 4) - bias), out var r1, out var g1, out var b1);
-            Store(ref d, i, Pack(ToByte(r0), ToByte(g0), ToByte(b0), bgr));
-            Store(ref d, i + 4, Pack(ToByte(r1), ToByte(g1), ToByte(b1), bgr));
+            StoreYcc(ref d, i, r0, g0, b0, bgr);
+            StoreYcc(ref d, i + 4, r1, g1, b1, bgr);
         }
 
         return i;

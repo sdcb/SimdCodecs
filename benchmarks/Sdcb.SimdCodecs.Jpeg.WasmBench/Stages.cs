@@ -31,6 +31,8 @@ internal static class Stages
     {
         Console.WriteLine($"# {runtime}: V128={Vector128.IsHardwareAccelerated} V256={Vector256.IsHardwareAccelerated} " +
             $"cores={Environment.ProcessorCount}; median (min) ms of {Rounds} rounds after {Warmup} warm-ups");
+        if (!Verify.Run())
+            return 1;
         Console.WriteLine("image\tfacade\trgba\tentropy\tidct\tup+color\tno-idct\tno-up+color\tchecksum");
         var any = false;
         foreach (var (name, data) in EmbeddedImages())

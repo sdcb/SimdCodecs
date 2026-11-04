@@ -15,7 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Stages.cs;..\Program.cs" />
+    <Compile Include="..\Stages.cs;..\Verify.cs;..\Program.cs" />
     <ProjectReference Include="..\..\..\src\Sdcb.SimdCodecs\Sdcb.SimdCodecs.csproj" />
   </ItemGroup>
 
