@@ -1,10 +1,11 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using Sdcb.SimdCodecs.Abstractions;
 
 namespace Sdcb.SimdCodecs.Webp;
 
-/// <summary>Options for <see cref="WebpEncoder.EncodeLossless(ReadOnlySpan{byte}, int, int, ImagePixelFormat, WebpLosslessEncodeOptions?, int)"/>.</summary>
+/// <summary>Options for <see cref="WebpEncoder.EncodeLossless(ReadOnlySpan{byte}, int, int, PixelFormat, WebpLosslessEncodeOptions?, int)"/>.</summary>
 public sealed record WebpLosslessEncodeOptions
 {
     /// <summary>
@@ -43,16 +44,16 @@ public static partial class WebpEncoder
     /// <param name="pixels">The image, top row first.</param>
     /// <param name="width">Width in pixels, 1..16384.</param>
     /// <param name="height">Height in pixels, 1..16384.</param>
-    /// <param name="format">The input layout. Formats without alpha are stored opaque.</param>
+    /// <param name="format">The input layout: any <see cref="PixelFormat"/>. WebP stores 8 bits, so 16-bit input is narrowed and premultiplied input unpremultiplied; formats without alpha are stored opaque.</param>
     /// <param name="options">Effort and transparency handling; null for the defaults.</param>
     /// <param name="stride">Bytes from one input row to the next; 0 means tightly packed.</param>
     /// <exception cref="ArgumentException">The size or buffer does not fit.</exception>
-    public static byte[] EncodeLossless(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    public static byte[] EncodeLossless(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format,
         WebpLosslessEncodeOptions? options = null, int stride = 0) =>
         EncodeLossless(pixels, width, height, format, options, stride, Vp8LAblation.None);
 
-    /// <summary>The benchmark's entry: <see cref="EncodeLossless(ReadOnlySpan{byte}, int, int, ImagePixelFormat, WebpLosslessEncodeOptions?, int)"/> with stages switched off.</summary>
-    internal static byte[] EncodeLossless(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    /// <summary>The benchmark's entry: <see cref="EncodeLossless(ReadOnlySpan{byte}, int, int, PixelFormat, WebpLosslessEncodeOptions?, int)"/> with stages switched off.</summary>
+    internal static byte[] EncodeLossless(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format,
         WebpLosslessEncodeOptions? options, int stride, Vp8LAblation ablation)
     {
         using var writer = EncodeVp8L(pixels, width, height, format, options, stride, ablation);
@@ -60,8 +61,8 @@ public static partial class WebpEncoder
     }
 
     /// <summary>Encodes a lossless WebP file into <paramref name="output"/>, from its current position.</summary>
-    /// <inheritdoc cref="EncodeLossless(ReadOnlySpan{byte}, int, int, ImagePixelFormat, WebpLosslessEncodeOptions?, int)"/>
-    public static void EncodeLossless(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, Stream output,
+    /// <inheritdoc cref="EncodeLossless(ReadOnlySpan{byte}, int, int, PixelFormat, WebpLosslessEncodeOptions?, int)"/>
+    public static void EncodeLossless(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, Stream output,
         WebpLosslessEncodeOptions? options = null, int stride = 0)
     {
         ArgumentNullException.ThrowIfNull(output);
@@ -78,7 +79,7 @@ public static partial class WebpEncoder
             new WebpMetadata(options?.IccProfile, options?.Exif, options?.Xmp));
     }
 
-    internal static Vp8LBitWriter EncodeVp8L(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    internal static Vp8LBitWriter EncodeVp8L(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format,
         WebpLosslessEncodeOptions? options, int stride, Vp8LAblation ablation)
     {
         options ??= new WebpLosslessEncodeOptions();
@@ -121,34 +122,24 @@ public static partial class WebpEncoder
     }
 
     /// <summary>
-    /// Packs the input as ARGB words. A little-endian ARGB word is B, G, R, A in memory, so RGB-order
-    /// input converts to <see cref="ImagePixelFormat.Bgra32"/> and BGR-order input, read as if it were
-    /// RGB, to <see cref="ImagePixelFormat.Rgba32"/>.
+    /// Packs the input as ARGB words. A little-endian ARGB word is B, G, R, A in memory, so input
+    /// converts to <see cref="PixelFormat.Bgra32"/>.
     /// </summary>
-    internal static void ToArgb(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, int rowStride, uint[] argb)
+    internal static void ToArgb(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, int rowStride, uint[] argb)
     {
-        (int channels, ImagePixelFormat target) = format switch
-        {
-            ImagePixelFormat.Rgba32 => (4, ImagePixelFormat.Bgra32),
-            ImagePixelFormat.Bgra32 => (4, ImagePixelFormat.Rgba32),
-            ImagePixelFormat.Rgb24 => (3, ImagePixelFormat.Bgra32),
-            ImagePixelFormat.Bgr24 => (3, ImagePixelFormat.Rgba32),
-            ImagePixelFormat.Gray8 => (1, ImagePixelFormat.Bgra32),
-            _ => throw new ArgumentOutOfRangeException(nameof(format)),
-        };
-        int bpp = PixelConverter.BytesPerPixel(format);
-        Span<byte> words = System.Runtime.InteropServices.MemoryMarshal.AsBytes(argb.AsSpan(0, width * height));
+        int bpp = format.BytesPerPixel;
+        Span<byte> words = MemoryMarshal.AsBytes(argb.AsSpan(0, width * height));
         for (int y = 0; y < height; y++)
         {
             ReadOnlySpan<byte> row = pixels.Slice(y * rowStride, width * bpp);
             Span<byte> destination = words.Slice(y * width * 4, width * 4);
-            if (format == ImagePixelFormat.Bgra32)
+            if (format == PixelFormat.Bgra32)
             {
                 row.CopyTo(destination);
             }
             else
             {
-                PixelConverter.ConvertRow(row, channels, SampleFormat.UInt8, destination, target, width);
+                PixelConverter.ConvertRow(row, format, destination, PixelFormat.Bgra32, width);
             }
         }
 

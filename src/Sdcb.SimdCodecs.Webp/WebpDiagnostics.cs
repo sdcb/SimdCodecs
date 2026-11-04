@@ -41,7 +41,7 @@ internal enum WebpAblation
 internal static class WebpDiagnostics
 {
     /// <summary>
-    /// <see cref="WebpDecoder.DecodeTo(ReadOnlySpan{byte}, Span{byte}, int)"/> with stages switched off.
+    /// <see cref="WebpDecoder.DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, System.Threading.CancellationToken)"/> with stages switched off.
     /// With <see cref="WebpAblation.None"/> it is exactly the production path.
     /// </summary>
     public static void DecodeTo(ReadOnlySpan<byte> data, Span<byte> rgba, WebpAblation ablation) =>

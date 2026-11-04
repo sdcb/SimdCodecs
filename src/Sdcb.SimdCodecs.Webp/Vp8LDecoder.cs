@@ -36,16 +36,16 @@ internal static class Vp8LDecoder
         (-6, 7), (7, 6), (-7, 6), (8, 5), (7, 7), (-7, 7), (8, 6), (8, 7)
     };
 
-    public static byte[] DecodeRgba(ReadOnlySpan<byte> stream)
+    public static byte[] DecodeRgba(ReadOnlySpan<byte> stream, CancellationToken cancellationToken = default)
     {
         ReadHeader(stream, out int width, out int height);
         byte[] result = new byte[checked(width * height * 4)];
-        DecodeRgbaInPlace(stream, result, width, height, WebpAblation.None);
+        DecodeRgbaInPlace(stream, result, width, height, WebpAblation.None, cancellationToken);
         return result;
     }
 
     public static void DecodeRgbaTo(ReadOnlySpan<byte> stream, Span<byte> output, int stride,
-        WebpAblation ablation = WebpAblation.None)
+        WebpAblation ablation = WebpAblation.None, CancellationToken cancellationToken = default)
     {
         ReadHeader(stream, out int width, out int height);
         int rowLength = checked(width * 4);
@@ -56,12 +56,12 @@ internal static class Vp8LDecoder
 
         if (stride == rowLength)
         {
-            DecodeRgbaInPlace(stream, output, width, height, ablation);
+            DecodeRgbaInPlace(stream, output, width, height, ablation, cancellationToken);
             return;
         }
 
         int[] argb = DecodeImage(new BitReader(stream[5..]), width, height, allowTransforms: true, ablation,
-            Span<byte>.Empty, out _, Span<int>.Empty)!;
+            Span<byte>.Empty, out _, Span<int>.Empty, cancellationToken)!;
         try
         {
             if ((ablation & WebpAblation.SkipOutput) == 0)
@@ -81,19 +81,19 @@ internal static class Vp8LDecoder
     /// buffer is held besides the caller's.
     /// </summary>
     private static void DecodeRgbaInPlace(ReadOnlySpan<byte> stream, Span<byte> output, int width, int height,
-        WebpAblation ablation)
+        WebpAblation ablation, CancellationToken cancellationToken = default)
     {
         int pixelCount = width * height;
         Span<int> argb = MemoryMarshal.Cast<byte, int>(output[..(pixelCount * 4)]);
         DecodeImage(new BitReader(stream[5..]), width, height, allowTransforms: true, ablation,
-            Span<byte>.Empty, out _, argb);
+            Span<byte>.Empty, out _, argb, cancellationToken);
         if ((ablation & WebpAblation.SkipOutput) == 0)
         {
             ToRgba(argb, output, pixelCount, 1, pixelCount * 4);
         }
     }
 
-    public static byte[] DecodeAlpha(ReadOnlySpan<byte> stream, int width, int height)
+    public static byte[] DecodeAlpha(ReadOnlySpan<byte> stream, int width, int height, CancellationToken cancellationToken = default)
     {
         if ((long)width * height > WebpLimits.MaximumPixels)
         {
@@ -101,7 +101,7 @@ internal static class Vp8LDecoder
         }
 
         int[] argb = DecodeImage(new BitReader(stream), width, height, allowTransforms: true, WebpAblation.None,
-            Span<byte>.Empty, out _, Span<int>.Empty)!;
+            Span<byte>.Empty, out _, Span<int>.Empty, cancellationToken)!;
         try
         {
             int pixelCount = checked(width * height);
@@ -115,7 +115,7 @@ internal static class Vp8LDecoder
         }
     }
 
-    public static void DecodeAlphaTo(ReadOnlySpan<byte> stream, int width, int height, Span<byte> alpha)
+    public static void DecodeAlphaTo(ReadOnlySpan<byte> stream, int width, int height, Span<byte> alpha, CancellationToken cancellationToken = default)
     {
         if ((long)width * height > WebpLimits.MaximumPixels)
         {
@@ -129,7 +129,7 @@ internal static class Vp8LDecoder
         }
 
         int[] argb = DecodeImage(new BitReader(stream), width, height, allowTransforms: true,
-            WebpAblation.None, alpha[..pixelCount], out bool alphaWritten, Span<int>.Empty)!;
+            WebpAblation.None, alpha[..pixelCount], out bool alphaWritten, Span<int>.Empty, cancellationToken)!;
         try
         {
             if (!alphaWritten)
@@ -263,7 +263,8 @@ internal static class Vp8LDecoder
     /// are then the packed indices.
     /// </param>
     private static int[]? DecodeImage(BitReader reader, int width, int height, bool allowTransforms,
-        WebpAblation ablation, Span<byte> alphaDestination, out bool alphaWritten, Span<int> destination)
+        WebpAblation ablation, Span<byte> alphaDestination, out bool alphaWritten, Span<int> destination,
+        CancellationToken cancellationToken = default)
     {
         alphaWritten = false;
         if (width <= 0 || height <= 0 || (long)width * height > WebpLimits.MaximumPixels)
@@ -312,9 +313,10 @@ internal static class Vp8LDecoder
                 pixels = destination[..pixelCount];
             }
 
-            DecodeImageStream(ref reader, encodedWidth, encodedHeight, hasMetaPrefix: true, pixels);
+            DecodeImageStream(ref reader, encodedWidth, encodedHeight, hasMetaPrefix: true, pixels, cancellationToken);
             for (int i = transformCount - 1; i >= 0; i--)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (((ablation & WebpAblation.SkipTransforms) != 0 && transforms[i].Type != 3) ||
                     ((ablation & WebpAblation.SkipPredictorTransform) != 0 && transforms[i].Type == 0))
                 {
@@ -328,7 +330,7 @@ internal static class Vp8LDecoder
                     break;
                 }
 
-                ApplyTransform(pixels, transforms[i]);
+                ApplyTransform(pixels, transforms[i], cancellationToken);
             }
 
             int[]? result = owned;
@@ -407,7 +409,8 @@ internal static class Vp8LDecoder
     }
 
     // A subimage (entropy image, transform data, palette) into a pooled array.
-    private static int[] DecodeImageStream(ref BitReader reader, int width, int height, bool hasMetaPrefix)
+    private static int[] DecodeImageStream(ref BitReader reader, int width, int height, bool hasMetaPrefix,
+        CancellationToken cancellationToken = default)
     {
         if (width <= 0 || height <= 0 || (long)width * height > WebpLimits.MaximumPixels)
         {
@@ -417,7 +420,7 @@ internal static class Vp8LDecoder
         int[] result = WebpBufferPool<int>.Rent(width * height);
         try
         {
-            DecodeImageStream(ref reader, width, height, hasMetaPrefix, result.AsSpan(0, width * height));
+            DecodeImageStream(ref reader, width, height, hasMetaPrefix, result.AsSpan(0, width * height), cancellationToken);
             return result;
         }
         catch
@@ -429,7 +432,7 @@ internal static class Vp8LDecoder
 
     /// <summary>Decodes an entropy-coded image of width × height pixels into <paramref name="result"/>.</summary>
     private static void DecodeImageStream(ref BitReader reader, int width, int height, bool hasMetaPrefix,
-        Span<int> result)
+        Span<int> result, CancellationToken cancellationToken = default)
     {
         if (width <= 0 || height <= 0 || (long)width * height > WebpLimits.MaximumPixels)
         {
@@ -464,7 +467,7 @@ internal static class Vp8LDecoder
                 entropyWidth = (width + (1 << prefixBits) - 1) >> prefixBits;
                 int entropyHeight = (height + (1 << prefixBits) - 1) >> prefixBits;
                 int entropyCount = checked(entropyWidth * entropyHeight);
-                entropy = DecodeImageStream(ref reader, entropyWidth, entropyHeight, hasMetaPrefix: false);
+                entropy = DecodeImageStream(ref reader, entropyWidth, entropyHeight, hasMetaPrefix: false, cancellationToken);
                 int max = 0;
                 for (int i = 0; i < entropyCount; i++)
                 {
@@ -491,7 +494,7 @@ internal static class Vp8LDecoder
             }
 
             DecodePixels(ref reader, result, pixelCount, width, entropy ?? SingleGroupImage, entropy is not null, entropyWidth, prefixBits,
-                groups, groupCount, tables, cache, cacheBits);
+                groups, groupCount, tables, cache, cacheBits, cancellationToken);
             reader.ThrowIfTruncated();
         }
         finally
@@ -528,7 +531,7 @@ internal static class Vp8LDecoder
     /// </summary>
     private static void DecodePixels(ref BitReader reader, Span<int> result, int pixelCount, int width, int[] entropy,
         bool spatialGroups, int entropyWidth, int prefixBits, HuffmanGroup[] groups, int groupCount, uint[] tables, int[]? cache,
-        int cacheBits)
+        int cacheBits, CancellationToken cancellationToken = default)
     {
         reader.Load(out ulong buffer, out int bits);
         ref int output = ref MemoryMarshal.GetReference(result);
@@ -538,9 +541,17 @@ internal static class Vp8LDecoder
         int cached = 0;
         int x = 0;
         int y = 0;
+        int cancelInterval = Math.Max(width * 64, 4096);
+        int nextCancelPos = cancelInterval;
+        cancellationToken.ThrowIfCancellationRequested();
         ref HuffmanGroup group = ref SelectGroup(groups, groupCount, entropy, entropyWidth, prefixBits, 0, 0);
         while (position < pixelCount)
         {
+            if (position >= nextCancelPos)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                nextCancelPos = position + cancelInterval;
+            }
             Refill(ref reader, ref buffer, ref bits);
             int symbol = ReadSymbol(ref Unsafe.Add(ref tableBase, group.Green), group.GreenMask, ref buffer, ref bits);
             if (symbol < 256)
@@ -1133,15 +1144,15 @@ internal static class Vp8LDecoder
         return Math.Max(1, x + y * width);
     }
 
-    private static void ApplyTransform(Span<int> pixels, Transform transform)
+    private static void ApplyTransform(Span<int> pixels, Transform transform, CancellationToken cancellationToken = default)
     {
         switch (transform.Type)
         {
             case 0:
-                ApplyPredictor(pixels, transform);
+                ApplyPredictor(pixels, transform, cancellationToken);
                 break;
             case 1:
-                ApplyColorTransform(pixels, transform);
+                ApplyColorTransform(pixels, transform, cancellationToken);
                 break;
             case 2:
                 ApplySubtractGreen(pixels, transform);
@@ -1154,25 +1165,30 @@ internal static class Vp8LDecoder
         }
     }
 
-    private static void ApplyPredictor(Span<int> pixels, Transform transform)
+    private static void ApplyPredictor(Span<int> pixels, Transform transform, CancellationToken cancellationToken = default)
     {
         if (Vector.IsHardwareAccelerated)
         {
-            ApplyPredictorVector(pixels, transform);
+            ApplyPredictorVector(pixels, transform, cancellationToken);
         }
         else
         {
-            ApplyPredictorScalar(pixels, transform);
+            ApplyPredictorScalar(pixels, transform, cancellationToken);
         }
     }
 
-    internal static void ApplyPredictorScalar(Span<int> pixels, Transform transform)
+    internal static void ApplyPredictorScalar(Span<int> pixels, Transform transform, CancellationToken cancellationToken = default)
     {
         int width = transform.Width;
         int height = transform.Height;
         int blockWidth = (width + (1 << transform.Bits) - 1) >> transform.Bits;
         for (int y = 0; y < height; y++)
         {
+            if ((y & 63) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             for (int x = 0; x < width; x++)
             {
                 int index = y * width + x;
@@ -1194,7 +1210,7 @@ internal static class Vp8LDecoder
     // paid once per segment instead. Modes that only read the row above are
     // bytewise-vectorizable (AddArgb/Average are per-byte-lane operations);
     // modes that read the just-written left pixel stay scalar per segment.
-    internal static void ApplyPredictorVector(Span<int> pixels, Transform transform)
+    internal static void ApplyPredictorVector(Span<int> pixels, Transform transform, CancellationToken cancellationToken = default)
     {
         int width = transform.Width;
         int height = transform.Height;
@@ -1204,6 +1220,11 @@ internal static class Vp8LDecoder
         int index = 0;
         for (int y = 0; y < height; y++)
         {
+            if ((y & 63) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             int blockRow = (y >> bits) * blockWidth;
             if (y == 0)
             {
@@ -1680,23 +1701,28 @@ internal static class Vp8LDecoder
         };
     }
 
-    private static void ApplyColorTransform(Span<int> pixels, Transform transform)
+    private static void ApplyColorTransform(Span<int> pixels, Transform transform, CancellationToken cancellationToken = default)
     {
         if (Vector.IsHardwareAccelerated)
         {
-            ApplyColorTransformVector(pixels, transform);
+            ApplyColorTransformVector(pixels, transform, cancellationToken);
         }
         else
         {
-            ApplyColorTransformScalar(pixels, transform);
+            ApplyColorTransformScalar(pixels, transform, cancellationToken);
         }
     }
 
-    internal static void ApplyColorTransformScalar(Span<int> pixels, Transform transform)
+    internal static void ApplyColorTransformScalar(Span<int> pixels, Transform transform, CancellationToken cancellationToken = default)
     {
         int blockWidth = (transform.Width + (1 << transform.Bits) - 1) >> transform.Bits;
         for (int y = 0; y < transform.Height; y++)
         {
+            if ((y & 63) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             for (int x = 0; x < transform.Width; x++)
             {
                 int index = y * transform.Width + x;
@@ -1718,7 +1744,7 @@ internal static class Vp8LDecoder
     // across a (1 << bits)-wide run, so they broadcast into int lanes. All the
     // arithmetic is exact int math (products fit, shifts match the scalar >>
     // semantics), so vector lanes are bit-identical to the scalar path.
-    internal static void ApplyColorTransformVector(Span<int> pixels, Transform transform)
+    internal static void ApplyColorTransformVector(Span<int> pixels, Transform transform, CancellationToken cancellationToken = default)
     {
         int width = transform.Width;
         int height = transform.Height;
@@ -1728,6 +1754,11 @@ internal static class Vp8LDecoder
         int index = 0;
         for (int y = 0; y < height; y++)
         {
+            if ((y & 63) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             int blockRow = (y >> bits) * blockWidth;
             for (int bx = 0; bx < blockWidth; bx++)
             {

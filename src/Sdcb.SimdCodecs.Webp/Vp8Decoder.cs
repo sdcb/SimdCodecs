@@ -37,16 +37,16 @@ internal static class Vp8Decoder
     internal const int AboveV = 52;
     internal const int AboveLength = 64;
 
-    public static Vp8Yuv Decode(ReadOnlySpan<byte> frame, int width, int height, bool applyLoopFilter = true)
+    public static Vp8Yuv Decode(ReadOnlySpan<byte> frame, int width, int height, bool applyLoopFilter = true, CancellationToken cancellationToken = default)
         => DecodeToPlanes(frame, width, height,
-            applyLoopFilter ? WebpAblation.None : WebpAblation.SkipLoopFilter, pooledOutput: false);
+            applyLoopFilter ? WebpAblation.None : WebpAblation.SkipLoopFilter, pooledOutput: false, cancellationToken);
 
     internal static Vp8Yuv DecodePooled(ReadOnlySpan<byte> frame, int width, int height,
-        WebpAblation ablation = WebpAblation.None)
-        => DecodeToPlanes(frame, width, height, ablation, pooledOutput: true);
+        WebpAblation ablation = WebpAblation.None, CancellationToken cancellationToken = default)
+        => DecodeToPlanes(frame, width, height, ablation, pooledOutput: true, cancellationToken);
 
     private static Vp8Yuv DecodeToPlanes(ReadOnlySpan<byte> frame, int width, int height,
-        WebpAblation ablation, bool pooledOutput)
+        WebpAblation ablation, bool pooledOutput, CancellationToken cancellationToken = default)
     {
         int chromaWidth = (width + 1) >> 1;
         int chromaHeight = (height + 1) >> 1;
@@ -61,7 +61,7 @@ internal static class Vp8Decoder
             uPlane = pooledOutput ? WebpBufferPool<byte>.Rent(chromaPlaneLength) : new byte[chromaPlaneLength];
             vPlane = pooledOutput ? WebpBufferPool<byte>.Rent(chromaPlaneLength) : new byte[chromaPlaneLength];
             var sink = new PlaneSink(yPlane, uPlane, vPlane, width, height);
-            DecodeFrame(frame, width, height, ablation, ref sink);
+            DecodeFrame(frame, width, height, ablation, ref sink, cancellationToken);
             var result = new Vp8Yuv(width, height, yPlane, uPlane, vPlane, pooledOutput);
             yPlane = null;
             uPlane = null;
@@ -114,7 +114,8 @@ internal static class Vp8Decoder
         int width,
         int height,
         WebpAblation ablation,
-        ref TSink sink)
+        ref TSink sink,
+        CancellationToken cancellationToken = default)
         where TSink : IVp8RowSink, allows ref struct
     {
         bool applyLoopFilter = (ablation & WebpAblation.SkipLoopFilter) == 0;
@@ -252,6 +253,7 @@ internal static class Vp8Decoder
             int emitted = 0;
             for (int mbY = 0; mbY < mbHeight; mbY++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 for (int row = 0; row < 16; row++)
                 {
                     Unsafe.Add(ref yRow0, row * yStride - 1) = 129;

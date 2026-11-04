@@ -1,6 +1,6 @@
 namespace Sdcb.SimdCodecs.Webp;
 
-/// <summary>Options for <see cref="WebpDecoder.DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, WebpDecodeOptions?)"/>.</summary>
+/// <summary>Options for <see cref="WebpDecoder.DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, WebpDecodeOptions?, System.Threading.CancellationToken)"/>.</summary>
 public sealed record WebpDecodeOptions
 {
     /// <summary>
