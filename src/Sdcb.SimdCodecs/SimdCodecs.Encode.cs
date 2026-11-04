@@ -3,7 +3,12 @@ using System.Buffers;
 using System.IO;
 using System.Threading;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Bmp;
+using Sdcb.SimdCodecs.Gif;
+using Sdcb.SimdCodecs.Ico;
 using Sdcb.SimdCodecs.Jpeg;
+using Sdcb.SimdCodecs.Pnm;
+using Sdcb.SimdCodecs.Qoi;
 using Sdcb.SimdCodecs.Png;
 using Sdcb.SimdCodecs.Tiff;
 using Sdcb.SimdCodecs.Webp;
@@ -20,6 +25,11 @@ public static partial class SimdCodecs
         JpegImageEncoder.Registration,
         TiffImageEncoder.Registration,
         WebpImageEncoder.Registration,
+        GifImageEncoder.Registration,
+        BmpImageEncoder.Registration,
+        IcoImageEncoder.Registration,
+        QoiImageEncoder.Registration,
+        PnmImageEncoder.Registration,
     ];
     private static readonly Lock s_encoderLock = new();
 
