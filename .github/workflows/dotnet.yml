@@ -145,6 +145,13 @@ jobs:
     # BMP's row kernels (byte shuffles, 5-6-5 widening) have scalar twins too, and ICO decodes through them.
     - name: Test BMP and ICO
       run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Bmp|FullyQualifiedName~Ico|FullyQualifiedName~Qoi|FullyQualifiedName~Pnm"
+    # The HEVC / HEIF kernels have scalar twins too. HeifEquivalenceTests compares the tiers on random
+    # blocks and needs nothing; the golden tests need the fixtures. No REQUIRE_ORACLES here, so the live
+    # ffmpeg comparison skips while the goldens are still compared.
+    - name: Fetch HEIF fixtures
+      run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh
+    - name: Test HEIF
+      run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Heif"
 
   jpeg-aot:
     # NativeAOT picks the vector tier at compile time: its decodes must equal the JIT's.
