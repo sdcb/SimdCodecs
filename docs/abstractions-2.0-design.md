@@ -434,16 +434,40 @@ SimdCodecs.Encode(IDecodedImage image, ImageFormat format, Stream destination, E
 
 不能逐行的编码器在会话内部缓冲，对调用方的契约不变，只是没有内存收益。
 
-**原生输入格式。** 每个编码器至少原生接收 5 种 8 位布局：`Rgba32`、`Bgra32`、`Rgb24`、`Bgr24`、`Gray8`，以及
+**输入格式。** 分契约、实施、验收三层。
+
+*契约。* 每个编码器至少接收 5 种 8 位布局：`Rgba32`、`Bgra32`、`Rgb24`、`Bgr24`、`Gray8`，以及
 `Rgba32Premultiplied`、`Bgra32Premultiplied`（按第 3 节的反预乘约定处理）。对这些格式，`GetClosestInputFormat`
 原样返回；只有编码器存不下的精度（例如 JPEG 收到 16 位格式）才会改成别的格式。这条要求的目的是让 UI 框架的
 帧缓冲直接进编码器，调用方不用自己转换：Avalonia、WPF、WinUI、System.Drawing、Direct2D 的位图大多是 BGRA，
-而且往往是预乘的。
+而且往往是预乘的。`stride` 由 `WriteRows` 带进来，不要求调用方把帧缓冲先拷成紧密排列。输入格式决定输出的颜色类型：
+`Gray8` 写成灰度（PNG 灰度、JPEG 单分量），不先展开成 RGBA。
 
-对 JPEG 来说成本很低：通道顺序只是 RGB→YCbCr 那一步（`JpegEncoderKernels.ConvertRow` 及 4:2:0 的下采样路径）
-从哪个字节取 R 和 B，解码端的 `JpegColor` 已经用 `bgr` 开关做同样的事。`stride` 由 `WriteRows` 带进来，按行读取，
-不要求调用方把帧缓冲先拷成紧密排列。在此之前（1.x），`JpegEncoder.Encode` 只接收紧密排列的 RGB(A)，BGRA 帧缓冲
-要先逐行用 `PixelConverter.ConvertRow` 换成 RGBA：R/B 互换是对称的，把 BGRA 当作 RGBA 转成 `Bgra32` 得到的就是 RGBA。
+*实施。* M0 先在适配器里逐行用 `PixelConverter` 把输入转成编码器内部的格式（同类转换：灰度仍是灰度，有 alpha
+仍有 alpha，不一律转成 RGBA）。`WriteRows` 本来就是逐行的，只需一行临时缓冲，不需要整帧拷贝。为此 2.0 的
+`PixelConverter` 要能以 `PixelFormat` 描述源格式（BGR 顺序、预乘），并带反预乘内核；1.x 的 `ConvertRow` 源格式
+只有灰度 / 灰度+alpha / RGB / RGBA。
+
+最终每个编码器都直接读原始格式，不再经过 `PixelConverter`。知道原始格式有三个好处，只有原生路径拿得到：
+
+1. 转换并进编码器的第一个阶段，省掉一遍读写和临时行。例如 JPEG 的 RGB→YCbCr（`JpegEncoderKernels.ConvertRow`
+   及 4:2:0 的下采样路径）按偏移直接从 BGRA 取 R 和 B，解码端的 `JpegColor` 已经用 `bgr` 开关做同样的事；PNG
+   在滤波时顺手换通道。
+2. 精度更高。有损编码器可以在 float 颜色转换里直接反预乘（`c × max / a`），省掉先反预乘到 8 位的那次舍入，
+   低 alpha 区域的颜色更准。
+3. 跳过不需要的工作。例如 `Gray8` 输入给 JPEG 直接作为 Y 分量，没有色度；alpha 被丢弃且输入是非预乘的，alpha
+   字节完全不读。
+
+*验收。*
+
+- **无损编码器**（PNG、BMP、QOI、PNM、TIFF、WebP 无损、GIF）：原生路径的输出必须与“先用
+  `PixelConverter` 转换，再编码”**逐字节相同**。`PixelConverter` 是参考实现，测试直接比较两者，与解码端
+  `TryDecodeInto` 的契约相同。所以第 3 节的反预乘舍入要精确定义，不能各编码器自行其是。
+- **有损编码器**（JPEG、WebP 有损）：契约是质量而不是字节，可以合并转换、在 float 里反预乘，以 `encode --gate`
+  （及 WebP 对应的质量门限）为准；同一输入的 BGRA 与 RGBA 版本必须编码出相同的字节。
+
+1.x 的 `JpegEncoder.Encode` 只接收紧密排列的 RGB(A)。在 2.0 之前，BGRA 帧缓冲要先逐行用
+`PixelConverter.ConvertRow` 换成 RGBA：R/B 互换是对称的，把 BGRA 当作 RGBA 转成 `Bgra32` 得到的就是 RGBA。
 
 **影响范围。** 9 个编码器各写一个适配器；门面；Mono AOT 冒烟测试要覆盖每个编码入口（AGENTS.md：触及门面后必须
 跑 wasm 冒烟）。JPEG 编码的契约是质量而不是字节，适配器输出必须通过 `encode --gate`，渐进式和优化流仍要解码出与
