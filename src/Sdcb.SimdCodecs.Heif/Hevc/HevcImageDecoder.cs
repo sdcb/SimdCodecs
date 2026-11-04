@@ -58,7 +58,8 @@ internal static class HevcImageDecoder
     /// <summary>Hard cap on NAL units in one image item.</summary>
     private const int MaxNalUnits = 4096;
 
-    internal static HevcPicture Decode(HevcDecoderConfiguration config, ReadOnlySpan<byte> data)
+    /// <summary>Decodes the item; with <paramref name="pooled"/> the picture's planes are rented (see <see cref="HevcPicture.Release"/>).</summary>
+    internal static HevcPicture Decode(HevcDecoderConfiguration config, ReadOnlySpan<byte> data, bool pooled = false)
     {
         HevcSps? sps = null;
         HevcPps? pps = null;
@@ -114,6 +115,14 @@ internal static class HevcImageDecoder
         {
             throw new InvalidDataException("An in-band SPS changes the picture size declared in 'hvcC'.");
         }
-        return new HevcFrameDecoder(sps, pps).Decode(slices);
+        var decoder = new HevcFrameDecoder(sps, pps, pooled);
+        try
+        {
+            return decoder.Decode(slices);
+        }
+        finally
+        {
+            decoder.ReleaseScratch();
+        }
     }
 }

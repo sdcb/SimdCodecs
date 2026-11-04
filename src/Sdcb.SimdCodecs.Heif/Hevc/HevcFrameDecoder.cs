@@ -19,6 +19,7 @@ internal sealed partial class HevcFrameDecoder
     private readonly HevcPicture _pic;
 
     private readonly int _w4, _h4;
+    private readonly int _blocks;
     private readonly byte[] _ctDepth;
     private readonly byte[] _intraMode;
     private readonly sbyte[] _qpY;
@@ -86,7 +87,7 @@ internal sealed partial class HevcFrameDecoder
         }
     }
 
-    internal HevcFrameDecoder(HevcSps sps, HevcPps pps)
+    internal HevcFrameDecoder(HevcSps sps, HevcPps pps, bool pooled = false)
     {
         if (pps.TilesEnabled) throw new InvalidDataException("HEVC tiles are not supported.");
         if (sps.PcmEnabled) throw new InvalidDataException("HEVC PCM coding is not supported.");
@@ -95,7 +96,7 @@ internal sealed partial class HevcFrameDecoder
 
         _sps = sps;
         _pps = pps;
-        _pic = new HevcPicture(sps.Width, sps.Height, sps.ChromaFormatIdc, sps.BitDepthY, sps.BitDepthC)
+        _pic = new HevcPicture(sps.Width, sps.Height, sps.ChromaFormatIdc, sps.BitDepthY, sps.BitDepthC, pooled)
         {
             CropLeft = sps.ConfLeft,
             CropRight = sps.ConfRight,
@@ -105,14 +106,17 @@ internal sealed partial class HevcFrameDecoder
         _w4 = (sps.Width + 3) >> 2;
         _h4 = (sps.Height + 3) >> 2;
         var blocks = _w4 * _h4;
-        _ctDepth = new byte[blocks];
-        _intraMode = new byte[blocks];
-        _qpY = new sbyte[blocks];
-        _noFilter = new byte[blocks];
-        _decoded = new int[blocks];
-        Array.Fill(_decoded, -1);
-        _edgeVer = new byte[blocks];
-        _edgeHor = new byte[blocks];
+        _blocks = blocks;
+        // The 4x4 side information is rented (a grid decodes one picture per tile) and cleared: rented arrays may be
+        // longer than the picture and hold earlier contents. ReleaseScratch returns them.
+        _ctDepth = RentCleared<byte>(blocks);
+        _intraMode = RentCleared<byte>(blocks);
+        _qpY = RentCleared<sbyte>(blocks);
+        _noFilter = RentCleared<byte>(blocks);
+        _decoded = RentCleared<int>(blocks);
+        _decoded.AsSpan().Fill(-1);
+        _edgeVer = RentCleared<byte>(blocks);
+        _edgeHor = RentCleared<byte>(blocks);
         var ctbs = sps.PicWidthInCtbs * sps.PicHeightInCtbs;
         _ctbSliceAddr = new int[ctbs];
         Array.Fill(_ctbSliceAddr, -1);
@@ -143,6 +147,25 @@ internal sealed partial class HevcFrameDecoder
     }
 
     internal HevcPicture Picture => _pic;
+
+    private static T[] RentCleared<T>(int length)
+    {
+        var array = System.Buffers.ArrayPool<T>.Shared.Rent(length);
+        array.AsSpan().Clear();
+        return array;
+    }
+
+    /// <summary>Returns the rented side information; the decoder must not be used afterwards (the picture may).</summary>
+    internal void ReleaseScratch()
+    {
+        System.Buffers.ArrayPool<byte>.Shared.Return(_ctDepth);
+        System.Buffers.ArrayPool<byte>.Shared.Return(_intraMode);
+        System.Buffers.ArrayPool<sbyte>.Shared.Return(_qpY);
+        System.Buffers.ArrayPool<byte>.Shared.Return(_noFilter);
+        System.Buffers.ArrayPool<int>.Shared.Return(_decoded);
+        System.Buffers.ArrayPool<byte>.Shared.Return(_edgeVer);
+        System.Buffers.ArrayPool<byte>.Shared.Return(_edgeHor);
+    }
 
     /// <summary>Decodes the slice segments (unescaped RBSPs with their NAL types) of one picture.</summary>
     internal HevcPicture Decode(IReadOnlyList<(int NalType, byte[] Rbsp)> slices)

@@ -59,7 +59,7 @@ public static class HeifDecoder
         var container = HeifContainer.Parse(data);
         var (width, height) = container.DisplaySize();
         var pixels = new byte[(long)width * height * 4];
-        var bitDepth = DecodeRgba(data, container, pixels);
+        var bitDepth = DecodeInto(data, container, pixels, width * 4, ImagePixelFormat.Rgba32);
         return new HeifImage(width, height, pixels, bitDepth, container.IccProfile);
     }
 
@@ -82,12 +82,12 @@ public static class HeifDecoder
         {
             throw new ArgumentException($"The destination needs {(long)width * height * 4} bytes for a {width}x{height} image.", nameof(rgbaDestination));
         }
-        DecodeRgba(data, container, rgbaDestination);
+        DecodeInto(data, container, rgbaDestination, width * 4, ImagePixelFormat.Rgba32);
         return (width, height);
     }
 
-    /// <summary>Decodes every coded image (grid tile) of the primary item, in grid order, in parallel.</summary>
-    internal static HevcPicture[] DecodeCodedImages(ReadOnlySpan<byte> data, HeifContainer container)
+    /// <summary>The payload (length-prefixed NAL units) of every coded image of the primary item, in grid order.</summary>
+    private static byte[][] ResolvePayloads(ReadOnlySpan<byte> data, HeifContainer container)
     {
         var tiles = container.Tiles;
         var payloads = new byte[tiles.Count][];
@@ -98,22 +98,44 @@ public static class HeifDecoder
             payloads[i] = new byte[length];
             container.Items.Resolve(data, tiles[i], payloads[i]);
         }
+        return payloads;
+    }
 
-        var pictures = new HevcPicture[tiles.Count];
-        var configs = container.TileConfigs;
-        if (tiles.Count == 1)
+    /// <summary>
+    /// Runs <paramref name="body"/> for every index, in parallel when there is more than one. A failure surfaces as
+    /// the exception the body threw (an <see cref="InvalidDataException"/> when any tile threw one), never as an
+    /// <see cref="AggregateException"/>, so the parallel path fails the way the serial one does.
+    /// </summary>
+    internal static void ForEachTile(int count, Action<int> body)
+    {
+        if (count == 1)
         {
-            pictures[0] = HevcImageDecoder.Decode(configs[0], payloads[0]);
-            return pictures;
+            body(0);
+            return;
         }
         try
         {
-            Parallel.For(0, tiles.Count, i => pictures[i] = HevcImageDecoder.Decode(configs[i], payloads[i]));
+            Parallel.For(0, count, body);
         }
-        catch (AggregateException e) when (e.InnerException is InvalidDataException inner)
+        catch (AggregateException e)
         {
-            throw new InvalidDataException(inner.Message, inner);
+            var inner = e.Flatten().InnerExceptions;
+            foreach (var exception in inner)
+            {
+                if (exception is InvalidDataException invalid) throw new InvalidDataException(invalid.Message, invalid);
+            }
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(inner[0]).Throw();
+            throw;
         }
+    }
+
+    /// <summary>Decodes every coded image (grid tile) of the primary item, in grid order, in parallel, keeping the planes.</summary>
+    internal static HevcPicture[] DecodeCodedImages(ReadOnlySpan<byte> data, HeifContainer container)
+    {
+        var payloads = ResolvePayloads(data, container);
+        var configs = container.TileConfigs;
+        var pictures = new HevcPicture[payloads.Length];
+        ForEachTile(payloads.Length, i => pictures[i] = HevcImageDecoder.Decode(configs[i], payloads[i]));
         return pictures;
     }
 
@@ -145,125 +167,54 @@ public static class HeifDecoder
     internal static int MatrixCoefficients(HeifContainer container) =>
         container.NclxColour is { } nclx ? nclx.MatrixCoefficients : container.TileConfigs[0].ParseSps().MatrixCoefficients;
 
-    /// <summary>Decodes, converts and transforms the primary image into <paramref name="destination"/> (tightly packed
-    /// RGBA8, display size); returns the bit depth.</summary>
-    internal static int DecodeRgba(ReadOnlySpan<byte> data, HeifContainer container, Span<byte> destination) =>
-        DecodeCanvas(data, container, destination, gray: false);
-
     /// <summary>
-    /// Decodes the primary image's luma into <paramref name="destination"/> (tightly packed, one byte per pixel,
-    /// display size) with <see cref="HeifColor.ToGray"/>; returns the bit depth. Not for an identity matrix
-    /// (<see cref="MatrixCoefficients"/> 0), whose Y plane carries G, not luma.
+    /// Decodes the primary image, display-oriented, into <paramref name="destination"/> in <paramref name="format"/>
+    /// with <paramref name="stride"/> bytes per row; returns the coded bit depth. Each tile is converted into the
+    /// output as soon as it is decoded and its planes go back to the pool (<see cref="HeifCanvas"/>), so the only
+    /// image-sized buffer is the destination.
     /// </summary>
-    internal static int DecodeGray(ReadOnlySpan<byte> data, HeifContainer container, Span<byte> destination) =>
-        DecodeCanvas(data, container, destination, gray: true);
-
-    private static int DecodeCanvas(ReadOnlySpan<byte> data, HeifContainer container, Span<byte> destination, bool gray)
+    internal static unsafe int DecodeInto(ReadOnlySpan<byte> data, HeifContainer container, Span<byte> destination, int stride,
+        ImagePixelFormat format)
     {
-        var pictures = DecodeCodedImages(data, container);
-        var (tileW, tileH) = ValidateTiles(container, pictures);
-        var first = pictures[0];
-        int canvasW = container.CanvasWidth, canvasH = container.CanvasHeight;
-        var bytesPerPixel = gray ? 1 : 4;
-
-        var sps = container.TileConfigs[0].ParseSps();
+        var payloads = ResolvePayloads(data, container);
+        var configs = container.TileConfigs;
+        var sps = configs[0].ParseSps();
+        if (sps.BitDepthY != sps.BitDepthC) throw new InvalidDataException("Different luma and chroma bit depths are not supported.");
+        int tileW = sps.Width - sps.ConfLeft - sps.ConfRight, tileH = sps.Height - sps.ConfTop - sps.ConfBottom;
+        if ((long)tileW * container.GridColumns < container.CanvasWidth || (long)tileH * container.GridRows < container.CanvasHeight)
+        {
+            throw new InvalidDataException("The grid tiles do not cover the output image.");
+        }
         var coefficients = container.NclxColour is { } nclx
-            ? HeifColor.For(nclx.MatrixCoefficients, nclx.FullRange, first.BitDepthY)
-            : HeifColor.For(sps.MatrixCoefficients, sps.VideoFullRange, first.BitDepthY);
-        if (gray && coefficients.Identity) throw new InvalidOperationException("An identity-matrix image has no luma plane.");
+            ? HeifColor.For(nclx.MatrixCoefficients, nclx.FullRange, sps.BitDepthY)
+            : HeifColor.For(sps.MatrixCoefficients, sps.VideoFullRange, sps.BitDepthY);
 
-        var direct = container.Transforms.Count == 0;
-        var canvas = direct ? destination : new byte[(long)canvasW * canvasH * bytesPerPixel];
-        for (var i = 0; i < pictures.Length; i++)
+        fixed (byte* pointer = destination)
         {
-            var p = pictures[i];
-            var x0 = i % container.GridColumns * tileW;
-            var y0 = i / container.GridColumns * tileH;
-            if (x0 >= canvasW || y0 >= canvasH || HeifDiagnostics.Skips(HeifAblation.SkipColor)) continue;
-            var w = Math.Min(tileW, canvasW - x0);
-            var h = Math.Min(tileH, canvasH - y0);
-            var lumaOffset = p.CropTop * p.Width + p.CropLeft;
-            var target = canvas[(int)(((long)y0 * canvasW + x0) * bytesPerPixel)..];
-            if (gray)
+            var canvas = new HeifCanvas(container, pointer, destination.Length, stride, format, coefficients);
+            var columns = container.GridColumns;
+            ForEachTile(payloads.Length, i =>
             {
-                HeifColor.ToGray(p.Planes[0].AsSpan(lumaOffset), p.Width, w, h, coefficients, target, canvasW);
-            }
-            else
-            {
-                var chromaOffset = (p.CropTop / p.SubHeightC) * p.ChromaWidth + p.CropLeft / p.SubWidthC;
-                HeifColor.ToRgba420(p.Planes[0].AsSpan(lumaOffset), p.Width, p.Planes[1].AsSpan(chromaOffset), p.Planes[2].AsSpan(chromaOffset),
-                    p.ChromaWidth, w, h, coefficients, target, canvasW * 4);
-            }
+                var picture = HevcImageDecoder.Decode(configs[i], payloads[i], pooled: true);
+                try
+                {
+                    if (picture.OutputWidth != tileW || picture.OutputHeight != tileH || picture.BitDepthY != sps.BitDepthY ||
+                        picture.BitDepthC != sps.BitDepthC || picture.ChromaFormatIdc != sps.ChromaFormatIdc)
+                    {
+                        throw new InvalidDataException("The grid tiles differ in size, bit depth or chroma format.");
+                    }
+                    if (!HeifDiagnostics.Skips(HeifAblation.SkipColor))
+                    {
+                        canvas.WriteTile(picture, i % columns * tileW, i / columns * tileH, tileW, tileH);
+                    }
+                }
+                finally
+                {
+                    picture.Release();
+                }
+            });
         }
-
-        if (!direct) ApplyTransforms(container, canvas, canvasW, canvasH, destination, bytesPerPixel);
-        return first.BitDepthY;
-    }
-
-    /// <summary>Applies clap / irot / imir in association order (23008-12 §6.5.1) to pixels of
-    /// <paramref name="bytesPerPixel"/> bytes.</summary>
-    private static void ApplyTransforms(HeifContainer container, Span<byte> source, int width, int height, Span<byte> destination, int bytesPerPixel)
-    {
-        var bpp = bytesPerPixel;
-        var current = source.ToArray();
-        foreach (var t in container.Transforms)
-        {
-            byte[] next;
-            int nextW = width, nextH = height;
-            switch (t.Type)
-            {
-                case HeifContainer.PropClap:
-                {
-                    var (x0, y0, w, h) = HeifContainer.ClapRectangle(t.Clap!, width, height);
-                    next = new byte[(long)w * h * bpp];
-                    for (var y = 0; y < h; y++)
-                    {
-                        current.AsSpan(((y0 + y) * width + x0) * bpp, w * bpp).CopyTo(next.AsSpan(y * w * bpp));
-                    }
-                    nextW = w;
-                    nextH = h;
-                    break;
-                }
-                case HeifContainer.PropIrot:
-                {
-                    var quarterTurns = t.A; // anti-clockwise
-                    if (quarterTurns == 0) continue;
-                    if ((quarterTurns & 1) != 0) (nextW, nextH) = (height, width);
-                    next = new byte[(long)nextW * nextH * bpp];
-                    for (var y = 0; y < height; y++)
-                    {
-                        for (var x = 0; x < width; x++)
-                        {
-                            var (dx, dy) = quarterTurns switch
-                            {
-                                1 => (y, width - 1 - x),          // 90° anti-clockwise
-                                2 => (width - 1 - x, height - 1 - y),
-                                _ => (height - 1 - y, x),         // 270° anti-clockwise
-                            };
-                            current.AsSpan((y * width + x) * bpp, bpp).CopyTo(next.AsSpan((dy * nextW + dx) * bpp));
-                        }
-                    }
-                    break;
-                }
-                default: // imir: axis 0 = vertical axis (left ↔ right), 1 = horizontal axis (top ↔ bottom)
-                {
-                    next = new byte[(long)width * height * bpp];
-                    for (var y = 0; y < height; y++)
-                    {
-                        for (var x = 0; x < width; x++)
-                        {
-                            var (dx, dy) = t.A == 0 ? (width - 1 - x, y) : (x, height - 1 - y);
-                            current.AsSpan((y * width + x) * bpp, bpp).CopyTo(next.AsSpan((dy * width + dx) * bpp));
-                        }
-                    }
-                    break;
-                }
-            }
-            current = next;
-            width = nextW;
-            height = nextH;
-        }
-        current.AsSpan().CopyTo(destination);
+        return sps.BitDepthY;
     }
 
     /// <summary>

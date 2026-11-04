@@ -195,22 +195,32 @@ internal sealed partial class HevcFrameDecoder
 
         // Transquant-bypass CUs are not filtered (8.7.3.1): with any in the picture, every CTB takes the
         // per-sample path that checks for them.
-        var anyNoFilter = Array.IndexOf(_noFilter, (byte)1) >= 0;
+        var anyNoFilter = _noFilter.AsSpan(0, _blocks).IndexOf((byte)1) >= 0;
         Span<int> offsets = stackalloc int[4];
         for (var c = 0; c < 3; c++)
         {
-            // SAO reads the deblocked picture and writes a new one (8.7.3.1).
+            // SAO reads the deblocked picture and writes a new one (8.7.3.1). Edge offset reads at most one sample
+            // beyond its CTB, so the deblocked samples it needs while the plane is rewritten in place, CTB row by CTB
+            // row, are a strip: the row above the CTB row (saved before the previous strip rewrote it), the CTB row
+            // itself and the row below. strip row r holds plane row y0 − 1 + r.
             var plane = _pic.Planes[c];
-            var source = System.Buffers.ArrayPool<ushort>.Shared.Rent(plane.Length);
+            var width = _pic.PlaneWidth(c);
+            var height = _pic.PlaneHeight(c);
+            var ctbSize = c == 0 ? _sps.CtbSizeY : _sps.CtbSizeY >> 1;
+            var bitDepth = c == 0 ? _sps.BitDepthY : _sps.BitDepthC;
+            var strip = System.Buffers.ArrayPool<ushort>.Shared.Rent((ctbSize + 2) * width);
+            var above = System.Buffers.ArrayPool<ushort>.Shared.Rent(width);
             try
             {
-                plane.CopyTo(source, 0);
-                var width = _pic.PlaneWidth(c);
-                var height = _pic.PlaneHeight(c);
-                var ctbSize = c == 0 ? _sps.CtbSizeY : _sps.CtbSizeY >> 1;
-                var bitDepth = c == 0 ? _sps.BitDepthY : _sps.BitDepthC;
                 for (var ry = 0; ry < _sps.PicHeightInCtbs; ry++)
                 {
+                    var y0 = ry * ctbSize;
+                    var yEnd = Math.Min(y0 + ctbSize + 1, height); // through the row below the strip
+                    if (ry > 0) above.AsSpan(0, width).CopyTo(strip);
+                    plane.AsSpan(y0 * width, (yEnd - y0) * width).CopyTo(strip.AsSpan(width));
+                    if (y0 + ctbSize - 1 < height) strip.AsSpan(ctbSize * width, width).CopyTo(above); // deblocked last row
+                    var stripOffset = -(y0 - 1) * width; // strip[stripOffset + y * width + x] = deblocked (x, y)
+
                     for (var rx = 0; rx < _sps.PicWidthInCtbs; rx++)
                     {
                         var ctbAddr = ry * _sps.PicWidthInCtbs + rx;
@@ -220,37 +230,38 @@ internal sealed partial class HevcFrameDecoder
                         var type = p.Type(c);
                         if (type == 0) continue;
                         var x0 = rx * ctbSize;
-                        var y0 = ry * ctbSize;
                         var x1 = Math.Min(x0 + ctbSize, width);
                         var y1 = Math.Min(y0 + ctbSize, height);
                         for (var i = 0; i < 4; i++) offsets[i] = p.Offset(c, i);
                         if (type == 1)
                         {
+                            // Band offset reads only the sample it writes: in place.
                             if (anyNoFilter)
                             {
-                                SaoBand(c, source, width, x0, y0, x1, y1, p, bitDepth);
+                                SaoBand(c, plane, width, x0, y0, x1, y1, p, bitDepth);
                                 continue;
                             }
                             for (var y = y0; y < y1; y++)
                             {
-                                HevcSao.BandRow(source.AsSpan(y * width + x0, x1 - x0), plane.AsSpan(y * width + x0, x1 - x0),
-                                    x1 - x0, p.Band(c), bitDepth, offsets);
+                                var row = plane.AsSpan(y * width + x0, x1 - x0);
+                                HevcSao.BandRow(row, row, x1 - x0, p.Band(c), bitDepth, offsets);
                             }
                         }
                         else if (anyNoFilter || !SaoNeighboursUsable(rx, ry, ctbAddr, slice))
                         {
-                            SaoEdge(c, source, width, height, x0, y0, x1, y1, p, bitDepth, ctbAddr);
+                            SaoEdge(c, strip, stripOffset, width, height, x0, y0, x1, y1, p, bitDepth, ctbAddr);
                         }
                         else
                         {
-                            SaoEdgeFast(source, plane, width, height, x0, y0, x1, y1, p.Class(c), bitDepth, offsets);
+                            SaoEdgeFast(strip, stripOffset, plane, width, height, x0, y0, x1, y1, p.Class(c), bitDepth, offsets);
                         }
                     }
                 }
             }
             finally
             {
-                System.Buffers.ArrayPool<ushort>.Shared.Return(source);
+                System.Buffers.ArrayPool<ushort>.Shared.Return(strip);
+                System.Buffers.ArrayPool<ushort>.Shared.Return(above);
             }
         }
     }
@@ -278,7 +289,7 @@ internal sealed partial class HevcFrameDecoder
     /// Edge offset of one CTB whose neighbours are all usable: only the picture boundary excludes samples (8.7.3.2),
     /// so each row is one run for <see cref="HevcSao.EdgeRow"/>.
     /// </summary>
-    private static void SaoEdgeFast(ushort[] source, ushort[] dst, int width, int height, int x0, int y0, int x1, int y1,
+    private static void SaoEdgeFast(ushort[] source, int sourceOffset, ushort[] dst, int width, int height, int x0, int y0, int x1, int y1,
         int eoClass, int bitDepth, ReadOnlySpan<int> offsets)
     {
         // Table 8-13; hPos[1] = −hPos[0] and vPos[1] = −vPos[0].
@@ -300,8 +311,9 @@ internal sealed partial class HevcFrameDecoder
         for (var y = ys; y < ye; y++)
         {
             var at = y * width + xs;
+            var src = sourceOffset + at;
             var neighbour = vPos * width + hPos;
-            HevcSao.EdgeRow(source.AsSpan(at, count), source.AsSpan(at + neighbour, count), source.AsSpan(at - neighbour, count),
+            HevcSao.EdgeRow(source.AsSpan(src, count), source.AsSpan(src + neighbour, count), source.AsSpan(src - neighbour, count),
                 dst.AsSpan(at, count), count, offsets, max);
         }
     }
@@ -327,7 +339,7 @@ internal sealed partial class HevcFrameDecoder
         }
     }
 
-    private void SaoEdge(int c, ushort[] source, int width, int height, int x0, int y0, int x1, int y1, SaoParams p, int bitDepth, int ctbAddr)
+    private void SaoEdge(int c, ushort[] source, int sourceOffset, int width, int height, int x0, int y0, int x1, int y1, SaoParams p, int bitDepth, int ctbAddr)
     {
         // Table 8-13.
         var eoClass = p.Class(c);
@@ -358,8 +370,8 @@ internal sealed partial class HevcFrameDecoder
                 {
                     continue;
                 }
-                var v = source[y * width + x];
-                var edgeIdx = 2 + Math.Sign(v - source[ya * width + xa]) + Math.Sign(v - source[yb * width + xb]);
+                var v = source[sourceOffset + y * width + x];
+                var edgeIdx = 2 + Math.Sign(v - source[sourceOffset + ya * width + xa]) + Math.Sign(v - source[sourceOffset + yb * width + xb]);
                 if (edgeIdx is 0 or 1 or 2) edgeIdx = edgeIdx == 2 ? 0 : edgeIdx + 1;
                 if (edgeIdx != 0) dst[y * width + x] = (ushort)Math.Clamp(v + offsetVal[edgeIdx], 0, max);
             }

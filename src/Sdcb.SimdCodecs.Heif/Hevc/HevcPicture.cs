@@ -6,7 +6,7 @@ namespace Sdcb.SimdCodecs.Heif.Hevc;
 /// </summary>
 internal sealed class HevcPicture
 {
-    internal HevcPicture(int width, int height, int chromaFormatIdc, int bitDepthY, int bitDepthC)
+    internal HevcPicture(int width, int height, int chromaFormatIdc, int bitDepthY, int bitDepthC, bool pooled = false)
     {
         Width = width;
         Height = height;
@@ -17,12 +17,33 @@ internal sealed class HevcPicture
         SubHeightC = chromaFormatIdc == 1 ? 2 : 1;
         ChromaWidth = chromaFormatIdc == 0 ? 0 : width / SubWidthC;
         ChromaHeight = chromaFormatIdc == 0 ? 0 : height / SubHeightC;
-        Planes =
-        [
-            new ushort[(long)width * height],
-            new ushort[(long)ChromaWidth * ChromaHeight],
-            new ushort[(long)ChromaWidth * ChromaHeight],
-        ];
+        Pooled = pooled;
+        // A pooled plane may be longer than the picture and is not cleared: decoding writes every sample (the CTBs
+        // of a decoded picture cover it; intra prediction fills each block before its residual is added).
+        Planes = pooled
+            ?
+            [
+                System.Buffers.ArrayPool<ushort>.Shared.Rent(checked(width * height)),
+                System.Buffers.ArrayPool<ushort>.Shared.Rent(checked(ChromaWidth * ChromaHeight)),
+                System.Buffers.ArrayPool<ushort>.Shared.Rent(checked(ChromaWidth * ChromaHeight)),
+            ]
+            :
+            [
+                new ushort[(long)width * height],
+                new ushort[(long)ChromaWidth * ChromaHeight],
+                new ushort[(long)ChromaWidth * ChromaHeight],
+            ];
+    }
+
+    /// <summary>The planes are rented from <see cref="System.Buffers.ArrayPool{T}.Shared"/>; <see cref="Release"/> returns them.</summary>
+    internal bool Pooled { get; }
+
+    /// <summary>Returns pooled planes; the picture must not be used afterwards.</summary>
+    internal void Release()
+    {
+        if (!Pooled) return;
+        foreach (var plane in Planes) System.Buffers.ArrayPool<ushort>.Shared.Return(plane);
+        Planes[0] = Planes[1] = Planes[2] = [];
     }
 
     /// <summary>Coded width in luma samples (pic_width_in_luma_samples).</summary>

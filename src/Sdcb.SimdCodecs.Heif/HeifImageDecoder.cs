@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
@@ -103,16 +102,8 @@ public sealed class HeifImageDecoder : IImageDecoder
         try
         {
             var (width, height) = container.DisplaySize();
-            var pixelCount = (long)width * height;
-            var rgba = new byte[pixelCount * 4];
-            HeifDecoder.DecodeRgba(data, container, rgba);
-            var rgb = new byte[pixelCount * 3];
-            for (long source = 0, target = 0; source < rgba.Length; source += 4, target += 3)
-            {
-                rgb[target] = rgba[source];
-                rgb[target + 1] = rgba[source + 1];
-                rgb[target + 2] = rgba[source + 2];
-            }
+            var rgb = new byte[(long)width * height * 3];
+            HeifDecoder.DecodeInto(data, container, rgb, width * 3, ImagePixelFormat.Rgb24);
 
             image = new RasterImage(width, height, 3, SampleFormat.UInt8, rgb, container.IccProfile, ColorEncodingOf(container));
             return true;
@@ -125,8 +116,8 @@ public sealed class HeifImageDecoder : IImageDecoder
 
     /// <inheritdoc />
     /// <remarks>
-    /// Tightly packed <see cref="ImagePixelFormat.Rgba32"/> is the decoder's own output; the other layouts convert
-    /// from a pooled RGBA frame. <see cref="ImagePixelFormat.Gray8"/> is the stored luma, range-mapped to 8 bits
+    /// Every layout and stride is written straight into <paramref name="destination"/>, one grid tile at a time,
+    /// with no image-sized intermediate. <see cref="ImagePixelFormat.Gray8"/> is the stored luma, range-mapped to 8 bits
     /// (see <see cref="IImageDecoder.TryDecodeInto"/> on codecs that store luma; the formula is frozen in
     /// <c>HeifColor</c>), except for an identity-matrix (GBR) image, which takes the luma of the RGB. False, without
     /// throwing, for malformed or unsupported data, a destination that does not fit, and a PQ or HLG transfer
@@ -135,56 +126,19 @@ public sealed class HeifImageDecoder : IImageDecoder
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format)
     {
         if (!TryParse(data, out var container)) return false;
-        byte[]? rented = null;
         try
         {
             var (width, height) = container.DisplaySize();
             if (!PixelConverter.TryGetLayout(width, height, format, stride, destination.Length, out var rowStride)) return false;
             if (ColorEncodingOf(container).Transfer is TransferFunction.Pq or TransferFunction.Hlg) return false;
 
-            if (format == ImagePixelFormat.Gray8 && HeifDecoder.MatrixCoefficients(container) != 0)
-            {
-                if (rowStride == width)
-                {
-                    HeifDecoder.DecodeGray(data, container, destination);
-                    return true;
-                }
-
-                rented = ArrayPool<byte>.Shared.Rent(checked(width * height));
-                HeifDecoder.DecodeGray(data, container, rented);
-                for (var y = 0; y < height; y++)
-                {
-                    rented.AsSpan(y * width, width).CopyTo(destination.Slice(y * rowStride, width));
-                }
-
-                return true;
-            }
-
-            var rgbaRow = width * 4;
-            if (format == ImagePixelFormat.Rgba32 && rowStride == rgbaRow)
-            {
-                HeifDecoder.DecodeRgba(data, container, destination);
-                return true;
-            }
-
-            rented = ArrayPool<byte>.Shared.Rent(checked(rgbaRow * height));
-            HeifDecoder.DecodeRgba(data, container, rented);
-            var rowBytes = width * PixelConverter.BytesPerPixel(format);
-            for (var y = 0; y < height; y++)
-            {
-                PixelConverter.ConvertRow(rented.AsSpan(y * rgbaRow, rgbaRow), 4, SampleFormat.UInt8,
-                    destination.Slice(y * rowStride, rowBytes), format, width);
-            }
-
+            // Every layout and stride is written straight into the destination, a tile at a time (HeifCanvas).
+            HeifDecoder.DecodeInto(data, container, destination, rowStride, format);
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or OverflowException)
         {
             return false;
-        }
-        finally
-        {
-            if (rented is not null) ArrayPool<byte>.Shared.Return(rented);
         }
     }
 
