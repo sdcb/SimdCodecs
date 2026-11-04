@@ -327,4 +327,65 @@ public sealed class HeifEquivalenceTests
         if (!HasV256) return;
         RunColor((y, cb, cr, o, w, k) => w < 8 ? 0 : HeifColor.ToRgba420RowV256(y, cb, cr, o, w, k), 8);
     }
+
+    /// <summary>
+    /// Intra prediction: all 35 modes at every size, luma (with the neighbour filter and the DC / angular edge
+    /// filters) and chroma, 8 and 10 bits, strong smoothing on and off; each vector tier against the scalar tier
+    /// (the M1 code the byte-exact goldens pin). The reference samples are random, smooth (so strong smoothing
+    /// triggers) or at the ends of the range.
+    /// </summary>
+    private static void RunIntra(int tier)
+    {
+        var rng = new Random(846);
+        for (var iteration = 0; iteration < 4000; iteration++)
+        {
+            var log2Size = rng.Next(2, 6);
+            var n = 1 << log2Size;
+            if (tier == HevcIntraPred.Vector256Tier && n < 8) continue;
+            var mode = rng.Next(35);
+            var isLuma = rng.Next(2) == 0;
+            var strong = rng.Next(2) == 0;
+            var bitDepth = rng.Next(2) == 0 ? 8 : 10;
+            var max = (1 << bitDepth) - 1;
+            var kind = rng.Next(3);
+            var refs = new int[4 * n + 1];
+            var start = rng.Next(max + 1);
+            for (var i = 0; i < refs.Length; i++)
+            {
+                refs[i] = kind switch
+                {
+                    0 => rng.Next(max + 1),
+                    1 => Math.Clamp(start + i / 8, 0, max),
+                    _ => rng.Next(2) == 0 ? 0 : max,
+                };
+            }
+            var stride = n + rng.Next(0, 9);
+            var initial = new ushort[(n - 1) * stride + n + 8];
+            for (var i = 0; i < initial.Length; i++) initial[i] = (ushort)rng.Next(max + 1);
+            var expected = (ushort[])initial.Clone();
+            var actual = (ushort[])initial.Clone();
+            var refsExpected = (int[])refs.Clone();
+            var refsActual = (int[])refs.Clone();
+            HevcIntraPred.Predict(refsExpected, log2Size, mode, isLuma, isLuma, strong, bitDepth, expected, stride, HevcIntraPred.ScalarTier);
+            HevcIntraPred.Predict(refsActual, log2Size, mode, isLuma, isLuma, strong, bitDepth, actual, stride, tier);
+            actual.ShouldBe(expected, $"iteration {iteration}: N={n} mode={mode} luma={isLuma} strong={strong} bitDepth={bitDepth} kind={kind}");
+        }
+    }
+
+    [Fact]
+    public void IntraPred_Vector128_matches_scalar()
+    {
+        if (!HasV128) return;
+        RunIntra(HevcIntraPred.Vector128Tier);
+    }
+
+    [Fact]
+    public void IntraPred_Vector256_matches_scalar()
+    {
+        if (!HasV256) return;
+        RunIntra(HevcIntraPred.Vector256Tier);
+    }
+
+    [Fact]
+    public void IntraPred_dispatch_matches_scalar() => RunIntra(HevcIntraPred.AutoTier);
 }

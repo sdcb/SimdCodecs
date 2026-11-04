@@ -1,3 +1,7 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+
 namespace Sdcb.SimdCodecs.Heif.Hevc;
 
 /// <summary>
@@ -52,8 +56,32 @@ internal static class HevcIntraPred
     /// <paramref name="refs"/> is modified in place by the filter.
     /// </summary>
     internal static void Predict(Span<int> refs, int log2Size, int mode, bool isLuma, bool filterNeighbours,
-        bool strongSmoothing, int bitDepth, Span<ushort> dst, int stride)
+        bool strongSmoothing, int bitDepth, Span<ushort> dst, int stride) =>
+        Predict(refs, log2Size, mode, isLuma, filterNeighbours, strongSmoothing, bitDepth, dst, stride, AutoTier);
+
+    /// <summary>Tier selectors for the sample loops of <see cref="Predict(Span{int}, int, int, bool, bool, bool, int, Span{ushort}, int, int)"/>; tests force each one.</summary>
+    internal const int AutoTier = 0, ScalarTier = 1, Vector128Tier = 128, Vector256Tier = 256;
+
+    /// <summary>
+    /// <see cref="Predict(Span{int}, int, int, bool, bool, bool, int, Span{ushort}, int)"/> with the sample loops on
+    /// <paramref name="tier"/>; every tier writes the same samples.
+    /// </summary>
+    internal static void Predict(Span<int> refs, int log2Size, int mode, bool isLuma, bool filterNeighbours,
+        bool strongSmoothing, int bitDepth, Span<ushort> dst, int stride, int tier)
     {
+        var size = 1 << log2Size;
+        // The proof for the unchecked accesses of the vector tiers below.
+        if (refs.Length < 4 * size + 1 || stride < size || dst.Length < (size - 1) * stride + size)
+        {
+            throw new ArgumentException("The intra block does not fit its buffers.");
+        }
+        if (tier == AutoTier)
+        {
+            tier = Vector256.IsHardwareAccelerated && size >= 8 ? Vector256Tier
+                : Vector128.IsHardwareAccelerated ? Vector128Tier : ScalarTier;
+        }
+        if (tier == Vector256Tier && size < 8) tier = Vector128Tier;
+
         var n = 1 << log2Size;
         var corner = 2 * n;
 
@@ -68,18 +96,9 @@ internal static class HevcIntraPred
         if (mode == 0)
         {
             // INTRA_PLANAR (8-46).
-            var topRight = refs[corner + 1 + n];
-            var bottomLeft = refs[corner - 1 - n];
-            for (var y = 0; y < n; y++)
-            {
-                var left = refs[corner - 1 - y];
-                var row = dst.Slice(y * stride, n);
-                for (var x = 0; x < n; x++)
-                {
-                    row[x] = (ushort)(((n - 1 - x) * left + (x + 1) * topRight +
-                                       (n - 1 - y) * refs[corner + 1 + x] + (y + 1) * bottomLeft + n) >> (log2Size + 1));
-                }
-            }
+            if (tier == ScalarTier) PlanarScalar(refs, log2Size, dst, stride);
+            else if (tier == Vector128Tier) PlanarVector128(refs, log2Size, dst, stride);
+            else PlanarVector256(refs, log2Size, dst, stride);
             return;
         }
 
@@ -125,19 +144,9 @@ internal static class HevcIntraPred
             for (var x = n + 1; x <= 2 * n; x++) refBuf[n + x] = vertical ? refs[corner + x] : refs[corner - x];
         }
 
-        for (var j = 0; j < n; j++)
-        {
-            var iIdx = ((j + 1) * angle) >> 5;
-            var iFact = ((j + 1) * angle) & 31;
-            for (var i = 0; i < n; i++)
-            {
-                var a = refBuf[n + i + iIdx + 1];
-                var value = iFact != 0 ? ((32 - iFact) * a + iFact * refBuf[n + i + iIdx + 2] + 16) >> 5 : a;
-                // Vertical: j is the row y and i the column x; horizontal: the reverse.
-                if (vertical) dst[j * stride + i] = (ushort)value;
-                else dst[i * stride + j] = (ushort)value;
-            }
-        }
+        if (tier == ScalarTier) AngularScalar(refBuf, n, angle, vertical, dst, stride);
+        else if (tier == Vector128Tier) AngularVector128(refBuf, n, angle, vertical, dst, stride);
+        else AngularVector256(refBuf, n, angle, vertical, dst, stride);
 
         if (isLuma && n < 32)
         {
@@ -155,6 +164,165 @@ internal static class HevcIntraPred
                     dst[x] = (ushort)Math.Clamp(refs[corner - 1] + ((refs[corner + 1 + x] - refs[corner]) >> 1), 0, max);
                 }
             }
+        }
+    }
+
+    private static void PlanarScalar(ReadOnlySpan<int> refs, int log2Size, Span<ushort> dst, int stride)
+    {
+        var n = 1 << log2Size;
+        var corner = 2 * n;
+        var topRight = refs[corner + 1 + n];
+        var bottomLeft = refs[corner - 1 - n];
+        for (var y = 0; y < n; y++)
+        {
+            var left = refs[corner - 1 - y];
+            var row = dst.Slice(y * stride, n);
+            for (var x = 0; x < n; x++)
+            {
+                row[x] = (ushort)(((n - 1 - x) * left + (x + 1) * topRight +
+                                   (n - 1 - y) * refs[corner + 1 + x] + (y + 1) * bottomLeft + n) >> (log2Size + 1));
+            }
+        }
+    }
+
+    // The planar vector tiers compute the same integer sums (exact in int32, so the order of the terms is free)
+    // four or eight columns at a time. Every load is refs[corner + 1 + c .. + lanes] with c + lanes <= n, every
+    // store dst[y * stride + c .. + lanes] with y < n: in range by the check at the top of Predict.
+
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    private static void PlanarVector128(ReadOnlySpan<int> refs, int log2Size, Span<ushort> dst, int stride)
+    {
+        var n = 1 << log2Size;
+        var corner = 2 * n;
+        ref var r = ref MemoryMarshal.GetReference(refs);
+        ref var d = ref MemoryMarshal.GetReference(dst);
+        var topRight = Unsafe.Add(ref r, corner + 1 + n);
+        var bottomLeft = Unsafe.Add(ref r, corner - 1 - n);
+        var lane = Vector128.Create(0, 1, 2, 3);
+        for (var c = 0; c < n; c += 4)
+        {
+            var x = lane + Vector128.Create(c);
+            var top = Vector128.LoadUnsafe(ref r, (nuint)(corner + 1 + c));
+            // Row-invariant part (x + 1)·topRight + n; each row adds (n − 1 − x)·left + (n − 1 − y)·top + (y + 1)·bottomLeft.
+            var fixedPart = (x + Vector128<int>.One) * topRight + Vector128.Create(n);
+            var leftWeight = Vector128.Create(n - 1) - x;
+            for (var y = 0; y < n; y++)
+            {
+                var left = Unsafe.Add(ref r, corner - 1 - y);
+                var v = (leftWeight * left + fixedPart + top * (n - 1 - y) + Vector128.Create((y + 1) * bottomLeft)) >> (log2Size + 1);
+                var packed = Vector128.Narrow(v.AsUInt32(), v.AsUInt32()).AsUInt64().ToScalar();
+                Unsafe.WriteUnaligned(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref d, y * stride + c)), packed);
+            }
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    private static void PlanarVector256(ReadOnlySpan<int> refs, int log2Size, Span<ushort> dst, int stride)
+    {
+        var n = 1 << log2Size;
+        var corner = 2 * n;
+        ref var r = ref MemoryMarshal.GetReference(refs);
+        ref var d = ref MemoryMarshal.GetReference(dst);
+        var topRight = Unsafe.Add(ref r, corner + 1 + n);
+        var bottomLeft = Unsafe.Add(ref r, corner - 1 - n);
+        var lane = Vector256.Create(0, 1, 2, 3, 4, 5, 6, 7);
+        for (var c = 0; c < n; c += 8)
+        {
+            var x = lane + Vector256.Create(c);
+            var top = Vector256.LoadUnsafe(ref r, (nuint)(corner + 1 + c));
+            var fixedPart = (x + Vector256<int>.One) * topRight + Vector256.Create(n);
+            var leftWeight = Vector256.Create(n - 1) - x;
+            for (var y = 0; y < n; y++)
+            {
+                var left = Unsafe.Add(ref r, corner - 1 - y);
+                var v = (leftWeight * left + fixedPart + top * (n - 1 - y) + Vector256.Create((y + 1) * bottomLeft)) >> (log2Size + 1);
+                Vector128.Narrow(v.GetLower().AsUInt32(), v.GetUpper().AsUInt32()).StoreUnsafe(ref d, (nuint)(y * stride + c));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The angular sample loop of (8-59 .. 8-68) over refBuf (refBuf[n + i] = ref[i]): row j of the predicted
+    /// block (column j for a horizontal mode) interpolates ref at i + iIdx + 1 and i + iIdx + 2.
+    /// </summary>
+    private static void AngularScalar(ReadOnlySpan<int> refBuf, int n, int angle, bool vertical, Span<ushort> dst, int stride)
+    {
+        for (var j = 0; j < n; j++)
+        {
+            var iIdx = ((j + 1) * angle) >> 5;
+            var iFact = ((j + 1) * angle) & 31;
+            for (var i = 0; i < n; i++)
+            {
+                var a = refBuf[n + i + iIdx + 1];
+                var value = iFact != 0 ? ((32 - iFact) * a + iFact * refBuf[n + i + iIdx + 2] + 16) >> 5 : a;
+                // Vertical: j is the row y and i the column x; horizontal: the reverse.
+                if (vertical) dst[j * stride + i] = (ushort)value;
+                else dst[i * stride + j] = (ushort)value;
+            }
+        }
+    }
+
+    // Angular vector tiers. The first tap reads refBuf[n + iIdx + 1 + i] and, when iFact != 0, the second
+    // refBuf[n + iIdx + 2 + i], for i < n. With |angle| <= 32, -n <= iIdx <= n - 1 when iFact != 0 and iIdx <= n
+    // when iFact == 0, so every index lies in 1 .. 3n of the 3n + 1 entries (checked length). A horizontal mode is
+    // computed into a transposed scratch block, then written column-wise.
+
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    private static void AngularVector128(ReadOnlySpan<int> refBuf, int n, int angle, bool vertical, Span<ushort> dst, int stride)
+    {
+        if (refBuf.Length < 3 * n + 1 || (uint)(angle + 32) > 64) throw new ArgumentException("The angular reference does not fit.");
+        ref var r = ref MemoryMarshal.GetReference(refBuf);
+        Span<ushort> scratch = stackalloc ushort[vertical ? 0 : n * n];
+        ref var d = ref vertical ? ref MemoryMarshal.GetReference(dst) : ref MemoryMarshal.GetReference(scratch);
+        var rowStride = vertical ? stride : n;
+        var r16 = Vector128.Create(16);
+        for (var j = 0; j < n; j++)
+        {
+            var iIdx = ((j + 1) * angle) >> 5;
+            var iFact = ((j + 1) * angle) & 31;
+            var at = n + iIdx + 1;
+            for (var c = 0; c < n; c += 4)
+            {
+                var a = Vector128.LoadUnsafe(ref r, (nuint)(at + c));
+                var v = iFact == 0 ? a : (a * (32 - iFact) + Vector128.LoadUnsafe(ref r, (nuint)(at + c + 1)) * iFact + r16) >> 5;
+                var packed = Vector128.Narrow(v.AsUInt32(), v.AsUInt32()).AsUInt64().ToScalar();
+                Unsafe.WriteUnaligned(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref d, j * rowStride + c)), packed);
+            }
+        }
+        if (!vertical) Transpose(scratch, n, dst, stride);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    private static void AngularVector256(ReadOnlySpan<int> refBuf, int n, int angle, bool vertical, Span<ushort> dst, int stride)
+    {
+        if (refBuf.Length < 3 * n + 1 || n < 8 || (uint)(angle + 32) > 64) throw new ArgumentException("The angular reference does not fit.");
+        ref var r = ref MemoryMarshal.GetReference(refBuf);
+        Span<ushort> scratch = stackalloc ushort[vertical ? 0 : n * n];
+        ref var d = ref vertical ? ref MemoryMarshal.GetReference(dst) : ref MemoryMarshal.GetReference(scratch);
+        var rowStride = vertical ? stride : n;
+        var r16 = Vector256.Create(16);
+        for (var j = 0; j < n; j++)
+        {
+            var iIdx = ((j + 1) * angle) >> 5;
+            var iFact = ((j + 1) * angle) & 31;
+            var at = n + iIdx + 1;
+            for (var c = 0; c < n; c += 8)
+            {
+                var a = Vector256.LoadUnsafe(ref r, (nuint)(at + c));
+                var v = iFact == 0 ? a : (a * (32 - iFact) + Vector256.LoadUnsafe(ref r, (nuint)(at + c + 1)) * iFact + r16) >> 5;
+                Vector128.Narrow(v.GetLower().AsUInt32(), v.GetUpper().AsUInt32()).StoreUnsafe(ref d, (nuint)(j * rowStride + c));
+            }
+        }
+        if (!vertical) Transpose(scratch, n, dst, stride);
+    }
+
+    /// <summary>dst[i * stride + j] = scratch[j * n + i].</summary>
+    private static void Transpose(ReadOnlySpan<ushort> scratch, int n, Span<ushort> dst, int stride)
+    {
+        for (var i = 0; i < n; i++)
+        {
+            var row = dst.Slice(i * stride, n);
+            for (var j = 0; j < n; j++) row[j] = scratch[j * n + i];
         }
     }
 

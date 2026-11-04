@@ -23,6 +23,7 @@ internal sealed partial class HevcFrameDecoder
     private readonly byte[] _intraMode;
     private readonly sbyte[] _qpY;
     private readonly byte[] _noFilter;
+    private readonly int[] _decoded;    // SliceAddrRs of each reconstructed 4x4 luma block, -1 before (intra reference availability)
     private readonly byte[] _edgeVer;   // bS of the vertical edge on the left of each 4x4 block
     private readonly byte[] _edgeHor;   // bS of the horizontal edge on top of each 4x4 block
     private readonly int[] _ctbSliceAddr;  // SliceAddrRs of the slice containing each CTB, -1 while undecoded
@@ -108,6 +109,8 @@ internal sealed partial class HevcFrameDecoder
         _intraMode = new byte[blocks];
         _qpY = new sbyte[blocks];
         _noFilter = new byte[blocks];
+        _decoded = new int[blocks];
+        Array.Fill(_decoded, -1);
         _edgeVer = new byte[blocks];
         _edgeHor = new byte[blocks];
         var ctbs = sps.PicWidthInCtbs * sps.PicHeightInCtbs;
@@ -621,26 +624,27 @@ internal sealed partial class HevcFrameDecoder
 
         // Luma: predict, then add the residual.
         var lumaMode = _intraMode[Block(x0, y0)];
-        PredictIntra(0, x0, y0, log2Size, lumaMode, x0, y0);
+        PredictIntra(0, x0, y0, log2Size, lumaMode);
         if (cbfLuma) ResidualAndReconstruct(0, x0, y0, log2Size, lumaMode);
         MarkTransformEdges(x0, y0, 1 << log2Size);
+        MarkDecoded(x0, y0, 1 << log2Size);
 
         if (log2Size > 2)
         {
             var xC = x0 >> 1;
             var yC = y0 >> 1;
-            PredictIntra(1, xC, yC, log2Size - 1, _intraChromaMode, x0, y0);
+            PredictIntra(1, xC, yC, log2Size - 1, _intraChromaMode);
             if (cbfCb) ResidualAndReconstruct(1, xC, yC, log2Size - 1, _intraChromaMode);
-            PredictIntra(2, xC, yC, log2Size - 1, _intraChromaMode, x0, y0);
+            PredictIntra(2, xC, yC, log2Size - 1, _intraChromaMode);
             if (cbfCr) ResidualAndReconstruct(2, xC, yC, log2Size - 1, _intraChromaMode);
         }
         else if (blkIdx == 3)
         {
             var xC = xBase >> 1;
             var yC = yBase >> 1;
-            PredictIntra(1, xC, yC, 2, _intraChromaMode, xBase, yBase);
+            PredictIntra(1, xC, yC, 2, _intraChromaMode);
             if (cbfCb) ResidualAndReconstruct(1, xC, yC, 2, _intraChromaMode);
-            PredictIntra(2, xC, yC, 2, _intraChromaMode, xBase, yBase);
+            PredictIntra(2, xC, yC, 2, _intraChromaMode);
             if (cbfCr) ResidualAndReconstruct(2, xC, yC, 2, _intraChromaMode);
         }
     }
@@ -671,8 +675,29 @@ internal sealed partial class HevcFrameDecoder
 
     // ───────────────────────────── intra prediction (8.4.4.2) ─────────────────────────────
 
+    /// <summary>
+    /// Marks the luma TB at (x0, y0) reconstructed. Intra prediction reads a neighbouring sample only once it is
+    /// reconstructed: in decoding order (CTBs in raster order, z-scan inside them) a sample outside the current
+    /// block precedes it in z-scan order (6.4.1) exactly when it has been reconstructed, so "marked with the
+    /// current slice's address" is the availability of 6.4.1 for intra reference samples.
+    /// </summary>
+    private void MarkDecoded(int x0, int y0, int size)
+    {
+        var xEnd = Math.Min(x0 + size, _sps.Width);
+        var yEnd = Math.Min(y0 + size, _sps.Height);
+        var sliceAddr = _slice.SliceAddrRs;
+        for (var y = y0; y < yEnd; y += 4)
+        {
+            _decoded.AsSpan(Block(x0, y), (xEnd - x0 + 3) >> 2).Fill(sliceAddr);
+        }
+    }
+
+    /// <summary>Availability (6.4.1) of the luma sample (xN, yN) as an intra reference; see <see cref="MarkDecoded"/>.</summary>
+    private bool ReferenceAvailable(int xN, int yN) =>
+        (uint)xN < (uint)_sps.Width && (uint)yN < (uint)_sps.Height && _decoded[(yN >> 2) * _w4 + (xN >> 2)] == _slice.SliceAddrRs;
+
     /// <summary>Predicts the block of component <paramref name="cIdx"/> at (xTb, yTb) in that component's samples.</summary>
-    private void PredictIntra(int cIdx, int xTb, int yTb, int log2Size, int mode, int xTbY, int yTbY)
+    private void PredictIntra(int cIdx, int xTb, int yTb, int log2Size, int mode)
     {
         if (HeifDiagnostics.Skips(HeifAblation.SkipIntraPred)) return;
         var n = 1 << log2Size;
@@ -684,42 +709,47 @@ internal sealed partial class HevcFrameDecoder
         var refs = _refs.AsSpan(0, 4 * n + 1);
         var available = _refAvailable.AsSpan(0, 4 * n + 1);
         var corner = 2 * n;
-        var any = false;
+        var count = 0;
 
         // Left column, bottom (index 0 = p[-1][2N-1]) to top (index 2N-1 = p[-1][0]).
         var xLeft = xTb - 1;
         for (var y = 0; y < 2 * n; y += unit)
         {
-            var ok = Available(xTbY, yTbY, xLeft << shift, (yTb + y) << shift);
+            var ok = ReferenceAvailable(xLeft << shift, (yTb + y) << shift);
+            var at = (yTb + y) * stride + xLeft;
             for (var k = 0; k < unit; k++)
             {
                 var index = corner - 1 - (y + k);
                 available[index] = ok;
-                if (ok) refs[index] = plane[(yTb + y + k) * stride + xLeft];
+                if (ok) refs[index] = plane[at + k * stride];
             }
-            any |= ok;
+            if (ok) count += unit;
         }
 
         // Corner.
-        var cornerOk = Available(xTbY, yTbY, xLeft << shift, (yTb - 1) << shift);
+        var cornerOk = ReferenceAvailable(xLeft << shift, (yTb - 1) << shift);
         available[corner] = cornerOk;
-        if (cornerOk) refs[corner] = plane[(yTb - 1) * stride + xLeft];
-        any |= cornerOk;
-
-        // Top row, left to right.
-        for (var x = 0; x < 2 * n; x += unit)
+        if (cornerOk)
         {
-            var ok = Available(xTbY, yTbY, (xTb + x) << shift, (yTb - 1) << shift);
-            for (var k = 0; k < unit; k++)
-            {
-                var index = corner + 1 + x + k;
-                available[index] = ok;
-                if (ok) refs[index] = plane[(yTb - 1) * stride + xTb + x + k];
-            }
-            any |= ok;
+            refs[corner] = plane[(yTb - 1) * stride + xLeft];
+            count++;
         }
 
-        HevcIntraPred.Substitute(refs, available, any, bitDepth);
+        // Top row, left to right.
+        var top = (yTb - 1) * stride + xTb;
+        for (var x = 0; x < 2 * n; x += unit)
+        {
+            var ok = ReferenceAvailable((xTb + x) << shift, (yTb - 1) << shift);
+            var index = corner + 1 + x;
+            available.Slice(index, unit).Fill(ok);
+            if (ok)
+            {
+                for (var k = 0; k < unit; k++) refs[index + k] = plane[top + x + k];
+                count += unit;
+            }
+        }
+
+        if (count != refs.Length) HevcIntraPred.Substitute(refs, available, count > 0, bitDepth);
         HevcIntraPred.Predict(refs, log2Size, mode, cIdx == 0, cIdx == 0, _sps.StrongIntraSmoothingEnabled, bitDepth,
             plane.AsSpan(yTb * stride + xTb), stride);
     }
