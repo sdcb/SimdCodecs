@@ -56,6 +56,23 @@ internal static class HalftoneDecoder
             ref mq, contexts, count * patternWidth, patternHeight, template,
             typicalPrediction: false, CollectiveAt(patternWidth), budget);
 
+        return SlicePatterns(collective, count, patternWidth, patternHeight);
+    }
+
+    /// <summary>
+    /// <see cref="DecodePatternDictionary(ref MqDecoder, int, int, int, int, Jbig2PixelBudget)"/>
+    /// for HDMMR = 1: the collective bitmap is MMR-coded (T.88 §6.7.5, Table 27).
+    /// </summary>
+    public static Jbig2Bitmap[] DecodePatternDictionaryMmr(
+        ReadOnlySpan<byte> data, int patternWidth, int patternHeight, int maxIndex, Jbig2PixelBudget budget)
+    {
+        var count = maxIndex + 1;
+        var collective = MmrDecoder.Decode(data, count * patternWidth, patternHeight, budget);
+        return SlicePatterns(collective, count, patternWidth, patternHeight);
+    }
+
+    private static Jbig2Bitmap[] SlicePatterns(Jbig2Bitmap collective, int count, int patternWidth, int patternHeight)
+    {
         var patterns = new Jbig2Bitmap[count];
         for (var i = 0; i < count; i++)
             patterns[i] = collective.Crop(i * patternWidth, 0, patternWidth, patternHeight);
@@ -75,6 +92,8 @@ internal static class HalftoneDecoder
     /// <param name="Template">HTEMPLATE, the generic template each bitplane uses.</param>
     /// <param name="DefaultPixel">HDEFPIXEL.</param>
     /// <param name="Combination">HCOMBOP.</param>
+    /// <param name="Mmr">HMMR: the grey-scale bitplanes are MMR-coded.</param>
+    /// <param name="EnableSkip">HENABLESKIP: grid cells whose pattern falls wholly outside the region are not coded.</param>
     internal readonly record struct HalftoneParameters(
         int Width,
         int Height,
@@ -86,22 +105,47 @@ internal static class HalftoneDecoder
         int VectorY,
         int Template,
         byte DefaultPixel,
-        CombinationOperator Combination);
+        CombinationOperator Combination,
+        bool Mmr = false,
+        bool EnableSkip = false);
 
     /// <summary>Decodes a halftone region (T.88 §6.6.5).</summary>
-    /// <param name="mq">The arithmetic decoder, positioned at the grey-scale bitplanes.</param>
+    /// <param name="data">The coded grey-scale bitplanes, after the segment's fixed fields.</param>
     /// <param name="p">The region parameters, read from the segment header.</param>
     /// <param name="patterns">The dither patterns from the pattern dictionary this region names.</param>
     /// <param name="budget">The decode's remaining pixel allowance.</param>
     public static Jbig2Bitmap DecodeHalftoneRegion(
-        ref MqDecoder mq, HalftoneParameters p, Jbig2Bitmap[] patterns, Jbig2PixelBudget budget)
+        ReadOnlySpan<byte> data, HalftoneParameters p, Jbig2Bitmap[] patterns, Jbig2PixelBudget budget)
     {
         if (patterns.Length == 0)
             throw new InvalidDataException("JBIG2: halftone region refers to an empty pattern dictionary.");
 
         budget.Charge(p.Width, p.Height);
         var region = new Jbig2Bitmap(p.Width, p.Height, p.DefaultPixel);
-        var grey = DecodeGrayscale(ref mq, p.GridWidth, p.GridHeight, patterns.Length, p.Template, budget);
+
+        // §6.6.5.1: with HENABLESKIP, a grid cell whose pattern would land wholly
+        // outside the region is not coded in any bitplane. The test is on the
+        // pattern's top-left corner, in whole pixels, against the pattern size.
+        Jbig2Bitmap? skip = null;
+        if (p.EnableSkip)
+        {
+            budget.Charge(p.GridWidth, p.GridHeight);
+            skip = new Jbig2Bitmap(p.GridWidth, p.GridHeight);
+            var patternWidth = patterns[0].Width;
+            var patternHeight = patterns[0].Height;
+            for (var m = 0; m < p.GridHeight; m++)
+            {
+                for (var n = 0; n < p.GridWidth; n++)
+                {
+                    var x = (p.GridX + (long)m * p.VectorY + (long)n * p.VectorX) >> 8;
+                    var y = (p.GridY + (long)m * p.VectorX - (long)n * p.VectorY) >> 8;
+                    if (x + patternWidth <= 0 || x >= p.Width || y + patternHeight <= 0 || y >= p.Height)
+                        skip.Data[m * p.GridWidth + n] = 1;
+                }
+            }
+        }
+
+        var grey = DecodeGrayscale(data, p, patterns.Length, skip, budget);
 
         for (var m = 0; m < p.GridHeight; m++)
         {
@@ -111,15 +155,24 @@ internal static class HalftoneDecoder
                 // a vector, so a dither grid can be rotated or sheared relative to
                 // the page. Coordinates are in 1/256 pixel units throughout, hence
                 // the shift rather than a division.
-                var x = p.GridX + m * p.VectorY + n * p.VectorX;
-                var y = p.GridY + m * p.VectorX - n * p.VectorY;
+                // In long: HGX is a full 32-bit value, and a grid of 2^24 cells times a
+                // 16-bit vector overflows int long before it is implausible.
+                var x = p.GridX + (long)m * p.VectorY + (long)n * p.VectorX;
+                var y = p.GridY + (long)m * p.VectorX - (long)n * p.VectorY;
 
                 var level = grey[m * p.GridWidth + n];
                 if ((uint)level >= (uint)patterns.Length)
                     throw new InvalidDataException(
                         $"JBIG2: halftone grey level {level} exceeds the {patterns.Length}-pattern dictionary.");
 
-                region.Combine(patterns[level], x >> 8, y >> 8, p.Combination);
+                var px = x >> 8;
+                var py = y >> 8;
+                // A pattern wholly off the region changes nothing; skipping it here
+                // also keeps the coordinates inside int for Combine.
+                if (px >= p.Width || py >= p.Height || px + patterns[level].Width <= 0 || py + patterns[level].Height <= 0)
+                    continue;
+
+                region.Combine(patterns[level], (int)px, (int)py, p.Combination);
             }
         }
 
@@ -132,14 +185,21 @@ internal static class HalftoneDecoder
     /// above it to undo the Gray coding.
     /// </summary>
     private static int[] DecodeGrayscale(
-        ref MqDecoder mq, int width, int height, int levels, int template, Jbig2PixelBudget budget)
+        ReadOnlySpan<byte> data, HalftoneParameters p, int levels, Jbig2Bitmap? skip, Jbig2PixelBudget budget)
     {
+        var width = p.GridWidth;
+        var height = p.GridHeight;
+
+        // HBPP = ceil(log2(HNUMPATS)), at least one plane. levels is at most 2^32,
+        // so this stops by 32.
         var planes = 0;
-        while (1 << planes < levels) planes++;
+        while (planes < 32 && 1L << planes < levels) planes++;
         planes = Math.Max(planes, 1);
 
-        var contexts = new byte[1 << GenericRegionDecoder.ContextBits(template)];
-        var at = GrayscaleAt(template);
+        var contexts = new byte[1 << GenericRegionDecoder.ContextBits(p.Template)];
+        var at = GrayscaleAt(p.Template);
+        var mq = new MqDecoder(data);
+        var mmrOffset = 0;
 
         // The caller has already bounded the grid by Jbig2Limits.MaxHalftoneGridCells,
         // which is what keeps this product inside int and these two arrays (five
@@ -149,8 +209,19 @@ internal static class HalftoneDecoder
 
         for (var bit = planes - 1; bit >= 0; bit--)
         {
-            var plane = GenericRegionDecoder.Decode(
-                ref mq, contexts, width, height, template, typicalPrediction: false, at, budget);
+            Jbig2Bitmap plane;
+            if (p.Mmr)
+            {
+                // C.5 with GSMMR = 1: each plane is its own MMR bitmap, starting on the
+                // byte after the previous one ended. SKIP does not apply to MMR coding.
+                plane = MmrDecoder.Decode(data[Math.Min(mmrOffset, data.Length)..], width, height, budget, out var used);
+                mmrOffset += used;
+            }
+            else
+            {
+                plane = GenericRegionDecoder.Decode(
+                    ref mq, contexts, width, height, p.Template, typicalPrediction: false, at, budget, skip);
+            }
 
             // C.5: every plane but the first is coded relative to the one above,
             // so the running XOR is what turns Gray code back into binary.

@@ -144,9 +144,9 @@ public sealed class Jbig2FacadeTests
     {
         // The facade contract is "false for undecodable", not "throws". Every
         // region type decodes now, so the case has to be a genuinely refused
-        // feature: a Huffman-coded symbol dictionary.
+        // feature: a symbol dictionary that imports arithmetic contexts.
         var dictionary = Jbig2SymbolBuilder.SymbolDictionarySegment(Jbig2TextRegionTests.Alphabet());
-        dictionary[1] |= 0x01;   // SDHUFF
+        dictionary[0] |= 0x01;   // bitmap coding context used (bit 8 of the flags)
 
         var file = Jbig2StreamBuilder.SequentialFile(
             Jbig2StreamBuilder.Segment(0, SegmentType.PageInformation, 1,

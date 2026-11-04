@@ -62,36 +62,24 @@ public sealed class Jbig2HalftoneTests
             .Message.ShouldContain("pattern dictionary");
     }
 
+    /// <summary>
+    /// GRAYMAX is a four-byte field; one that asks for a collective bitmap past the
+    /// per-bitmap ceiling is refused before anything is allocated.
+    /// </summary>
     [Fact]
-    public void HalftoneRegion_WithSkipEnabled_IsRefusedByName()
-    {
-        var patterns = Patterns(4);
-        var segment = HalftoneRegionSegment(32, 32, new int[4], 2, 2, 4, patterns);
-        segment[17] |= 0x08;   // HENABLESKIP, in the flags byte after the region info
-
-        var stream = Jbig2StreamBuilder.Stream(
-            Jbig2StreamBuilder.Segment(0, SegmentType.PageInformation, 1,
-                Jbig2StreamBuilder.PageInformation(32, 32)),
-            Jbig2StreamBuilder.Segment(1, SegmentType.PatternDictionary, 1, PatternDictionarySegment(patterns)),
-            Jbig2StreamBuilder.Segment(2, SegmentType.ImmediateHalftoneRegion, 1, segment, referredTo: [1]));
-
-        Should.Throw<NotSupportedException>(() => Jbig2Decoder.Decode(stream, 32, 32))
-            .Message.ShouldContain("HENABLESKIP");
-    }
-
-    [Fact]
-    public void MmrCodedPatternDictionary_IsRefusedByName()
+    public void PatternDictionary_ImplausibleGrayMax_IsRefusedBeforeAllocating()
     {
         var segment = PatternDictionarySegment(Patterns(4));
-        segment[0] |= 0x01;   // HDMMR
+        segment[3] = segment[4] = segment[5] = segment[6] = 0xFF;   // GRAYMAX = 0xFFFFFFFF
 
         var stream = Jbig2StreamBuilder.Stream(
             Jbig2StreamBuilder.Segment(0, SegmentType.PageInformation, 1,
                 Jbig2StreamBuilder.PageInformation(32, 32)),
             Jbig2StreamBuilder.Segment(1, SegmentType.PatternDictionary, 1, segment));
 
-        Should.Throw<NotSupportedException>(() => Jbig2Decoder.Decode(stream, 32, 32))
-            .Message.ShouldContain("MMR");
+        Should.Throw<InvalidDataException>(() => Jbig2Decoder.Decode(stream, 32, 32,
+                TestContext.Current.CancellationToken))
+            .Message.ShouldContain("GRAYMAX");
     }
 
     // ---- stream construction -----------------------------------------------------
@@ -199,12 +187,31 @@ public sealed class Jbig2HalftoneTests
     }
 
     /// <summary>A halftone region segment (T.88 §7.4.5) carrying the grey grid as Gray-coded bitplanes.</summary>
+    /// <param name="enableSkip">
+    /// HENABLESKIP: cells whose pattern lies wholly outside the region are left out of
+    /// every bitplane (T.88 §6.6.5.1). The skip test is written out here a second time,
+    /// independently of the decoder's, so the two only agree with jbig2dec if both are right.
+    /// </param>
     internal static byte[] HalftoneRegionSegment(
         int width, int height, int[] grey, int gridWidth, int gridHeight, int levels,
         Jbig2Bitmap[] patterns, int gridX = 0, int gridY = 0, int vectorX = 0, int vectorY = 0,
-        int template = 0)
+        int template = 0, bool enableSkip = false)
     {
         if (vectorX == 0) vectorX = patterns[0].Width * 256;
+
+        bool[]? skip = null;
+        if (enableSkip)
+        {
+            skip = new bool[gridWidth * gridHeight];
+            for (var m = 0; m < gridHeight; m++)
+                for (var n = 0; n < gridWidth; n++)
+                {
+                    var x = (gridX + m * vectorY + n * vectorX) >> 8;
+                    var y = (gridY + m * vectorX - n * vectorY) >> 8;
+                    skip[m * gridWidth + n] = x + patterns[0].Width <= 0 || x >= width
+                        || y + patterns[0].Height <= 0 || y >= height;
+                }
+        }
 
         var body = new List<byte>();
         WriteUInt32(body, (uint)width);
@@ -212,14 +219,14 @@ public sealed class Jbig2HalftoneTests
         WriteUInt32(body, 0);
         WriteUInt32(body, 0);
         body.Add((byte)CombinationOperator.Or);           // external combination
-        body.Add((byte)(template << 1));                  // HMMR=0, HENABLESKIP=0, HCOMBOP=OR, HDEFPIXEL=0
+        body.Add((byte)((template << 1) | (enableSkip ? 0x08 : 0)));   // HMMR=0, HCOMBOP=OR, HDEFPIXEL=0
         WriteUInt32(body, (uint)gridWidth);
         WriteUInt32(body, (uint)gridHeight);
         WriteUInt32(body, (uint)gridX);
         WriteUInt32(body, (uint)gridY);
         WriteUInt16(body, (ushort)vectorX);
         WriteUInt16(body, (ushort)vectorY);
-        body.AddRange(EncodeGrayscale(grey, gridWidth, gridHeight, levels, template));
+        body.AddRange(EncodeGrayscale(grey, gridWidth, gridHeight, levels, template, skip));
         return [.. body];
     }
 
@@ -229,7 +236,7 @@ public sealed class Jbig2HalftoneTests
     /// one arithmetic stream with one shared context array, exactly as the decoder
     /// reads them back.
     /// </summary>
-    private static byte[] EncodeGrayscale(int[] values, int width, int height, int levels, int template)
+    private static byte[] EncodeGrayscale(int[] values, int width, int height, int levels, int template, bool[]? skip = null)
     {
         var planes = 0;
         while (1 << planes < levels) planes++;
@@ -249,11 +256,21 @@ public sealed class Jbig2HalftoneTests
                 plane.Data[i] = previous is null ? raw : (byte)(raw ^ previous[i]);
             }
 
+            // A skipped cell is coded nowhere and decodes as 0 in every plane, so
+            // its plane bit has to be 0 here too for the contexts of its
+            // neighbours to match the decoder's.
+            if (skip is not null)
+                for (var i = 0; i < values.Length; i++)
+                    if (skip[i]) plane.Data[i] = 0;
+
             for (var y = 0; y < height; y++)
                 for (var x = 0; x < width; x++)
+                {
+                    if (skip is not null && skip[y * width + x]) continue;
                     encoder.Encode(contexts,
                         GenericRegionDecoder.Context(plane, x, y, template, at),
                         plane.Data[y * width + x]);
+                }
 
             // The next plane down is coded against this one *after* decoding, so
             // the running reference is the reconstructed bit, not the coded one.

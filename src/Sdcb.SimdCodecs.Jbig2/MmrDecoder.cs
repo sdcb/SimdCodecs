@@ -49,7 +49,17 @@ internal ref struct MmrDecoder
     /// </summary>
     /// <exception cref="InvalidDataException">The coded data is malformed or ends early.</exception>
     /// <exception cref="NotSupportedException">The data uses a 2D extension code, which includes T.6's uncompressed mode.</exception>
-    public static Jbig2Bitmap Decode(ReadOnlySpan<byte> data, int width, int height, Jbig2PixelBudget budget)
+    public static Jbig2Bitmap Decode(ReadOnlySpan<byte> data, int width, int height, Jbig2PixelBudget budget) =>
+        Decode(data, width, height, budget, out _);
+
+    /// <summary>
+    /// <see cref="Decode(ReadOnlySpan{byte}, int, int, Jbig2PixelBudget)"/>, also reporting how many
+    /// bytes the bitmap occupied: its rows, an EOFB if one follows them, and the padding to the
+    /// next byte boundary. That is where the next MMR bitmap starts when several are coded back to
+    /// back, as the bitplanes of a halftone region's grey-scale image are (T.88 Annex C.5).
+    /// </summary>
+    public static Jbig2Bitmap Decode(
+        ReadOnlySpan<byte> data, int width, int height, Jbig2PixelBudget budget, out int bytesConsumed)
     {
         budget.Charge(width, height);
         var bitmap = new Jbig2Bitmap(width, height);
@@ -75,6 +85,10 @@ internal ref struct MmrDecoder
             referenceCount = count;
         }
 
+        // T.6 §2.4: EOFB is two EOL codes, 000000000001 twice. It is optional after a
+        // region of known height, so it is consumed only when it is actually there.
+        if (decoder.Peek(24) == 0x001001) decoder._bitPosition += 24;
+        bytesConsumed = Math.Min((decoder._bitPosition + 7) >> 3, data.Length);
         return bitmap;
     }
 
@@ -246,7 +260,7 @@ internal ref struct MmrDecoder
         for (var i = 0; i < 4; i++)
             window = (window << 8) | (index + i < _data.Length ? _data[index + i] : 0u);
 
-        // count is at most 13 and shift at most 7, so the wanted bits are always
+        // count is at most 24 and shift at most 7, so the wanted bits are always
         // inside the 32-bit window.
         return (window << shift) >> (32 - count);
     }

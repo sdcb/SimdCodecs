@@ -114,38 +114,6 @@ public sealed class Jbig2TextRegionTests
             .Message.ShouldContain("symbol dictionary");
     }
 
-    [Fact]
-    public void HuffmanCodedTextRegion_IsRefusedByName()
-    {
-        var segment = Jbig2SymbolBuilder.TextRegionSegment(16, 16, Alphabet(), [new(0, 0, 0)]);
-        segment[18] |= 0x01;   // SBHUFF, low byte of the flags at offset 17..18
-
-        var stream = Jbig2StreamBuilder.Stream(
-            Jbig2StreamBuilder.Segment(0, SegmentType.PageInformation, 1,
-                Jbig2StreamBuilder.PageInformation(16, 16)),
-            Jbig2StreamBuilder.Segment(1, SegmentType.SymbolDictionary, 1,
-                Jbig2SymbolBuilder.SymbolDictionarySegment(Alphabet())),
-            Jbig2StreamBuilder.Segment(2, SegmentType.ImmediateTextRegion, 1, segment, referredTo: [1]));
-
-        Should.Throw<NotSupportedException>(() => Jbig2Decoder.Decode(stream, 16, 16))
-            .Message.ShouldContain("SBHUFF");
-    }
-
-    [Fact]
-    public void HuffmanCodedSymbolDictionary_IsRefusedByName()
-    {
-        var segment = Jbig2SymbolBuilder.SymbolDictionarySegment(Alphabet());
-        segment[1] |= 0x01;   // SDHUFF, low byte of the 16-bit flags
-
-        var stream = Jbig2StreamBuilder.Stream(
-            Jbig2StreamBuilder.Segment(0, SegmentType.PageInformation, 1,
-                Jbig2StreamBuilder.PageInformation(16, 16)),
-            Jbig2StreamBuilder.Segment(1, SegmentType.SymbolDictionary, 1, segment));
-
-        Should.Throw<NotSupportedException>(() => Jbig2Decoder.Decode(stream, 16, 16))
-            .Message.ShouldContain("SDHUFF");
-    }
-
     /// <summary>
     /// A dictionary that imports from another — the mechanism PDF's
     /// <c>/JBIG2Globals</c> is built on, and the one place symbol numbering spans

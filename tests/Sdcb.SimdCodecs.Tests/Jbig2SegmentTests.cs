@@ -171,11 +171,12 @@ public sealed class Jbig2SegmentTests
     }
 
     [Fact]
-    public void ReadHeader_UnknownDataLength_IsRejectedExplicitly()
+    public void ReadHeader_UnknownDataLength_OnAnImmediateGenericRegion_IsLeftToTheStreamReader()
     {
         // §7.2.7 allows 0xFFFFFFFF on an immediate generic region, whose data is
-        // then terminated by a search sequence instead. Not implemented, and it
-        // must say so rather than treat the value as a length.
+        // then terminated by an end sequence instead. The header reader reports
+        // it rather than treating the value as a length; Jbig2ExtendedOracleTests
+        // covers the resolution.
         byte[] header =
         [
             0x00, 0x00, 0x00, 0x01,
@@ -186,7 +187,25 @@ public sealed class Jbig2SegmentTests
         ];
 
         var position = 0;
-        Should.Throw<NotSupportedException>(() => Jbig2Segment.ReadHeader(header, ref position))
+        var segment = Jbig2Segment.ReadHeader(header, ref position);
+        segment.LengthUnknown.ShouldBeTrue();
+        segment.DataStart.ShouldBe(header.Length);
+    }
+
+    [Fact]
+    public void ReadHeader_UnknownDataLength_OnAnyOtherType_IsInvalidData()
+    {
+        byte[] header =
+        [
+            0x00, 0x00, 0x00, 0x01,
+            0x06,   // immediate text region
+            0x00,
+            0x01,
+            0xFF, 0xFF, 0xFF, 0xFF,
+        ];
+
+        var position = 0;
+        Should.Throw<InvalidDataException>(() => Jbig2Segment.ReadHeader(header, ref position))
             .Message.ShouldContain("unknown data length");
     }
 

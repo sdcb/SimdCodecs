@@ -52,7 +52,8 @@ internal readonly record struct TextRegionParameters(
 /// Every number here comes from an <see cref="ArithIntDecoder"/> — one per field,
 /// as T.88 names them (IADT, IAFS, IADS, IAIT, IARI, IARDW…), because each
 /// field's values have their own distribution and sharing contexts between them
-/// would cost compression.
+/// would cost compression. A Huffman-coded region (SBHUFF = 1) reads the same
+/// fields from Huffman tables instead, in <see cref="DecodeHuffman"/>.
 /// </para>
 /// </summary>
 internal static class TextRegionDecoder
@@ -227,6 +228,203 @@ internal static class TextRegionDecoder
 
         return advanceFirst ? curs : curs + extent - 1;
     }
+
+    /// <summary>The Huffman tables a Huffman-coded text region reads its fields with (§7.4.3.1.2).</summary>
+    internal sealed record HuffmanTables(
+        HuffmanTable Fs, HuffmanTable Ds, HuffmanTable Dt,
+        HuffmanTable Rdw, HuffmanTable Rdh, HuffmanTable Rdx, HuffmanTable Rdy, HuffmanTable RefinementSize)
+    {
+        /// <summary>
+        /// The tables T.88 Table 17 fixes for a text region decoded inside a
+        /// Huffman-coded symbol dictionary's aggregate symbol (§6.5.8.2.1).
+        /// </summary>
+        public static HuffmanTables SymbolDictionaryAggregate => new(
+            HuffmanTable.Get(6), HuffmanTable.Get(8), HuffmanTable.Get(11),
+            HuffmanTable.Get(15), HuffmanTable.Get(15), HuffmanTable.Get(15), HuffmanTable.Get(15),
+            HuffmanTable.Get(1));
+    }
+
+    /// <summary>
+    /// Reads the symbol ID Huffman table that opens a Huffman-coded text region's data
+    /// (§7.4.3.1.7): 35 four-bit lengths for the run codes, then one code length per
+    /// symbol coded with those run codes, then padding to the next byte.
+    /// </summary>
+    public static HuffmanTable ReadSymbolCodeTable(ref Jbig2BitReader reader, int symbolCount)
+    {
+        Span<int> runLengths = stackalloc int[35];
+        for (var i = 0; i < runLengths.Length; i++) runLengths[i] = (int)reader.ReadBits(4);
+        var runCodes = HuffmanTable.FromCodeLengths(runLengths);
+
+        var lengths = new int[symbolCount];
+        var count = 0;
+        while (count < symbolCount)
+        {
+            var code = runCodes.Decode(ref reader);
+            int repeat, value;
+            switch (code)
+            {
+                case >= 0 and < 32:
+                    lengths[count++] = code;
+                    continue;
+                case 32:
+                    // RUNCODE32: the previous length again, 3 to 6 times.
+                    if (count == 0)
+                        throw new InvalidDataException("JBIG2: symbol ID table repeats a length before any is given.");
+                    value = lengths[count - 1];
+                    repeat = 3 + (int)reader.ReadBits(2);
+                    break;
+                case 33:
+                    value = 0;
+                    repeat = 3 + (int)reader.ReadBits(3);
+                    break;
+                case 34:
+                    value = 0;
+                    repeat = 11 + (int)reader.ReadBits(7);
+                    break;
+                default:
+                    throw new InvalidDataException($"JBIG2: symbol ID table has run code {code}.");
+            }
+
+            if (count + repeat > symbolCount)
+                throw new InvalidDataException("JBIG2: symbol ID table runs past the symbol count.");
+            lengths.AsSpan(count, repeat).Fill(value);
+            count += repeat;
+        }
+
+        reader.AlignToByte();
+        return HuffmanTable.FromCodeLengths(lengths);
+    }
+
+    /// <summary>
+    /// Decodes a Huffman-coded text region (SBHUFF = 1, §6.4.5 with the Huffman
+    /// branches of §6.4.6 to §6.4.11).
+    /// </summary>
+    /// <param name="reader">Positioned at the first field after the symbol ID table.</param>
+    /// <param name="p">The region parameters.</param>
+    /// <param name="symbols">SBSYMS.</param>
+    /// <param name="tables">The field tables.</param>
+    /// <param name="symbolCodes">
+    /// SBSYMCODES, or null for the uniform <paramref name="codeLength"/>-bit IDs a symbol
+    /// dictionary's aggregate region uses.
+    /// </param>
+    /// <param name="codeLength">The width of a uniform ID; unused when <paramref name="symbolCodes"/> is given.</param>
+    /// <param name="refinementContexts">Contexts for per-instance refinement.</param>
+    /// <param name="refinementAt">SBRAT.</param>
+    /// <param name="budget">The decode's remaining pixel allowance.</param>
+    public static Jbig2Bitmap DecodeHuffman(
+        ref Jbig2BitReader reader,
+        TextRegionParameters p,
+        Jbig2Bitmap[] symbols,
+        HuffmanTables tables,
+        HuffmanTable? symbolCodes,
+        int codeLength,
+        Span<byte> refinementContexts,
+        scoped ReadOnlySpan<sbyte> refinementAt,
+        Jbig2PixelBudget budget)
+    {
+        budget.Charge(p.Width, p.Height);
+        var region = new Jbig2Bitmap(p.Width, p.Height, p.DefaultPixel);
+        var logStrips = System.Numerics.BitOperations.Log2((uint)p.Strips);
+
+        var stript = -(long)RequireHuffman(tables.Dt.Decode(ref reader), "DT") * p.Strips;
+        long firsts = 0;
+        var instances = 0;
+
+        while (instances < p.Instances)
+        {
+            stript += (long)RequireHuffman(tables.Dt.Decode(ref reader), "DT") * p.Strips;
+            firsts += RequireHuffman(tables.Fs.Decode(ref reader), "FS");
+            var curs = firsts;
+
+            while (true)
+            {
+                if (instances >= p.Instances)
+                    throw new InvalidDataException("JBIG2: text region codes more symbol instances than it declared.");
+
+                // §6.4.9: with SBHUFF the within-strip T offset is LOG2SBSTRIPS raw bits.
+                var curt = (long)reader.ReadBits(logStrips);
+                var t = ClampCoordinate(stript + curt);
+
+                var id = symbolCodes is null ? (int)reader.ReadBits(codeLength) : symbolCodes.Decode(ref reader);
+                if ((uint)id >= (uint)symbols.Length)
+                    throw new InvalidDataException($"JBIG2: text region names symbol {id} of {symbols.Length}.");
+
+                var symbol = symbols[id];
+                if (p.Refine && reader.ReadBit() != 0)
+                {
+                    var rdw = RequireHuffman(tables.Rdw.Decode(ref reader), "RDW");
+                    var rdh = RequireHuffman(tables.Rdh.Decode(ref reader), "RDH");
+                    var rdx = RequireHuffman(tables.Rdx.Decode(ref reader), "RDX");
+                    var rdy = RequireHuffman(tables.Rdy.Decode(ref reader), "RDY");
+                    var size = RequireHuffman(tables.RefinementSize.Decode(ref reader), "RSIZE");
+
+                    var width = (long)symbol.Width + rdw;
+                    var height = (long)symbol.Height + rdh;
+                    if (width is <= 0 or > int.MaxValue || height is <= 0 or > int.MaxValue)
+                        throw new InvalidDataException($"JBIG2: refined text instance has size {width}x{height}.");
+
+                    symbol = DecodeHuffmanRefinement(
+                        ref reader, size, refinementContexts, (int)width, (int)height, p.RefinementTemplate,
+                        symbol, FloorHalf(rdw) + rdx, FloorHalf(rdh) + rdy, refinementAt, budget);
+                }
+
+                curs = PlaceSymbol(region, symbol, p, ClampCoordinate(curs), t);
+                instances++;
+
+                var ds = tables.Ds.Decode(ref reader);
+                if (ds == HuffmanTable.OutOfBand) break;
+
+                curs += (long)ds + p.DsOffset;
+            }
+        }
+
+        return region;
+    }
+
+    /// <summary>
+    /// A refinement inside Huffman-coded data (§6.4.11.1 and §6.5.8.2.2): it starts
+    /// on the next byte boundary, is arithmetically coded, and occupies exactly
+    /// <paramref name="size"/> bytes, after which the Huffman fields resume.
+    /// </summary>
+    public static Jbig2Bitmap DecodeHuffmanRefinement(
+        ref Jbig2BitReader reader,
+        int size,
+        Span<byte> contexts,
+        int width,
+        int height,
+        int template,
+        Jbig2Bitmap reference,
+        int dx,
+        int dy,
+        scoped ReadOnlySpan<sbyte> at,
+        Jbig2PixelBudget budget)
+    {
+        if (size < 0) throw new InvalidDataException($"JBIG2: refinement data size {size} is negative.");
+
+        reader.AlignToByte();
+        var start = reader.BytePosition;
+        if ((long)start + size > reader.Data.Length)
+            throw new InvalidDataException("JBIG2: Huffman-coded refinement data runs past the segment.");
+
+        // Each refinement is its own arithmetically coded unit, so it starts from
+        // fresh adaptive state.
+        contexts.Clear();
+        var mq = new MqDecoder(reader.Data.Slice(start, size));
+        var bitmap = RefinementRegionDecoder.Decode(
+            ref mq, contexts, width, height, template, reference, dx, dy,
+            typicalPrediction: false, at, budget);
+
+        reader.SeekToByte((long)start + size);
+        return bitmap;
+    }
+
+    // Coordinates are accumulated in long from coded deltas; anything outside int
+    // can only place a symbol off the region, so pin it somewhere that still is.
+    private static int ClampCoordinate(long value) => (int)Math.Clamp(value, int.MinValue / 2, int.MaxValue / 2);
+
+    private static int RequireHuffman(int value, string field) => value != HuffmanTable.OutOfBand
+        ? value
+        : throw new InvalidDataException($"JBIG2: unexpected OOB decoding {field} in a text region.");
 
     /// <summary>Floor division by two that keeps working for negative deltas, which <c>/ 2</c> does not.</summary>
     private static int FloorHalf(int value) => value >> 1;

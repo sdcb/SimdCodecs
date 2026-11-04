@@ -25,26 +25,19 @@ namespace Sdcb.SimdCodecs.Jbig2;
 /// contexts that name a specific neighbourhood in the spec's numbering.
 /// </para>
 /// <para>
-/// <b>TPGRON is refused.</b> Everything else here is confirmed against jbig2dec
-/// — both templates, six reference/target relationships, and moved AT pixels —
-/// but with TPGRON on, this decoder and jbig2dec part company. What is known,
-/// from measurement rather than assumption:
-/// </para>
-/// <list type="bullet">
-/// <item>GRTEMPLATE 1 never agrees. Sweeping <em>all 1024</em> possible SLTP
-/// context values produced no agreeing candidate, so the SLTP constant is not
-/// the cause — something about how the skip itself applies is.</item>
-/// <item>GRTEMPLATE 0 agrees on five of six relationships and desynchronises
-/// part-way down the sixth, which rules out a simple constant just as
-/// firmly.</item>
-/// <item>jbig2dec emits no diagnostic either way, so there is no evidence about
-/// which side is wrong — and no second oracle available to break the tie.</item>
-/// </list>
-/// <para>
-/// So the flag throws. Partial credit is the wrong instinct here: "agrees on
-/// five of six" describes a decoder that silently corrupts the sixth, and a
-/// caller cannot tell which one it has. TPGRON is an encoder's option, never a
-/// requirement, so refusing it costs strictly less than getting it wrong.
+/// <b>TPGRON</b> (§6.3.5.6) toggles LTP with one SLTP decision per row, and
+/// while LTP is on a pixel over a uniform 3x3 patch of the reference takes the
+/// patch's colour without a decision. The SLTP decision has a context of its
+/// own, a fixed value: 0x0010 for GRTEMPLATE 0 and 0x0004 for GRTEMPLATE 1 in
+/// the numbering below. An earlier version of this file used 0x0100 / 0x0080
+/// and refused TPGRON because it disagreed with jbig2dec. The constants were
+/// settled by measurement: for GRTEMPLATE 1, sweeping all 1024 values against
+/// jbig2dec over the six <c>Jbig2RefinementTests.Cases</c> leaves 0x0004 as the
+/// only one that agrees on every case; for GRTEMPLATE 0 those cases agree with
+/// many values (the slot is rarely reached), and 0x0010 is the one that also
+/// decodes the TPGRON refinement region of the issue #1 corpus
+/// (<c>042_24.jb2</c>, see <c>Issue1Jbig2CorpusTests</c>) exactly as
+/// jbig2dec does.
 /// </para>
 /// </summary>
 internal static class RefinementRegionDecoder
@@ -57,7 +50,7 @@ internal static class RefinementRegionDecoder
     public static ReadOnlySpan<sbyte> NominalAt => [-1, -1, -1, -1];
 
     // T.88 §6.3.5.6: the pseudo-context the SLTP decision uses when TPGRON is on.
-    private static ReadOnlySpan<ushort> TypicalPredictionContexts => [0x0100, 0x0080];
+    private static ReadOnlySpan<ushort> TypicalPredictionContexts => [0x0010, 0x0004];
 
     /// <summary>Number of context bits (hence the context array size) for each GRTEMPLATE.</summary>
     public static int ContextBits(int template) => template switch
@@ -101,14 +94,6 @@ internal static class RefinementRegionDecoder
             throw new ArgumentException("GRTEMPLATE 0 needs two AT pixels.", nameof(at));
         if (contexts.Length < 1 << ContextBits(template))
             throw new ArgumentException("Context array too small for this GRTEMPLATE.", nameof(contexts));
-
-        // See the class remarks. Refinement without TPGRON is confirmed against
-        // jbig2dec on both templates; with it, this decoder disagrees on inputs it
-        // cannot explain, so the flag is refused rather than guessed at.
-        if (typicalPrediction)
-            throw new NotSupportedException(
-                "JBIG2: TPGRON (typical prediction) in a refinement region is not implemented — the decoded " +
-                "result cannot be reconciled with the reference decoder, and a wrong page is worse than none.");
 
         budget.Charge(width, height);
         var bitmap = new Jbig2Bitmap(width, height);

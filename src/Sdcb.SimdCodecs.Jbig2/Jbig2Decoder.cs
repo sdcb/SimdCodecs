@@ -21,22 +21,30 @@ namespace Sdcb.SimdCodecs.Jbig2;
 /// </para>
 /// <para>
 /// Standalone <c>.jb2</c> files — which do have a header, and do carry their own
-/// dimensions — go through <see cref="DecodeFile"/>, and register with the
+/// dimensions — go through <see cref="DecodeFile(ReadOnlySpan{byte}, int, CancellationToken)"/>, and register with the
 /// <c>Sdcb.SimdCodecs</c> facade via <see cref="Jbig2ImageDecoder"/>.
 /// </para>
 /// <para>
-/// <b>Implemented:</b> every region type T.88 defines, arithmetically coded —
-/// generic regions both ways (§6.2.5 templates 0-3 with TPGDON and arbitrary AT
-/// pixels, and MMR / ITU-T T.6 §6.2.6), refinement regions (§6.3), symbol
-/// dictionaries and text regions (§6.4/§6.5, including per-instance refinement
-/// and refine/aggregate symbols), pattern dictionaries and halftone regions
-/// (§6.6/§6.7), page information, and region composition.
-/// <b>Not implemented:</b> the Huffman-coded variants (SDHUFF / SBHUFF and custom
-/// table segments), MMR inside pattern dictionaries and halftone regions,
-/// HENABLESKIP, and TPGRON in a refinement region. Each throws
+/// <b>Implemented:</b> every region type T.88 defines — generic regions (§6.2.5
+/// templates 0-3 with TPGDON and arbitrary AT pixels, MMR / ITU-T T.6 §6.2.6, and
+/// the unknown data length of §7.2.7), refinement regions with or without TPGRON
+/// (§6.3), symbol dictionaries and text regions both arithmetically and
+/// Huffman-coded (§6.4/§6.5, with the standard tables of Annex B, custom table
+/// segments, per-instance refinement and refine/aggregate symbols), pattern
+/// dictionaries and halftone regions with MMR, HENABLESKIP and any GRAYMAX
+/// (§6.6/§6.7), page information, region composition, and every page of a
+/// multi-page file.
+/// <b>Not implemented:</b> EXTTEMPLATE generic regions, symbol dictionaries that
+/// import or retain arithmetic contexts, and T.6's 2D extension codes. Each throws
 /// <see cref="NotSupportedException"/> naming the feature — a stream this decoder
 /// cannot fully reconstruct fails loudly rather than returning a
 /// plausible-looking partial page.
+/// </para>
+/// <para>
+/// <b>After changing this decoder,</b> run <c>Issue1Jbig2CorpusTests</c> against the
+/// files attached to issue #1 (https://github.com/sdcb/SimdCodecs/issues/1): download
+/// and extract them, set <c>SIMDCODECS_ISSUE1_DIR</c>, and every page is compared with
+/// jbig2dec. They are not in the repository because their licence is unknown.
 /// </para>
 /// </summary>
 public static class Jbig2Decoder
@@ -113,16 +121,37 @@ public static class Jbig2Decoder
     /// <param name="cancellationToken">A cancellation token to monitor for cancellation requests.</param>
     /// <exception cref="InvalidDataException">The file header or a segment is malformed.</exception>
     /// <exception cref="NotSupportedException">The file needs a JBIG2 feature this decoder does not implement yet.</exception>
-    public static Jbig2Image DecodeFile(ReadOnlySpan<byte> file, CancellationToken cancellationToken = default)
+    public static Jbig2Image DecodeFile(ReadOnlySpan<byte> file, CancellationToken cancellationToken = default) =>
+        DecodeFile(file, pageNumber: 1, cancellationToken);
+
+    /// <summary>
+    /// Decodes one page of a standalone <c>.jb2</c> file (T.88 Annex D). Segments
+    /// associated with page 0 (shared dictionaries) apply to every page; the rest
+    /// are filtered to <paramref name="pageNumber"/>.
+    /// </summary>
+    /// <param name="file">The standalone JBIG2 file bytes.</param>
+    /// <param name="pageNumber">
+    /// The page's association number (T.88 §7.2.6): 1 for the first page. A file's pages
+    /// are numbered 1 to the page count that
+    /// <see cref="TryReadFileInfo(ReadOnlySpan{byte}, out int, out int, out int)"/> reports.
+    /// </param>
+    /// <param name="cancellationToken">A cancellation token to monitor for cancellation requests.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="pageNumber"/> is not positive.</exception>
+    /// <exception cref="InvalidDataException">The file header or a segment is malformed, or the file has no such page.</exception>
+    /// <exception cref="NotSupportedException">The file needs a JBIG2 feature this decoder does not implement yet.</exception>
+    public static Jbig2Image DecodeFile(ReadOnlySpan<byte> file, int pageNumber, CancellationToken cancellationToken = default)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(pageNumber);
+
         var segments = ReadFile(file, out var body);
-        if (!TryFindPageSize(body, segments, out var width, out var height))
-            throw new InvalidDataException("JBIG2: file has no page information segment for page 1, or its height is indeterminate.");
+        if (!TryFindPageSize(body, segments, (uint)pageNumber, out var width, out var height))
+            throw new InvalidDataException(
+                $"JBIG2: file has no page information segment for page {pageNumber}, or its height is indeterminate.");
 
         cancellationToken.ThrowIfCancellationRequested();
 
         var state = new DecodingState(new Jbig2Bitmap(width, height));
-        ProcessStream(body, segments, state, targetPage: 1, cancellationToken);
+        ProcessStream(body, segments, state, targetPage: (uint)pageNumber, cancellationToken);
 
         return new Jbig2Image(width, height, state.Page.Data);
     }
@@ -138,9 +167,10 @@ public static class Jbig2Decoder
 
     /// <summary>
     /// <see cref="TryReadFileInfo(ReadOnlySpan{byte}, out int, out int)"/>, plus the number of pages:
-    /// page information segments, one per page (T.88 §7.4.8). Only page 1 is decoded.
+    /// page information segments, one per page (T.88 §7.4.8). The width and height are page 1's;
+    /// decode any page with <see cref="DecodeFile(ReadOnlySpan{byte}, int, CancellationToken)"/>.
     /// </summary>
-    internal static bool TryReadFileInfo(ReadOnlySpan<byte> file, out int width, out int height, out int pages)
+    public static bool TryReadFileInfo(ReadOnlySpan<byte> file, out int width, out int height, out int pages)
     {
         width = height = 0;
         pages = 0;
@@ -151,7 +181,7 @@ public static class Jbig2Decoder
             {
                 if (segment.Type == SegmentType.PageInformation) pages++;
             }
-            return TryFindPageSize(body, segments, out width, out height);
+            return TryFindPageSize(body, segments, 1, out width, out height);
         }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException or ArgumentException)
         {
@@ -193,6 +223,7 @@ public static class Jbig2Decoder
         while (position < stream.Length)
         {
             var header = Jbig2Segment.ReadHeader(stream, ref position);
+            if (header.LengthUnknown) header = Jbig2Segment.ResolveUnknownLength(stream, header);
             segments.Add(header);
             position = header.DataStart + header.DataLength;
         }
@@ -216,6 +247,10 @@ public static class Jbig2Decoder
         while (position + declared < stream.Length)
         {
             var header = Jbig2Segment.ReadHeader(stream, ref position);
+            if (header.LengthUnknown)
+                throw new InvalidDataException(
+                    "JBIG2: a random-access file has a segment of unknown data length, which T.88 §7.2.7 " +
+                    "allows only where each data part follows its header.");
             headers.Add(header);
             declared += header.DataLength;
         }
@@ -236,13 +271,17 @@ public static class Jbig2Decoder
 
     // ---- page geometry -----------------------------------------------------------
 
-    private static bool TryFindPageSize(ReadOnlySpan<byte> stream, List<SegmentHeader> segments, out int width, out int height)
+    private static bool TryFindPageSize(
+        ReadOnlySpan<byte> stream, List<SegmentHeader> segments, uint page, out int width, out int height)
     {
         width = height = 0;
 
         foreach (var segment in segments)
         {
-            if (segment.Type != SegmentType.PageInformation || segment.Page is not (0 or 1)) continue;
+            // Page 1 also accepts a page information segment on page 0, which some
+            // single-page encoders write.
+            if (segment.Type != SegmentType.PageInformation
+                || !(segment.Page == page || (page == 1 && segment.Page == 0))) continue;
             if (segment.DataLength < 19) return false;
 
             var info = stream.Slice(segment.DataStart, segment.DataLength);
@@ -251,7 +290,7 @@ public static class Jbig2Decoder
 
             // §7.4.8.2: an unknown height means the page is striped, and its real
             // extent is only known from the end-of-stripe segments that follow.
-            if (h == uint.MaxValue && !TryFindStripedHeight(stream, segments, out h))
+            if (h == uint.MaxValue && !TryFindStripedHeight(stream, segments, segment.Page, out h))
                 return false;
 
             if (w == 0 || h == 0 || w > int.MaxValue || h > int.MaxValue
@@ -266,14 +305,15 @@ public static class Jbig2Decoder
         return false;
     }
 
-    private static bool TryFindStripedHeight(ReadOnlySpan<byte> stream, List<SegmentHeader> segments, out uint height)
+    private static bool TryFindStripedHeight(
+        ReadOnlySpan<byte> stream, List<SegmentHeader> segments, uint page, out uint height)
     {
         // §7.4.10: an end-of-stripe segment carries the row number of the stripe's
         // last row, so the tallest one plus one is the page height.
         long last = -1;
         foreach (var segment in segments)
         {
-            if (segment.Type != SegmentType.EndOfStripe || segment.DataLength < 4) continue;
+            if (segment.Type != SegmentType.EndOfStripe || segment.DataLength < 4 || segment.Page != page) continue;
             last = Math.Max(last, BinaryPrimitives.ReadUInt32BigEndian(stream.Slice(segment.DataStart, 4)));
         }
 
@@ -301,6 +341,7 @@ public static class Jbig2Decoder
         private readonly Dictionary<uint, Jbig2Bitmap> _intermediateRegions = [];
         private readonly Dictionary<uint, Jbig2Bitmap[]> _symbolDictionaries = [];
         private readonly Dictionary<uint, Jbig2Bitmap[]> _patternDictionaries = [];
+        private readonly Dictionary<uint, HuffmanTable> _tables = [];
 
         /// <summary>The page being composited onto.</summary>
         public Jbig2Bitmap Page { get; } = page;
@@ -323,6 +364,24 @@ public static class Jbig2Decoder
         /// <summary>Records a symbol dictionary's exported symbols.</summary>
         public void StoreSymbols(uint segment, Jbig2Bitmap[] symbols) =>
             _symbolDictionaries[segment] = symbols;
+
+        /// <summary>Records a custom Huffman table (§7.4.13).</summary>
+        public void StoreTable(uint segment, HuffmanTable table) => _tables[segment] = table;
+
+        /// <summary>
+        /// The custom Huffman tables a segment refers to, in referred-to order: the
+        /// order in which its table selection flags consume them (§7.4.2.1.6,
+        /// §7.4.3.1.6).
+        /// </summary>
+        public Queue<HuffmanTable> GatherTables(SegmentHeader segment)
+        {
+            var tables = new Queue<HuffmanTable>();
+            foreach (var referred in segment.ReferredTo)
+                if (_tables.TryGetValue(referred, out var table))
+                    tables.Enqueue(table);
+
+            return tables;
+        }
 
         /// <summary>Records a pattern dictionary's dither patterns.</summary>
         public void StorePatterns(uint segment, Jbig2Bitmap[] patterns) =>
@@ -417,7 +476,7 @@ public static class Jbig2Decoder
 
             case SegmentType.ImmediateGenericRegion:
             case SegmentType.ImmediateLosslessGenericRegion:
-                Compose(state, DecodeGenericRegion(data, state.Budget, out var genericInfo), genericInfo);
+                Compose(state, DecodeGenericRegion(data, state.Budget, out var genericInfo, segment.RowCount), genericInfo);
                 break;
 
             case SegmentType.IntermediateGenericRegion:
@@ -457,9 +516,8 @@ public static class Jbig2Decoder
                 break;
 
             case SegmentType.Tables:
-                throw new NotSupportedException(
-                    "JBIG2: custom Huffman table segments are not implemented — this decoder handles " +
-                    "arithmetic symbol dictionaries and text regions only.");
+                state.StoreTable(segment.Number, HuffmanTable.ReadSegment(data));
+                break;
 
             case SegmentType.PatternDictionary:
                 state.StorePatterns(segment.Number, DecodePatternDictionary(data, state.Budget));
@@ -511,10 +569,10 @@ public static class Jbig2Decoder
 
     /// <summary>Generic region segment (T.88 §7.4.6): region info, flags, AT pixels, then MQ-coded data.</summary>
     private static Jbig2Bitmap DecodeGenericRegion(
-        ReadOnlySpan<byte> data, Jbig2PixelBudget budget, out RegionInfo info)
+        ReadOnlySpan<byte> data, Jbig2PixelBudget budget, out RegionInfo info, uint? rowCount = null)
     {
         var position = 0;
-        var region = Jbig2Segment.ReadRegionInfo(data, ref position);
+        var region = Jbig2Segment.ReadRegionInfo(data, ref position, rowCount);
         info = region;
 
         if (position >= data.Length)
@@ -644,10 +702,6 @@ public static class Jbig2Decoder
         var contextUsed = (flags & 0x0100) != 0;
         var contextRetained = (flags & 0x0200) != 0;
 
-        if (huffman)
-            throw new NotSupportedException(
-                "JBIG2: Huffman-coded symbol dictionaries (SDHUFF = 1) are not implemented.");
-
         // §7.4.3.1.1 bits 8-9: carrying adaptive state across segments. Refusing
         // is not laziness — a dictionary decoded with the wrong initial contexts
         // produces plausible but wrong glyphs, which is precisely the failure this
@@ -656,12 +710,16 @@ public static class Jbig2Decoder
             throw new NotSupportedException(
                 "JBIG2: symbol dictionaries that import or retain arithmetic contexts are not implemented.");
 
+        // §7.4.2.1.2: the generic AT pixels are present only for arithmetic coding.
         Span<sbyte> at = stackalloc sbyte[8];
-        var atPixels = template == 0 ? 4 : 1;
-        if (position + atPixels * 2 > data.Length)
-            throw new InvalidDataException("JBIG2: truncated symbol dictionary AT pixel list.");
+        if (!huffman)
+        {
+            var atPixels = template == 0 ? 4 : 1;
+            if (position + atPixels * 2 > data.Length)
+                throw new InvalidDataException("JBIG2: truncated symbol dictionary AT pixel list.");
 
-        for (var i = 0; i < atPixels * 2; i++) at[i] = (sbyte)data[position++];
+            for (var i = 0; i < atPixels * 2; i++) at[i] = (sbyte)data[position++];
+        }
 
         Span<sbyte> refinementAt = stackalloc sbyte[4];
         RefinementRegionDecoder.NominalAt.CopyTo(refinementAt);
@@ -693,6 +751,21 @@ public static class Jbig2Decoder
 
         var parameters = new SymbolDictionaryParameters(
             (int)created, (int)exported, template, refinementAggregate, refinementTemplate);
+
+        if (huffman)
+        {
+            // §7.4.2.1.1 bits 2-7: which table each number is read with, standard or
+            // the next custom one this segment refers to.
+            var custom = state.GatherTables(segment);
+            var tables = new SymbolDictionaryDecoder.HuffmanTables(
+                SelectTable((flags >> 2) & 0x03, [4, 5, 0], custom, "SDHUFFDH"),
+                SelectTable((flags >> 4) & 0x03, [2, 3, 0], custom, "SDHUFFDW"),
+                SelectTable((flags >> 6) & 0x01, [1], custom, "SDHUFFBMSIZE"),
+                SelectTable((flags >> 7) & 0x01, [1], custom, "SDHUFFAGGINST"));
+
+            return SymbolDictionaryDecoder.DecodeHuffman(
+                data[position..], parameters, inputSymbols, tables, refinementAt, state.Budget);
+        }
 
         var mq = new MqDecoder(data[position..]);
         return SymbolDictionaryDecoder.Decode(
@@ -729,9 +802,15 @@ public static class Jbig2Decoder
         var dsOffset = (flags >> 10) & 0x1F;
         if (dsOffset > 15) dsOffset -= 32;
 
+        // §7.4.3.1.2: the Huffman table selections come next, when SBHUFF is set.
+        var huffmanFlags = 0;
         if (huffman)
-            throw new NotSupportedException(
-                "JBIG2: Huffman-coded text regions (SBHUFF = 1) are not implemented.");
+        {
+            if (position + 2 > data.Length)
+                throw new InvalidDataException("JBIG2: truncated text region Huffman flags.");
+            huffmanFlags = BinaryPrimitives.ReadUInt16BigEndian(data[position..]);
+            position += 2;
+        }
 
         Span<sbyte> refinementAt = stackalloc sbyte[4];
         RefinementRegionDecoder.NominalAt.CopyTo(refinementAt);
@@ -762,16 +841,57 @@ public static class Jbig2Decoder
             region.Width, region.Height, (int)instances, 1 << logStrips,
             defaultPixel, combination, corner, transposed, dsOffset, refine, refinementTemplate);
 
-        var codeLength = TextRegionDecoder.SymbolCodeLength(symbols.Length);
-        var idContexts = new byte[ArithIntDecoder.IdContextSize(codeLength)];
         var refinementContexts = refine
             ? new byte[1 << RefinementRegionDecoder.ContextBits(refinementTemplate)]
             : [];
+
+        if (huffman)
+        {
+            var custom = state.GatherTables(segment);
+            var tables = new TextRegionDecoder.HuffmanTables(
+                SelectTable(huffmanFlags & 0x03, [6, 7, 0], custom, "SBHUFFFS"),
+                SelectTable((huffmanFlags >> 2) & 0x03, [8, 9, 10], custom, "SBHUFFDS"),
+                SelectTable((huffmanFlags >> 4) & 0x03, [11, 12, 13], custom, "SBHUFFDT"),
+                SelectTable((huffmanFlags >> 6) & 0x03, [14, 15, 0], custom, "SBHUFFRDW"),
+                SelectTable((huffmanFlags >> 8) & 0x03, [14, 15, 0], custom, "SBHUFFRDH"),
+                SelectTable((huffmanFlags >> 10) & 0x03, [14, 15, 0], custom, "SBHUFFRDX"),
+                SelectTable((huffmanFlags >> 12) & 0x03, [14, 15, 0], custom, "SBHUFFRDY"),
+                SelectTable((huffmanFlags >> 14) & 0x01, [1], custom, "SBHUFFRSIZE"));
+
+            var reader = new Jbig2BitReader(data[position..]);
+            var symbolCodes = TextRegionDecoder.ReadSymbolCodeTable(ref reader, symbols.Length);
+            return TextRegionDecoder.DecodeHuffman(
+                ref reader, parameters, symbols, tables, symbolCodes, codeLength: 0,
+                refinementContexts, refinementAt, state.Budget);
+        }
+
+        var codeLength = TextRegionDecoder.SymbolCodeLength(symbols.Length);
+        var idContexts = new byte[ArithIntDecoder.IdContextSize(codeLength)];
 
         var mq = new MqDecoder(data[position..]);
         return TextRegionDecoder.Decode(
             ref mq, parameters, symbols, new TextRegionDecoder.Fields(),
             idContexts, refinementContexts, refinementAt, state.Budget);
+    }
+
+    /// <summary>
+    /// Resolves one Huffman table selection field. <paramref name="standard"/> maps
+    /// each value to a standard table number, 0 marking a reserved value; the value
+    /// one past the list (3 for a two-bit field, 1 for a one-bit field) means "the
+    /// next custom table".
+    /// </summary>
+    private static HuffmanTable SelectTable(int selection, int[] standard, Queue<HuffmanTable> custom, string field)
+    {
+        var customValue = standard.Length == 1 ? 1 : 3;
+        if (selection == customValue)
+            return custom.Count > 0
+                ? custom.Dequeue()
+                : throw new InvalidDataException($"JBIG2: {field} selects a custom Huffman table the segment does not refer to.");
+
+        var number = selection < standard.Length ? standard[selection] : 0;
+        return number != 0
+            ? HuffmanTable.Get(number)
+            : throw new InvalidDataException($"JBIG2: {field} selection {selection} is reserved.");
     }
 
     /// <summary>
@@ -791,15 +911,23 @@ public static class Jbig2Decoder
         int patternHeight = data[2];
         var maxIndex = BinaryPrimitives.ReadUInt32BigEndian(data[3..]);
 
-        if (mmr)
-            throw new NotSupportedException("JBIG2: MMR-coded pattern dictionaries are not implemented.");
         if (patternWidth == 0 || patternHeight == 0)
             throw new InvalidDataException($"JBIG2: pattern dictionary has a {patternWidth}x{patternHeight} pattern size.");
 
-        // §7.4.4.1.4 caps GRAYMAX at 255, and the collective bitmap is
-        // (GRAYMAX + 1) patterns wide, so this also bounds the allocation.
-        if (maxIndex > 255)
-            throw new InvalidDataException($"JBIG2: pattern dictionary GRAYMAX {maxIndex} exceeds 255.");
+        // GRAYMAX is a four-byte field (§7.4.5.1.4), and real dictionaries go past
+        // 255 (a 20x20 cell has 401 grey levels). The collective bitmap is
+        // (GRAYMAX + 1) patterns wide, so bounding that one bitmap bounds the
+        // allocation; the pixel budget is charged by the region decoder as usual.
+        var collectiveWidth = (maxIndex + 1L) * patternWidth;
+        if (collectiveWidth > int.MaxValue || collectiveWidth * patternHeight > Jbig2Limits.MaxBitmapPixels)
+            throw new InvalidDataException(
+                $"JBIG2: pattern dictionary GRAYMAX {maxIndex} with {patternWidth}x{patternHeight} patterns " +
+                $"needs a {collectiveWidth}x{patternHeight} collective bitmap, past the " +
+                $"{Jbig2Limits.MaxBitmapPixels:N0} pixel ceiling.");
+
+        if (mmr)
+            return HalftoneDecoder.DecodePatternDictionaryMmr(
+                data[7..], patternWidth, patternHeight, (int)maxIndex, budget);
 
         var mq = new MqDecoder(data[7..]);
         return HalftoneDecoder.DecodePatternDictionary(
@@ -828,14 +956,9 @@ public static class Jbig2Decoder
         var combination = (CombinationOperator)((flags >> 4) & 0x07);
         var defaultPixel = (byte)((flags >> 7) & 0x01);
 
-        if (mmr)
-            throw new NotSupportedException("JBIG2: MMR-coded halftone regions are not implemented.");
-
-        // HENABLESKIP changes what gets coded, not just how fast: skipped pixels
-        // are absent from the stream entirely, so ignoring the flag would
-        // desynchronise rather than merely run slower.
-        if (enableSkip)
-            throw new NotSupportedException("JBIG2: halftone regions using HENABLESKIP are not implemented.");
+        // HENABLESKIP changes what gets coded, not just how fast: skipped cells are
+        // absent from the stream entirely, which is why HalftoneDecoder rebuilds
+        // the same SKIP bitmap the encoder used before reading any plane.
         if (combination > CombinationOperator.Replace)
             throw new InvalidDataException($"JBIG2: reserved halftone combination operator {(int)combination}.");
 
@@ -858,10 +981,9 @@ public static class Jbig2Decoder
 
         var parameters = new HalftoneDecoder.HalftoneParameters(
             region.Width, region.Height, (int)gridWidth, (int)gridHeight,
-            gridX, gridY, vectorX, vectorY, template, defaultPixel, combination);
+            gridX, gridY, vectorX, vectorY, template, defaultPixel, combination, mmr, enableSkip);
 
-        var mq = new MqDecoder(data[position..]);
-        return HalftoneDecoder.DecodeHalftoneRegion(ref mq, parameters, patterns, state.Budget);
+        return HalftoneDecoder.DecodeHalftoneRegion(data[position..], parameters, patterns, state.Budget);
     }
 
 }

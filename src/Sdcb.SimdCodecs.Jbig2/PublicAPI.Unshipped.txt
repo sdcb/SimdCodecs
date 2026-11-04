@@ -1,1 +1,3 @@
 #nullable enable
+static Sdcb.SimdCodecs.Jbig2.Jbig2Decoder.DecodeFile(System.ReadOnlySpan<byte> file, int pageNumber, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Jbig2.Jbig2Image!
+static Sdcb.SimdCodecs.Jbig2.Jbig2Decoder.TryReadFileInfo(System.ReadOnlySpan<byte> file, out int width, out int height, out int pages) -> bool

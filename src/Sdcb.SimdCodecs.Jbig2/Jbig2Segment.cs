@@ -47,15 +47,28 @@ internal readonly record struct SegmentHeader(
     uint[] ReferredTo,
     uint Page,
     int DataStart,
-    int DataLength);
+    int DataLength)
+{
+    /// <summary>
+    /// For an immediate generic region whose header declared an unknown data length
+    /// (T.88 §7.2.7), the row count that follows its end sequence, which replaces the
+    /// region's declared height (§7.4.6.4). Null for every other segment.
+    /// </summary>
+    public uint? RowCount { get; init; }
+
+    /// <summary>Whether the header declared 0xFFFFFFFF and the length is still to be found.</summary>
+    public bool LengthUnknown => DataLength < 0;
+}
 
 /// <summary>Parsing of T.88 segment headers and the segment-level fields they introduce.</summary>
 internal static class Jbig2Segment
 {
     /// <summary>
     /// T.88 §7.2.7 unknown-length marker. Legal only on an immediate generic
-    /// region, where the data part is instead terminated by a search sequence;
-    /// this decoder rejects it rather than guessing.
+    /// region in a sequential or embedded stream, where the data part is instead
+    /// terminated by an end sequence and a row count. <see cref="ReadHeader"/>
+    /// reports it as a negative <see cref="SegmentHeader.DataLength"/>, and the
+    /// sequential reader resolves it with <see cref="ResolveUnknownLength"/>.
     /// </summary>
     public const uint UnknownDataLength = 0xFFFFFFFF;
 
@@ -114,8 +127,13 @@ internal static class Jbig2Segment
 
         var length = ReadUInt32(data, ref position);
         if (length == UnknownDataLength)
-            throw new NotSupportedException(
-                "JBIG2: segment with unknown data length (0xFFFFFFFF, T.88 §7.2.7) is not supported.");
+        {
+            if (type is not (SegmentType.ImmediateGenericRegion or SegmentType.ImmediateLosslessGenericRegion))
+                throw new InvalidDataException(
+                    $"JBIG2: segment {number} of type {(int)type} declares an unknown data length, which " +
+                    "T.88 §7.2.7 allows only for an immediate generic region.");
+            return new SegmentHeader(number, type, referredTo, page, position, -1);
+        }
         if (length > int.MaxValue || position + (long)length > data.Length)
             throw new InvalidDataException($"JBIG2: segment {number} data length {length} runs past the end of the stream.");
 
@@ -123,16 +141,60 @@ internal static class Jbig2Segment
     }
 
     /// <summary>
+    /// Finds the end of an immediate generic region whose data length is unknown
+    /// (T.88 §7.2.7, §7.4.6.4). After the 18 bytes of region info and flags (and the
+    /// AT pixels, for arithmetic coding) the coded data runs until an end sequence,
+    /// <c>00 00</c> for MMR and <c>FF AC</c> for arithmetic coding, followed by a
+    /// four-byte row count. Neither sequence can occur inside its own kind of coded
+    /// data: MQ output never has <c>FF</c> followed by a byte above <c>8F</c>, and
+    /// T.6 codes never hold sixteen zero bits in a row. The resolved data length
+    /// covers the sequence and the row count.
+    /// </summary>
+    public static SegmentHeader ResolveUnknownLength(ReadOnlySpan<byte> stream, SegmentHeader header)
+    {
+        var start = header.DataStart;
+        if (start + 18 > stream.Length)
+            throw new InvalidDataException("JBIG2: truncated generic region of unknown length.");
+
+        var flags = stream[start + 17];
+        var mmr = (flags & 0x01) != 0;
+        var codedStart = start + 18;
+        if (!mmr) codedStart += ((flags >> 1) & 0x03) == 0 ? 8 : 2;
+
+        if (codedStart > stream.Length)
+            throw new InvalidDataException("JBIG2: truncated generic region of unknown length.");
+
+        var (first, second) = mmr ? ((byte)0x00, (byte)0x00) : ((byte)0xFF, (byte)0xAC);
+        var at = stream[codedStart..].IndexOf([first, second]);
+        // The search is linear in the stream, once per segment, so a hostile stream
+        // costs no more than reading it.
+        if (at < 0 || codedStart + at + 6 > stream.Length)
+            throw new InvalidDataException(
+                $"JBIG2: generic region segment {header.Number} has an unknown data length and no end sequence.");
+
+        var end = codedStart + at;
+        var rows = BinaryPrimitives.ReadUInt32BigEndian(stream[(end + 2)..]);
+        return header with { DataLength = end + 6 - start, RowCount = rows };
+    }
+
+    /// <summary>
     /// The region segment information field (T.88 §7.4.1): 17 bytes of geometry
     /// and the external combination operator, prefixed to every region segment.
     /// </summary>
-    public static RegionInfo ReadRegionInfo(ReadOnlySpan<byte> data, ref int position)
+    /// <param name="data">The segment data.</param>
+    /// <param name="position">Where the field starts; advanced past it.</param>
+    /// <param name="rowCount">
+    /// The row count of an unknown-length generic region, which replaces the declared
+    /// height (§7.4.6.4), or null.
+    /// </param>
+    public static RegionInfo ReadRegionInfo(ReadOnlySpan<byte> data, ref int position, uint? rowCount = null)
     {
         if (position + 17 > data.Length)
             throw new InvalidDataException("JBIG2: truncated region segment information field.");
 
         var width = ReadUInt32(data, ref position);
         var height = ReadUInt32(data, ref position);
+        if (rowCount is { } rows) height = rows;
         var x = ReadUInt32(data, ref position);
         var y = ReadUInt32(data, ref position);
         var flags = ReadByte(data, ref position);

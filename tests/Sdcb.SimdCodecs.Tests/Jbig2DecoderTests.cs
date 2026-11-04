@@ -183,18 +183,15 @@ public sealed class Jbig2DecoderTests
     }
 
     /// <summary>
-    /// What is left unimplemented, and it is now one thing: custom Huffman table
-    /// segments (§7.4.13). Every region and dictionary type this list used to
-    /// name — symbol dictionary, text, refinement, pattern, halftone — decodes,
-    /// so a malformed one of those fails as corrupt data instead, which their own
-    /// test files cover.
+    /// Custom Huffman table segments (§7.4.13) are decoded now; one too short to hold
+    /// its fixed fields is corrupt data. Jbig2HuffmanTests covers well-formed ones.
     /// </summary>
     [Fact]
-    public void Decode_CustomHuffmanTableSegment_SaysWhatIsMissing()
+    public void Decode_TruncatedHuffmanTableSegment_IsInvalidData()
     {
         var stream = Jbig2StreamBuilder.Segment(1, SegmentType.Tables, 1, [0x00, 0x00, 0x00, 0x00]);
 
-        Should.Throw<NotSupportedException>(() => Jbig2Decoder.Decode(stream, 8, 8))
+        Should.Throw<InvalidDataException>(() => Jbig2Decoder.Decode(stream, 8, 8, TestContext.Current.CancellationToken))
             .Message.ShouldContain("Huffman table");
     }
 

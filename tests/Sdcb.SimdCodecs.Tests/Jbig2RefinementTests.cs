@@ -29,9 +29,8 @@ public sealed class Jbig2RefinementTests
         var data = new TheoryData<string, int, bool>();
         foreach (var edit in (string[])["identical", "speckle", "grow", "shrink", "shift", "inverted"])
             foreach (var template in (int[])[0, 1])
-                // TPGRON is refused rather than decoded — see
-                // RefinementRegionDecoder's remarks and the refusal test below.
-                data.Add(edit, template, false);
+                foreach (var tpgron in (bool[])[false, true])
+                    data.Add(edit, template, tpgron);
 
         return data;
     }
@@ -135,47 +134,27 @@ public sealed class Jbig2RefinementTests
     }
 
     /// <summary>
-    /// TPGRON is refused. §6.3 is otherwise confirmed against jbig2dec, but with
-    /// this flag the two decoders disagree in ways that measurement narrowed and
-    /// did not resolve — see RefinementRegionDecoder's remarks. "Mostly agrees"
-    /// is not a decoder a caller can use, so it throws.
+    /// TPGRON survives the segment layer: a refinement segment with the flag set
+    /// decodes to its target. The pixel-level agreement with jbig2dec is
+    /// <c>Jbig2RefinementOracleTests</c>.
     /// </summary>
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
-    public void Tpgron_IsRefusedByName(int template)
+    public void Tpgron_InARefinementSegment_Decodes(int template)
     {
-        var (reference, target) = Build("identical", 16, 8);
-        var contexts = new byte[1 << RefinementRegionDecoder.ContextBits(template)];
-
-        var exception = Should.Throw<NotSupportedException>(() =>
-        {
-            var mq = new MqDecoder(new byte[16]);
-            RefinementRegionDecoder.Decode(
-                ref mq, contexts, target.Width, target.Height, template,
-                reference, 0, 0, typicalPrediction: true, RefinementRegionDecoder.NominalAt,
-                Jbig2PixelBudget.Unmetered());
-        });
-
-        exception.Message.ShouldContain("TPGRON");
-    }
-
-    /// <summary>And the refusal has to survive the segment layer, not just the inner call.</summary>
-    [Fact]
-    public void Tpgron_InARefinementSegment_IsRefused()
-    {
-        var (reference, target) = Build("identical", 16, 8);
+        var (reference, target) = Build("speckle", 40, 24);
 
         var stream = Jbig2StreamBuilder.Stream(
             Jbig2StreamBuilder.Segment(0, SegmentType.PageInformation, 1,
-                Jbig2StreamBuilder.PageInformation(16, 8)),
+                Jbig2StreamBuilder.PageInformation(40, 24)),
             Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
                 Jbig2StreamBuilder.GenericRegionSegment(reference)),
             Jbig2StreamBuilder.Segment(2, SegmentType.ImmediateRefinementRegion, 1,
-                Jbig2StreamBuilder.RefinementRegionSegment(target, reference, typicalPrediction: true)));
+                Jbig2StreamBuilder.RefinementRegionSegment(
+                    target, reference, op: CombinationOperator.Replace, template: template, typicalPrediction: true)));
 
-        Should.Throw<NotSupportedException>(() => Jbig2Decoder.Decode(stream, 16, 8))
-            .Message.ShouldContain("TPGRON");
+        Jbig2Decoder.Decode(stream, 40, 24, TestContext.Current.CancellationToken).Bits.ToArray().ShouldBe(target.Data);
     }
 
     [Fact]

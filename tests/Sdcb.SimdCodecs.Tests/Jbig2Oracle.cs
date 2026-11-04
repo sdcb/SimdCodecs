@@ -131,6 +131,31 @@ internal static class Jbig2Oracle
     /// </summary>
     public static Raster Decode(byte[] stream, bool embedded = false)
     {
+        var pbm = Run(stream, embedded);
+        var position = 0;
+        return ParsePbm(pbm, ref position);
+    }
+
+    /// <summary>
+    /// Decodes every page of <paramref name="stream"/>: jbig2dec writes a
+    /// multi-page file as consecutive PBM images in one output.
+    /// </summary>
+    public static IReadOnlyList<Raster> DecodePages(byte[] stream, bool embedded = false)
+    {
+        var pbm = Run(stream, embedded);
+        var pages = new List<Raster>();
+        var position = 0;
+        while (position < pbm.Length && ReadToken(pbm, ref position) is { Length: > 0 } magic)
+        {
+            position -= magic.Length;
+            pages.Add(ParsePbm(pbm, ref position));
+        }
+
+        return pages;
+    }
+
+    private static byte[] Run(byte[] stream, bool embedded)
+    {
         var (exe, viaWsl, _) = Resolved.Value;
         if (exe is null) throw new InvalidOperationException("jbig2dec oracle is not available.");
 
@@ -184,7 +209,7 @@ internal static class Jbig2Oracle
                 throw new InvalidOperationException(
                     $"jbig2dec produced no output (exit {process.ExitCode}).\n{stdout}\n{stderr}");
 
-            return ParsePbm(File.ReadAllBytes(output));
+            return File.ReadAllBytes(output);
         }
         finally
         {
@@ -209,10 +234,8 @@ internal static class Jbig2Oracle
     /// and a set bit means black — so the unpacked result is already in T.88
     /// polarity and needs no inversion.
     /// </summary>
-    private static Raster ParsePbm(byte[] pbm)
+    private static Raster ParsePbm(byte[] pbm, ref int position)
     {
-        var position = 0;
-
         if (ReadToken(pbm, ref position) != "P4")
             throw new InvalidDataException("jbig2dec did not produce a binary PBM (P4).");
 
@@ -234,6 +257,7 @@ internal static class Jbig2Oracle
                 bits[y * width + x] = (byte)((pbm[row + (x >> 3)] >> (7 - (x & 7))) & 1);
         }
 
+        position += stride * height;
         return new Raster(width, height, bits);
     }
 

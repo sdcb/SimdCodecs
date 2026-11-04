@@ -10,6 +10,11 @@ bottom.
 | **us → jbig2dec** | `jbig2dec` (Artifex, AGPL) | `Jbig2Oracle` + `Jbig2OracleTests` | Yes, else the tests skip |
 | **libtiff → us** (MMR) | ImageMagick / libtiff, via Magick.NET | `Group4Tiff` + `Jbig2MmrOracleTests` | **No** — Magick.NET is already a package reference |
 
+**Optional local corpus.** The 114 `.jb2` files attached to issue #1 (unknown source and
+licence, so never committed or fetched by a test) are checked page by page against jbig2dec by
+`Issue1Jbig2CorpusTests` when `SIMDCODECS_ISSUE1_DIR` points at their extracted directory; the
+test's remarks give the URLs and the expected result. Run it after any change to the decoder.
+
 They cover different things, which is the point of having all three.
 
 - jbig2enc only ever emits **GBTEMPLATE 0 with nominal AT pixels** (asserted by

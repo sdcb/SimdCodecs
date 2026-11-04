@@ -97,6 +97,11 @@ internal static class GenericRegionDecoder
     /// <param name="budget">
     /// The decode's remaining pixel allowance, charged before anything is allocated.
     /// </param>
+    /// <param name="skip">
+    /// USESKIP / SKIP of T.88 §6.2.5.7: where this bitmap holds a 1 the pixel is not
+    /// coded at all and is set to 0. Null when USESKIP is 0. Must be
+    /// <paramref name="width"/> x <paramref name="height"/>.
+    /// </param>
     public static Jbig2Bitmap Decode(
         ref MqDecoder mq,
         scoped Span<byte> contexts,
@@ -105,8 +110,11 @@ internal static class GenericRegionDecoder
         int template,
         bool typicalPrediction,
         scoped ReadOnlySpan<sbyte> at,
-        Jbig2PixelBudget budget)
+        Jbig2PixelBudget budget,
+        Jbig2Bitmap? skip = null)
     {
+        if (skip is not null && (skip.Width != width || skip.Height != height))
+            throw new ArgumentException("The SKIP bitmap must match the region size.", nameof(skip));
         var expectedAt = template == 0 ? 8 : 2;
         if (at.Length < expectedAt)
             throw new ArgumentException($"GBTEMPLATE {template} needs {expectedAt / 2} AT pixel(s).", nameof(at));
@@ -138,8 +146,22 @@ internal static class GenericRegionDecoder
             }
 
             var row = y * width;
-            for (var x = 0; x < width; x++)
-                bitmap.Data[row + x] = (byte)mq.Decode(contexts, Context(bitmap, x, y, template, at));
+            if (skip is null)
+            {
+                for (var x = 0; x < width; x++)
+                    bitmap.Data[row + x] = (byte)mq.Decode(contexts, Context(bitmap, x, y, template, at));
+            }
+            else
+            {
+                // §6.2.5.7 step 3 c): a skipped pixel costs no decision and reads as 0.
+                // The bitmap is freshly zeroed, so leaving it alone is setting it to 0.
+                var skipped = skip.Data;
+                for (var x = 0; x < width; x++)
+                {
+                    if (skipped[row + x] != 0) continue;
+                    bitmap.Data[row + x] = (byte)mq.Decode(contexts, Context(bitmap, x, y, template, at));
+                }
+            }
         }
 
         return bitmap;

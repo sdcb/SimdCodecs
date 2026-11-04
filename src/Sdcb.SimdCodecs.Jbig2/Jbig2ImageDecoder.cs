@@ -9,7 +9,7 @@ namespace Sdcb.SimdCodecs.Jbig2;
 
 /// <summary>
 /// <see cref="IImageDecoder"/> adapter for standalone <c>.jb2</c> files, bridging
-/// <see cref="Jbig2Decoder.DecodeFile"/> into the <c>Sdcb.SimdCodecs</c> facade.
+/// <see cref="Jbig2Decoder.DecodeFile(ReadOnlySpan{byte}, CancellationToken)"/> into the <c>Sdcb.SimdCodecs</c> facade.
 /// <para>
 /// This is the <em>courtesy</em> entry point, not the main one. JBIG2's reason to
 /// exist in this family is PDF's <c>/JBIG2Decode</c> filter, and a PDF-embedded

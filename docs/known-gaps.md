@@ -53,7 +53,7 @@ HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmar
   0..255（线性光数据如增益图 HDR 再加 `srgbEncode: true`），但不做色调映射。
 - **多帧读取器的帧数可能少于文件里的帧数。** `ImageInfo.FrameCount` 报告文件里有多少帧或页，但：
   - APNG：解码还没实现，读取器只给出 PNG 的默认图（1 帧）；
-  - JBIG2：独立 `.jb2` 文件只解码第 1 页，读取器只有 1 帧。
+  - JBIG2：门面的读取器只给出独立 `.jb2` 文件的第 1 页（1 帧）；其他页用 `Jbig2Decoder.DecodeFile(file, pageNumber)`。
 - **接口里没有“时间戳 → 帧号”的辅助方法。** WebP 包的 `WebpAnimationDecoder.FrameIndexAt` 有，接口层没有；
   需要时可以按各帧的 `Duration` 自己累加。
 - **`IImageFrameReader` 和 `ImageDecoder` 会话都不是线程安全的**（动画需要在调用之间保留画布状态），每个线程各开一个。
