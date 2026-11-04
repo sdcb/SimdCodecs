@@ -49,7 +49,7 @@ public class Jpeg2000IrreversibleTests
         OpenJpegOracle.RequireOrSkip();
 
         var bytes = Fixture(name);
-        var decoded = Jpeg2000Decoder.Decode(bytes);
+        var decoded = Jpeg2000Decoder.Decode(bytes, cancellationToken: TestContext.Current.CancellationToken);
         var expected = OpenJpegOracle.Decode(bytes, decoded.Components == 1 ? ".pgm" : ".ppm");
 
         decoded.Width.ShouldBe(expected.Width);

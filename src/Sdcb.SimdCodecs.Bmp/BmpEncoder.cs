@@ -59,7 +59,7 @@ public enum BmpHeaderVersion
 }
 
 /// <summary>Options for <see cref="BmpEncoder"/>.</summary>
-public sealed record BmpEncodeOptions
+public sealed record BmpEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
     /// <summary>The pixel layout. A palette layout is exact when the colours fit it, otherwise built by Wu's
     /// quantizer (with <see cref="Dither"/>).</summary>
@@ -91,10 +91,10 @@ public sealed record BmpEncodeOptions
 /// <summary>
 /// Pure-managed BMP encoder: 1/4/8-bit palettes (optionally RLE4 / RLE8), 16-bit 5-5-5 and 5-6-5, 24-bit,
 /// and 32-bit with or without alpha, under a core, 40-byte, V4 or V5 header, bottom-up or top-down.
-/// Input is any <see cref="ImagePixelFormat"/>, or 1 / 3 / 4 channels (grey, RGB, RGBA); B, G, R input
+/// Input is any <see cref="PixelFormat"/> (16-bit, premultiplied and grey + alpha layouts are converted to 8-bit straight alpha), or 1 / 3 / 4 channels (grey, RGB, RGBA); B, G, R input
 /// written as 24- or 32-bit is copied, not converted.
 /// <para>
-/// <see cref="EncodeDib(ReadOnlySpan{byte}, int, int, ImagePixelFormat, BmpEncodeOptions?, int, bool)"/> writes a
+/// <see cref="EncodeDib(ReadOnlySpan{byte}, int, int, PixelFormat, BmpEncodeOptions?, int, bool)"/> writes a
 /// packed DIB, without the file header: the clipboard's layout, and an icon or cursor image's, with its AND
 /// mask (alpha below 128 is transparent).
 /// </para>
@@ -113,7 +113,7 @@ public static class BmpEncoder
     /// <param name="options">The output layout; null for <see cref="BmpEncodeFormat.Auto"/>.</param>
     /// <param name="stride">Bytes from one input row to the next; 0 means tightly packed.</param>
     /// <exception cref="ArgumentException">The size, buffer or options do not fit.</exception>
-    public static byte[] Encode(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    public static byte[] Encode(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format,
         BmpEncodeOptions? options = null, int stride = 0) =>
         Write(pixels, width, height, format, options ?? new BmpEncodeOptions(), stride, file: true, iconImage: false);
 
@@ -129,7 +129,7 @@ public static class BmpEncoder
     /// <param name="options">The output layout; null for <see cref="BmpEncodeFormat.Auto"/>.</param>
     /// <param name="stride">Bytes from one input row to the next; 0 means tightly packed.</param>
     /// <exception cref="ArgumentException">The size, buffer or options do not fit.</exception>
-    public static void Encode(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, Stream output,
+    public static void Encode(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, Stream output,
         BmpEncodeOptions? options = null, int stride = 0)
     {
         ArgumentNullException.ThrowIfNull(output);
@@ -152,19 +152,19 @@ public static class BmpEncoder
     /// and the 1-bit AND mask written after it. A palette or 24-bit image's transparent pixels are written black,
     /// as the mask needs.</param>
     /// <exception cref="ArgumentException">The size, buffer or options do not fit.</exception>
-    public static byte[] EncodeDib(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    public static byte[] EncodeDib(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format,
         BmpEncodeOptions? options = null, int stride = 0, bool iconImage = false) =>
         Write(pixels, width, height, format, options ?? new BmpEncodeOptions(), stride, file: false, iconImage);
 
-    private static ImagePixelFormat FormatOf(int channels) => channels switch
+    private static PixelFormat FormatOf(int channels) => channels switch
     {
-        1 => ImagePixelFormat.Gray8,
-        3 => ImagePixelFormat.Rgb24,
-        4 => ImagePixelFormat.Rgba32,
+        1 => PixelFormat.Gray8,
+        3 => PixelFormat.Rgb24,
+        4 => PixelFormat.Rgba32,
         _ => throw new ArgumentOutOfRangeException(nameof(channels), channels, "Channels must be 1 (grey), 3 (RGB) or 4 (RGBA)."),
     };
 
-    private static byte[] Write(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    private static byte[] Write(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format,
         BmpEncodeOptions options, int stride, bool file, bool iconImage) =>
         Write(pixels, width, height, format, options, stride, file, iconImage, stream: null)!;
 
@@ -174,7 +174,7 @@ public static class BmpEncoder
     /// zeroed first, as every byte is written), or into <paramref name="stream"/> a row at a time through a pooled
     /// row, with no buffer of the whole file.
     /// </summary>
-    private static byte[]? Write(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    private static byte[]? Write(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format,
         BmpEncodeOptions options, int stride, bool file, bool iconImage, Stream? stream)
     {
         if (width < 1 || height < 1)
@@ -183,14 +183,35 @@ public static class BmpEncoder
             throw new ArgumentOutOfRangeException(nameof(width), $"{width}x{height} is above the limit of {BmpHeader.MaximumPixels:N0} pixels.");
         if (!PixelConverter.TryGetLayout(width, height, format, stride, pixels.Length, out var rowStride))
             throw new ArgumentException($"The pixels do not hold a {width}x{height} {format} image with stride {stride}.", nameof(pixels));
+        if (!format.IsBasic8)
+        {
+            // Any other layout (16-bit, premultiplied, grey + alpha) is converted, a row at a time, to the native
+            // 8-bit layout it maps to, then encoded like that.
+            var native = format.HasAlpha ? PixelFormat.Rgba32 : format.IsGray ? PixelFormat.Gray8 : PixelFormat.Rgb24;
+            var nativeStride = width * native.BytesPerPixel;
+            var rented = ArrayPool<byte>.Shared.Rent(checked(nativeStride * height));
+            try
+            {
+                for (var y = 0; y < height; y++)
+                {
+                    PixelConverter.ConvertRow(pixels.Slice(y * rowStride, width * format.BytesPerPixel), format,
+                        rented.AsSpan(y * nativeStride, nativeStride), native, width);
+                }
+                return Write(rented.AsSpan(0, nativeStride * height), width, height, native, options, 0, file, iconImage, stream);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
+        }
         var input = new Input(pixels, width, height, format, rowStride);
 
-        var hasAlphaChannel = format is ImagePixelFormat.Rgba32 or ImagePixelFormat.Bgra32;
+        var hasAlphaChannel = format.HasAlpha;
         var layout = options.Format;
         if (layout == BmpEncodeFormat.Auto)
         {
             layout = iconImage || (hasAlphaChannel && !input.IsOpaque()) ? BmpEncodeFormat.Argb32
-                : format == ImagePixelFormat.Gray8 ? BmpEncodeFormat.Indexed8
+                : format == PixelFormat.Gray8 ? BmpEncodeFormat.Indexed8
                 : BmpEncodeFormat.Rgb24;
         }
         var header = options.Header;
@@ -418,15 +439,15 @@ public static class BmpEncoder
     // ---- Input -------------------------------------------------------------------------------------------------
 
     /// <summary>The caller's pixels: any layout, rows <c>Stride</c> apart.</summary>
-    private readonly ref struct Input(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, int stride)
+    private readonly ref struct Input(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, int stride)
     {
         public readonly ReadOnlySpan<byte> Pixels = pixels;
         public readonly int Width = width, Height = height, Stride = stride;
-        public readonly ImagePixelFormat Format = format;
+        public readonly PixelFormat Format = format;
 
-        public ReadOnlySpan<byte> Row(int y) => Pixels.Slice(y * Stride, Width * PixelConverter.BytesPerPixel(Format));
+        public ReadOnlySpan<byte> Row(int y) => Pixels.Slice(y * Stride, Width * Format.BytesPerPixel);
 
-        public int Alpha(int x, int y) => Format is ImagePixelFormat.Rgba32 or ImagePixelFormat.Bgra32 ? Pixels[y * Stride + 4 * x + 3] : 255;
+        public int Alpha(int x, int y) => Format.HasAlpha ? Pixels[y * Stride + 4 * x + 3] : 255;
 
         public bool IsOpaque()
         {
@@ -445,27 +466,21 @@ public static class BmpEncoder
         public void ToRgba(int y, Span<byte> rgba)
         {
             var row = Row(y);
-            switch (Format)
+            if (Format == PixelFormat.Rgba32)
+                row.CopyTo(rgba);
+            else if (Format == PixelFormat.Bgra32)
+                BmpKernels.Shuffle32(row, rgba, Width, [2, 1, 0, 3], 0, BmpKernels.BestTier);
+            else if (Format == PixelFormat.Rgb24)
+                BmpKernels.Expand24(row, rgba, Width, swap: false, BmpKernels.BestTier);
+            else if (Format == PixelFormat.Bgr24)
+                BmpKernels.Expand24(row, rgba, Width, swap: true, BmpKernels.BestTier);
+            else
             {
-                case ImagePixelFormat.Rgba32:
-                    row.CopyTo(rgba);
-                    break;
-                case ImagePixelFormat.Bgra32:
-                    BmpKernels.Shuffle32(row, rgba, Width, [2, 1, 0, 3], 0, BmpKernels.BestTier);
-                    break;
-                case ImagePixelFormat.Rgb24:
-                    BmpKernels.Expand24(row, rgba, Width, swap: false, BmpKernels.BestTier);
-                    break;
-                case ImagePixelFormat.Bgr24:
-                    BmpKernels.Expand24(row, rgba, Width, swap: true, BmpKernels.BestTier);
-                    break;
-                default:
-                    for (var x = 0; x < Width; x++)
-                    {
-                        rgba[4 * x] = rgba[4 * x + 1] = rgba[4 * x + 2] = row[x];
-                        rgba[4 * x + 3] = 255;
-                    }
-                    break;
+                for (var x = 0; x < Width; x++)
+                {
+                    rgba[4 * x] = rgba[4 * x + 1] = rgba[4 * x + 2] = row[x];
+                    rgba[4 * x + 3] = 255;
+                }
             }
         }
     }
@@ -478,57 +493,70 @@ public static class BmpEncoder
         var source = input.Row(y);
         var tier = BmpKernels.BestTier;
         // A 24-bit icon's transparent pixels go through RGBA, where they are blacked out for the AND mask.
-        var blackOut = iconImage && layout != BmpEncodeFormat.Argb32 && input.Format is ImagePixelFormat.Rgba32 or ImagePixelFormat.Bgra32;
+        var blackOut = iconImage && layout != BmpEncodeFormat.Argb32 && input.Format.HasAlpha;
         if (layout == BmpEncodeFormat.Rgb24 && !blackOut)
         {
-            switch (input.Format)
+            var f = input.Format;
+            if (f == PixelFormat.Bgr24)
             {
-                case ImagePixelFormat.Bgr24:
-                    source.CopyTo(row);
-                    return;
-                case ImagePixelFormat.Rgb24:
-                    BmpKernels.Swap24(source, row, width, tier);
-                    return;
-                case ImagePixelFormat.Rgba32:
-                    BmpKernels.Pack32To24(source, row, width, [2, 1, 0], tier);
-                    return;
-                case ImagePixelFormat.Bgra32:
-                    BmpKernels.Pack32To24(source, row, width, [0, 1, 2], tier);
-                    return;
+                source.CopyTo(row);
+                return;
+            }
+            if (f == PixelFormat.Rgb24)
+            {
+                BmpKernels.Swap24(source, row, width, tier);
+                return;
+            }
+            if (f == PixelFormat.Rgba32)
+            {
+                BmpKernels.Pack32To24(source, row, width, [2, 1, 0], tier);
+                return;
+            }
+            if (f == PixelFormat.Bgra32)
+            {
+                BmpKernels.Pack32To24(source, row, width, [0, 1, 2], tier);
+                return;
             }
         }
         if (layout is BmpEncodeFormat.Rgb32 or BmpEncodeFormat.Argb32)
         {
             var keepAlpha = layout == BmpEncodeFormat.Argb32;
-            switch (input.Format)
+            var f = input.Format;
+            if (f == PixelFormat.Bgra32 && keepAlpha)
             {
-                case ImagePixelFormat.Bgra32 when keepAlpha:
-                    source.CopyTo(row);
-                    return;
-                case ImagePixelFormat.Bgra32:
-                    BmpKernels.Shuffle32(source, row, width, [0, 1, 2, 0x80], 0xFF000000u, tier);
-                    return;
-                case ImagePixelFormat.Rgba32:
-                    BmpKernels.Shuffle32(source, row, width, [2, 1, 0, (byte)(keepAlpha ? 3 : 0x80)], keepAlpha ? 0 : 0xFF000000u, tier);
-                    return;
-                case ImagePixelFormat.Rgb24:
-                    BmpKernels.Expand24(source, row, width, swap: true, tier);
-                    return;
-                case ImagePixelFormat.Bgr24:
-                    BmpKernels.Expand24(source, row, width, swap: false, tier);
-                    return;
+                source.CopyTo(row);
+                return;
+            }
+            if (f == PixelFormat.Bgra32)
+            {
+                BmpKernels.Shuffle32(source, row, width, [0, 1, 2, 0x80], 0xFF000000u, tier);
+                return;
+            }
+            if (f == PixelFormat.Rgba32)
+            {
+                BmpKernels.Shuffle32(source, row, width, [2, 1, 0, (byte)(keepAlpha ? 3 : 0x80)], keepAlpha ? 0 : 0xFF000000u, tier);
+                return;
+            }
+            if (f == PixelFormat.Rgb24)
+            {
+                BmpKernels.Expand24(source, row, width, swap: true, tier);
+                return;
+            }
+            if (f == PixelFormat.Bgr24)
+            {
+                BmpKernels.Expand24(source, row, width, swap: false, tier);
+                return;
             }
         }
 
         // Everything else a pixel at a time, straight from the input: its channel offsets and pixel size.
-        var (ri, gi, bi, ai, step) = input.Format switch
-        {
-            ImagePixelFormat.Rgba32 => (0, 1, 2, 3, 4),
-            ImagePixelFormat.Bgra32 => (2, 1, 0, 3, 4),
-            ImagePixelFormat.Rgb24 => (0, 1, 2, -1, 3),
-            ImagePixelFormat.Bgr24 => (2, 1, 0, -1, 3),
-            _ => (0, 0, 0, -1, 1),
-        };
+        var inFormat = input.Format;
+        var (ri, gi, bi, ai, step) =
+            inFormat == PixelFormat.Rgba32 ? (0, 1, 2, 3, 4)
+            : inFormat == PixelFormat.Bgra32 ? (2, 1, 0, 3, 4)
+            : inFormat == PixelFormat.Rgb24 ? (0, 1, 2, -1, 3)
+            : inFormat == PixelFormat.Bgr24 ? (2, 1, 0, -1, 3)
+            : (0, 0, 0, -1, 1);
         if (layout is BmpEncodeFormat.Rgb555 or BmpEncodeFormat.Rgb565 && !blackOut)
         {
             Pack16(source, row, width, step, ri, gi, bi, green6: layout == BmpEncodeFormat.Rgb565);

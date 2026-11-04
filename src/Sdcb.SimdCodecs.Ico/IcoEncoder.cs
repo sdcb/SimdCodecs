@@ -35,12 +35,13 @@ public enum IcoImageEncoding
 /// <param name="Pixels">The image, top row first, tightly packed in <paramref name="Format"/>.</param>
 /// <param name="Width">Width in pixels, 1 to 256.</param>
 /// <param name="Height">Height in pixels, 1 to 256.</param>
-/// <param name="Format">The pixel layout of <paramref name="Pixels"/>.</param>
+/// <param name="Format">The pixel layout of <paramref name="Pixels"/>: any <see cref="PixelFormat"/> (the default
+/// value is <see cref="PixelFormat.Rgba32"/>); 16-bit, premultiplied and grey + alpha layouts are converted to 8-bit straight alpha.</param>
 /// <param name="Encoding">How the image is stored.</param>
 /// <param name="HotspotX">For a cursor, the hotspot's column; ignored for an icon.</param>
 /// <param name="HotspotY">For a cursor, the hotspot's row; ignored for an icon.</param>
 public readonly record struct IcoFrame(ReadOnlyMemory<byte> Pixels, int Width, int Height,
-    ImagePixelFormat Format = ImagePixelFormat.Rgba32, IcoImageEncoding Encoding = IcoImageEncoding.Auto,
+    PixelFormat Format = default, IcoImageEncoding Encoding = IcoImageEncoding.Auto,
     int HotspotX = 0, int HotspotY = 0);
 
 /// <summary>
@@ -63,9 +64,9 @@ public static class IcoEncoder
 
     /// <summary>Encodes an icon of one image.</summary>
     /// <exception cref="ArgumentException">The size, buffer or encoding does not fit.</exception>
-    public static byte[] Encode(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format = ImagePixelFormat.Rgba32,
+    public static byte[] Encode(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat? format = null,
         IcoImageEncoding encoding = IcoImageEncoding.Auto) =>
-        Encode([new IcoFrame(pixels.ToArray(), width, height, format, encoding)]);
+        Encode([new IcoFrame(pixels.ToArray(), width, height, format ?? PixelFormat.Rgba32, encoding)]);
 
     private static byte[] Write(IReadOnlyList<IcoFrame> images, IcoKind kind)
     {
@@ -148,27 +149,28 @@ public static class IcoEncoder
     private static byte[] ToRgba(IcoFrame image)
     {
         int width = image.Width, height = image.Height;
-        if (image.Format == ImagePixelFormat.Rgba32) return image.Pixels[..(width * height * 4)].ToArray();
+        if (image.Format == PixelFormat.Rgba32) return image.Pixels[..(width * height * 4)].ToArray();
         var rgba = new byte[width * height * 4];
         var source = image.Pixels.Span;
+        if (!image.Format.IsBasic8)
+        {
+            // 16-bit, premultiplied and grey + alpha layouts: converted a row at a time.
+            var rowBytes = width * image.Format.BytesPerPixel;
+            for (var y = 0; y < height; y++)
+                PixelConverter.ConvertRow(source.Slice(y * rowBytes, rowBytes), image.Format, rgba.AsSpan(y * width * 4, width * 4), PixelFormat.Rgba32, width);
+            return rgba;
+        }
         for (var p = 0; p < width * height; p++)
         {
             byte r, g, b, a = 255;
-            switch (image.Format)
-            {
-                case ImagePixelFormat.Bgra32:
-                    (b, g, r, a) = (source[4 * p], source[4 * p + 1], source[4 * p + 2], source[4 * p + 3]);
-                    break;
-                case ImagePixelFormat.Rgb24:
-                    (r, g, b) = (source[3 * p], source[3 * p + 1], source[3 * p + 2]);
-                    break;
-                case ImagePixelFormat.Bgr24:
-                    (b, g, r) = (source[3 * p], source[3 * p + 1], source[3 * p + 2]);
-                    break;
-                default:
-                    r = g = b = source[p];
-                    break;
-            }
+            if (image.Format == PixelFormat.Bgra32)
+                (b, g, r, a) = (source[4 * p], source[4 * p + 1], source[4 * p + 2], source[4 * p + 3]);
+            else if (image.Format == PixelFormat.Rgb24)
+                (r, g, b) = (source[3 * p], source[3 * p + 1], source[3 * p + 2]);
+            else if (image.Format == PixelFormat.Bgr24)
+                (b, g, r) = (source[3 * p], source[3 * p + 1], source[3 * p + 2]);
+            else
+                r = g = b = source[p];
             (rgba[4 * p], rgba[4 * p + 1], rgba[4 * p + 2], rgba[4 * p + 3]) = (r, g, b, a);
         }
         return rgba;

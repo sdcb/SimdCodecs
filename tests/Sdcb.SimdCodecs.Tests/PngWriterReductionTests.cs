@@ -108,7 +108,7 @@ public sealed class PngWriterReductionTests
 
         // The RGBA8 projection agrees. The layout choice is a size heuristic; on these images it never
         // costs more than the PLTE and tRNS it adds.
-        PngReader.Decode(png).ToRgba8().ShouldBe(Expected(source).Select(v => (byte)(v >> 8)).ToArray());
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).ToRgba8().ShouldBe(Expected(source).Select(v => (byte)(v >> 8)).ToArray());
         png.Length.ShouldBeLessThanOrEqualTo(Encode(source, options with { LosslessReduction = false }).Length + 800);
     }
 
@@ -221,7 +221,7 @@ public sealed class PngWriterReductionTests
 
         (reduced[24], reduced[25]).ShouldBe(((byte)2, (byte)3));
         reduced.Length.ShouldBeLessThan(plain.Length / 2);
-        PngReader.Decode(reduced).ToRgba8().ShouldBe(rgba);
+        PngReader.Decode(reduced, cancellationToken: TestContext.Current.CancellationToken).ToRgba8().ShouldBe(rgba);
     }
 
     [Theory]
@@ -270,7 +270,7 @@ public sealed class PngWriterReductionTests
         }
         expected.Where((_, i) => i % 4 == 3).ShouldContain((ushort)0);
         ReadBack16(png).ShouldBe(expected);
-        PngReader.Decode(png).TransparentColor.ShouldBe(key);
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).TransparentColor.ShouldBe(key);
     }
 
     [Fact]
@@ -291,12 +291,12 @@ public sealed class PngWriterReductionTests
     {
         var png = PngWriter.EncodeRgb8(new byte[2 * 2 * 3], 2, 2, new PngWriteOptions { PhysicalDimensions = PngPhysicalDimensions.FromDpi(300) });
 
-        PngReader.Decode(png).PhysicalDimensions.ShouldBe(new PngPhysicalDimensions(11811, 11811, true));
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).PhysicalDimensions.ShouldBe(new PngPhysicalDimensions(11811, 11811, true));
         using var image = new MagickImage(png);
         image.Density.ChangeUnits(DensityUnit.PixelsPerInch).X.ShouldBe(300, 0.01);
 
         var aspect = PngWriter.EncodeRgb8(new byte[2 * 2 * 3], 2, 2, new PngWriteOptions { PhysicalDimensions = new(2, 1, false) });
-        PngReader.Decode(aspect).PhysicalDimensions.ShouldBe(new PngPhysicalDimensions(2, 1, false));
+        PngReader.Decode(aspect, cancellationToken: TestContext.Current.CancellationToken).PhysicalDimensions.ShouldBe(new PngPhysicalDimensions(2, 1, false));
     }
 
     private static byte[] Encode(Source source, PngWriteOptions options)

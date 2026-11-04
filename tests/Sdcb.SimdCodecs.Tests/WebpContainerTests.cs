@@ -75,7 +75,7 @@ public sealed class WebpContainerTests
     public void TryDecodeTo_ReturnsFalseForUnsupportedLaterRungs()
     {
         WebpDecoder.TryDecodeTo(BuildFile(
-            ("VP8L", BuildVp8L(2, 2, hasAlpha: false))), new byte[16]).ShouldBeFalse();
+            ("VP8L", BuildVp8L(2, 2, hasAlpha: false))), new byte[16], cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public sealed class WebpContainerTests
         byte[] file = File.ReadAllBytes(Path.Combine(
             AppContext.BaseDirectory, "Fixtures", "webp", "tiny.webp"));
 
-        WebpImage image = WebpDecoder.Decode(file);
+        WebpImage image = WebpDecoder.Decode(file, cancellationToken: TestContext.Current.CancellationToken);
 
         image.Width.ShouldBe(2);
         image.Height.ShouldBe(2);
@@ -111,7 +111,7 @@ public sealed class WebpContainerTests
         Should.Throw<InvalidDataException>(() => WebpDecoder.ReadInfo(data));
         Should.Throw<InvalidDataException>(() => WebpDecoder.Decode(data));
         WebpDecoder.TryReadInfo(data, out _).ShouldBeFalse();
-        SimdCodecs.TryDecode(data, out _).ShouldBeFalse();
+        SimdCodecs.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Theory]
@@ -122,9 +122,9 @@ public sealed class WebpContainerTests
         byte[] plain = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "webp", fixture));
         WebpInfo info = WebpDecoder.ReadInfo(plain);
 
-        WebpImage image = WebpDecoder.Decode(WrapStillInVp8x(fixture, info.Width, info.Height));
+        WebpImage image = WebpDecoder.Decode(WrapStillInVp8x(fixture, info.Width, info.Height), cancellationToken: TestContext.Current.CancellationToken);
 
-        image.Rgba.ShouldBe(WebpDecoder.Decode(plain).Rgba);
+        image.Rgba.ShouldBe(WebpDecoder.Decode(plain, cancellationToken: TestContext.Current.CancellationToken).Rgba);
     }
 
     private static byte[] WrapStillInVp8x(string fixture, int width, int height)
@@ -154,11 +154,11 @@ public sealed class WebpContainerTests
         int rowBytes = info.Width * 4;
         int stride = rowBytes + 12;
         byte[] packed = new byte[rowBytes * info.Height];
-        WebpDecoder.DecodeTo(file, packed);
+        WebpDecoder.DecodeTo(file, packed, cancellationToken: TestContext.Current.CancellationToken);
 
         byte[] strided = new byte[(info.Height - 1) * stride + rowBytes];
         Array.Fill(strided, (byte)0xA5);
-        WebpDecoder.DecodeTo(file, strided, stride);
+        WebpDecoder.DecodeTo(file, strided, stride, cancellationToken: TestContext.Current.CancellationToken);
 
         for (int row = 0; row < info.Height; row++)
         {
@@ -173,7 +173,7 @@ public sealed class WebpContainerTests
 
         Should.Throw<ArgumentException>(() => WebpDecoder.DecodeTo(file, strided, rowBytes - 1));
         Should.Throw<ArgumentException>(() => WebpDecoder.DecodeTo(file, strided.AsSpan(1).ToArray(), stride));
-        WebpDecoder.TryDecodeTo(file, strided.AsSpan(1).ToArray(), stride).ShouldBeFalse();
+        WebpDecoder.TryDecodeTo(file, strided.AsSpan(1).ToArray(), stride, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     // A tightly packed destination is used as the lossless decoder's ARGB working buffer; it need
@@ -184,9 +184,9 @@ public sealed class WebpContainerTests
     public void DecodeTo_LosslessIntoMisalignedTightDestination_MatchesDecode(string fixture)
     {
         byte[] file = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "webp", fixture));
-        WebpImage image = WebpDecoder.Decode(file);
+        WebpImage image = WebpDecoder.Decode(file, cancellationToken: TestContext.Current.CancellationToken);
         byte[] buffer = new byte[image.Rgba.Length + 3];
-        WebpDecoder.DecodeTo(file, buffer.AsSpan(1, image.Rgba.Length));
+        WebpDecoder.DecodeTo(file, buffer.AsSpan(1, image.Rgba.Length), cancellationToken: TestContext.Current.CancellationToken);
         buffer.AsSpan(1, image.Rgba.Length).SequenceEqual(image.Rgba).ShouldBeTrue();
         buffer[0].ShouldBe((byte)0);
         buffer[^2].ShouldBe((byte)0);

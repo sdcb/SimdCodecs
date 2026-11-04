@@ -57,7 +57,7 @@ public class Jpeg2000ComponentsAndLayersTests
         OpenJpegOracle.RequireOrSkip();
 
         var bytes = File.ReadAllBytes(Path.Combine(LossyDirectory, name + ".j2k"));
-        var decoded = Jpeg2000Decoder.Decode(bytes);
+        var decoded = Jpeg2000Decoder.Decode(bytes, cancellationToken: TestContext.Current.CancellationToken);
         var expected = OpenJpegOracle.Decode(bytes, decoded.Components == 1 ? ".pgm" : ".ppm");
 
         decoded.Width.ShouldBe(expected.Width);
@@ -74,8 +74,8 @@ public class Jpeg2000ComponentsAndLayersTests
     [Fact]
     public void LossyFixtures_AreNotLossless()
     {
-        var decoded = Jpeg2000Decoder.Decode(File.ReadAllBytes(Path.Combine(LossyDirectory, "lossy53-struct64.j2k")));
-        var source = Jpeg2000Decoder.Decode(Fixture("dwt5-struct64"));
+        var decoded = Jpeg2000Decoder.Decode(File.ReadAllBytes(Path.Combine(LossyDirectory, "lossy53-struct64.j2k")), cancellationToken: TestContext.Current.CancellationToken);
+        var source = Jpeg2000Decoder.Decode(Fixture("dwt5-struct64"), cancellationToken: TestContext.Current.CancellationToken);
 
         decoded.Samples.ShouldNotBe(source.Samples);
     }
@@ -87,7 +87,7 @@ public class Jpeg2000ComponentsAndLayersTests
     [Fact]
     public void ThreeComponents_HaveNoGreyPlane()
     {
-        var decoded = Jpeg2000Decoder.Decode(Fixture("rgb-struct64"));
+        var decoded = Jpeg2000Decoder.Decode(Fixture("rgb-struct64"), cancellationToken: TestContext.Current.CancellationToken);
 
         decoded.Components.ShouldBe(3);
         Should.Throw<InvalidOperationException>(() => decoded.ToGray8());
@@ -115,7 +115,7 @@ public class Jpeg2000ComponentsAndLayersTests
         var patched = InsertBeforeFirstSot(bytes, Segment(0x53, coc), Segment(0x5D, qcc));
         var expected = Pnm.Read(Jpeg2000FixtureTests.SourceRaster("rgb-struct64"));
 
-        Jpeg2000Decoder.Decode(patched).Samples.ShouldBe(expected.Samples);
+        Jpeg2000Decoder.Decode(patched, cancellationToken: TestContext.Current.CancellationToken).Samples.ShouldBe(expected.Samples);
     }
 
     /// <summary>
@@ -136,7 +136,7 @@ public class Jpeg2000ComponentsAndLayersTests
 
         var patched = InsertBeforeFirstSot(bytes, Segment(0x5D, qcc));
         var expected = Pnm.Read(Jpeg2000FixtureTests.SourceRaster("rgb-nomct-struct64")).Samples;
-        var decoded = Jpeg2000Decoder.Decode(patched).Samples;
+        var decoded = Jpeg2000Decoder.Decode(patched, cancellationToken: TestContext.Current.CancellationToken).Samples;
 
         Plane(decoded, 0).ShouldBe(Plane(expected, 0));
         Plane(decoded, 1).ShouldBe(Plane(expected, 1));

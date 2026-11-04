@@ -22,13 +22,13 @@ void Main()
 	var rows = new List<object>();
 	foreach (var (name, rgba) in images)
 	{
-		byte[] qoi = QoiEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32);
+		byte[] qoi = QoiEncoder.Encode(rgba, width, height, PixelFormat.Rgba32);
 		byte[] png = PngWriter.Encode(rgba, width, height);
 		var decoded = new byte[rgba.Length];
 
-		double qoiEncode = Best(() => QoiEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32));
+		double qoiEncode = Best(() => QoiEncoder.Encode(rgba, width, height, PixelFormat.Rgba32));
 		double pngEncode = Best(() => PngWriter.Encode(rgba, width, height));
-		double qoiDecode = Best(() => QoiDecoder.DecodeTo(qoi, decoded, ImagePixelFormat.Rgba32));
+		double qoiDecode = Best(() => QoiDecoder.DecodeTo(qoi, decoded, PixelFormat.Rgba32));
 		bool qoiExact = decoded.AsSpan().SequenceEqual(rgba);
 		double pngDecode = Best(() => PngImageDecoder.TryDecodeIntoRgba8(png, decoded));
 		bool pngExact = decoded.AsSpan().SequenceEqual(rgba);
@@ -50,10 +50,10 @@ void Main()
 
 	// Decode into a BGRA buffer whose rows are padded to a multiple of 64 bytes: no intermediate copy, no allocation.
 	byte[] screen = images[1].Rgba;
-	byte[] file = QoiEncoder.Encode(screen, width, height, ImagePixelFormat.Rgba32);
+	byte[] file = QoiEncoder.Encode(screen, width, height, PixelFormat.Rgba32);
 	int stride = (width * 4 + 63) / 64 * 64;
 	var bgra = new byte[stride * height];
-	QoiDecoder.DecodeTo(file, bgra, ImagePixelFormat.Bgra32, stride);
+	QoiDecoder.DecodeTo(file, bgra, PixelFormat.Bgra32, stride);
 	int px = 100 * stride + 200 * 4, src = (100 * width + 200) * 4;
 	new
 	{
@@ -73,8 +73,8 @@ void Main()
 	var headers = new[]
 	{
 		QoiDecoder.ReadInfo(file),
-		QoiDecoder.ReadInfo(QoiEncoder.Encode(rgb, width, height, ImagePixelFormat.Rgb24)),
-		QoiDecoder.ReadInfo(QoiEncoder.Encode(rgb, width, height, ImagePixelFormat.Rgb24, QoiColorSpace.Linear)),
+		QoiDecoder.ReadInfo(QoiEncoder.Encode(rgb, width, height, PixelFormat.Rgb24)),
+		QoiDecoder.ReadInfo(QoiEncoder.Encode(rgb, width, height, PixelFormat.Rgb24, QoiColorSpace.Linear)),
 	};
 	headers.Dump("Headers: RGBA input, RGB input, RGB input marked linear");
 }

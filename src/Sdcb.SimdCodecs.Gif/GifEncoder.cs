@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 namespace Sdcb.SimdCodecs.Gif;
 
 /// <summary>Options for <see cref="GifEncoder"/>.</summary>
-public sealed record GifEncodeOptions
+public sealed record GifEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
     /// <summary>
     /// Floyd–Steinberg error diffusion when the image has more colours than a GIF palette holds, trading

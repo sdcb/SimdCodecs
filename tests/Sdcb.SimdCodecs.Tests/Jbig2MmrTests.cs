@@ -289,7 +289,7 @@ public sealed class Jbig2MmrTests
             Jbig2StreamBuilder.Segment(0, SegmentType.PageInformation, 1, Jbig2StreamBuilder.PageInformation(width, height)),
             Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1, segment));
 
-        Jbig2Decoder.Decode(stream, width, height).Bits.ToArray().ShouldBe(expected);
+        Jbig2Decoder.Decode(stream, width, height, cancellationToken: TestContext.Current.CancellationToken).Bits.ToArray().ShouldBe(expected);
     }
 
     // ---- helpers -----------------------------------------------------------------

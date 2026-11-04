@@ -37,7 +37,7 @@ public sealed class Jbig2DecoderTests
             Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
                 Jbig2StreamBuilder.GenericRegionSegment(source)));
 
-        var page = Jbig2Decoder.Decode(stream, source.Width, source.Height);
+        var page = Jbig2Decoder.Decode(stream, source.Width, source.Height, cancellationToken: TestContext.Current.CancellationToken);
 
         page.Width.ShouldBe(source.Width);
         page.Height.ShouldBe(source.Height);
@@ -53,7 +53,7 @@ public sealed class Jbig2DecoderTests
         var stream = Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
             Jbig2StreamBuilder.GenericRegionSegment(source));
 
-        var page = Jbig2Decoder.Decode(stream, source.Width, source.Height);
+        var page = Jbig2Decoder.Decode(stream, source.Width, source.Height, cancellationToken: TestContext.Current.CancellationToken);
 
         Jbig2StreamBuilder.ToRows(page.Width, page.Height, page.Bits).ShouldBe(Glyph);
     }
@@ -70,7 +70,7 @@ public sealed class Jbig2DecoderTests
         var embedded = Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
             Jbig2StreamBuilder.GenericRegionSegment(source));
 
-        var page = Jbig2Decoder.Decode(embedded, globals, source.Width, source.Height);
+        var page = Jbig2Decoder.Decode(embedded, globals, source.Width, source.Height, cancellationToken: TestContext.Current.CancellationToken);
 
         // Page default black, then the glyph OR-ed on: everything stays black.
         page.Bits.ToArray().ShouldAllBe(b => b == 1);
@@ -86,7 +86,7 @@ public sealed class Jbig2DecoderTests
             Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
                 Jbig2StreamBuilder.GenericRegionSegment(source, op: CombinationOperator.Or)));
 
-        var page = Jbig2Decoder.Decode(stream, 4, 2);
+        var page = Jbig2Decoder.Decode(stream, 4, 2, cancellationToken: TestContext.Current.CancellationToken);
 
         Jbig2StreamBuilder.ToRows(4, 2, page.Bits).ShouldBe(["####", "####"]);
     }
@@ -98,7 +98,7 @@ public sealed class Jbig2DecoderTests
         var stream = Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
             Jbig2StreamBuilder.GenericRegionSegment(block, x: 3, y: 1));
 
-        var page = Jbig2Decoder.Decode(stream, 6, 4);
+        var page = Jbig2Decoder.Decode(stream, 6, 4, cancellationToken: TestContext.Current.CancellationToken);
 
         Jbig2StreamBuilder.ToRows(6, 4, page.Bits).ShouldBe(
         [
@@ -118,7 +118,7 @@ public sealed class Jbig2DecoderTests
         var stream = Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
             Jbig2StreamBuilder.GenericRegionSegment(block, x: 2, y: 1));
 
-        var page = Jbig2Decoder.Decode(stream, 4, 2);
+        var page = Jbig2Decoder.Decode(stream, 4, 2, cancellationToken: TestContext.Current.CancellationToken);
 
         Jbig2StreamBuilder.ToRows(4, 2, page.Bits).ShouldBe(["....", "..##"]);
     }
@@ -147,7 +147,7 @@ public sealed class Jbig2DecoderTests
             Jbig2StreamBuilder.Segment(2, SegmentType.ImmediateGenericRegion, 1,
                 Jbig2StreamBuilder.GenericRegionSegment(second, x: 2, op: op)));
 
-        var page = Jbig2Decoder.Decode(stream, 6, 2);
+        var page = Jbig2Decoder.Decode(stream, 6, 2, cancellationToken: TestContext.Current.CancellationToken);
 
         Jbig2StreamBuilder.ToRows(6, 2, page.Bits).ShouldBe([expected, expected]);
     }
@@ -161,7 +161,7 @@ public sealed class Jbig2DecoderTests
         var stream = Jbig2StreamBuilder.Segment(1, SegmentType.IntermediateGenericRegion, 1,
             Jbig2StreamBuilder.GenericRegionSegment(source));
 
-        var page = Jbig2Decoder.Decode(stream, 4, 2);
+        var page = Jbig2Decoder.Decode(stream, 4, 2, cancellationToken: TestContext.Current.CancellationToken);
 
         Jbig2StreamBuilder.ToRows(4, 2, page.Bits).ShouldBe(["....", "...."]);
     }
@@ -177,7 +177,7 @@ public sealed class Jbig2DecoderTests
             Jbig2StreamBuilder.Segment(2, SegmentType.ImmediateGenericRegion, 1,
                 Jbig2StreamBuilder.GenericRegionSegment(source)));
 
-        var page = Jbig2Decoder.Decode(stream, 4, 2);
+        var page = Jbig2Decoder.Decode(stream, 4, 2, cancellationToken: TestContext.Current.CancellationToken);
 
         Jbig2StreamBuilder.ToRows(4, 2, page.Bits).ShouldBe(["####", "####"]);
     }
@@ -262,7 +262,7 @@ public sealed class Jbig2DecoderTests
         var stream = Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
             Jbig2StreamBuilder.GenericRegionSegment(source, template: template, typicalPrediction: true));
 
-        var page = Jbig2Decoder.Decode(stream, source.Width, source.Height);
+        var page = Jbig2Decoder.Decode(stream, source.Width, source.Height, cancellationToken: TestContext.Current.CancellationToken);
 
         Jbig2StreamBuilder.ToRows(page.Width, page.Height, page.Bits).ShouldBe(Glyph);
     }
@@ -276,7 +276,7 @@ public sealed class Jbig2DecoderTests
         var stream = Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
             Jbig2StreamBuilder.GenericRegionSegment(source));
 
-        var page = Jbig2Decoder.Decode(stream, 2, 1);
+        var page = Jbig2Decoder.Decode(stream, 2, 1, cancellationToken: TestContext.Current.CancellationToken);
 
         // T.88: 1 is black. The grey projection is the conventional visual
         // reading, black 0 / white 255.
@@ -292,7 +292,7 @@ public sealed class Jbig2DecoderTests
         var stream = Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
             Jbig2StreamBuilder.GenericRegionSegment(source));
 
-        var raster = Jbig2Decoder.Decode(stream, 2, 2).ToRaster();
+        var raster = Jbig2Decoder.Decode(stream, 2, 2, cancellationToken: TestContext.Current.CancellationToken).ToRaster();
 
         raster.Channels.ShouldBe(1);
         raster.SampleFormat.ShouldBe(SampleFormat.UInt8);
@@ -305,7 +305,7 @@ public sealed class Jbig2DecoderTests
         var source = Jbig2StreamBuilder.FromRows("##", "##");
         var stream = Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
             Jbig2StreamBuilder.GenericRegionSegment(source));
-        var page = Jbig2Decoder.Decode(stream, 2, 2);
+        var page = Jbig2Decoder.Decode(stream, 2, 2, cancellationToken: TestContext.Current.CancellationToken);
 
         Should.Throw<ArgumentException>(() => page.ExpandToGray8(new byte[3]));
     }
@@ -324,7 +324,7 @@ public sealed class Jbig2DecoderTests
             Jbig2StreamBuilder.Segment(2, SegmentType.EndOfPage, 1, []),
             Jbig2StreamBuilder.Segment(3, SegmentType.EndOfFile, 0, []));
 
-        var page = Jbig2Decoder.DecodeFile(file);
+        var page = Jbig2Decoder.DecodeFile(file, cancellationToken: TestContext.Current.CancellationToken);
 
         Jbig2StreamBuilder.ToRows(page.Width, page.Height, page.Bits).ShouldBe(Glyph);
     }
@@ -343,7 +343,7 @@ public sealed class Jbig2DecoderTests
                 Jbig2StreamBuilder.GenericRegionSegment(source)),
             Jbig2StreamBuilder.Split(2, SegmentType.EndOfFile, 0, []));
 
-        var page = Jbig2Decoder.DecodeFile(file);
+        var page = Jbig2Decoder.DecodeFile(file, cancellationToken: TestContext.Current.CancellationToken);
 
         Jbig2StreamBuilder.ToRows(page.Width, page.Height, page.Bits).ShouldBe(Glyph);
     }
@@ -361,7 +361,7 @@ public sealed class Jbig2DecoderTests
                 Jbig2StreamBuilder.GenericRegionSegment(source)),
             Jbig2StreamBuilder.Segment(2, SegmentType.EndOfStripe, 1, Jbig2StreamBuilder.EndOfStripe(2)));
 
-        var page = Jbig2Decoder.DecodeFile(file);
+        var page = Jbig2Decoder.DecodeFile(file, cancellationToken: TestContext.Current.CancellationToken);
 
         page.Height.ShouldBe(3);
         Jbig2StreamBuilder.ToRows(4, 3, page.Bits).ShouldBe(["####", "#..#", "####"]);
@@ -381,7 +381,7 @@ public sealed class Jbig2DecoderTests
             Jbig2StreamBuilder.Segment(2, SegmentType.ImmediateGenericRegion, 2,
                 Jbig2StreamBuilder.GenericRegionSegment(other, op: CombinationOperator.Replace)));
 
-        var page = Jbig2Decoder.DecodeFile(file);
+        var page = Jbig2Decoder.DecodeFile(file, cancellationToken: TestContext.Current.CancellationToken);
 
         Jbig2StreamBuilder.ToRows(4, 2, page.Bits).ShouldBe(["####", "####"]);
     }

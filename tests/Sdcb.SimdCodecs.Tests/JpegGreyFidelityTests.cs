@@ -22,7 +22,7 @@ public sealed class JpegGreyFidelityTests
 
         SimdCodecs.TryReadInfo(jpeg, out var info).ShouldBeTrue();
         (info.Channels, info.SampleFormat).ShouldBe((1, SampleFormat.UInt8));
-        SimdCodecs.TryDecode(jpeg, out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(jpeg, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         (image.Channels, image.SampleFormat).ShouldBe((1, SampleFormat.UInt8));
         // Its samples are the frame's one plane, and the display projection is the RGBA decode.
         image.Pixels.ToArray().ShouldBe(JpegDiagnostics.DecodePlanes(jpeg)[0].Samples);

@@ -12,6 +12,10 @@ namespace Sdcb.SimdCodecs.Bmp;
 /// </summary>
 public sealed class BmpImageDecoder : IImageDecoder
 {
+    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Bmp, CanDecode, TryReadInfo,
+        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail);
+
     /// <inheritdoc />
     /// <remarks>The 14-byte file header and the bitmap header's size field.</remarks>
     public static int SignatureLength => 18;
@@ -30,6 +34,8 @@ public sealed class BmpImageDecoder : IImageDecoder
             {
                 Format = ImageFormat.Bmp,
                 BitDepth = BmpDecoder.BitDepth(header),
+                Resolution = header.XPelsPerMeter == 0 && header.YPelsPerMeter == 0 ? null
+                    : new Resolution(header.XPelsPerMeter, header.YPelsPerMeter, ResolutionUnit.PerMeter),
             };
             return true;
         }
@@ -41,30 +47,58 @@ public sealed class BmpImageDecoder : IImageDecoder
     }
 
     /// <inheritdoc />
-    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image)
+    public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
+        out int width, out int height, out int scaleDenominator) =>
+        ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
+
+    /// <inheritdoc />
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
+        image = null;
+        BmpHeader header;
+        BmpInfo bmp;
         try
         {
-            var bmp = BmpDecoder.Decode(data);
-            image = new RasterImage(bmp.Width, bmp.Height, bmp.Channels, SampleFormat.UInt8, bmp.Pixels, bmp.IccProfile);
-            return true;
+            header = BmpHeader.ReadFile(data);
+            bmp = BmpDecoder.Info(data, header);
         }
         catch (InvalidDataException)
         {
-            image = null;
             return false;
         }
+
+        options?.Validate(bmp.Width, bmp.Height, supportsScale: false);
+        var raster = RasterImage.Create(bmp.Width, bmp.Height, bmp.Channels, SampleFormat.UInt8, options?.Pool,
+            BmpDecoder.Icc(data, header));
+        try
+        {
+            BmpPixels.Decode(data, header, raster.WritablePixels, bmp.Width * bmp.Channels,
+                bmp.Channels == 4 ? PixelFormat.Rgba32 : PixelFormat.Rgb24, cancellationToken);
+        }
+        catch (Exception e)
+        {
+            raster.Dispose();
+            if (e is InvalidDataException)
+                return false;
+            throw;
+        }
+        image = DecodeOptions.Apply(raster, options);
+        return true;
     }
 
     /// <inheritdoc />
-    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format)
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
+        if (options is { IsFullImage: false } || !format.IsBasic8)
+            return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
         try
         {
             var header = BmpHeader.ReadFile(data);
             if (!PixelConverter.TryGetLayout(header.Width, header.Height, format, stride, destination.Length, out var rowStride))
                 return false;
-            BmpPixels.Decode(data, header, destination, rowStride, format);
+            BmpPixels.Decode(data, header, destination, rowStride, format, cancellationToken);
             return true;
         }
         catch (InvalidDataException)
@@ -72,11 +106,33 @@ public sealed class BmpImageDecoder : IImageDecoder
             return false;
         }
     }
+
+    /// <inheritdoc />
+    /// <remarks>The ICC profile a V5 header embeds; a bitmap without one gives <see cref="ImageMetadata.Empty"/>.</remarks>
+    public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata)
+    {
+        try
+        {
+            var icc = BmpDecoder.Icc(data, BmpHeader.ReadFile(data));
+            metadata = icc is null ? ImageMetadata.Empty : new ImageMetadata(icc: icc);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            metadata = null;
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>BMP has no thumbnails: always false.</remarks>
+    public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail) =>
+        ImageDecoderFallback.NoThumbnail(out thumbnail);
 
     /// <summary>
     /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA: <paramref name="rgbaDestination"/> must be
     /// at least <c>Width * Height * 4</c> bytes.
     /// </summary>
     public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
-        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
+        TryDecodeInto(data, rgbaDestination, 0, PixelFormat.Rgba32);
 }

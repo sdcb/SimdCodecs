@@ -45,8 +45,8 @@ public sealed class TiffFloatPredictorOracleTests
         layout.FileIsLittleEndian.ShouldBe(endian == "lsb");
         TiffReader.ReadLayout(plain).Predictor.ShouldBe(TiffPredictor.None);
 
-        var expected = TiffReader.ReadPage(plain).Pixels;
-        var actual = TiffReader.ReadPage(predicted).Pixels;
+        var expected = TiffReader.ReadPage(plain, cancellationToken: TestContext.Current.CancellationToken).Pixels;
+        var actual = TiffReader.ReadPage(predicted, cancellationToken: TestContext.Current.CancellationToken).Pixels;
         actual.Length.ShouldBe(Width * Height * channels * (bits / 8));
         actual.ShouldBe(expected);
 
@@ -63,7 +63,7 @@ public sealed class TiffFloatPredictorOracleTests
     public void Predictor3_SegmentReadEqualsTheWholePage()
     {
         var predicted = Write(32, 3, "msb", "16x16", predictor: 3);
-        var page = TiffReader.ReadPage(predicted).Pixels;
+        var page = TiffReader.ReadPage(predicted, cancellationToken: TestContext.Current.CancellationToken).Pixels;
         var layout = TiffReader.ReadLayout(predicted);
 
         var bytesPerPixel = layout.BytesPerPixel;

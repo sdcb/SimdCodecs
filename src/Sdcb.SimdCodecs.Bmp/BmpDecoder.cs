@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Numerics;
 using Sdcb.SimdCodecs.Abstractions;
 
@@ -49,8 +50,8 @@ public static class BmpDecoder
     /// </summary>
     /// <exception cref="InvalidDataException">The data is not a decodable bitmap.</exception>
     /// <exception cref="ArgumentException">The destination is too small, or the stride shorter than a row.</exception>
-    public static void DecodeTo(ReadOnlySpan<byte> data, Span<byte> destination, ImagePixelFormat format = ImagePixelFormat.Rgba32, int stride = 0) =>
-        Into(data, BmpHeader.ReadFile(data), destination, format, stride);
+    public static void DecodeTo(ReadOnlySpan<byte> data, Span<byte> destination, PixelFormat? format = null, int stride = 0) =>
+        Into(data, BmpHeader.ReadFile(data), destination, format ?? PixelFormat.Rgba32, stride);
 
     /// <summary><see cref="ReadInfo"/> for a packed DIB (no file header).</summary>
     /// <param name="dib">The bitmap header, masks, palette and pixels.</param>
@@ -74,9 +75,9 @@ public static class BmpDecoder
     /// <param name="iconImage">An icon or cursor image: see <see cref="DecodeDib"/>.</param>
     /// <exception cref="InvalidDataException">The data is not a decodable DIB.</exception>
     /// <exception cref="ArgumentException">The destination is too small, or the stride shorter than a row.</exception>
-    public static void DecodeDibTo(ReadOnlySpan<byte> dib, Span<byte> destination, ImagePixelFormat format = ImagePixelFormat.Rgba32,
+    public static void DecodeDibTo(ReadOnlySpan<byte> dib, Span<byte> destination, PixelFormat? format = null,
         int stride = 0, bool iconImage = false) =>
-        Into(dib, BmpHeader.ReadDib(dib, iconImage), destination, format, stride);
+        Into(dib, BmpHeader.ReadDib(dib, iconImage), destination, format ?? PixelFormat.Rgba32, stride);
 
     internal static BmpInfo Info(ReadOnlySpan<byte> data, BmpHeader header)
     {
@@ -91,18 +92,39 @@ public static class BmpDecoder
         var info = Info(data, header);
         var channels = info.Channels;
         var pixels = new byte[(long)header.Width * header.Height * channels];
-        BmpPixels.Decode(data, header, pixels, header.Width * channels, channels == 4 ? ImagePixelFormat.Rgba32 : ImagePixelFormat.Rgb24);
+        BmpPixels.Decode(data, header, pixels, header.Width * channels, channels == 4 ? PixelFormat.Rgba32 : PixelFormat.Rgb24);
         return new BmpImage(header.Width, header.Height, channels, pixels, Icc(data, header));
     }
 
     internal static byte[]? Icc(ReadOnlySpan<byte> data, BmpHeader header) =>
         header.IccLength > 0 ? data.Slice(header.IccOffset, header.IccLength).ToArray() : null;
 
-    private static void Into(ReadOnlySpan<byte> data, BmpHeader header, Span<byte> destination, ImagePixelFormat format, int stride)
+    private static void Into(ReadOnlySpan<byte> data, BmpHeader header, Span<byte> destination, PixelFormat format, int stride)
     {
         if (!PixelConverter.TryGetLayout(header.Width, header.Height, format, stride, destination.Length, out var rowStride))
             throw new ArgumentException($"The destination does not hold a {header.Width}x{header.Height} {format} image with stride {stride}.", nameof(destination));
-        BmpPixels.Decode(data, header, destination, rowStride, format);
+        if (format.IsBasic8)
+        {
+            BmpPixels.Decode(data, header, destination, rowStride, format);
+            return;
+        }
+
+        // Any other layout: decode to RGBA, then convert a row at a time.
+        var width = header.Width;
+        var rented = ArrayPool<byte>.Shared.Rent(checked(width * header.Height * 4));
+        try
+        {
+            BmpPixels.Decode(data, header, rented, width * 4, PixelFormat.Rgba32);
+            for (var y = 0; y < header.Height; y++)
+            {
+                PixelConverter.ConvertRow(rented.AsSpan(y * width * 4, width * 4), PixelFormat.Rgba32,
+                    destination.Slice(y * rowStride, width * format.BytesPerPixel), format, width);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
     }
 
     /// <summary>The bits of precision per channel, at most 8: a palette's entries are 8-bit.</summary>

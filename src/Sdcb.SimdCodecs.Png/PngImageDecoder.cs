@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Sdcb.SimdCodecs.Abstractions;
 
 namespace Sdcb.SimdCodecs.Png;
@@ -26,6 +27,10 @@ namespace Sdcb.SimdCodecs.Png;
 /// </summary>
 public sealed class PngImageDecoder : IImageDecoder
 {
+    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Png, CanDecode, TryReadInfo,
+        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail);
+
     private static ReadOnlySpan<byte> Signature => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
     /// <inheritdoc />
@@ -58,24 +63,76 @@ public sealed class PngImageDecoder : IImageDecoder
             BitDepth = colorType == 3 ? 8 : bitDepth,
             Orientation = chunks.Orientation,
             FrameCount = chunks.FrameCount,
+            ColorEncoding = MapColorEncoding(chunks.Cicp, chunks.Gamma),
+            Resolution = chunks.Resolution,
         };
         return true;
     }
 
     /// <inheritdoc />
-    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image)
+    public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
+        out int width, out int height, out int scaleDenominator) =>
+        ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
+
+    /// <inheritdoc />
+    /// <remarks>The <c>eXIf</c> chunk (from the TIFF header on), the <c>XML:com.adobe.xmp</c> text chunk
+    /// (UTF-8) and the inflated <c>iCCP</c> profile, whichever the file has.</remarks>
+    public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata)
     {
-        image = null;
-        if (!PngReader.TryDecode(data, out var png)) return false;
+        metadata = null;
         try
         {
-            image = ToDecoded(png);
+            metadata = MetadataOf(PngReader.ReadHeader(data, out _));
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
         {
             return false;
         }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>PNG has no thumbnails: always false.</remarks>
+    public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail) =>
+        ImageDecoderFallback.NoThumbnail(out thumbnail);
+
+    private static ImageMetadata MetadataOf(PngImage png)
+    {
+        ReadOnlyMemory<byte> xmp = default;
+        foreach (var text in png.Text)
+        {
+            if (text.Keyword == "XML:com.adobe.xmp")
+            {
+                xmp = System.Text.Encoding.UTF8.GetBytes(text.Text);
+                break;
+            }
+        }
+        return new ImageMetadata(png.Exif, xmp, png.IccProfile);
+    }
+
+    /// <inheritdoc />
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        image = null;
+        if (options is not null)
+        {
+            // Outside any catch: a scale or a region that does not fit throws on purpose.
+            if (!TryReadInfo(data, out var info)) return false;
+            options.Validate(info.Width, info.Height, supportsScale: false);
+        }
+        if (!PngReader.TryDecode(data, out var png, cancellationToken)) return false;
+        RasterImage raster;
+        try
+        {
+            raster = ToDecoded(png);
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+        image = DecodeOptions.Apply(raster, options);
+        return true;
     }
 
     /// <inheritdoc />
@@ -87,13 +144,21 @@ public sealed class PngImageDecoder : IImageDecoder
     /// display path (linear is monotone and the astro-master quick-look case;
     /// HLG's nominal SDR fallback was considered, but the facade can't know the
     /// display context, so HLG refuses alongside PQ).</remarks>
-    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format)
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
+        if (options is { IsFullImage: false } || !format.IsBasic8)
+        {
+            // 8-bit samples are display projections, so the HDR refusal applies to them whichever the layout;
+            // 16-bit formats keep the file's code values and go through the generic path as they are.
+            if (format.Sample == SampleFormat.UInt8 && !TryReadDisplayReferred(data, out _, out _)) return false;
+            return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
+        }
         if (!TryReadDisplayReferred(data, out var header, out var idat)) return false;
         if (!PixelConverter.TryGetLayout(header.Width, header.Height, format, stride, destination.Length, out var rowStride)) return false;
         try
         {
-            PngReader.DecodeInto(data, header, idat, destination, rowStride, format);
+            PngReader.DecodeInto(data, header, idat, destination, rowStride, format, cancellationToken: cancellationToken);
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
@@ -109,7 +174,7 @@ public sealed class PngImageDecoder : IImageDecoder
     /// <remarks>False for a corrupt stream, a destination that is too small, and cICP PQ/HLG-tagged
     /// files (see <see cref="TryDecodeInto"/>).</remarks>
     public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
-        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
+        TryDecodeInto(data, rgbaDestination, 0, PixelFormat.Rgba32);
 
     /// <summary>
     /// Decode a PNG to tightly-packed 8-bit RGBA in an array the caller owns, without knowing its
@@ -181,7 +246,8 @@ public sealed class PngImageDecoder : IImageDecoder
         }
     }
 
-    private readonly record struct ChunkFacts(bool TransparentColor, ImageOrientation Orientation, int FrameCount);
+    private readonly record struct ChunkFacts(bool TransparentColor, ImageOrientation Orientation, int FrameCount,
+        CicpChunk? Cicp, double? Gamma, Resolution? Resolution);
 
     // What TryReadInfo needs beyond IHDR, from chunk headers alone (lengths, no CRCs). Before the first
     // IDAT: whether a greyscale or RGB file carries a tRNS transparent colour, with the length test
@@ -193,6 +259,9 @@ public sealed class PngImageDecoder : IImageDecoder
         var frames = 1;
         var orientation = ImageOrientation.Normal;
         var exifSeen = false;
+        CicpChunk? cicp = null;
+        double? gamma = null;
+        Resolution? resolution = null;
         var beforeIdat = true;
         var pos = 8;
         while (pos + 8 <= data.Length)
@@ -208,6 +277,16 @@ public sealed class PngImageDecoder : IImageDecoder
                 transparent = colorType is 0 or 2 && length == (colorType == 0 ? 2u : 6u);
             else if (beforeIdat && type.SequenceEqual("acTL"u8) && payload.Length == 8)
                 frames = (int)Math.Clamp(BinaryPrimitives.ReadUInt32BigEndian(payload), 1u, int.MaxValue);
+            // Like PngReader, the last of each of these chunks wins; one of the wrong length is ignored here
+            // (PngReader refuses the file for cICP and gAMA, so TryReadInfo's answer is then moot).
+            else if (type.SequenceEqual("cICP"u8) && payload.Length == 4)
+                cicp = CicpChunk.Read(payload);
+            else if (type.SequenceEqual("gAMA"u8) && payload.Length == 4)
+                gamma = BinaryPrimitives.ReadUInt32BigEndian(payload) / 100_000.0;
+            else if (type.SequenceEqual("pHYs"u8) && payload.Length == 9 && payload[8] <= 1)
+                resolution = new Resolution(BinaryPrimitives.ReadUInt32BigEndian(payload),
+                    BinaryPrimitives.ReadUInt32BigEndian(payload[4..]),
+                    payload[8] == 1 ? ResolutionUnit.PerMeter : ResolutionUnit.AspectRatio);
             else if (!exifSeen && type.SequenceEqual("eXIf"u8))
             {
                 exifSeen = true;
@@ -215,7 +294,7 @@ public sealed class PngImageDecoder : IImageDecoder
             }
             pos += 12 + (int)length;
         }
-        return new ChunkFacts(transparent, orientation, frames);
+        return new ChunkFacts(transparent, orientation, frames, cicp, gamma, resolution);
     }
 
     // The layout TryDecode produces. Indexed always expands to RGBA8; the rest keep
@@ -251,11 +330,14 @@ public sealed class PngImageDecoder : IImageDecoder
     private static RasterImage ToDecoded(PngImage png)
     {
         var icc = png.IccProfile;
-        var color = MapColorEncoding(png);
+        var color = MapColorEncoding(png.Cicp, png.Gamma);
+        var metadata = MetadataOf(png);
+        // 1-, 2- and 4-bit greyscale comes out as 8-bit samples; the file's precision is what bitDepth records.
+        var depth = png.ColorType == 0 && png.SourceBitDepth < 8 ? png.SourceBitDepth : 0;
 
         // Indexed: palette (+ optional tRNS) expansion to RGBA8 - PngImage.ToRgba8 already does this.
         if (png.ColorType == 3)
-            return new RasterImage(png.Width, png.Height, 4, SampleFormat.UInt8, png.ToRgba8(), icc, color);
+            return RasterImage.Wrap(png.Width, png.Height, 4, SampleFormat.UInt8, png.ToRgba8(), icc, color, metadata: metadata);
 
         var channels = PngReader.SamplesPerPixel(png.ColorType);
         var key = png.UnpackedTransparentColor();
@@ -265,19 +347,20 @@ public sealed class PngImageDecoder : IImageDecoder
             // host byte order. AsUInt16Samples returns host-native ushort[].
             var samples = png.AsUInt16Samples();
             if (key is not null)
-                return new RasterImage(png.Width, png.Height, channels + 1, SampleFormat.UInt16,
-                    MemoryMarshal.AsBytes(WithKeyAlpha(samples, channels, key, ushort.MaxValue).AsSpan()).ToArray(), icc, color);
+                return RasterImage.Wrap(png.Width, png.Height, channels + 1, SampleFormat.UInt16,
+                    MemoryMarshal.AsBytes(WithKeyAlpha(samples, channels, key, ushort.MaxValue).AsSpan()).ToArray(), icc, color,
+                    metadata: metadata);
             var bytes = MemoryMarshal.AsBytes(samples.AsSpan()).ToArray();
-            return new RasterImage(png.Width, png.Height, channels, SampleFormat.UInt16, bytes, icc, color);
+            return RasterImage.Wrap(png.Width, png.Height, channels, SampleFormat.UInt16, bytes, icc, color, metadata: metadata);
         }
 
         // 8-bit: Pixels are already the interleaved host-order raster.
         if (key is not null)
         {
-            return new RasterImage(png.Width, png.Height, channels + 1, SampleFormat.UInt8,
-                WithKeyAlpha(png.Pixels, channels, key, byte.MaxValue), icc, color);
+            return RasterImage.Wrap(png.Width, png.Height, channels + 1, SampleFormat.UInt8,
+                WithKeyAlpha(png.Pixels, channels, key, byte.MaxValue), icc, color, depth, metadata);
         }
-        return new RasterImage(png.Width, png.Height, channels, SampleFormat.UInt8, png.Pixels, icc, color);
+        return RasterImage.Wrap(png.Width, png.Height, channels, SampleFormat.UInt8, png.Pixels, icc, color, depth, metadata);
     }
 
     // Samples of `channels` per pixel with an alpha sample appended to each pixel: 0 where the pixel is
@@ -307,9 +390,9 @@ public sealed class PngImageDecoder : IImageDecoder
     // that. Anything else (sRGB chunk, gAMA ~1/2.2, untagged) lands on the sRGB
     // assumption; the raw gAMA / cHRM values stay available via PngReader for
     // consumers that need them.
-    private static ColorEncoding MapColorEncoding(PngImage png)
+    private static ColorEncoding MapColorEncoding(CicpChunk? cicpChunk, double? gamma)
     {
-        if (png.Cicp is { } cicp)
+        if (cicpChunk is { } cicp)
             return new ColorEncoding
             {
                 Primaries = cicp.ColorPrimaries,
@@ -317,7 +400,7 @@ public sealed class PngImageDecoder : IImageDecoder
                 FullRange = cicp.VideoFullRangeFlag,
             };
 
-        if (png.Gamma == 1.0)
+        if (gamma == 1.0)
             return ColorEncoding.AssumedSrgb with { Transfer = TransferFunction.Linear };
 
         return ColorEncoding.AssumedSrgb;

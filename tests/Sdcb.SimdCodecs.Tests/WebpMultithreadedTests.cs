@@ -23,20 +23,20 @@ public sealed class WebpMultithreadedTests
         byte[] file = ReadFixture(fixture);
         WebpInfo info = WebpDecoder.ReadInfo(file);
         byte[] expected = new byte[info.Width * info.Height * 4];
-        WebpDecoder.DecodeTo(file, expected);
+        WebpDecoder.DecodeTo(file, expected, cancellationToken: TestContext.Current.CancellationToken);
 
         // Repeated: whether the plane arrives before, during or after the frame varies by run.
         for (int run = 0; run < 8; run++)
         {
             byte[] actual = new byte[expected.Length];
-            WebpDecoder.DecodeTo(file, actual, 0, Multithreaded);
+            WebpDecoder.DecodeTo(file, actual, 0, Multithreaded, cancellationToken: TestContext.Current.CancellationToken);
             Assert.True(expected.AsSpan().SequenceEqual(actual), $"{fixture}, run {run}");
         }
 
         int stride = info.Width * 4 + 8;
         byte[] strided = new byte[(info.Height - 1) * stride + info.Width * 4];
         Array.Fill(strided, (byte)0x5A);
-        WebpDecoder.DecodeTo(file, strided, stride, Multithreaded);
+        WebpDecoder.DecodeTo(file, strided, stride, Multithreaded, cancellationToken: TestContext.Current.CancellationToken);
         for (int row = 0; row < info.Height; row++)
         {
             Assert.True(strided.AsSpan(row * stride, info.Width * 4)
@@ -54,9 +54,9 @@ public sealed class WebpMultithreadedTests
         WebpInfo info = WebpDecoder.ReadInfo(file);
         byte[] rgba = new byte[info.Width * info.Height * 4];
 
-        Assert.Throws<InvalidDataException>(() => WebpDecoder.DecodeTo(file, rgba));
-        Assert.Throws<InvalidDataException>(() => WebpDecoder.DecodeTo(file, rgba, 0, Multithreaded));
-        Assert.False(WebpDecoder.TryDecodeTo(file, rgba, 0, Multithreaded));
+        Assert.Throws<InvalidDataException>(() => WebpDecoder.DecodeTo(file, rgba, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Throws<InvalidDataException>(() => WebpDecoder.DecodeTo(file, rgba, 0, Multithreaded, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.False(WebpDecoder.TryDecodeTo(file, rgba, 0, Multithreaded, cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]

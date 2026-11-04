@@ -3,7 +3,7 @@
   <PropertyGroup>
     <!-- Non-release builds use this version family; release packages use the Git tag
          (see .github/workflows/dotnet.yml). -->
-    <VersionMajorMinor>0.1</VersionMajorMinor>
+    <VersionMajorMinor>2.0</VersionMajorMinor>
     <VersionPrefix Condition="'$(VersionPrefix)' == ''">$(VersionMajorMinor).0</VersionPrefix>
     <AssemblyVersion>$(VersionMajorMinor).0.0</AssemblyVersion>
   </PropertyGroup>

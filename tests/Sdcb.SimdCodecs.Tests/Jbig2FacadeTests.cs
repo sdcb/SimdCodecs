@@ -67,7 +67,7 @@ public sealed class Jbig2FacadeTests
     [Fact]
     public void TryDecode_ProducesTheGrayFidelityRaster()
     {
-        SimdCodecs.TryDecode(BuildFile(), out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(BuildFile(), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         image!.Width.ShouldBe(10);
         image.Height.ShouldBe(5);
@@ -114,9 +114,9 @@ public sealed class Jbig2FacadeTests
         var file = File.ReadAllBytes(Path.Combine(Jbig2SymbolFixtureTests.FixtureDirectory, "sym.jb2"));
 
         SimdCodecs.CanDecode(file).ShouldBeTrue();
-        SimdCodecs.TryDecode(file, out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
-        var direct = Jbig2Decoder.DecodeFile(file);
+        var direct = Jbig2Decoder.DecodeFile(file, cancellationToken: TestContext.Current.CancellationToken);
         image!.Width.ShouldBe(direct.Width);
         image.Height.ShouldBe(direct.Height);
         image.Pixels.ToArray().ShouldBe(direct.ToGray8());
@@ -134,7 +134,7 @@ public sealed class Jbig2FacadeTests
         var file = Jbig2StreamBuilder.SequentialFile([.. segments,
             Jbig2StreamBuilder.Segment(9, SegmentType.EndOfFile, 0, [])]);
 
-        SimdCodecs.TryDecode(file, out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image!.Width.ShouldBe(expected.Width);
         image.Pixels.ToArray().ShouldBe(new Jbig2Image(expected.Width, expected.Height, expected.Data).ToGray8());
     }
@@ -153,9 +153,9 @@ public sealed class Jbig2FacadeTests
                 Jbig2StreamBuilder.PageInformation(8, 8)),
             Jbig2StreamBuilder.Segment(1, SegmentType.SymbolDictionary, 1, dictionary));
 
-        Jbig2ImageDecoder.TryDecode(file, out var image).ShouldBeFalse();
+        Jbig2ImageDecoder.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         image.ShouldBeNull();
-        SimdCodecs.TryDecode(file, out _).ShouldBeFalse();
+        SimdCodecs.TryDecode(file, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public sealed class Jbig2FacadeTests
     {
         var file = BuildFile();
 
-        Jbig2ImageDecoder.TryDecode(file.AsSpan(0, 20).ToArray(), out var image).ShouldBeFalse();
+        Jbig2ImageDecoder.TryDecode(file.AsSpan(0, 20).ToArray(), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         image.ShouldBeNull();
     }
 

@@ -71,7 +71,7 @@ public sealed class GainMapFacadeTests
     {
         var ultraHdr = BuildUltraHdr(out _);
 
-        SimdCodecs.TryDecode(ultraHdr, out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(ultraHdr, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.ShouldNotBeNull();
         image.ShouldBeOfType<GainMapDecodedImage>();
 
@@ -87,7 +87,7 @@ public sealed class GainMapFacadeTests
     public void ToFloats_Reconstructs_Hdr_Beyond_Sdr_White()
     {
         var ultraHdr = BuildUltraHdr(out _);
-        SimdCodecs.TryDecode(ultraHdr, out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(ultraHdr, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         var floats = image!.ToFloats();
 
@@ -100,7 +100,7 @@ public sealed class GainMapFacadeTests
     public void Facade_ToFloats_Equals_Reconstruct_At_Full_Authored_Headroom()
     {
         var ultraHdr = BuildUltraHdr(out _);
-        SimdCodecs.TryDecode(ultraHdr, out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(ultraHdr, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         // The facade must reconstruct at HdrCapacityMax (the full authored HDR),
         // identical to going through the gain-map API by hand.
@@ -114,7 +114,7 @@ public sealed class GainMapFacadeTests
     public void Source_Escape_Hatch_Exposes_The_Full_Gain_Map_Api()
     {
         var ultraHdr = BuildUltraHdr(out _);
-        SimdCodecs.TryDecode(ultraHdr, out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(ultraHdr, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         var gainMap = image.ShouldBeOfType<GainMapDecodedImage>().Source;
         gainMap.Metadata.HdrCapacityMax.ShouldBeGreaterThan(1.0);
@@ -128,7 +128,7 @@ public sealed class GainMapFacadeTests
     public void ToRgba8_Returns_The_Sdr_Base_Not_A_Tonemap()
     {
         var ultraHdr = BuildUltraHdr(out _);
-        SimdCodecs.TryDecode(ultraHdr, out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(ultraHdr, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         // The 8-bit path is the SDR base — byte-identical to decoding the primary
         // image as a plain JPEG (what any gain-map-unaware viewer shows).
@@ -169,7 +169,7 @@ public sealed class GainMapFacadeTests
     {
         var plain = EncodeJpeg(GrayRampRgb(48, 24), 48, 24);
 
-        SimdCodecs.TryDecode(plain, out var image).ShouldBeTrue();
+        SimdCodecs.TryDecode(plain, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         // Falls through to the base JPEG decoder: ordinary 8-bit RGB, not HDR.
         image.ShouldBeOfType<RasterImage>();

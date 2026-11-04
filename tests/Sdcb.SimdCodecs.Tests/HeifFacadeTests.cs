@@ -26,8 +26,8 @@ public sealed class HeifFacadeTests : IDisposable
 {
     private const string Fixture = "synth-photo-mangrove-1599x1199-main8.heic"; // odd size and a clap crop
 
-    private static readonly ImagePixelFormat[] AllFormats =
-        [ImagePixelFormat.Rgba32, ImagePixelFormat.Bgra32, ImagePixelFormat.Rgb24, ImagePixelFormat.Bgr24, ImagePixelFormat.Gray8];
+    private static readonly PixelFormat[] AllFormats =
+        [PixelFormat.Rgba32, PixelFormat.Bgra32, PixelFormat.Rgb24, PixelFormat.Bgr24, PixelFormat.Gray8];
 
     private readonly ImageDecoderRegistration[] _builtIn;
 
@@ -43,9 +43,9 @@ public sealed class HeifFacadeTests : IDisposable
         SimdCodecs.IsDecodable(ImageFormat.Heif).ShouldBeFalse();
         SimdCodecs.CanDecode(data).ShouldBeFalse();
         SimdCodecs.TryReadInfo(data, out _).ShouldBeFalse();
-        SimdCodecs.TryDecode(data, out var image).ShouldBeFalse();
+        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         image.ShouldBeNull();
-        SimdCodecs.TryDecodeInto(data, new byte[1599 * 1199 * 4], 0, ImagePixelFormat.Rgba32).ShouldBeFalse();
+        SimdCodecs.TryDecodeInto(data, new byte[1599 * 1199 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeFalse();
         reader.ShouldBeNull();
     }
@@ -65,17 +65,17 @@ public sealed class HeifFacadeTests : IDisposable
         info.ShouldBe(expectedInfo);
         (info.Width, info.Height).ShouldBe((1599, 1199));
 
-        HeifImageDecoder.TryDecode(data, out var expected).ShouldBeTrue();
-        SimdCodecs.TryDecode(data, out var image).ShouldBeTrue();
+        HeifImageDecoder.TryDecode(data, out var expected, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.Pixels.SequenceEqual(expected.Pixels).ShouldBeTrue();
         image.ColorEncoding.ShouldBe(expected.ColorEncoding);
 
         foreach (var format in AllFormats)
         {
-            int bytes = info.Width * info.Height * PixelConverter.BytesPerPixel(format);
+            int bytes = info.Width * info.Height * format.BytesPerPixel;
             byte[] mine = new byte[bytes], theirs = new byte[bytes];
-            HeifImageDecoder.TryDecodeInto(data, theirs, 0, format).ShouldBeTrue();
-            SimdCodecs.TryDecodeInto(data, mine, 0, format).ShouldBeTrue($"{format}");
+            HeifImageDecoder.TryDecodeInto(data, theirs, 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+            SimdCodecs.TryDecodeInto(data, mine, 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue($"{format}");
             mine.ShouldBe(theirs, $"{format}");
         }
 
@@ -90,10 +90,10 @@ public sealed class HeifFacadeTests : IDisposable
             reader.LoopCount.ShouldBeNull();
             reader.TryGetFrameInfo(0, out var frame).ShouldBeTrue();
             frame.Info.ShouldBe(info);
-            reader.TryDecodeFrame(0, out var first).ShouldBeTrue();
+            reader.TryDecodeFrame(0, out var first, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
             first.Pixels.SequenceEqual(expected.Pixels).ShouldBeTrue();
             var into = new byte[rgba.Length];
-            reader.TryDecodeFrameInto(0, into, 0, ImagePixelFormat.Rgba32).ShouldBeTrue();
+            reader.TryDecodeFrameInto(0, into, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
             into.ShouldBe(rgba);
             Should.Throw<ArgumentOutOfRangeException>(() => reader.TryDecodeFrame(1, out _));
         }
@@ -107,14 +107,14 @@ public sealed class HeifFacadeTests : IDisposable
         {
             byte[] data = HeifTests.ReadFixture(fixture);
             SimdCodecs.DetectFormat(data).ShouldBe(ImageFormat.Heif);
-            SimdCodecs.TryDecode(data, out _).ShouldBeFalse(fixture);
-            SimdCodecs.TryDecodeInto(data, new byte[1280 * 720 * 4], 0, ImagePixelFormat.Rgba32).ShouldBeFalse(fixture);
+            SimdCodecs.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(fixture);
+            SimdCodecs.TryDecodeInto(data, new byte[1280 * 720 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(fixture);
         }
 
         byte[] pq = HeifTests.ReadFixture("synth-screen-testsrc2-640x360-pq-vui.heic");
-        SimdCodecs.TryDecode(pq, out var hdr).ShouldBeTrue();
+        SimdCodecs.TryDecode(pq, out var hdr, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         hdr.ColorEncoding.Transfer.ShouldBe(TransferFunction.Pq);
-        SimdCodecs.TryDecodeInto(pq, new byte[640 * 360 * 4], 0, ImagePixelFormat.Rgba32).ShouldBeFalse();
+        SimdCodecs.TryDecodeInto(pq, new byte[640 * 360 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Fact]
@@ -128,7 +128,8 @@ public sealed class HeifFacadeTests : IDisposable
 
         // A second registration object built from the same method groups is the same codec.
         SimdCodecs.Register(new ImageDecoderRegistration(ImageFormat.Heif, HeifImageDecoder.CanDecode, HeifImageDecoder.TryReadInfo,
-            HeifImageDecoder.TryDecode, HeifImageDecoder.TryDecodeInto));
+            HeifImageDecoder.TryGetClosestSize, HeifImageDecoder.TryDecode, HeifImageDecoder.TryDecodeInto, HeifImageDecoder.TryReadMetadata, HeifImageDecoder.TryDecodeThumbnail,
+            tryReadPlanarInfo: HeifImageDecoder.TryReadPlanarInfo, tryDecodePlanes: HeifImageDecoder.TryDecodePlanes));
         SimdCodecs.RegisteredCount.ShouldBe(before + 1);
 
         // A different codec is not.
@@ -162,13 +163,13 @@ public sealed class HeifFacadeTests : IDisposable
     {
         Should.Throw<ArgumentNullException>(() => SimdCodecs.Register(null!));
         Should.Throw<ArgumentOutOfRangeException>(() => new ImageDecoderRegistration(ImageFormat.Unknown, HeifImageDecoder.CanDecode,
-            HeifImageDecoder.TryReadInfo, HeifImageDecoder.TryDecode, HeifImageDecoder.TryDecodeInto));
+            HeifImageDecoder.TryReadInfo, HeifImageDecoder.TryGetClosestSize, HeifImageDecoder.TryDecode, HeifImageDecoder.TryDecodeInto, HeifImageDecoder.TryReadMetadata, HeifImageDecoder.TryDecodeThumbnail));
         Should.Throw<ArgumentOutOfRangeException>(() => new ImageDecoderRegistration((ImageFormat)200, HeifImageDecoder.CanDecode,
-            HeifImageDecoder.TryReadInfo, HeifImageDecoder.TryDecode, HeifImageDecoder.TryDecodeInto));
+            HeifImageDecoder.TryReadInfo, HeifImageDecoder.TryGetClosestSize, HeifImageDecoder.TryDecode, HeifImageDecoder.TryDecodeInto, HeifImageDecoder.TryReadMetadata, HeifImageDecoder.TryDecodeThumbnail));
         Should.Throw<ArgumentNullException>(() => new ImageDecoderRegistration(ImageFormat.Heif, null!,
-            HeifImageDecoder.TryReadInfo, HeifImageDecoder.TryDecode, HeifImageDecoder.TryDecodeInto));
+            HeifImageDecoder.TryReadInfo, HeifImageDecoder.TryGetClosestSize, HeifImageDecoder.TryDecode, HeifImageDecoder.TryDecodeInto, HeifImageDecoder.TryReadMetadata, HeifImageDecoder.TryDecodeThumbnail));
         Should.Throw<ArgumentNullException>(() => new ImageDecoderRegistration(ImageFormat.Heif, HeifImageDecoder.CanDecode,
-            HeifImageDecoder.TryReadInfo, HeifImageDecoder.TryDecode, null!));
+            HeifImageDecoder.TryReadInfo, HeifImageDecoder.TryGetClosestSize, HeifImageDecoder.TryDecode, null!, HeifImageDecoder.TryReadMetadata, HeifImageDecoder.TryDecodeThumbnail));
     }
 
     /// <summary>Registration while other threads decode: no decode fails or sees a torn registry, and every
@@ -179,7 +180,7 @@ public sealed class HeifFacadeTests : IDisposable
         byte[] heif = HeifTests.ReadFixture("synth-screen-testsrc2-1280x720-main8.heic");
         byte[] png = PngWriter.Encode(Enumerable.Range(0, 16 * 16 * 4).Select(i => (byte)i).ToArray(), 16, 16);
         SimdCodecs.Register(HeifImageDecoder.Registration);
-        HeifImageDecoder.TryDecode(heif, out var expected).ShouldBeTrue();
+        HeifImageDecoder.TryDecode(heif, out var expected, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         byte[] expectedPixels = expected.Pixels.ToArray();
         int before = SimdCodecs.RegisteredCount;
 
@@ -223,7 +224,26 @@ public sealed class HeifFacadeTests : IDisposable
     /// <summary>A stand-in codec that claims streams starting with <paramref name="magic"/> and reports a 1×1
     /// AVIF; its signature test captures <paramref name="magic"/>, so each call is a distinct codec.</summary>
     private static ImageDecoderRegistration Fake(byte[] magic) =>
-        new(ImageFormat.Avif, header => header.StartsWith(magic), FakeInfo, FakeDecode, (_, _, _, _) => false);
+        new(ImageFormat.Avif, header => header.StartsWith(magic), FakeInfo, FakeClosestSize, FakeDecode, (_, _, _, _, _, _) => false,
+            FakeMetadata, FakeThumbnail);
+
+    private static bool FakeClosestSize(ReadOnlySpan<byte> data, int w, int h, out int width, out int height, out int scale)
+    {
+        (width, height, scale) = (1, 1, 1);
+        return true;
+    }
+
+    private static bool FakeMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata)
+    {
+        metadata = ImageMetadata.Empty;
+        return true;
+    }
+
+    private static bool FakeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail)
+    {
+        thumbnail = null;
+        return false;
+    }
 
     private static bool FakeInfo(ReadOnlySpan<byte> data, out ImageInfo info)
     {
@@ -231,9 +251,10 @@ public sealed class HeifFacadeTests : IDisposable
         return true;
     }
 
-    private static bool FakeDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image)
+    private static bool FakeDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options, CancellationToken cancellationToken)
     {
-        image = new RasterImage(1, 1, 3, SampleFormat.UInt8, [0, 0, 0]);
+        image = RasterImage.Wrap(1, 1, 3, SampleFormat.UInt8, [0, 0, 0]);
         return true;
     }
 }

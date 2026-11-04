@@ -13,7 +13,7 @@ namespace Sdcb.SimdCodecs.Tests;
 public sealed class PixelStretchTests
 {
     private static RasterImage FloatImage(int width, int height, params float[] rgba) =>
-        new(width, height, 4, SampleFormat.Float32, MemoryMarshal.AsBytes(rgba.AsSpan()).ToArray());
+        RasterImage.Wrap(width, height, 4, SampleFormat.Float32, MemoryMarshal.AsBytes(rgba.AsSpan()).ToArray());
 
     [Fact]
     public void Auto_range_maps_the_smallest_colour_to_0_and_the_largest_to_255()
@@ -69,7 +69,7 @@ public sealed class PixelStretchTests
     public void Integer_images_stretch_their_normalised_values()
     {
         // 8-bit grey 64..192 normalises to 0.25..0.75 and stretches onto the full range.
-        var grey = new RasterImage(2, 1, 1, SampleFormat.UInt8, [64, 192]);
+        var grey = RasterImage.Wrap(2, 1, 1, SampleFormat.UInt8, [64, 192]);
 
         PixelConverter.StretchToRgba8(grey).ShouldBe(new byte[] { 0, 0, 0, 255, 255, 255, 255, 255 });
     }
@@ -119,7 +119,7 @@ public sealed class PixelStretchTests
     public void Srgb_encoding_brightens_a_reconstructed_gain_map_hdr()
     {
         // The reconstructed HDR is linear light: stretched as is, its mid-tones sit far below the SDR base's.
-        SimdCodecs.TryDecode(GainMapFacadeTests.BuildUltraHdr(out _), out var hdr).ShouldBeTrue();
+        SimdCodecs.TryDecode(GainMapFacadeTests.BuildUltraHdr(out _), out var hdr, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         hdr.ColorEncoding.Transfer.ShouldBe(TransferFunction.Linear);
 
         var plain = PixelConverter.StretchToRgba8(hdr);

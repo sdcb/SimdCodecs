@@ -157,16 +157,17 @@ public sealed class WebpAnimationDecoder
     /// <summary>Decodes and copies the next full-canvas frame into <paramref name="canvasRgba"/>.</summary>
     /// <param name="canvasRgba">Destination with at least width × height × 4 bytes.</param>
     /// <param name="frame">Metadata for the decoded frame, or the default value at end of input.</param>
+    /// <param name="cancellationToken">Cancellation token checked before decoding the frame.</param>
     /// <returns>True when a frame was decoded; false after the final frame.</returns>
     /// <exception cref="ArgumentException">The destination is too small.</exception>
-    public bool TryDecodeNextFrame(Span<byte> canvasRgba, out WebpFrameInfo frame)
+    public bool TryDecodeNextFrame(Span<byte> canvasRgba, out WebpFrameInfo frame, CancellationToken cancellationToken = default)
     {
         if (canvasRgba.Length < _canvas.Length)
         {
             throw new ArgumentException("The destination is too small for the animation canvas.", nameof(canvasRgba));
         }
 
-        if (!DecodeNextFrame())
+        if (!DecodeNextFrame(cancellationToken))
         {
             frame = default;
             return false;
@@ -179,8 +180,9 @@ public sealed class WebpAnimationDecoder
 
     /// <summary>Positions the decoder so the next frame returned has the requested index.</summary>
     /// <param name="frameIndex">A zero-based frame index.</param>
+    /// <param name="cancellationToken">Cancellation token checked between frames.</param>
     /// <exception cref="ArgumentOutOfRangeException">The index is outside the animation.</exception>
-    public void Seek(int frameIndex)
+    public void Seek(int frameIndex, CancellationToken cancellationToken = default)
     {
         if ((uint)frameIndex >= (uint)_frameData.Length)
         {
@@ -197,7 +199,8 @@ public sealed class WebpAnimationDecoder
         _nextFrameIndex = start;
         while (_nextFrameIndex < frameIndex)
         {
-            DecodeNextFrame();
+            cancellationToken.ThrowIfCancellationRequested();
+            DecodeNextFrame(cancellationToken);
         }
     }
 
@@ -214,13 +217,14 @@ public sealed class WebpAnimationDecoder
     /// Composites frame <paramref name="frameIndex"/> into <see cref="Canvas"/>: directly when it is the
     /// next frame, otherwise after <see cref="Seek"/> replays from the nearest independent frame.
     /// </summary>
-    internal void DecodeFrame(int frameIndex)
+    internal void DecodeFrame(int frameIndex, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (frameIndex != _nextFrameIndex)
         {
-            Seek(frameIndex);
+            Seek(frameIndex, cancellationToken);
         }
-        DecodeNextFrame();
+        DecodeNextFrame(cancellationToken);
     }
 
     /// <summary>
@@ -248,8 +252,9 @@ public sealed class WebpAnimationDecoder
         return _frameInfos.Length - 1;
     }
 
-    private bool DecodeNextFrame()
+    private bool DecodeNextFrame(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_nextFrameIndex >= _frameData.Length)
         {
             return false;
@@ -276,7 +281,8 @@ public sealed class WebpAnimationDecoder
             alpha,
             frame.Width,
             frame.Height,
-            _fancy);
+            _fancy,
+            cancellationToken);
 
         for (int y = 0; y < frame.Height; y++)
         {

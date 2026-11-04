@@ -187,7 +187,7 @@ public sealed class GifDecisionTests
             for (var i = 0; i < frames.Length; i++)
             {
                 var rgba = new byte[info.Info.Width * info.Info.Height * 4];
-                reader.TryDecodeFrameInto(i, rgba, 0, ImagePixelFormat.Rgba32).ShouldBeTrue($"frame {i}");
+                reader.TryDecodeFrameInto(i, rgba, 0, PixelFormat.Rgba32).ShouldBeTrue($"frame {i}");
                 frames[i] = [.. System.Runtime.InteropServices.MemoryMarshal.Cast<byte, uint>(rgba)];
             }
             return frames;
@@ -412,8 +412,8 @@ public sealed class GifDecisionTests
     {
         var gif = new GifStream(1, 1, Palette(4)).Image(0, 0, 1, 1, [], minCodeSize: minCodeSize, codes: [0, 0]).Trailer();
         SimdCodecs.TryReadInfo(gif, out _).ShouldBeTrue(); // the structure is fine
-        SimdCodecs.TryDecode(gif, out _).ShouldBeFalse();
-        SimdCodecs.TryDecodeInto(gif, new byte[16], 0, ImagePixelFormat.Rgba32).ShouldBeFalse();
+        SimdCodecs.TryDecode(gif, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        SimdCodecs.TryDecodeInto(gif, new byte[16], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Fact]
@@ -473,7 +473,7 @@ public sealed class GifDecisionTests
                 reader.TryGetFrameInfo(0, out var info).ShouldBeTrue();
                 var buffer = new byte[info.Info.Width * info.Info.Height * 4];
                 for (var i = reader.FrameCount - 1; i >= 0; i--)
-                    reader.TryDecodeFrameInto(i, buffer, 0, ImagePixelFormat.Rgba32);
+                    reader.TryDecodeFrameInto(i, buffer, 0, PixelFormat.Rgba32);
             }
         }
     }

@@ -38,16 +38,16 @@ internal static unsafe class Baseline
 
     /// <summary>The baseline's <c>QoiImageDecoder</c> / <c>PnmImageDecoder.TryDecodeInto</c>, to RGBA.</summary>
     public static bool TryDecodeInto(bool qoi, ReadOnlySpan<byte> data, Span<byte> rgba) =>
-        ((delegate*<ReadOnlySpan<byte>, Span<byte>, int, ImagePixelFormat, bool>)(qoi ? Loaded.Value.QoiDecodeInto : Loaded.Value.PnmDecodeInto))(
-            data, rgba, 0, ImagePixelFormat.Rgba32);
+        ((delegate*<ReadOnlySpan<byte>, Span<byte>, int, PixelFormat, bool>)(qoi ? Loaded.Value.QoiDecodeInto : Loaded.Value.PnmDecodeInto))(
+            data, rgba, 0, PixelFormat.Rgba32);
 
     /// <summary>The baseline's <c>QoiEncoder.Encode(pixels, width, height, format, Srgb, 0)</c>.</summary>
-    public static byte[] EncodeQoi(byte[] pixels, int width, int height, ImagePixelFormat format) =>
-        ((delegate*<ReadOnlySpan<byte>, int, int, ImagePixelFormat, byte, int, byte[]>)Loaded.Value.QoiEncode)(pixels, width, height, format, 0, 0);
+    public static byte[] EncodeQoi(byte[] pixels, int width, int height, PixelFormat format) =>
+        ((delegate*<ReadOnlySpan<byte>, int, int, PixelFormat, byte, int, byte[]>)Loaded.Value.QoiEncode)(pixels, width, height, format, 0, 0);
 
     /// <summary>The baseline's <c>PnmEncoder.Encode(pixels, width, height, format, options, 0)</c>, the options copied
     /// across by property name.</summary>
-    public static Func<byte[], int, int, ImagePixelFormat, byte[]> CreatePnmEncoder(PnmEncodeOptions options)
+    public static Func<byte[], int, int, PixelFormat, byte[]> CreatePnmEncoder(PnmEncodeOptions options)
     {
         var bound = Loaded.Value;
         var copy = Activator.CreateInstance(bound.PnmOptionsType!)!;
@@ -60,7 +60,7 @@ internal static unsafe class Baseline
         }
         var fn = bound.PnmEncode;
         return (pixels, width, height, format) =>
-            ((delegate*<ReadOnlySpan<byte>, int, int, ImagePixelFormat, object, int, byte[]>)fn)(pixels, width, height, format, copy, 0);
+            ((delegate*<ReadOnlySpan<byte>, int, int, PixelFormat, object, int, byte[]>)fn)(pixels, width, height, format, copy, 0);
     }
 
     private static Bound Load()
@@ -83,7 +83,7 @@ internal static unsafe class Baseline
             bound.PnmDecodeInto = Pointer(pnm.GetType("Sdcb.SimdCodecs.Pnm.PnmImageDecoder"), "TryDecodeInto", 4);
             bound.PnmOptionsType = pnm.GetType("Sdcb.SimdCodecs.Pnm.PnmEncodeOptions");
             bound.PnmEncode = pnm.GetType("Sdcb.SimdCodecs.Pnm.PnmEncoder")?.GetMethods(BindingFlags.Public | BindingFlags.Static).SingleOrDefault(m =>
-                    m.Name == "Encode" && m.GetParameters() is { Length: 6 } p && p[3].ParameterType.Name == nameof(ImagePixelFormat) && p[4].ParameterType.Name == "PnmEncodeOptions")
+                    m.Name == "Encode" && m.GetParameters() is { Length: 6 } p && p[3].ParameterType.Name == nameof(PixelFormat) && p[4].ParameterType.Name == "PnmEncodeOptions")
                 ?.MethodHandle.GetFunctionPointer() ?? IntPtr.Zero;
         }
         return bound;

@@ -52,50 +52,74 @@ internal sealed class WebpFrameReader : IImageFrameReader
         return true;
     }
 
-    public bool TryDecodeFrame(int index, [NotNullWhen(true)] out IDecodedImage? image)
+    public bool TryDecodeFrame(int index, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         var animation = Check(index);
         if (animation is null)
-            return WebpImageDecoder.TryDecode(_data.Span, out image);
+            return WebpImageDecoder.TryDecode(_data.Span, out image, options, cancellationToken);
 
         image = null;
-        if (!TryComposite(animation, index)) return false;
+        options?.Validate(_frameInfo.Width, _frameInfo.Height, supportsScale: false);
+        if (!TryComposite(animation, index, cancellationToken)) return false;
+
         var canvas = animation.Canvas;
         int width = _frameInfo.Width, height = _frameInfo.Height, channels = _frameInfo.Channels;
-        var pixels = new byte[width * height * channels];
-        if (channels == 4)
+        var raster = RasterImage.Create(width, height, channels, SampleFormat.UInt8, options?.Pool,
+            iccProfile: _icc, colorEncoding: ColorEncoding.AssumedSrgb, bitDepth: 8);
+        try
         {
-            canvas.CopyTo(pixels);
-        }
-        else
-        {
-            for (var y = 0; y < height; y++)
+            if (channels == 4)
             {
-                PixelConverter.ConvertRow(canvas.Slice(y * width * 4, width * 4), 4, SampleFormat.UInt8,
-                    pixels.AsSpan(y * width * 3, width * 3), ImagePixelFormat.Rgb24, width);
+                canvas.CopyTo(raster.WritablePixels);
+            }
+            else
+            {
+                int rgbRow = checked(width * 3);
+                int rgbaRow = checked(width * 4);
+                for (var y = 0; y < height; y++)
+                {
+                    PixelConverter.ConvertRow(canvas.Slice(y * rgbaRow, rgbaRow), PixelFormat.Rgba32,
+                        raster.WritablePixels.Slice(y * rgbRow, rgbRow), PixelFormat.Rgb24, width);
+                }
             }
         }
-        image = new RasterImage(width, height, channels, SampleFormat.UInt8, pixels, _icc, ColorEncoding.AssumedSrgb);
+        catch (Exception)
+        {
+            raster.Dispose();
+            throw;
+        }
+
+        image = DecodeOptions.Apply(raster, options);
         return true;
     }
 
-    public bool TryDecodeFrameInto(int index, Span<byte> destination, int stride, ImagePixelFormat format)
+    public bool TryDecodeFrameInto(int index, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         var animation = Check(index);
         if (animation is null)
-            return WebpImageDecoder.TryDecodeInto(_data.Span, destination, stride, format);
+            return WebpImageDecoder.TryDecodeInto(_data.Span, destination, stride, format, options, cancellationToken);
+
+        if (options is { IsFullImage: false })
+            return ImageDecoderFallback.TryDecodeFrameInto(this, index, destination, stride, format, options, cancellationToken);
+
+        options?.Validate(_frameInfo.Width, _frameInfo.Height, supportsScale: false);
 
         int width = _frameInfo.Width, height = _frameInfo.Height;
         if (!PixelConverter.TryGetLayout(width, height, format, stride, destination.Length, out var rowStride))
             return false;
-        if (!TryComposite(animation, index)) return false;
+        if (!TryComposite(animation, index, cancellationToken)) return false;
+
         // The canvas is RGBA whatever the declared channels: opaque where the container says it has no
         // alpha, which is what ToRgba8 of the RGB frame gives too.
         var canvas = animation.Canvas;
+        int rowBytes = checked(width * format.BytesPerPixel);
+        int rgbaRow = checked(width * 4);
         for (var y = 0; y < height; y++)
         {
-            PixelConverter.ConvertRow(canvas.Slice(y * width * 4, width * 4), 4, SampleFormat.UInt8,
-                destination.Slice(y * rowStride), format, width);
+            PixelConverter.ConvertRow(canvas.Slice(y * rgbaRow, rgbaRow), PixelFormat.Rgba32,
+                destination.Slice(y * rowStride, rowBytes), format, width);
         }
         return true;
     }
@@ -118,11 +142,11 @@ internal sealed class WebpFrameReader : IImageFrameReader
     // A frame that fails leaves the decoder consistent: its bitstream is decoded before it touches the
     // canvas, and the previous frame's disposal it may already have applied is idempotent, so asking for
     // the same frame again, or any other, starts from a canvas that matches the decoder's position.
-    private static bool TryComposite(WebpAnimationDecoder animation, int index)
+    private static bool TryComposite(WebpAnimationDecoder animation, int index, CancellationToken cancellationToken)
     {
         try
         {
-            animation.DecodeFrame(index);
+            animation.DecodeFrame(index, cancellationToken);
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)

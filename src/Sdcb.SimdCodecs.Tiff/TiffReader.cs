@@ -173,7 +173,7 @@ public static partial class TiffReader
     /// others.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">The file has fewer pages.</exception>
-    public static TiffPage ReadPage(ReadOnlySpan<byte> tiff, int pageIndex = 0)
+    public static TiffPage ReadPage(ReadOnlySpan<byte> tiff, int pageIndex = 0, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(pageIndex);
         var fileIsLE = ReadHeader(tiff);
@@ -187,7 +187,7 @@ public static partial class TiffReader
             throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
 
         var sink = new BufferingSink();
-        var (page, _) = ReadPage(tiff, (int)ifdOffset, fileIsLE, pageIndex, ref sink);
+        var (page, _) = ReadPage(tiff, (int)ifdOffset, fileIsLE, pageIndex, ref sink, cancellationToken);
         return page with { Pixels = sink.TakePixels() };
     }
 
@@ -233,9 +233,10 @@ public static partial class TiffReader
     }
 
     private static (TiffPage Page, int NextIfdOffset) ReadPage<TSink>(ReadOnlySpan<byte> tiff, int ifdOffset,
-        bool fileIsLE, int pageIndex, ref TSink sink)
+        bool fileIsLE, int pageIndex, ref TSink sink, CancellationToken cancellationToken = default)
         where TSink : ITiffStripSink
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // ---- Parse and validate the IFD (shared with the on-demand segment read) ----
         var src = new SpanBytes(tiff);
         var ifd = TiffIfdParser.Parse(ref src, ifdOffset, fileIsLE);
@@ -288,7 +289,8 @@ public static partial class TiffReader
             GpsInfoIfdOffset: gpsIfdOffset,
             FileIsLittleEndian: fileIsLE,
             TileWidth: isTiled ? tileWidth : 0,
-            TileHeight: isTiled ? tileHeight : 0);
+            TileHeight: isTiled ? tileHeight : 0,
+            StoredBitsPerSample: ifd.BitsPerSample);
 
         if (!sink.BeginPage(pageIndex, page))
         {
@@ -369,6 +371,7 @@ public static partial class TiffReader
             {
                 for (var tileY = 0; tileY < tilesDown; tileY++)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var firstRow = geometry.FirstRow(tileY);
                     var rowsInBand = geometry.RowCount(tileY);
 
@@ -408,6 +411,7 @@ public static partial class TiffReader
             {
                 for (var strip = 0; strip < geometry.SegmentsDown; strip++)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var rowCursor = geometry.FirstRow(strip);
                     var rowCount = geometry.RowCount(strip);
 
@@ -903,4 +907,5 @@ public sealed record TiffPage(
     int? GpsInfoIfdOffset,
     bool FileIsLittleEndian,
     int TileWidth = 0,
-    int TileHeight = 0);
+    int TileHeight = 0,
+    int StoredBitsPerSample = 0);

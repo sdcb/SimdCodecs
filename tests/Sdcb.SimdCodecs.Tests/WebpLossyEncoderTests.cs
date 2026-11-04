@@ -81,11 +81,11 @@ public sealed class WebpLossyEncoderTests
                 foreach (int quality in new[] { 5, 50, 90, 100 })
                 {
                     string because = $"{kind} {w}x{h} effort {effort} q{quality}";
-                    byte[] webp = WebpEncoder.EncodeLossy(source, w, h, ImagePixelFormat.Rgba32,
+                    byte[] webp = WebpEncoder.EncodeLossy(source, w, h, PixelFormat.Rgba32,
                         new WebpLossyEncodeOptions { Effort = effort, Quality = quality });
                     WebpDecoder.ReadInfo(webp).Format.ShouldBe(WebpFormat.Lossy, because);
                     var ours = new byte[w * h * 4];
-                    WebpDecoder.DecodeTo(webp, ours);
+                    WebpDecoder.DecodeTo(webp, ours, cancellationToken: TestContext.Current.CancellationToken);
                     MagickRgba(webp).ShouldBe(ours, because);
                 }
             }
@@ -102,13 +102,13 @@ public sealed class WebpLossyEncoderTests
         foreach (int effort in new[] { 0, 4, 6 })
         {
             byte[] source = Content(kind, 131, 75, effort + kind.Length);
-            byte[] webp = WebpEncoder.EncodeLossy(source, 131, 75, ImagePixelFormat.Rgba32, new WebpLossyEncodeOptions { Effort = effort });
+            byte[] webp = WebpEncoder.EncodeLossy(source, 131, 75, PixelFormat.Rgba32, new WebpLossyEncodeOptions { Effort = effort });
             string input = Path.Combine(directory, $"{Guid.NewGuid():N}.webp");
             File.WriteAllBytes(input, webp);
             try
             {
                 var ours = new byte[source.Length];
-                WebpDecoder.DecodeTo(webp, ours);
+                WebpDecoder.DecodeTo(webp, ours, cancellationToken: TestContext.Current.CancellationToken);
                 WebpOracleTests.RunDwebp(dwebp, input, yuv: false, noFancy: false).ShouldBe(ours, $"{kind} effort {effort}");
             }
             finally
@@ -136,14 +136,14 @@ public sealed class WebpLossyEncoderTests
                 foreach (int quality in new[] { 60, 100 })
                 {
                     byte[] source = Content("noise", w, h, w * 31 + h + quality);
-                    byte[] webp = WebpEncoder.EncodeLossy(source, w, h, ImagePixelFormat.Rgba32,
+                    byte[] webp = WebpEncoder.EncodeLossy(source, w, h, PixelFormat.Rgba32,
                         new WebpLossyEncodeOptions { Effort = 6, Quality = quality });
                     string input = Path.Combine(directory, $"{Guid.NewGuid():N}.webp");
                     File.WriteAllBytes(input, webp);
                     try
                     {
                         var ours = new byte[source.Length];
-                        WebpDecoder.DecodeTo(webp, ours);
+                        WebpDecoder.DecodeTo(webp, ours, cancellationToken: TestContext.Current.CancellationToken);
                         WebpOracleTests.RunDwebp(dwebp, input, yuv: false, noFancy: false).ShouldBe(ours, $"{w}x{h} q{quality}");
                     }
                     finally
@@ -172,7 +172,7 @@ public sealed class WebpLossyEncoderTests
                 using var encoder = new Vp8Encoder(w, h, Vp8EncoderConfig.For(60, effort));
                 encoder.SetArgb(argb);
                 byte[] frame = encoder.Encode();
-                using Vp8Yuv decoded = Vp8Decoder.Decode(frame, w, h, applyLoopFilter: false);
+                using Vp8Yuv decoded = Vp8Decoder.Decode(frame, w, h, applyLoopFilter: false, cancellationToken: TestContext.Current.CancellationToken);
                 encoder.Reconstruction(out byte[] y, out byte[] u, out byte[] v);
                 y.ShouldBe(decoded.Y, $"{w}x{h} effort {effort} luma");
                 u.ShouldBe(decoded.U, $"{w}x{h} effort {effort} U");
@@ -200,9 +200,9 @@ public sealed class WebpLossyEncoderTests
         int previousSize = 0;
         foreach (int quality in new[] { 10, 40, 70, 95 })
         {
-            byte[] webp = WebpEncoder.EncodeLossy(source, w, h, ImagePixelFormat.Rgba32, new WebpLossyEncodeOptions { Quality = quality });
+            byte[] webp = WebpEncoder.EncodeLossy(source, w, h, PixelFormat.Rgba32, new WebpLossyEncodeOptions { Quality = quality });
             var decoded = new byte[source.Length];
-            WebpDecoder.DecodeTo(webp, decoded);
+            WebpDecoder.DecodeTo(webp, decoded, cancellationToken: TestContext.Current.CancellationToken);
             double se = 0;
             for (int i = 0; i < source.Length; i++)
             {
@@ -220,20 +220,21 @@ public sealed class WebpLossyEncoderTests
     }
 
     [Theory]
-    [InlineData(ImagePixelFormat.Bgra32)]
-    [InlineData(ImagePixelFormat.Rgb24)]
-    [InlineData(ImagePixelFormat.Bgr24)]
-    [InlineData(ImagePixelFormat.Gray8)]
-    public void Every_input_layout_gives_the_file_of_the_same_rgba(ImagePixelFormat format)
+    [InlineData("Bgra32")]
+    [InlineData("Rgb24")]
+    [InlineData("Bgr24")]
+    [InlineData("Gray8")]
+    public void Every_input_layout_gives_the_file_of_the_same_rgba(string formatName)
     {
+        var format = PixelFormatByName(formatName);
         const int width = 37, height = 11, stride = 37 * 4 + 5;
-        byte[] rgba = Content(format == ImagePixelFormat.Gray8 ? "flat" : "pattern", width, height, 3);
-        if (format == ImagePixelFormat.Gray8)
+        byte[] rgba = Content(format == PixelFormat.Gray8 ? "flat" : "pattern", width, height, 3);
+        if (format == PixelFormat.Gray8)
         {
             for (int i = 0; i < rgba.Length; i += 4) rgba[i] = rgba[i + 2] = rgba[i + 1] = (byte)(i * 7 / 4);
         }
 
-        int bpp = PixelConverter.BytesPerPixel(format);
+        int bpp = format.BytesPerPixel;
         var input = new byte[stride * height];
         for (int y = 0; y < height; y++)
         {
@@ -241,17 +242,17 @@ public sealed class WebpLossyEncoderTests
             {
                 int s = 4 * (y * width + x), d = y * stride + x * bpp;
                 byte r = rgba[s], g = rgba[s + 1], b = rgba[s + 2];
-                switch (format)
+                switch (format.Layout)
                 {
-                    case ImagePixelFormat.Bgra32: input[d] = b; input[d + 1] = g; input[d + 2] = r; input[d + 3] = 255; break;
-                    case ImagePixelFormat.Rgb24: input[d] = r; input[d + 1] = g; input[d + 2] = b; break;
-                    case ImagePixelFormat.Bgr24: input[d] = b; input[d + 1] = g; input[d + 2] = r; break;
+                    case ChannelLayout.Bgra: input[d] = b; input[d + 1] = g; input[d + 2] = r; input[d + 3] = 255; break;
+                    case ChannelLayout.Rgb: input[d] = r; input[d + 1] = g; input[d + 2] = b; break;
+                    case ChannelLayout.Bgr: input[d] = b; input[d + 1] = g; input[d + 2] = r; break;
                     default: input[d] = g; break;
                 }
             }
         }
 
-        byte[] expected = WebpEncoder.EncodeLossy(rgba, width, height, ImagePixelFormat.Rgba32);
+        byte[] expected = WebpEncoder.EncodeLossy(rgba, width, height, PixelFormat.Rgba32);
         WebpEncoder.EncodeLossy(input, width, height, format, null, stride).ShouldBe(expected);
         using var stream = new MemoryStream();
         WebpEncoder.EncodeLossy(input, width, height, format, stream, null, stride);
@@ -262,12 +263,12 @@ public sealed class WebpLossyEncoderTests
     public void Bad_arguments_are_rejected()
     {
         var pixels = new byte[16 * 4];
-        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeLossy(pixels, 0, 4, ImagePixelFormat.Rgba32));
-        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeLossy(pixels, 16384, 1, ImagePixelFormat.Rgba32));
-        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeLossy(pixels, 5, 4, ImagePixelFormat.Rgba32));
-        Should.Throw<ArgumentOutOfRangeException>(() => WebpEncoder.EncodeLossy(pixels, 4, 4, ImagePixelFormat.Rgba32,
+        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeLossy(pixels, 0, 4, PixelFormat.Rgba32));
+        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeLossy(pixels, 16384, 1, PixelFormat.Rgba32));
+        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeLossy(pixels, 5, 4, PixelFormat.Rgba32));
+        Should.Throw<ArgumentOutOfRangeException>(() => WebpEncoder.EncodeLossy(pixels, 4, 4, PixelFormat.Rgba32,
             new WebpLossyEncodeOptions { Quality = 101 }));
-        Should.Throw<ArgumentOutOfRangeException>(() => WebpEncoder.EncodeLossy(pixels, 4, 4, ImagePixelFormat.Rgba32,
+        Should.Throw<ArgumentOutOfRangeException>(() => WebpEncoder.EncodeLossy(pixels, 4, 4, PixelFormat.Rgba32,
             new WebpLossyEncodeOptions { Effort = 7 }));
     }
 
@@ -278,4 +279,7 @@ public sealed class WebpLossyEncoderTests
         using var pixels = image.GetPixels();
         return [.. pixels.ToShortArray(PixelMapping.RGBA)!.Select(v => (byte)(v >> 8))];
     }
+
+    private static PixelFormat PixelFormatByName(string name) =>
+        (PixelFormat)typeof(PixelFormat).GetProperty(name)!.GetValue(null)!;
 }

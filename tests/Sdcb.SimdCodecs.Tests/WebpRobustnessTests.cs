@@ -90,12 +90,12 @@ public sealed class WebpRobustnessTests
         byte[] animation = BuildTinyFrameAnimation(64, 32, frames: 8);
         const long exact = 64 * 32 * 8;
 
-        WebpAnimation decoded = WebpDecoder.DecodeAnimation(animation, exact);
+        WebpAnimation decoded = WebpDecoder.DecodeAnimation(animation, exact, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(8, decoded.Frames.Count);
         Assert.All(decoded.Frames, frame => Assert.Equal(64 * 32 * 4, frame.Rgba.Length));
 
-        Assert.Throws<InvalidDataException>(() => WebpDecoder.DecodeAnimation(animation, exact - 1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => WebpDecoder.DecodeAnimation(animation, 0));
+        Assert.Throws<InvalidDataException>(() => WebpDecoder.DecodeAnimation(animation, exact - 1, cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Throws<ArgumentOutOfRangeException>(() => WebpDecoder.DecodeAnimation(animation, 0, cancellationToken: TestContext.Current.CancellationToken));
 
         // The streaming decoder holds one canvas whatever the frame count, so it stays available.
         var streaming = new WebpAnimationDecoder(BuildTinyFrameAnimation(4096, 4096, frames: 64));

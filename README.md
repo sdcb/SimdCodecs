@@ -38,13 +38,25 @@ File.WriteAllBytes("photo.jpg", jpeg);
 
 The rest of the facade:
 
-- `SimdCodecs.TryDecodeInto(file, buffer, stride, format)` — BGRA (Windows / WPF / Skia), RGB, BGR (OpenCV)
-  or grey (OCR) straight into your buffer, at any row stride. JPEG and PNG write these natively, with no RGBA
-  frame in between; a colour JPEG's grey is its Y plane.
-- `SimdCodecs.TryDecode(file, out image)` — the native layout: channel count (grey JPEG 1, colour JPEG 3),
-  8/16-bit or float samples, ICC profile.
-- `SimdCodecs.TryReadInfo(file, out info)` — from the headers alone: format, stored bit depth, EXIF
-  orientation (reported, never applied), frame or page count.
+- `SimdCodecs.TryDecodeInto(file, buffer, stride, format)` — any `PixelFormat` straight into your buffer, at any
+  row stride: BGRA (Windows / Skia), `Bgra32Premultiplied` (WPF, Direct2D, compositors), RGB, BGR (OpenCV), grey
+  (OCR), and their 16-bit twins (`Rgba64`, `Gray16`, …) without losing a 16-bit PNG's or a 10-bit HEIC's precision.
+  JPEG and PNG write the 8-bit layouts natively, with no RGBA frame in between; a colour JPEG's grey is its Y plane.
+- `SimdCodecs.TryDecode(file, out image, options, cancellationToken)` — the native layout: channel count, 8/16-bit or
+  float samples, real bit depth, ICC, Exif / XMP (`image.Metadata`). `DecodeOptions` asks for a region, a scaled
+  decode (JPEG 1/2–1/8 in the DCT domain; `TryGetClosestSize` says what a codec does natively) or pooled memory
+  (dispose the image to return it). Every entry point takes a `CancellationToken`.
+- `SimdCodecs.TryReadInfo(file, out info)` — from the headers alone: format, stored bit depth, colour encoding (is
+  it PQ / HLG HDR?), resolution (DPI), EXIF orientation (reported, never applied), frame or page count, thumbnail.
+- `SimdCodecs.TryReadMetadata(file, out metadata)` / `TryDecodeThumbnail(file, out thumb)` — the Exif, XMP and ICC
+  blocks for a transcoder to pass on, and the embedded preview (Exif IFD1, HEIF `thmb`).
+- `ImageDecoder.Open(stream | path | memory)` — a WIC-style session: `Format`, `FrameCount`, then
+  `GetFrame(i).Decode(options)` or `.CopyPixels(region, format, buffer, stride)`; `OpenAsync` for a non-seekable stream.
+- `SimdCodecs.Encode(image, ImageFormat.Png, stream)` / `CreateEncoder(format, writer)` — the encoder abstraction:
+  every encoder takes every `PixelFormat` (premultiplied BGRA from a UI framework included), rows pushed in any
+  stride, and writes the image's metadata; `GetClosestInputFormat` shows where an 8-bit-only format narrows.
+- `SimdCodecs.TryReadPlanarInfo` / `TryDecodePlanes` — the YCbCr planes as coded (HEIF), for video pipelines and
+  GPU upload.
 - `SimdCodecs.DetectFormat(file)` — also names formats it recognises but does not decode (AVIF, JPEG XL,
   …); `SimdCodecs.IsDecodable(format)` tells the two apart. HEIF is decodable once its package is registered.
 - `SimdCodecs.Register(HeifImageDecoder.Registration)` — enables HEIF / HEIC in every entry point above. HEVC is
@@ -53,6 +65,8 @@ The rest of the facade:
 - `SimdCodecs.TryOpenFrames(file, out reader)` — every frame, by index, in any layout: animated WebP / GIF
   frames with durations, multi-page TIFF pages, the images of an icon (any other image is one frame).
   `reader.EnumerateFramesInto(buffer, stride, format)` plays them in order through one buffer.
+
+Upgrading from 1.x: see [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md).
 
 Each format is also its own package with a richer API: scaled JPEG decoding, TIFF segment reads, WebP
 animation seeking by timestamp, Ultra HDR, and more.
@@ -73,7 +87,7 @@ animation seeking by timestamp, Ultra HDR, and more.
 | Netpbm | ✅ | ✅ | PBM, PGM, PPM plain and raw at any maximum up to 65535, PAM with 1–4 channels, PFM float; native 8/16-bit or float samples, or any layout into your buffer with no allocation; encodes every variant |
 | JPEG 2000 | ✅ | — | Part 1 (T.800), for PDF `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88, for PDF `/JBIG2Decode` |
-| HEIF / HEIC | ✅ | — | Separate opt-in package, registered explicitly (HEVC patents; no patent licence conveyed). HEVC Main / Main 10 / Main Still Picture stills and phone-camera grids, byte-exact with ffmpeg; ICC, nclx, `clap` / `irot` / `imir`; 8-bit output |
+| HEIF / HEIC | ✅ | — | Separate opt-in package, registered explicitly (HEVC patents; no patent licence conveyed). HEVC Main / Main 10 / Main Still Picture stills and phone-camera grids, byte-exact with ffmpeg; ICC, nclx, Exif / XMP items, `thmb` thumbnails, `clap` / `irot` / `imir`; 8-bit, or 16-bit for Main 10; YCbCr planes |
 | EXIF | ✅ | ✅ | From JPEG, TIFF, PNG and WebP; `ExifWriter` builds a block for the JPEG encoder |
 | ICC profiles | ✅ | ✅ | Decoders return embedded profiles; `IccProfiles.Describe` names one; bundled sRGB v4 profile; splice a profile into an existing JPEG |
 
@@ -160,7 +174,7 @@ All packages ship in lockstep under one version.
 | `Sdcb.SimdCodecs.Heif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Heif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Heif) | HEIF / HEIC decoder (HEVC). Not referenced by `Sdcb.SimdCodecs`: install it and call `SimdCodecs.Register(HeifImageDecoder.Registration)`. Conveys no HEVC patent licence |
 | `Sdcb.SimdCodecs.Exif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Exif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Exif) | EXIF reader and writer |
 | `Sdcb.SimdCodecs.Color.Icc` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Color.Icc.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Color.Icc) | sRGB v4 ICC profile, `cicp` tag injector |
-| `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | Shared types: `IImageDecoder`, `RasterImage`, `ImagePixelFormat` / `PixelConverter`, `IImageFrameReader` (frames and pages), H.273 colour vocabulary |
+| `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | Shared types: `IImageDecoder` / `IImageEncoder`, `IDecodedImage` / `RasterImage`, `PixelFormat` / `PixelConverter`, `DecodeOptions`, `ImageMetadata`, `IPlanarImageDecoder`, `IImageFrameReader` (frames and pages), H.273 colour vocabulary |
 
 <details>
 <summary>Feature details per package</summary>
@@ -188,13 +202,13 @@ All packages ship in lockstep under one version.
   frames for opaque animations.
 - **Bmp** — the Windows DIB and OS/2 bitmap: core, OS/2 2.x, 40-byte, V2–V5 headers; 1/2/4/8-bit palettes and
   16/24/32-bit; `BI_BITFIELDS` / `BI_ALPHABITFIELDS`; RLE4 / RLE8 with deltas, OS/2 RLE24 and Huffman 1D; `BI_PNG`;
-  top-down rows; V5 ICC; packed DIBs (clipboard, icon images). Decodes into any `ImagePixelFormat` without
+  top-down rows; V5 ICC; packed DIBs (clipboard, icon images). Decodes into any `PixelFormat` without
   allocating; checked pixel for pixel against WIC. The decisions the documentation leaves open are listed in the
   package README.
 - **Ico** — icons and cursors over Bmp and Png: every image, the largest and deepest by default, hotspots; encodes
   multi-size icons and cursors, each image PNG or a 1/4/8/24/32-bit DIB.
 - **Qoi** — the QOI specification: 3- and 4-channel images, the colour space reported (a linear one as a linear
-  transfer); decodes into any `ImagePixelFormat` without allocating; encodes from RGBA, BGRA, RGB, BGR or grey.
+  transfer); decodes into any `PixelFormat` without allocating; encodes from RGBA, BGRA, RGB, BGR or grey.
 - **Pnm** — Netpbm: P1–P6 plain and raw at any maximum up to 65535 (16-bit samples above 255), PAM (P7) with 1–4
   channels, PFM (`Pf` / `PF`) as float samples; only a file's first image. Encodes every format; plain output keeps
   lines within 70 characters. The decisions the format pages leave open are listed in the package README.

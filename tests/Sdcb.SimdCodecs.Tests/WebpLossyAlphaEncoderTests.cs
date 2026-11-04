@@ -68,12 +68,12 @@ public sealed class WebpLossyAlphaEncoderTests
             foreach (int effort in new[] { 0, 4, 6 })
             {
                 string because = $"{kind} {w}x{h} effort {effort}";
-                byte[] webp = WebpEncoder.EncodeLossy(source, w, h, ImagePixelFormat.Rgba32, new WebpLossyEncodeOptions { Effort = effort, Quality = 60 });
+                byte[] webp = WebpEncoder.EncodeLossy(source, w, h, PixelFormat.Rgba32, new WebpLossyEncodeOptions { Effort = effort, Quality = 60 });
                 WebpInfo info = WebpDecoder.ReadInfo(webp);
                 info.Format.ShouldBe(WebpFormat.Lossy, because);
                 info.HasAlpha.ShouldBeTrue(because);
                 var ours = new byte[w * h * 4];
-                WebpDecoder.DecodeTo(webp, ours);
+                WebpDecoder.DecodeTo(webp, ours, cancellationToken: TestContext.Current.CancellationToken);
                 Alpha(ours).ShouldBe(Alpha(source), because);
                 WebpLossyEncoderTests.MagickRgba(webp).ShouldBe(ours, because);
             }
@@ -96,7 +96,7 @@ public sealed class WebpLossyAlphaEncoderTests
                 for (int filter = 0; filter < 4; filter++)
                 {
                     string because = $"{kind} {w}x{h} filter {filter}";
-                    byte[] webp = WebpEncoder.EncodeLossy(source, w, h, ImagePixelFormat.Rgba32,
+                    byte[] webp = WebpEncoder.EncodeLossy(source, w, h, PixelFormat.Rgba32,
                         Vp8EncoderConfig.For(75, 4) with { AlphaFilter = filter });
                     (string _, int offset, int _) = WebpEncoderContainerTests.Chunks(webp).Single(c => c.FourCc == "ALPH");
                     seen.Add(webp[offset]);
@@ -105,7 +105,7 @@ public sealed class WebpLossyAlphaEncoderTests
                     try
                     {
                         var ours = new byte[w * h * 4];
-                        WebpDecoder.DecodeTo(webp, ours);
+                        WebpDecoder.DecodeTo(webp, ours, cancellationToken: TestContext.Current.CancellationToken);
                         Alpha(ours).ShouldBe(Alpha(source), because);
                         WebpOracleTests.RunDwebp(dwebp, file, yuv: false, noFancy: false).ShouldBe(ours, because);
                         (int exit, string output) = WebpEncoderContainerTests.Run(webpinfo, "-diag", file);
@@ -133,7 +133,7 @@ public sealed class WebpLossyAlphaEncoderTests
     public void Opaque_images_have_no_alpha_chunk_and_stay_in_the_simple_format()
     {
         byte[] source = WebpLossyEncoderTests.Content("pattern", 40, 30, 1);
-        byte[] webp = WebpEncoder.EncodeLossy(source, 40, 30, ImagePixelFormat.Rgba32);
+        byte[] webp = WebpEncoder.EncodeLossy(source, 40, 30, PixelFormat.Rgba32);
         WebpEncoderContainerTests.Chunks(webp).Select(c => c.FourCc).ShouldBe(["VP8 "]);
         WebpDecoder.ReadInfo(webp).HasAlpha.ShouldBeFalse();
     }
@@ -142,7 +142,7 @@ public sealed class WebpLossyAlphaEncoderTests
     public void Transparent_images_are_vp8x_with_the_alpha_flag_and_alph_before_vp8()
     {
         byte[] source = Content("radial", 40, 30, 1);
-        byte[] webp = WebpEncoder.EncodeLossy(source, 40, 30, ImagePixelFormat.Rgba32, new WebpLossyEncodeOptions { Xmp = "<x/>"u8.ToArray() });
+        byte[] webp = WebpEncoder.EncodeLossy(source, 40, 30, PixelFormat.Rgba32, new WebpLossyEncodeOptions { Xmp = "<x/>"u8.ToArray() });
         List<(string FourCc, int Offset, int Length)> chunks = WebpEncoderContainerTests.Chunks(webp);
         chunks.Select(c => c.FourCc).ShouldBe(["VP8X", "ALPH", "VP8 ", "XMP "]);
         (webp[chunks[0].Offset] & 0x10).ShouldBe(0x10, "VP8X alpha flag");
@@ -153,10 +153,10 @@ public sealed class WebpLossyAlphaEncoderTests
     {
         const int w = 160, h = 120;
         byte[] source = Content("radial", w, h, 2);
-        byte[] exact = WebpEncoder.EncodeLossy(source, w, h, ImagePixelFormat.Rgba32);
+        byte[] exact = WebpEncoder.EncodeLossy(source, w, h, PixelFormat.Rgba32);
         foreach (int alphaQuality in new[] { 0, 50, 90 })
         {
-            byte[] webp = WebpEncoder.EncodeLossy(source, w, h, ImagePixelFormat.Rgba32, new WebpLossyEncodeOptions { AlphaQuality = alphaQuality });
+            byte[] webp = WebpEncoder.EncodeLossy(source, w, h, PixelFormat.Rgba32, new WebpLossyEncodeOptions { AlphaQuality = alphaQuality });
             (string _, int offset, int _) = WebpEncoderContainerTests.Chunks(webp).Single(c => c.FourCc == "ALPH");
             webp.Length.ShouldBeLessThanOrEqualTo(exact.Length, $"alpha quality {alphaQuality}: never larger than exact");
             if (((webp[offset] >> 4) & 3) == 0)
@@ -170,7 +170,7 @@ public sealed class WebpLossyAlphaEncoderTests
             webp.Length.ShouldBeLessThan(exact.Length, $"alpha quality {alphaQuality}");
 
             var decoded = new byte[w * h * 4];
-            WebpDecoder.DecodeTo(webp, decoded);
+            WebpDecoder.DecodeTo(webp, decoded, cancellationToken: TestContext.Current.CancellationToken);
             byte[] a = Alpha(decoded), s = Alpha(source);
             int levels = 4 + (alphaQuality * 252 + 50) / 100;
             int halfStep = (255 + levels - 2) / (levels - 1) / 2 + 1;
@@ -191,12 +191,12 @@ public sealed class WebpLossyAlphaEncoderTests
     {
         const int w = 128, h = 96;
         byte[] source = Content("binary", w, h, 3);
-        byte[] lean = WebpEncoder.EncodeLossy(source, w, h, ImagePixelFormat.Rgba32);
-        byte[] exact = WebpEncoder.EncodeLossy(source, w, h, ImagePixelFormat.Rgba32, new WebpLossyEncodeOptions { Exact = true });
+        byte[] lean = WebpEncoder.EncodeLossy(source, w, h, PixelFormat.Rgba32);
+        byte[] exact = WebpEncoder.EncodeLossy(source, w, h, PixelFormat.Rgba32, new WebpLossyEncodeOptions { Exact = true });
         lean.Length.ShouldBeLessThan(exact.Length * 9 / 10, "noise under alpha 0 is not coded by default");
 
         var decoded = new byte[w * h * 4];
-        WebpDecoder.DecodeTo(exact, decoded);
+        WebpDecoder.DecodeTo(exact, decoded, cancellationToken: TestContext.Current.CancellationToken);
         Alpha(decoded).ShouldBe(Alpha(source));
         double invisibleError = 0, sourceSpread = 0;
         int count = 0;
@@ -301,9 +301,9 @@ public sealed class WebpLossyAlphaEncoderTests
     public void Bad_alpha_quality_is_rejected()
     {
         var pixels = new byte[16 * 4];
-        Should.Throw<ArgumentOutOfRangeException>(() => WebpEncoder.EncodeLossy(pixels, 4, 4, ImagePixelFormat.Rgba32,
+        Should.Throw<ArgumentOutOfRangeException>(() => WebpEncoder.EncodeLossy(pixels, 4, 4, PixelFormat.Rgba32,
             new WebpLossyEncodeOptions { AlphaQuality = 101 }));
-        Should.Throw<ArgumentOutOfRangeException>(() => WebpEncoder.EncodeLossy(pixels, 4, 4, ImagePixelFormat.Rgba32,
+        Should.Throw<ArgumentOutOfRangeException>(() => WebpEncoder.EncodeLossy(pixels, 4, 4, PixelFormat.Rgba32,
             new WebpLossyEncodeOptions { AlphaQuality = -1 }));
     }
 }

@@ -37,8 +37,8 @@ internal static unsafe class Baseline
 
     /// <summary>The baseline's <c>BmpImageDecoder</c> / <c>IcoImageDecoder.TryDecodeInto</c>, to RGBA.</summary>
     public static bool TryDecodeInto(bool icon, ReadOnlySpan<byte> data, Span<byte> rgba) =>
-        ((delegate*<ReadOnlySpan<byte>, Span<byte>, int, ImagePixelFormat, bool>)(icon ? Loaded.Value.IcoDecodeInto : Loaded.Value.BmpDecodeInto))(
-            data, rgba, 0, ImagePixelFormat.Rgba32);
+        ((delegate*<ReadOnlySpan<byte>, Span<byte>, int, PixelFormat, bool>)(icon ? Loaded.Value.IcoDecodeInto : Loaded.Value.BmpDecodeInto))(
+            data, rgba, 0, PixelFormat.Rgba32);
 
     /// <summary>The baseline's <c>BmpEncoder.Encode(pixels, width, height, Rgba32, options)</c>, the options copied
     /// across by property name.</summary>
@@ -55,7 +55,7 @@ internal static unsafe class Baseline
         }
         var fn = bound.BmpEncode;
         return (pixels, width, height) =>
-            ((delegate*<ReadOnlySpan<byte>, int, int, ImagePixelFormat, object, int, byte[]>)fn)(pixels, width, height, ImagePixelFormat.Rgba32, copy, 0);
+            ((delegate*<ReadOnlySpan<byte>, int, int, PixelFormat, object, int, byte[]>)fn)(pixels, width, height, PixelFormat.Rgba32, copy, 0);
     }
 
     private static Bound Load()
@@ -69,7 +69,7 @@ internal static unsafe class Baseline
         bound.OptionsType = bmp.GetType("Sdcb.SimdCodecs.Bmp.BmpEncodeOptions");
         var encoder = bmp.GetType("Sdcb.SimdCodecs.Bmp.BmpEncoder");
         var encode = encoder?.GetMethods(BindingFlags.Public | BindingFlags.Static).SingleOrDefault(m =>
-            m.Name == "Encode" && m.GetParameters() is { Length: 6 } p && p[3].ParameterType.Name == nameof(ImagePixelFormat));
+            m.Name == "Encode" && m.GetParameters() is { Length: 6 } p && p[3].ParameterType.Name == nameof(PixelFormat));
         bound.BmpEncode = encode?.MethodHandle.GetFunctionPointer() ?? IntPtr.Zero;
         if (File.Exists(Path.Combine(dir, "Sdcb.SimdCodecs.Ico.dll")))
         {

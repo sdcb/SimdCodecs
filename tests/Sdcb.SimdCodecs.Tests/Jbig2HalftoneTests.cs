@@ -25,7 +25,7 @@ public sealed class Jbig2HalftoneTests
     {
         var (stream, expected) = Build(levels, 8, 6, 4, 4);
 
-        var image = Jbig2Decoder.Decode(stream, expected.Width, expected.Height);
+        var image = Jbig2Decoder.Decode(stream, expected.Width, expected.Height, cancellationToken: TestContext.Current.CancellationToken);
         image.Bits.ToArray().ShouldBe(expected.Data);
     }
 
@@ -45,7 +45,7 @@ public sealed class Jbig2HalftoneTests
     {
         var (stream, expected) = Build(4, 6, 5, 4, 4, vectorX, vectorY);
 
-        var image = Jbig2Decoder.Decode(stream, expected.Width, expected.Height);
+        var image = Jbig2Decoder.Decode(stream, expected.Width, expected.Height, cancellationToken: TestContext.Current.CancellationToken);
         image.Bits.ToArray().ShouldBe(expected.Data);
     }
 

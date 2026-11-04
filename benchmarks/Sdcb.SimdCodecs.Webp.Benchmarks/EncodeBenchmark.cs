@@ -66,7 +66,7 @@ internal static class EncodeBenchmark
         var encoder = new WebpAnimationEncoder(s.Width, s.Height, options);
         foreach (byte[] frame in s.Frames)
         {
-            encoder.AddFrame(frame, Sdcb.SimdCodecs.Abstractions.ImagePixelFormat.Rgba32, TimeSpan.FromMilliseconds(s.DurationMs));
+            encoder.AddFrame(frame, Sdcb.SimdCodecs.Abstractions.PixelFormat.Rgba32, TimeSpan.FromMilliseconds(s.DurationMs));
         }
 
         return encoder.Encode();
@@ -175,7 +175,7 @@ internal static class EncodeBenchmark
     internal static string OursName(int effort) => effort == 6 ? "ours" : $"ours -e {effort}";
 
     internal static byte[] OursLossless(EncodeImage img, int effort) =>
-        WebpEncoder.EncodeLossless(img.Rgba, img.Width, img.Height, Sdcb.SimdCodecs.Abstractions.ImagePixelFormat.Rgba32,
+        WebpEncoder.EncodeLossless(img.Rgba, img.Width, img.Height, Sdcb.SimdCodecs.Abstractions.PixelFormat.Rgba32,
             new WebpLosslessEncodeOptions { Effort = effort });
 
     internal static List<Contestant> LossyContestants(string? cwebp, int quality)
@@ -207,7 +207,7 @@ internal static class EncodeBenchmark
         string? overrides = Environment.GetEnvironmentVariable("VP8CFG");
         if (string.IsNullOrEmpty(overrides))
         {
-            return WebpEncoder.EncodeLossy(img.Rgba, img.Width, img.Height, Sdcb.SimdCodecs.Abstractions.ImagePixelFormat.Rgba32,
+            return WebpEncoder.EncodeLossy(img.Rgba, img.Width, img.Height, Sdcb.SimdCodecs.Abstractions.PixelFormat.Rgba32,
                 new WebpLossyEncodeOptions { Quality = quality });
         }
 
@@ -226,7 +226,7 @@ internal static class EncodeBenchmark
             property.SetValue(config, property.PropertyType == typeof(bool) ? kv[1] != "0" : int.Parse(kv[1], CultureInfo.InvariantCulture));
         }
 
-        return WebpEncoder.EncodeLossy(img.Rgba, img.Width, img.Height, Sdcb.SimdCodecs.Abstractions.ImagePixelFormat.Rgba32, config);
+        return WebpEncoder.EncodeLossy(img.Rgba, img.Width, img.Height, Sdcb.SimdCodecs.Abstractions.PixelFormat.Rgba32, config);
     }
 
     internal static (byte[], double) Time(Func<byte[]> encode)

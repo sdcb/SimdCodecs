@@ -31,7 +31,7 @@ byte[] ico = IcoEncoder.Encode(
 byte[] cur = IcoEncoder.EncodeCursor([new IcoFrame(rgba32, 32, 32, HotspotX: 4, HotspotY: 2)]);
 ```
 
-Each image is 1 to 256 pixels a side, in any `ImagePixelFormat`, stored as `Png`, `Bmp32` (alpha, plus an AND mask
+Each image is 1 to 256 pixels a side, in any `PixelFormat`, stored as `Png`, `Bmp32` (alpha, plus an AND mask
 from it), or `Bmp24` / `Bmp8` / `Bmp4` / `Bmp1` (transparency in the AND mask only; a palette is exact when the
 colours fit, otherwise Wu-quantized). `Auto` is PNG at 256 pixels and 32-bit BMP below: compact where icons get large, and readable everywhere else.
 Alpha below 128 is transparent in an AND mask, and a transparent pixel of a DIB without alpha is written black, as

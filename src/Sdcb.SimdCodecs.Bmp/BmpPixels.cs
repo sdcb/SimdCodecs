@@ -9,7 +9,7 @@ namespace Sdcb.SimdCodecs.Bmp;
 
 /// <summary>
 /// Decodes a bitmap's pixels (<see cref="BmpHeader"/> has checked its layout) straight into the caller's
-/// buffer, in any <see cref="ImagePixelFormat"/>: rows are written top row first whichever way they are stored,
+/// buffer, in any <see cref="PixelFormat"/>: rows are written top row first whichever way they are stored,
 /// and nothing is allocated beyond a pooled row for the layouts that go through <see cref="PixelConverter"/>.
 /// <para>
 /// What the specifications leave open is settled as Windows' own decoder (WIC) settles it, and recorded in the
@@ -23,7 +23,8 @@ internal static class BmpPixels
 {
     /// <summary>Decodes into <paramref name="destination"/>, rows <paramref name="rowStride"/> bytes apart (checked by the caller).</summary>
     /// <exception cref="InvalidDataException">The pixel data is corrupt.</exception>
-    public static void Decode(ReadOnlySpan<byte> data, BmpHeader h, Span<byte> destination, int rowStride, ImagePixelFormat format)
+    public static void Decode(ReadOnlySpan<byte> data, BmpHeader h, Span<byte> destination, int rowStride, PixelFormat format,
+        CancellationToken cancellationToken = default)
     {
         switch (h.Compression)
         {
@@ -40,8 +41,8 @@ internal static class BmpPixels
                 return;
         }
 
-        var seenAlpha = DecodeUncompressed(data, h, destination, rowStride, format) >> 24;
-        var hasAlphaByte = format is ImagePixelFormat.Rgba32 or ImagePixelFormat.Bgra32;
+        var seenAlpha = DecodeUncompressed(data, h, destination, rowStride, format, cancellationToken) >> 24;
+        var hasAlphaByte = format.HasAlpha;
         if (!hasAlphaByte) return;
         var alphaIsReal = h.AlphaMask != 0 && !(h.AlphaUnlessAllZero && seenAlpha == 0);
         if (h.IconMask && !alphaIsReal)
@@ -60,7 +61,7 @@ internal static class BmpPixels
         return info;
     }
 
-    private static void DecodePng(ReadOnlySpan<byte> data, BmpHeader h, Span<byte> destination, int rowStride, ImagePixelFormat format)
+    private static void DecodePng(ReadOnlySpan<byte> data, BmpHeader h, Span<byte> destination, int rowStride, PixelFormat format)
     {
         ReadPngInfo(data, h);
         if (!PngImageDecoder.TryDecodeInto(data[h.PixelOffset..], destination, rowStride, format))
@@ -73,10 +74,11 @@ internal static class BmpPixels
 
     /// <returns>Every decoded pixel ORed together in the output's 32-bit layout, for 4-byte outputs (so its top
     /// byte, alpha in both RGBA and BGRA, says whether any pixel had alpha); 0 otherwise.</returns>
-    private static uint DecodeUncompressed(ReadOnlySpan<byte> data, BmpHeader h, Span<byte> destination, int rowStride, ImagePixelFormat format)
+    private static uint DecodeUncompressed(ReadOnlySpan<byte> data, BmpHeader h, Span<byte> destination, int rowStride, PixelFormat format,
+        CancellationToken cancellationToken)
     {
         int width = h.Width, height = h.Height, stride = h.Stride, bpp = h.BitsPerPixel;
-        var outBytes = PixelConverter.BytesPerPixel(format);
+        var outBytes = format.BytesPerPixel;
         var tier = BmpKernels.BestTier;
 
         // The row kernel, chosen once. A layout without one decodes to RGBA in a pooled row, then converts.
@@ -85,7 +87,7 @@ internal static class BmpPixels
         var kind = Choose(h, format, control, out var set);
         if (kind is null)
         {
-            target = ImagePixelFormat.Rgba32;
+            target = PixelFormat.Rgba32;
             kind = Choose(h, target, control, out set) ?? RowKind.Fields;
         }
         Span<uint> lut = stackalloc uint[bpp <= 8 ? 256 : 0];
@@ -97,6 +99,7 @@ internal static class BmpPixels
         {
             for (var r = 0; r < height; r++)
             {
+                if ((r & 63) == 0) cancellationToken.ThrowIfCancellationRequested();
                 var offset = h.PixelOffset + r * stride;
                 var source = data.Slice(offset, Math.Min(stride, data.Length - offset));
                 var y = h.TopDown ? r : height - 1 - r;
@@ -105,13 +108,13 @@ internal static class BmpPixels
                 switch (kind)
                 {
                     case RowKind.Indexed:
-                        ExpandIndexed(source, output, width, bpp, lut, PixelConverter.BytesPerPixel(target));
+                        ExpandIndexed(source, output, width, bpp, lut, target.BytesPerPixel);
                         break;
                     case RowKind.Copy24:
                         source[..(3 * width)].CopyTo(output);
                         break;
                     case RowKind.Expand24:
-                        BmpKernels.Expand24(source, output, width, swap: target == ImagePixelFormat.Rgba32, tier);
+                        BmpKernels.Expand24(source, output, width, swap: target == PixelFormat.Rgba32, tier);
                         break;
                     case RowKind.Swap24:
                         BmpKernels.Swap24(source, output, width, tier);
@@ -124,7 +127,7 @@ internal static class BmpPixels
                         break;
                     case RowKind.Expand16:
                         BmpKernels.Expand16(source, output, width, green6: h.GreenMask == 0x07E0,
-                            rgba: target == ImagePixelFormat.Rgba32, BmpKernels.BestArithmeticTier);
+                            rgba: target == PixelFormat.Rgba32, BmpKernels.BestArithmeticTier);
                         break;
                     default:
                         seen |= fields!.Decode(source, output, width, bpp);
@@ -142,28 +145,25 @@ internal static class BmpPixels
     }
 
     // The kernel for this bitmap and output, or null when the output needs the RGBA detour.
-    private static RowKind? Choose(BmpHeader h, ImagePixelFormat format, Span<byte> control, out uint set)
+    private static RowKind? Choose(BmpHeader h, PixelFormat format, Span<byte> control, out uint set)
     {
         set = 0;
         var bpp = h.BitsPerPixel;
         if (bpp <= 8) return RowKind.Indexed;
-        if (format == ImagePixelFormat.Gray8) return null;
-        var four = format is ImagePixelFormat.Rgba32 or ImagePixelFormat.Bgra32;
-        var rgbOrder = format is ImagePixelFormat.Rgba32 or ImagePixelFormat.Rgb24;
+        if (format == PixelFormat.Gray8) return null;
+        var four = format.HasAlpha;
+        var rgbOrder = format == PixelFormat.Rgba32 || format == PixelFormat.Rgb24;
         switch (bpp)
         {
             case 24:
-                return format switch
-                {
-                    ImagePixelFormat.Bgr24 => RowKind.Copy24,
-                    ImagePixelFormat.Rgb24 => RowKind.Swap24,
-                    _ => RowKind.Expand24,
-                };
+                return format == PixelFormat.Bgr24 ? RowKind.Copy24
+                    : format == PixelFormat.Rgb24 ? RowKind.Swap24
+                    : RowKind.Expand24;
             case 32:
             {
                 // Byte-aligned masks are a byte permutation: each output byte names its source byte.
                 int r = ByteOf(h.RedMask), g = ByteOf(h.GreenMask), b = ByteOf(h.BlueMask), a = ByteOf(h.AlphaMask);
-                if (r < 0 || g < 0 || b < 0 || a < 0) return format == ImagePixelFormat.Rgba32 ? RowKind.Fields : null;
+                if (r < 0 || g < 0 || b < 0 || a < 0) return format == PixelFormat.Rgba32 ? RowKind.Fields : null;
                 byte first = (byte)(rgbOrder ? r : b), third = (byte)(rgbOrder ? b : r);
                 if (four)
                 {
@@ -181,7 +181,7 @@ internal static class BmpPixels
                 var plain = h.AlphaMask == 0 && h.BlueMask == 0x001F
                     && (h.RedMask, h.GreenMask) is (0xF800, 0x07E0) or (0x7C00, 0x03E0);
                 if (plain && four) return RowKind.Expand16;
-                return format == ImagePixelFormat.Rgba32 ? RowKind.Fields : null;
+                return format == PixelFormat.Rgba32 ? RowKind.Fields : null;
             }
         }
     }
@@ -274,7 +274,7 @@ internal static class BmpPixels
     /// The palette as 32-bit values in the output's byte order (R, G, B, 255 / B, G, R, 255 / BT.601 luma), all
     /// 256 entries: those past the bitmap's palette are opaque black.
     /// </summary>
-    internal static void BuildPalette(ReadOnlySpan<byte> data, BmpHeader h, ImagePixelFormat format, Span<uint> lut)
+    internal static void BuildPalette(ReadOnlySpan<byte> data, BmpHeader h, PixelFormat format, Span<uint> lut)
     {
         lut[..256].Fill(Pack(0, 0, 0, format));
         for (var i = 0; i < h.PaletteCount; i++)
@@ -285,14 +285,11 @@ internal static class BmpPixels
     }
 
     /// <summary>A colour in <paramref name="format"/>'s byte order, as a little-endian 32-bit value.</summary>
-    internal static uint Pack(int r, int g, int b, ImagePixelFormat format) => format switch
-    {
-        ImagePixelFormat.Rgba32 => (uint)(r | g << 8 | b << 16) | 0xFF000000u,
-        ImagePixelFormat.Bgra32 => (uint)(b | g << 8 | r << 16) | 0xFF000000u,
-        ImagePixelFormat.Rgb24 => (uint)(r | g << 8 | b << 16),
-        ImagePixelFormat.Bgr24 => (uint)(b | g << 8 | r << 16),
-        _ => (uint)((77 * r + 150 * g + 29 * b + 128) >> 8),
-    };
+    internal static uint Pack(int r, int g, int b, PixelFormat format) => format == PixelFormat.Rgba32 ? (uint)(r | g << 8 | b << 16) | 0xFF000000u
+        : format == PixelFormat.Bgra32 ? (uint)(b | g << 8 | r << 16) | 0xFF000000u
+        : format == PixelFormat.Rgb24 ? (uint)(r | g << 8 | b << 16)
+        : format == PixelFormat.Bgr24 ? (uint)(b | g << 8 | r << 16)
+        : (uint)((77 * r + 150 * g + 29 * b + 128) >> 8);
 
     /// <summary>Palette indices (1, 2, 4 or 8 bits, most significant first) to <paramref name="outBytes"/>-byte pixels.</summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -431,11 +428,11 @@ internal static class BmpPixels
         private readonly uint _black;
         private long _frontier;
 
-        public Canvas(Span<byte> destination, int rowStride, ImagePixelFormat format, int width, int height)
+        public Canvas(Span<byte> destination, int rowStride, PixelFormat format, int width, int height)
         {
             _destination = destination;
             _rowStride = rowStride;
-            _bytes = PixelConverter.BytesPerPixel(format);
+            _bytes = format.BytesPerPixel;
             _width = width;
             _height = height;
             _black = Pack(0, 0, 0, format);
@@ -629,7 +626,7 @@ internal static class BmpPixels
         }
     }
 
-    private static void DecodeRle(ReadOnlySpan<byte> data, BmpHeader h, Span<byte> destination, int rowStride, ImagePixelFormat format)
+    private static void DecodeRle(ReadOnlySpan<byte> data, BmpHeader h, Span<byte> destination, int rowStride, PixelFormat format)
     {
         var canvas = new Canvas(destination, rowStride, format, h.Width, h.Height);
         Span<uint> lut = stackalloc uint[256];
@@ -745,7 +742,7 @@ internal static class BmpPixels
     /// EOL code (eleven or more 0 bits, then a 1) may come before any row. A row that runs past the edge is
     /// corrupt; a stream that ends early leaves the rows it did not reach opaque black.
     /// </summary>
-    private static void DecodeHuffman(ReadOnlySpan<byte> data, BmpHeader h, Span<byte> destination, int rowStride, ImagePixelFormat format)
+    private static void DecodeHuffman(ReadOnlySpan<byte> data, BmpHeader h, Span<byte> destination, int rowStride, PixelFormat format)
     {
         var canvas = new Canvas(destination, rowStride, format, h.Width, h.Height);
         Span<uint> lut = stackalloc uint[256];

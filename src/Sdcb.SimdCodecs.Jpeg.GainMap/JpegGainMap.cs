@@ -41,8 +41,8 @@ public static class JpegGainMap
         }
 
         image = new GainMapImage(
-            new RasterImage(baseImage.Width, baseImage.Height, 4, SampleFormat.UInt8, baseImage.Pixels),
-            new RasterImage(gainMapImage.Width, gainMapImage.Height, 4, SampleFormat.UInt8, gainMapImage.Pixels),
+            RasterImage.Wrap(baseImage.Width, baseImage.Height, 4, SampleFormat.UInt8, baseImage.Pixels),
+            RasterImage.Wrap(gainMapImage.Width, gainMapImage.Height, 4, SampleFormat.UInt8, gainMapImage.Pixels),
             metadata);
         return true;
     }

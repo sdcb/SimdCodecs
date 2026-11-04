@@ -33,7 +33,52 @@ internal static class FacadeSmoke
         }
 
         Check(!SimdCodecs.CanDecode("not an image"u8), "garbage", "CanDecode");
-        return count + Heif();
+        return count + Heif() + V2();
+    }
+
+    /// <summary>
+    /// The 2.0 entry points, each through its registry delegate: options, metadata, thumbnail, closest size, the
+    /// session API, 16-bit and premultiplied output, and every built-in encoder through the encoder registry.
+    /// </summary>
+    private static int V2()
+    {
+        const int w = 37, h = 23;
+        var rgb = Program.Pattern(w, h);
+        var png = SimdCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, ImageFormat.Png,
+            metadata: new ImageMetadata(icc: new byte[] { 1, 2, 3 }));
+        var jpeg = SimdCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, ImageFormat.Jpeg);
+
+        Check(SimdCodecs.TryGetClosestSize(jpeg, 10, 6, out var cw, out var ch, out var scale), "v2", "TryGetClosestSize");
+        Check(SimdCodecs.TryReadMetadata(png, out var metadata) && metadata.Icc.Length == 3, "v2", "TryReadMetadata");
+        Check(!SimdCodecs.TryDecodeThumbnail(png, out _), "v2", "TryDecodeThumbnail");
+        Check(!SimdCodecs.TryReadPlanarInfo(png, out _), "v2", "TryReadPlanarInfo");
+
+        Check(SimdCodecs.TryDecode(jpeg, out var scaled, new DecodeOptions { ScaleDenominator = scale }), "v2", "TryDecode scaled");
+        Check(SimdCodecs.TryDecode(png, out var region, new DecodeOptions { Region = new PixelRect(3, 4, 10, 7) }), "v2", "TryDecode region");
+        var wide = new byte[w * h * 8];
+        Check(SimdCodecs.TryDecodeInto(png, wide, 0, PixelFormat.Rgba64), "v2", "TryDecodeInto Rgba64");
+        var pre = new byte[w * h * 4];
+        Check(SimdCodecs.TryDecodeInto(png, pre, 0, PixelFormat.Bgra32Premultiplied), "v2", "TryDecodeInto Bgra32Premultiplied");
+
+        using var session = ImageDecoder.Open(new MemoryStream(png));
+        using var frame = session.GetFrame(0).Decode();
+        var crop = new byte[5 * 5 * 3];
+        session.GetFrame(0).CopyPixels(new PixelRect(1, 1, 5, 5), PixelFormat.Bgr24, crop, 0);
+
+        var encoded = new List<string>();
+        foreach (var format in new[] { ImageFormat.Png, ImageFormat.Jpeg, ImageFormat.Tiff, ImageFormat.Webp, ImageFormat.Gif,
+                     ImageFormat.Bmp, ImageFormat.Ico, ImageFormat.Qoi, ImageFormat.Pnm })
+        {
+            Check(SimdCodecs.IsEncodable(format), "v2", $"IsEncodable {format}");
+            var file = SimdCodecs.Encode(rgb, w, h, PixelFormat.Bgr24, format);
+            Check(SimdCodecs.DetectFormat(file) == format, "v2", $"Encode {format}");
+            encoded.Add($"{format}={Hash(file)}/{SimdCodecs.GetClosestInputFormat(format, PixelFormat.Rgba64)}");
+        }
+
+        Console.WriteLine($"facade v2 closest={cw}x{ch}/{scale} scaled={scaled.Width}x{scaled.Height} region={region.Width}x{region.Height}" +
+            $"	{Hash(Pixels(scaled))} {Hash(Pixels(region))} {Hash(wide)} {Hash(pre)} {Hash(Pixels(frame))} {Hash(crop)}");
+        Console.WriteLine($"facade v2-encode	{string.Join(' ', encoded)}");
+        return 1;
     }
 
     private static void Exercise(string label, byte[] data)
@@ -80,9 +125,9 @@ internal static class FacadeSmoke
 
         Check(SimdCodecs.TryReadInfo(heic, out var info), "heif", "TryReadInfo");
         var formats = new List<string>();
-        foreach (var format in new[] { ImagePixelFormat.Rgba32, ImagePixelFormat.Bgra32, ImagePixelFormat.Rgb24, ImagePixelFormat.Bgr24, ImagePixelFormat.Gray8 })
+        foreach (var format in new[] { PixelFormat.Rgba32, PixelFormat.Bgra32, PixelFormat.Rgb24, PixelFormat.Bgr24, PixelFormat.Gray8 })
         {
-            var bpp = PixelConverter.BytesPerPixel(format);
+            var bpp = format.BytesPerPixel;
             var stride = info.Width * bpp + 3; // padded rows: the stride path
             var pixels = new byte[stride * info.Height];
             Check(SimdCodecs.TryDecodeInto(heic, pixels, stride, format), "heif", $"TryDecodeInto {format}");
@@ -128,12 +173,12 @@ internal static class FacadeSmoke
             ("webp-lossy", Fixture("astronaut-192-q20-normal.webp")),
             ("webp-lossless", Fixture("lossless-palette-16.webp")),
             ("webp-anim", Fixture("anim-img2webp-mixed.webp")),
-            ("webp-enc-lossless", WebpEncoder.EncodeLossless(rgba, w, h, ImagePixelFormat.Rgba32)),
-            ("webp-enc-lossy", WebpEncoder.EncodeLossy(rgb, w, h, ImagePixelFormat.Rgb24, new WebpLossyEncodeOptions { Quality = 60, Effort = 6 })),
-            ("webp-enc-lossy-alpha", WebpEncoder.EncodeLossy(rgba, w, h, ImagePixelFormat.Rgba32, new WebpLossyEncodeOptions { Quality = 60, Effort = 6 })),
+            ("webp-enc-lossless", WebpEncoder.EncodeLossless(rgba, w, h, PixelFormat.Rgba32)),
+            ("webp-enc-lossy", WebpEncoder.EncodeLossy(rgb, w, h, PixelFormat.Rgb24, new WebpLossyEncodeOptions { Quality = 60, Effort = 6 })),
+            ("webp-enc-lossy-alpha", WebpEncoder.EncodeLossy(rgba, w, h, PixelFormat.Rgba32, new WebpLossyEncodeOptions { Quality = 60, Effort = 6 })),
             ("webp-enc-anim", WebpEncoder.EncodeAnimation(
                 [new WebpAnimationCanvasFrame(rgba, TimeSpan.FromMilliseconds(50)), new WebpAnimationCanvasFrame(rgba.Reverse().ToArray(), TimeSpan.FromMilliseconds(50))],
-                w, h, ImagePixelFormat.Rgba32, new WebpAnimationEncodeOptions { Mode = WebpAnimationMode.Mixed })),
+                w, h, PixelFormat.Rgba32, new WebpAnimationEncodeOptions { Mode = WebpAnimationMode.Mixed })),
             ("gif", GifEncoder.Encode(rgb, w, h, 3)),
             ("gif-anim", GifEncoder.EncodeAnimation(
                 [new GifAnimationFrame(rgb, TimeSpan.FromMilliseconds(50)), new GifAnimationFrame(rgb.Reverse().ToArray(), TimeSpan.FromMilliseconds(50))],
@@ -143,14 +188,14 @@ internal static class FacadeSmoke
             ("bmp-rle8", BmpEncoder.Encode(rgb, w, h, 3, new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed8, Rle = true })),
             ("bmp-565", BmpEncoder.Encode(rgb, w, h, 3, new BmpEncodeOptions { Format = BmpEncodeFormat.Rgb565 })),
             ("ico", IcoEncoder.Encode(
-                [new IcoFrame(rgba, w, h), new IcoFrame(rgba, w, h, Encoding: IcoImageEncoding.Png), new IcoFrame(rgb, w, h, ImagePixelFormat.Rgb24, IcoImageEncoding.Bmp4)])),
+                [new IcoFrame(rgba, w, h), new IcoFrame(rgba, w, h, Encoding: IcoImageEncoding.Png), new IcoFrame(rgb, w, h, PixelFormat.Rgb24, IcoImageEncoding.Bmp4)])),
             ("cur", IcoEncoder.EncodeCursor([new IcoFrame(rgba, w, h, HotspotX: 3, HotspotY: 4)])),
-            ("qoi", QoiEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32)),
-            ("qoi-rgb", QoiEncoder.Encode(rgb, w, h, ImagePixelFormat.Rgb24)),
-            ("ppm", PnmEncoder.Encode(rgb, w, h, ImagePixelFormat.Rgb24)),
-            ("pgm-plain-16", PnmEncoder.Encode(rgb, w, h, ImagePixelFormat.Rgb24, new PnmEncodeOptions { Format = PnmFormat.PlainGraymap, MaxValue = 1000 })),
-            ("pbm", PnmEncoder.Encode(rgb, w, h, ImagePixelFormat.Rgb24, new PnmEncodeOptions { Format = PnmFormat.Bitmap })),
-            ("pam", PnmEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32)),
+            ("qoi", QoiEncoder.Encode(rgba, w, h, PixelFormat.Rgba32)),
+            ("qoi-rgb", QoiEncoder.Encode(rgb, w, h, PixelFormat.Rgb24)),
+            ("ppm", PnmEncoder.Encode(rgb, w, h, PixelFormat.Rgb24)),
+            ("pgm-plain-16", PnmEncoder.Encode(rgb, w, h, PixelFormat.Rgb24, new PnmEncodeOptions { Format = PnmFormat.PlainGraymap, MaxValue = 1000 })),
+            ("pbm", PnmEncoder.Encode(rgb, w, h, PixelFormat.Rgb24, new PnmEncodeOptions { Format = PnmFormat.Bitmap })),
+            ("pam", PnmEncoder.Encode(rgba, w, h, PixelFormat.Rgba32)),
             ("pfm", PnmEncoder.EncodePfm([.. rgb.Select(v => v / 255f)], w, h, 3)),
         ];
     }

@@ -17,7 +17,7 @@ public sealed class PngMetadataRoundTripTests
     public void Srgb_RoundTrip()
     {
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { SrgbRenderingIntent = 1 });
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         img.SrgbRenderingIntent.ShouldBe((byte)1);
     }
 
@@ -26,7 +26,7 @@ public sealed class PngMetadataRoundTripTests
     {
         // sRGB-style 1/2.2 ≈ 0.45455 — encoded as round(0.45455 × 100000) = 45455.
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Gamma = 0.45455 });
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         img.Gamma.ShouldNotBeNull();
         img.Gamma!.Value.ShouldBe(0.45455, tolerance: 1e-5);
     }
@@ -41,7 +41,7 @@ public sealed class PngMetadataRoundTripTests
             GreenX: 0.30,   GreenY: 0.60,
             BlueX:  0.15,   BlueY:  0.06);
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Chromaticity = chrm });
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         img.Chromaticity.ShouldNotBeNull();
         img.Chromaticity!.WhiteX.ShouldBe(chrm.WhiteX, tolerance: 1e-5);
         img.Chromaticity.WhiteY.ShouldBe(chrm.WhiteY, tolerance: 1e-5);
@@ -57,7 +57,7 @@ public sealed class PngMetadataRoundTripTests
         for (var i = 0; i < exif.Length; i++) exif[i] = (byte)(0x42 + i);
 
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Exif = exif });
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         img.Exif.ShouldNotBeNull();
         img.Exif!.ShouldBe(exif);
     }
@@ -72,7 +72,7 @@ public sealed class PngMetadataRoundTripTests
             IccProfile = icc,
             IccProfileName = "Display-P3",
         });
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         img.IccProfile!.ShouldBe(icc);
         img.IccProfileName.ShouldBe("Display-P3");
     }
@@ -86,7 +86,7 @@ public sealed class PngMetadataRoundTripTests
     {
         // The full HDR10 signal: BT.2020 + PQ + RGB + full-range.
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Cicp = CicpChunk.Hdr10Pq });
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         img.Cicp.ShouldBe(CicpChunk.Hdr10Pq);
         img.HasHdrSignaling.ShouldBeTrue();
     }
@@ -95,7 +95,7 @@ public sealed class PngMetadataRoundTripTests
     public void Cicp_Hlg_RoundTrip()
     {
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Cicp = CicpChunk.Bt2020Hlg });
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         img.Cicp.ShouldBe(CicpChunk.Bt2020Hlg);
     }
 
@@ -108,7 +108,7 @@ public sealed class PngMetadataRoundTripTests
             MatrixCoefficients: Sdcb.SimdCodecs.Abstractions.MatrixCoefficients.Identity,
             VideoFullRangeFlag: true);
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Cicp = cicp });
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         img.Cicp.ShouldBe(cicp);
     }
 
@@ -124,7 +124,7 @@ public sealed class PngMetadataRoundTripTests
             MaxLuminanceUnits: 10_000_000u,  // 1000 cd/m²
             MinLuminanceUnits: 50u);          // 0.005 cd/m²
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Mdcv = mdcv });
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         img.Mdcv.ShouldBe(mdcv);
     }
 
@@ -133,7 +133,7 @@ public sealed class PngMetadataRoundTripTests
     {
         var clli = new ClliChunk(MaxCllUnits: 4_000_000u, MaxFallUnits: 800_000u);
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Clli = clli });
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         img.Clli.ShouldBe(clli);
     }
 
@@ -155,7 +155,7 @@ public sealed class PngMetadataRoundTripTests
         for (var i = 0; i < rgba16.Length; i++) rgba16[i] = (ushort)rng.Next(0, 65536);
 
         var png = PngWriter.EncodeRgba16(rgba16, 16, 16, options);
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
 
         img.BitDepth.ShouldBe(16);
         img.HasHdrSignaling.ShouldBeTrue();
@@ -177,7 +177,7 @@ public sealed class PngMetadataRoundTripTests
             IccProfile = icc,
             SrgbRenderingIntent = 0,
         });
-        var img = PngReader.Decode(png);
+        var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         img.IccProfile.ShouldNotBeNull();
         img.SrgbRenderingIntent.ShouldBeNull(); // sRGB was suppressed
     }

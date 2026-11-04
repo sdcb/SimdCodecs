@@ -70,7 +70,7 @@ public sealed class TiffIfdLoopTests
 
         for (var page = 0; page < expected; page++)
         {
-            TiffReader.ReadPage(tiff, page).Height.ShouldBe(heights[page]);
+            TiffReader.ReadPage(tiff, page, cancellationToken: TestContext.Current.CancellationToken).Height.ShouldBe(heights[page]);
             TiffReader.ReadLayout(tiff, page).Height.ShouldBe(heights[page]);
             TiffReader.ReadLayout(new MemoryStream(tiff), page).Height.ShouldBe(heights[page]);
         }

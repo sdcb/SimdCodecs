@@ -37,13 +37,13 @@ async Task Main()
 	// of padding after every row, as a sub-rectangle of a wider surface would have.
 	int stride = info.Width * 4 + 64;
 	byte[] bgra = new byte[stride * info.Height];
-	if (!SimdCodecs.TryDecodeInto(heic, bgra, stride, ImagePixelFormat.Bgra32)) throw new InvalidDataException("Decode failed");
-	$"Bgra32, stride {stride}: {Fastest(() => SimdCodecs.TryDecodeInto(heic, bgra, stride, ImagePixelFormat.Bgra32)):F1} ms".Dump();
+	if (!SimdCodecs.TryDecodeInto(heic, bgra, stride, PixelFormat.Bgra32)) throw new InvalidDataException("Decode failed");
+	$"Bgra32, stride {stride}: {Fastest(() => SimdCodecs.TryDecodeInto(heic, bgra, stride, PixelFormat.Bgra32)):F1} ms".Dump();
 
 	// Gray8 is the stored luma (Y), range-mapped to 8 bits: chroma is never converted.
 	byte[] gray = new byte[info.Width * info.Height];
-	SimdCodecs.TryDecodeInto(heic, gray, 0, ImagePixelFormat.Gray8);
-	$"Gray8: {Fastest(() => SimdCodecs.TryDecodeInto(heic, gray, 0, ImagePixelFormat.Gray8)):F1} ms".Dump();
+	SimdCodecs.TryDecodeInto(heic, gray, 0, PixelFormat.Gray8);
+	$"Gray8: {Fastest(() => SimdCodecs.TryDecodeInto(heic, gray, 0, PixelFormat.Gray8)):F1} ms".Dump();
 
 	ShowBgra(bgra, stride, info.Width, info.Height).Dump("Bgra32 (thumbnail)");
 	ShowGray(gray, info.Width, info.Height).Dump("Gray8 (thumbnail)");
@@ -83,7 +83,7 @@ static object ShowBgra(byte[] bgra, int stride, int width, int height)
 	for (int y = 0; y < th; y++)
 	for (int x = 0; x < tw; x++)
 		bgra.AsSpan(y * Thumb * stride + x * Thumb * 4, 4).CopyTo(pixels.AsSpan((y * tw + x) * 4));
-	PixelConverter.ConvertRow(pixels, 4, SampleFormat.UInt8, pixels, ImagePixelFormat.Bgra32, tw * th);
+	PixelConverter.ConvertRow(pixels, 4, SampleFormat.UInt8, pixels, PixelFormat.Bgra32, tw * th);
 	return Util.Image(PngWriter.Encode(pixels, tw, th, new PngWriteOptions { CompressionLevel = CompressionLevel.Fastest }));
 }
 

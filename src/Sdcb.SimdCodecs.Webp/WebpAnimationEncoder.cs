@@ -18,8 +18,8 @@ public enum WebpAnimationMode
     Mixed,
 }
 
-/// <summary>Options for <see cref="WebpAnimationEncoder"/> and <see cref="WebpEncoder.EncodeAnimation(IReadOnlyList{WebpAnimationCanvasFrame}, int, int, ImagePixelFormat, WebpAnimationEncodeOptions?)"/>.</summary>
-public sealed record WebpAnimationEncodeOptions
+/// <summary>Options for <see cref="WebpAnimationEncoder"/> and <see cref="WebpEncoder.EncodeAnimation(IReadOnlyList{WebpAnimationCanvasFrame}, int, int, PixelFormat, WebpAnimationEncodeOptions?)"/>.</summary>
+public sealed record WebpAnimationEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
     /// <summary>Lossy (the default), lossless, or the smaller of the two per frame.</summary>
     public WebpAnimationMode Mode { get; init; }
@@ -49,7 +49,7 @@ public sealed record WebpAnimationEncodeOptions
     /// <summary>
     /// 0 (the default): a frame is independent of the ones before it only where that is smaller. N &gt; 0: at
     /// least one frame in every N is independent, so a player can seek to any frame by decoding at most N.
-    /// Applies to frames given whole (<see cref="WebpAnimationEncoder.AddFrame(ReadOnlySpan{byte}, ImagePixelFormat, TimeSpan, int)"/>).
+    /// Applies to frames given whole (<see cref="WebpAnimationEncoder.AddFrame(ReadOnlySpan{byte}, PixelFormat, TimeSpan, int)"/>).
     /// </summary>
     public int MaxKeyframeDistance { get; init; }
 
@@ -69,7 +69,7 @@ public sealed record WebpAnimationEncodeOptions
     internal int BlendThreshold { get; init; } = 10;
 }
 
-/// <summary>One whole-canvas frame for <see cref="WebpEncoder.EncodeAnimation(IReadOnlyList{WebpAnimationCanvasFrame}, int, int, ImagePixelFormat, WebpAnimationEncodeOptions?)"/>.</summary>
+/// <summary>One whole-canvas frame for <see cref="WebpEncoder.EncodeAnimation(IReadOnlyList{WebpAnimationCanvasFrame}, int, int, PixelFormat, WebpAnimationEncodeOptions?)"/>.</summary>
 /// <param name="Pixels">The whole canvas, tightly packed in the format given to <c>EncodeAnimation</c>.</param>
 /// <param name="Duration">How long the frame is shown; stored in whole milliseconds (rounded), at most 16777215.</param>
 public readonly record struct WebpAnimationCanvasFrame(ReadOnlyMemory<byte> Pixels, TimeSpan Duration);
@@ -84,7 +84,7 @@ public sealed record WebpAnimationFrame
     public required ReadOnlyMemory<byte> Pixels { get; init; }
 
     /// <summary>The layout of <see cref="Pixels"/>. Default RGBA.</summary>
-    public ImagePixelFormat Format { get; init; } = ImagePixelFormat.Rgba32;
+    public PixelFormat Format { get; init; } = PixelFormat.Rgba32;
 
     /// <summary>Bytes from one row of <see cref="Pixels"/> to the next; 0 means tightly packed.</summary>
     public int Stride { get; init; }
@@ -194,12 +194,12 @@ public sealed class WebpAnimationEncoder
 
     /// <summary>Adds a frame given as the whole canvas.</summary>
     /// <param name="canvas">The canvas, top row first.</param>
-    /// <param name="format">Its layout.</param>
+    /// <param name="format">Its layout: any <see cref="PixelFormat"/>.</param>
     /// <param name="duration">How long it is shown.</param>
     /// <param name="stride">Bytes from one row to the next; 0 means tightly packed.</param>
     /// <exception cref="ArgumentException">The buffer does not hold the canvas, or the duration is out of range.</exception>
     /// <exception cref="InvalidOperationException">The animation was already encoded.</exception>
-    public void AddFrame(ReadOnlySpan<byte> canvas, ImagePixelFormat format, TimeSpan duration, int stride = 0)
+    public void AddFrame(ReadOnlySpan<byte> canvas, PixelFormat format, TimeSpan duration, int stride = 0)
     {
         ThrowIfEncoded();
         int durationMs = DurationMs(duration, nameof(duration));
@@ -552,14 +552,14 @@ public sealed class WebpAnimationEncoder
         EncodedImage? lossy = null, lossless = null;
         if (mode != WebpAnimationMode.Lossless && lossyFits)
         {
-            (byte[] vp8, byte[]? alph) = WebpEncoder.EncodeVp8(bytes, width, height, ImagePixelFormat.Bgra32,
+            (byte[] vp8, byte[]? alph) = WebpEncoder.EncodeVp8(bytes, width, height, PixelFormat.Bgra32,
                 new WebpLossyEncodeOptions { Quality = quality, Effort = _options.LossyEffort, AlphaQuality = _options.AlphaQuality }, 0, null);
             lossy = new EncodedImage(false, vp8, alph, alph is not null);
         }
 
         if (mode != WebpAnimationMode.Lossy || lossy is null)
         {
-            using Vp8LBitWriter writer = WebpEncoder.EncodeVp8L(bytes, width, height, ImagePixelFormat.Bgra32,
+            using Vp8LBitWriter writer = WebpEncoder.EncodeVp8L(bytes, width, height, PixelFormat.Bgra32,
                 new WebpLosslessEncodeOptions { Effort = _options.LosslessEffort }, 0, Vp8LAblation.None);
             byte[] vp8l = writer.Finish().ToArray();
             lossless = new EncodedImage(true, vp8l, null, (vp8l[4] & 0x10) != 0);
@@ -696,7 +696,7 @@ public sealed class WebpAnimationEncoder
         }
     }
 
-    private static void Convert(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, int stride, uint[] argb, string name)
+    private static void Convert(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, int stride, uint[] argb, string name)
     {
         if (!PixelConverter.TryGetLayout(width, height, format, stride, pixels.Length, out int rowStride))
         {
@@ -732,10 +732,10 @@ public static partial class WebpEncoder
     /// <param name="frames">The frames; each holds the whole canvas in <paramref name="format"/>, tightly packed.</param>
     /// <param name="width">Canvas width, 1..16384.</param>
     /// <param name="height">Canvas height, 1..16384.</param>
-    /// <param name="format">The layout of every frame.</param>
+    /// <param name="format">The layout of every frame: any <see cref="PixelFormat"/>.</param>
     /// <param name="options">Mode, quality, effort, looping and metadata; null for the defaults.</param>
     /// <exception cref="ArgumentException">No frames, or a size, buffer or duration that does not fit.</exception>
-    public static byte[] EncodeAnimation(IReadOnlyList<WebpAnimationCanvasFrame> frames, int width, int height, ImagePixelFormat format,
+    public static byte[] EncodeAnimation(IReadOnlyList<WebpAnimationCanvasFrame> frames, int width, int height, PixelFormat format,
         WebpAnimationEncodeOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(frames);
@@ -754,8 +754,8 @@ public static partial class WebpEncoder
     }
 
     /// <summary>Encodes an animation into <paramref name="output"/>, from its current position.</summary>
-    /// <inheritdoc cref="EncodeAnimation(IReadOnlyList{WebpAnimationCanvasFrame}, int, int, ImagePixelFormat, WebpAnimationEncodeOptions?)"/>
-    public static void EncodeAnimation(IReadOnlyList<WebpAnimationCanvasFrame> frames, int width, int height, ImagePixelFormat format,
+    /// <inheritdoc cref="EncodeAnimation(IReadOnlyList{WebpAnimationCanvasFrame}, int, int, PixelFormat, WebpAnimationEncodeOptions?)"/>
+    public static void EncodeAnimation(IReadOnlyList<WebpAnimationCanvasFrame> frames, int width, int height, PixelFormat format,
         Stream output, WebpAnimationEncodeOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(output);

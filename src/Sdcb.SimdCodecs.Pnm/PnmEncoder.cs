@@ -7,7 +7,7 @@ using Sdcb.SimdCodecs.Abstractions;
 namespace Sdcb.SimdCodecs.Pnm;
 
 /// <summary>How <see cref="PnmEncoder"/> writes an image.</summary>
-public sealed record PnmEncodeOptions
+public sealed record PnmEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
     /// <summary>The magic number. <see cref="PnmFormat.Auto"/> picks P5 for 1 channel, P6 for 3, P7 for 2 or 4.
     /// A PBM or PGM format takes the input's luma (a PBM: black below 128), a PPM drops alpha. The float formats
@@ -31,34 +31,81 @@ public static class PnmEncoder
 {
     private const int Chunk = 1024; // pixels per step: a multiple of 8, so a PBM chunk ends on a byte
 
-    /// <summary>Encodes an 8-bit image.</summary>
+    /// <summary>Encodes an image.</summary>
     /// <param name="pixels">The image, top row first.</param>
     /// <param name="width">Width in pixels.</param>
     /// <param name="height">Height in pixels.</param>
-    /// <param name="format">The input layout.</param>
+    /// <param name="format">The input layout: any <see cref="PixelFormat"/>.</param>
     /// <param name="options">The output format; null for <see cref="PnmFormat.Auto"/>.</param>
     /// <param name="stride">Bytes from one input row to the next; 0 means tightly packed.</param>
     /// <exception cref="ArgumentException">The size, buffer or options do not fit.</exception>
-    public static byte[] Encode(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    public static byte[] Encode(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format,
         PnmEncodeOptions? options = null, int stride = 0)
     {
+        if (format.Sample == SampleFormat.UInt16)
+        {
+            CheckSize(width, height);
+            if (!PixelConverter.TryGetLayout(width, height, format, stride, pixels.Length, out var rowStride))
+                throw new ArgumentException($"The pixels do not hold a {width}x{height} {format} image with stride {stride}.", nameof(pixels));
+            var nativeFormat = PixelFormat.ForChannels(format.Channels, SampleFormat.UInt16);
+            if (format == nativeFormat && stride == 0)
+                return Encode(MemoryMarshal.Cast<byte, ushort>(pixels), width, height, format.Channels, options);
+
+            var count = checked(width * height * format.Channels);
+            var rented = ArrayPool<ushort>.Shared.Rent(count);
+            try
+            {
+                var samples = rented.AsSpan(0, count);
+                PixelConverter.Convert(pixels, rowStride, format, MemoryMarshal.AsBytes(samples), 0, nativeFormat, width, height);
+                return Encode(samples, width, height, format.Channels, options);
+            }
+            finally
+            {
+                ArrayPool<ushort>.Shared.Return(rented);
+            }
+        }
         var input = Input.Of(pixels, width, height, format, stride);
         return ToArray(input, Plan(input, options));
     }
 
-    /// <summary>Encodes an 8-bit image into <paramref name="output"/> through one pooled buffer.</summary>
+    /// <summary>Encodes an image into <paramref name="output"/> through one pooled buffer.</summary>
     /// <param name="pixels">The image, top row first.</param>
     /// <param name="width">Width in pixels.</param>
     /// <param name="height">Height in pixels.</param>
-    /// <param name="format">The input layout.</param>
+    /// <param name="format">The input layout: any <see cref="PixelFormat"/>.</param>
     /// <param name="output">Where the file is written, from its current position.</param>
     /// <param name="options">The output format; null for <see cref="PnmFormat.Auto"/>.</param>
     /// <param name="stride">Bytes from one input row to the next; 0 means tightly packed.</param>
     /// <exception cref="ArgumentException">The size, buffer or options do not fit.</exception>
-    public static void Encode(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, Stream output,
+    public static void Encode(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, Stream output,
         PnmEncodeOptions? options = null, int stride = 0)
     {
         ArgumentNullException.ThrowIfNull(output);
+        if (format.Sample == SampleFormat.UInt16)
+        {
+            CheckSize(width, height);
+            if (!PixelConverter.TryGetLayout(width, height, format, stride, pixels.Length, out var rowStride))
+                throw new ArgumentException($"The pixels do not hold a {width}x{height} {format} image with stride {stride}.", nameof(pixels));
+            var nativeFormat = PixelFormat.ForChannels(format.Channels, SampleFormat.UInt16);
+            if (format == nativeFormat && stride == 0)
+            {
+                Encode(MemoryMarshal.Cast<byte, ushort>(pixels), width, height, format.Channels, output, options);
+                return;
+            }
+            var count = checked(width * height * format.Channels);
+            var rented = ArrayPool<ushort>.Shared.Rent(count);
+            try
+            {
+                var samples = rented.AsSpan(0, count);
+                PixelConverter.Convert(pixels, rowStride, format, MemoryMarshal.AsBytes(samples), 0, nativeFormat, width, height);
+                Encode(samples, width, height, format.Channels, output, options);
+                return;
+            }
+            finally
+            {
+                ArrayPool<ushort>.Shared.Return(rented);
+            }
+        }
         var input = Input.Of(pixels, width, height, format, stride);
         ToStream(input, Plan(input, options), output);
     }
@@ -166,8 +213,9 @@ public static class PnmEncoder
         public readonly ReadOnlySpan<byte> Pixels;
         public readonly int Width, Height, Stride, Channels;
         public readonly bool Sixteen, Bgr;
+        public readonly PixelFormat Format;
 
-        private Input(ReadOnlySpan<byte> pixels, int width, int height, int stride, int channels, bool sixteen, bool bgr)
+        private Input(ReadOnlySpan<byte> pixels, int width, int height, int stride, int channels, bool sixteen, bool bgr, PixelFormat format)
         {
             Pixels = pixels;
             Width = width;
@@ -176,15 +224,15 @@ public static class PnmEncoder
             Channels = channels;
             Sixteen = sixteen;
             Bgr = bgr;
+            Format = format;
         }
 
-        public static Input Of(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, int stride)
+        public static Input Of(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, int stride)
         {
             CheckSize(width, height);
             if (!PixelConverter.TryGetLayout(width, height, format, stride, pixels.Length, out var rowStride))
                 throw new ArgumentException($"The pixels do not hold a {width}x{height} {format} image with stride {stride}.", nameof(pixels));
-            var channels = PixelConverter.BytesPerPixel(format);
-            return new Input(pixels, width, height, rowStride, channels, false, format is ImagePixelFormat.Bgra32 or ImagePixelFormat.Bgr24);
+            return new Input(pixels, width, height, rowStride, format.Channels, false, format.IsBgr, format);
         }
 
         public static Input Of(ReadOnlySpan<byte> samples, int width, int height, int channels, bool sixteen)
@@ -195,7 +243,8 @@ public static class PnmEncoder
             var rowStride = (long)width * channels * (sixteen ? 2 : 1);
             if (rowStride * height > samples.Length)
                 throw new ArgumentException($"The samples do not hold a {width}x{height} image of {channels} channels.", nameof(samples));
-            return new Input(samples, width, height, (int)rowStride, channels, sixteen, false);
+            var format = PixelFormat.ForChannels(channels, sixteen ? SampleFormat.UInt16 : SampleFormat.UInt8);
+            return new Input(samples, width, height, (int)rowStride, channels, sixteen, false, format);
         }
 
         public ReadOnlySpan<byte> Row(int y) => Pixels.Slice(y * Stride, Width * Channels * (Sixteen ? 2 : 1));
@@ -323,17 +372,24 @@ public static class PnmEncoder
                 else
                 {
                     samples = row.Slice(x * input.Channels, n * input.Channels);
-                    if (input.Bgr)
+                    if (!input.Format.IsBasic8)
+                    {
+                        var native = PixelFormat.ForChannels(input.Channels, SampleFormat.UInt8);
+                        PixelConverter.ConvertRow(row.Slice(x * input.Format.BytesPerPixel, n * input.Format.BytesPerPixel),
+                            input.Format, rgb, native, n);
+                        samples = rgb[..(n * input.Channels)];
+                    }
+                    else if (input.Bgr)
                     {
                         // B, G, R(, A) to R, G, B(, A): the swap that makes BGRA from RGBA works both ways.
                         PixelConverter.ConvertRow(samples, input.Channels, SampleFormat.UInt8, rgb,
-                            input.Channels == 4 ? ImagePixelFormat.Bgra32 : ImagePixelFormat.Bgr24, n);
+                            input.Channels == 4 ? PixelFormat.Bgra32 : PixelFormat.Bgr24, n);
                         samples = rgb[..(n * input.Channels)];
                     }
                     if (channels != input.Channels)
                     {
                         PixelConverter.ConvertRow(samples, input.Channels, SampleFormat.UInt8, converted,
-                            channels == 1 ? ImagePixelFormat.Gray8 : ImagePixelFormat.Rgb24, n);
+                            channels == 1 ? PixelFormat.Gray8 : PixelFormat.Rgb24, n);
                         samples = converted[..count];
                     }
                 }
@@ -389,7 +445,7 @@ public static class PnmEncoder
 
     /// <summary>A raw 8-bit raster that is the input's rows as they are.</summary>
     private static bool IsVerbatim(in Input input, Target target) =>
-        !input.Sixteen && !input.Bgr && target.Channels == input.Channels && target.MaxValue == 255 && !target.Plain && !target.Bitmap;
+        !input.Sixteen && input.Format.IsBasic8 && !input.Bgr && target.Channels == input.Channels && target.MaxValue == 255 && !target.Plain && !target.Bitmap;
 
     /// <summary>Sample <paramref name="i"/> scaled to <paramref name="max"/>, rounding to nearest.</summary>
     private static uint Sample(ReadOnlySpan<byte> samples, int i, bool sixteen, int max)

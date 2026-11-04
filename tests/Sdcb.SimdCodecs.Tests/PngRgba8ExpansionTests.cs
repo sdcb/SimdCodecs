@@ -57,7 +57,7 @@ public sealed class PngRgba8ExpansionTests
         (w, h).ShouldBe((width, Height));
         rgba.ShouldBe(expected);
 
-        PngReader.Decode(png).ToRgba8().ShouldBe(expected);
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).ToRgba8().ShouldBe(expected);
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class PngRgba8ExpansionTests
         PngImageDecoder.TryDecodeIntoRgba8(png, rgba).ShouldBeTrue();
 
         rgba.ShouldBe(new byte[] { 10, 20, 30, 255 });
-        PngReader.Decode(png).ToRgba8().ShouldBe(rgba);
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).ToRgba8().ShouldBe(rgba);
     }
 
     /// <summary>

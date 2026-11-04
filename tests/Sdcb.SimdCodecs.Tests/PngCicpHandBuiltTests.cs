@@ -33,7 +33,7 @@ public sealed class PngCicpHandBuiltTests
     {
         var png = BuildPng(16, Cicp(primaries, transfer, matrix, fullRange));
 
-        var doc = PngReader.Decode(png);
+        var doc = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         doc.Cicp.ShouldNotBeNull(label);
         ((byte)doc.Cicp.ColorPrimaries).ShouldBe(primaries);
         ((byte)doc.Cicp.TransferFunction).ShouldBe(transfer);
@@ -64,7 +64,7 @@ public sealed class PngCicpHandBuiltTests
 
         var png = BuildPng(16, Cicp(9, 16, 0, true), (mdcvName, mdcv), ("cLLI", clli));
 
-        var doc = PngReader.Decode(png);
+        var doc = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
         doc.Cicp.ShouldNotBeNull();
         doc.Mdcv.ShouldNotBeNull("mDCV chunk should be present and parsed");
         doc.Clli.ShouldNotBeNull("cLLI chunk should be present and parsed");

@@ -31,22 +31,21 @@ public static class ImageFrameReaderExtensions
     /// <param name="stride">Bytes from one row to the next; 0 means tightly packed.</param>
     /// <param name="format">The pixel layout to write.</param>
     /// <exception cref="ArgumentNullException"><paramref name="reader"/> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="stride"/> is negative or <paramref name="format"/> unknown.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="stride"/> is negative.</exception>
     /// <exception cref="ArgumentException">While enumerating: a frame does not fit <paramref name="destination"/> at <paramref name="stride"/>.</exception>
-    /// <exception cref="NotSupportedException">While enumerating: a frame has float samples, which have no 8-bit projection.</exception>
+    /// <exception cref="NotSupportedException">While enumerating: a frame has float samples, which have no integer projection.</exception>
     /// <exception cref="InvalidDataException">While enumerating: a frame is malformed or undecodable.</exception>
     public static IEnumerable<FrameTiming> EnumerateFramesInto(this IImageFrameReader reader,
-        Memory<byte> destination, int stride, ImagePixelFormat format)
+        Memory<byte> destination, int stride, PixelFormat format)
     {
         // Checked here, not on the first MoveNext: an iterator's body runs only when enumerated.
         ArgumentNullException.ThrowIfNull(reader);
         ArgumentOutOfRangeException.ThrowIfNegative(stride);
-        _ = PixelConverter.BytesPerPixel(format); // throws for an unknown format
         return Frames(reader, destination, stride, format);
     }
 
     private static IEnumerable<FrameTiming> Frames(IImageFrameReader reader, Memory<byte> destination, int stride,
-        ImagePixelFormat format)
+        PixelFormat format)
     {
         for (var index = 0; index < reader.FrameCount; index++)
         {
@@ -54,7 +53,7 @@ public static class ImageFrameReaderExtensions
                 throw new InvalidDataException($"Frame {index} cannot be read: it is malformed, or in a layout its decoder does not present.");
             var info = frame.Info;
             if (info.SampleFormat == SampleFormat.Float32)
-                throw new NotSupportedException($"Frame {index} has float samples, which have no 8-bit {format} projection.");
+                throw new NotSupportedException($"Frame {index} has float samples, which have no integer {format} projection.");
             if (!PixelConverter.TryGetLayout(info.Width, info.Height, format, stride, destination.Length, out _))
             {
                 throw new ArgumentException(

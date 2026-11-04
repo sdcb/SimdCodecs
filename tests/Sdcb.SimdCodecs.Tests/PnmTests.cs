@@ -105,12 +105,12 @@ public sealed class PnmTests
     [MemberData(nameof(EncoderFormats))]
     public void Encoded_files_read_back_in_imagemagick_as_the_pixels_meant(PnmFormat format, int maxValue)
     {
-        foreach (var input in new[] { ImagePixelFormat.Rgba32, ImagePixelFormat.Bgr24, ImagePixelFormat.Gray8 })
+        foreach (var input in new[] { PixelFormat.Rgba32, PixelFormat.Bgr24, PixelFormat.Gray8 })
         foreach (var width in Widths)
         {
             var rgba = new byte[width * 3 * 4];
             new Random(width).NextBytes(rgba);
-            var bpp = PixelConverter.BytesPerPixel(input);
+            var bpp = input.BytesPerPixel;
             var pixels = new byte[width * 3 * bpp];
             PixelConverter.ConvertRow(rgba, 4, SampleFormat.UInt8, pixels, input, width * 3);
             var data = PnmEncoder.Encode(pixels, width, 3, input, new PnmEncodeOptions { Format = format, MaxValue = maxValue });
@@ -120,8 +120,8 @@ public sealed class PnmTests
             for (var i = 0; i < width * 3; i++)
             {
                 int r = rgba[4 * i], g = rgba[4 * i + 1], b = rgba[4 * i + 2], a = rgba[4 * i + 3];
-                if (input == ImagePixelFormat.Gray8) r = g = b = (77 * r + 150 * g + 29 * b + 128) >> 8;
-                if (input != ImagePixelFormat.Rgba32) a = 255;
+                if (input == PixelFormat.Gray8) r = g = b = (77 * r + 150 * g + 29 * b + 128) >> 8;
+                if (input != PixelFormat.Rgba32) a = 255;
                 (source[4 * i], source[4 * i + 1], source[4 * i + 2], source[4 * i + 3]) = ((byte)r, (byte)g, (byte)b, (byte)a);
             }
             var resolved = format == PnmFormat.Auto ? (bpp == 1 ? PnmFormat.Graymap : bpp == 3 ? PnmFormat.Pixmap : PnmFormat.Arbitrary) : format;
@@ -173,7 +173,7 @@ public sealed class PnmTests
         var grey = Enumerable.Range(0, 100 * 2).Select(i => (byte)(i * 37)).ToArray();
         foreach (var format in new[] { PnmFormat.PlainBitmap, PnmFormat.PlainGraymap, PnmFormat.PlainPixmap })
         {
-            var text = Encoding.ASCII.GetString(PnmEncoder.Encode(grey, 100, 2, ImagePixelFormat.Gray8, new PnmEncodeOptions { Format = format }));
+            var text = Encoding.ASCII.GetString(PnmEncoder.Encode(grey, 100, 2, PixelFormat.Gray8, new PnmEncodeOptions { Format = format }));
             var lines = text.Split('\n');
             lines.ShouldAllBe(l => l.Length <= 70, format.ToString());
             text.ShouldEndWith("\n");
@@ -234,7 +234,7 @@ public sealed class PnmTests
         {
             // Every 8-bit layout through the adapter agrees with the native samples.
             var grey = new byte[image.Width * image.Height];
-            PnmImageDecoder.TryDecodeInto(data, grey, 0, ImagePixelFormat.Gray8).ShouldBeTrue(name);
+            PnmImageDecoder.TryDecodeInto(data, grey, 0, PixelFormat.Gray8, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue(name);
             if (channels == 1) grey.ShouldBe(expected, name);
         }
     }
@@ -248,7 +248,7 @@ public sealed class PnmTests
         image.SampleFormat.ShouldBe(SampleFormat.UInt16);
         Native16(image).ShouldBe(new ushort[] { 0, 32768, 65535, 65535 });
         var grey = new byte[4];
-        PnmDecoder.DecodeTo(data, grey, ImagePixelFormat.Gray8);
+        PnmDecoder.DecodeTo(data, grey, PixelFormat.Gray8);
         grey.ShouldBe(new byte[] { 0, 128, 255, 255 });
         PnmDecoder.Decode(Ascii("P2\n2 1\n300\n150 301")).Pixels.ShouldBe(System.Runtime.InteropServices.MemoryMarshal.AsBytes<ushort>([32768, 65535]).ToArray());
     }
@@ -269,11 +269,11 @@ public sealed class PnmTests
         var image = PnmDecoder.Decode(data);
         image.Info.Scale.ShouldBe(2.5f);
         System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(image.Pixels).ToArray().ShouldBe([.. top, .. bottom]);
-        PfmImageDecoder.TryDecode(data, out var decoded).ShouldBeTrue();
+        PfmImageDecoder.TryDecode(data, out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         decoded.ColorEncoding.Transfer.ShouldBe(TransferFunction.Linear);
-        PfmImageDecoder.TryDecodeInto(data, new byte[8], 0, ImagePixelFormat.Rgba32).ShouldBeFalse();
+        PfmImageDecoder.TryDecodeInto(data, new byte[8], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         Should.Throw<NotSupportedException>(() => PnmDecoder.DecodeTo(data, new byte[8]));
-        PnmImageDecoder.TryDecode(data, out _).ShouldBeFalse("PFM has its own adapter");
+        PnmImageDecoder.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse("PFM has its own adapter");
     }
 
     public static TheoryData<string, byte[]> Malformed() => new()
@@ -309,20 +309,20 @@ public sealed class PnmTests
     public void Malformed_files_are_refused(string name, byte[] data)
     {
         Should.Throw<InvalidDataException>(() => PnmDecoder.Decode(data), name);
-        PnmImageDecoder.TryDecode(data, out _).ShouldBeFalse(name);
-        PfmImageDecoder.TryDecode(data, out _).ShouldBeFalse(name);
-        PnmImageDecoder.TryDecodeInto(data, new byte[64], 0, ImagePixelFormat.Rgba32).ShouldBeFalse(name);
+        PnmImageDecoder.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(name);
+        PfmImageDecoder.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(name);
+        PnmImageDecoder.TryDecodeInto(data, new byte[64], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(name);
     }
 
     [Fact]
     public void Encoder_arguments_are_checked()
     {
-        Should.Throw<ArgumentException>(() => PnmEncoder.Encode(new byte[4], 0, 4, ImagePixelFormat.Gray8));
-        Should.Throw<ArgumentException>(() => PnmEncoder.Encode(new byte[3], 2, 2, ImagePixelFormat.Gray8));
-        Should.Throw<ArgumentException>(() => PnmEncoder.Encode(new byte[4], 2, 2, ImagePixelFormat.Gray8, new PnmEncodeOptions { MaxValue = 70000 }));
-        Should.Throw<ArgumentException>(() => PnmEncoder.Encode(new byte[4], 2, 2, ImagePixelFormat.Gray8, new PnmEncodeOptions { Format = PnmFormat.FloatPixmap }));
+        Should.Throw<ArgumentException>(() => PnmEncoder.Encode(new byte[4], 0, 4, PixelFormat.Gray8));
+        Should.Throw<ArgumentException>(() => PnmEncoder.Encode(new byte[3], 2, 2, PixelFormat.Gray8));
+        Should.Throw<ArgumentException>(() => PnmEncoder.Encode(new byte[4], 2, 2, PixelFormat.Gray8, new PnmEncodeOptions { MaxValue = 70000 }));
+        Should.Throw<ArgumentException>(() => PnmEncoder.Encode(new byte[4], 2, 2, PixelFormat.Gray8, new PnmEncodeOptions { Format = PnmFormat.FloatPixmap }));
         Should.Throw<ArgumentException>(() => PnmEncoder.Encode(new byte[4], 2, 2, 5));
-        Should.Throw<ArgumentException>(() => PnmEncoder.Encode(new byte[4], 2, 2, ImagePixelFormat.Gray8, new PnmEncodeOptions { Format = PnmFormat.Arbitrary, TupleType = "A\nB" }));
+        Should.Throw<ArgumentException>(() => PnmEncoder.Encode(new byte[4], 2, 2, PixelFormat.Gray8, new PnmEncodeOptions { Format = PnmFormat.Arbitrary, TupleType = "A\nB" }));
         Should.Throw<ArgumentException>(() => PnmEncoder.EncodePfm(new float[8], 2, 2, 2));
     }
 }

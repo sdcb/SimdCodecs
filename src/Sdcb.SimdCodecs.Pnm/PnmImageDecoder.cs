@@ -12,6 +12,10 @@ namespace Sdcb.SimdCodecs.Pnm;
 /// </summary>
 public sealed class PnmImageDecoder : IImageDecoder
 {
+    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Pnm, CanDecode, TryReadInfo,
+        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail);
+
     /// <inheritdoc />
     /// <remarks><c>P1</c> to <c>P7</c> and a whitespace byte.</remarks>
     public static int SignatureLength => 3;
@@ -23,19 +27,36 @@ public sealed class PnmImageDecoder : IImageDecoder
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info) => PnmAdapter.TryReadInfo(data, pfm: false, out info);
 
     /// <inheritdoc />
-    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image) =>
-        PnmAdapter.TryDecode(data, pfm: false, out image);
+    public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
+        out int width, out int height, out int scaleDenominator) =>
+        ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
 
     /// <inheritdoc />
-    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format) =>
-        PnmAdapter.TryDecodeInto(data, pfm: false, destination, stride, format);
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        PnmAdapter.TryDecode(data, pfm: false, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        PnmAdapter.TryDecodeInto(data, pfm: false, destination, stride, format, options, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>Netpbm carries no metadata blocks: a readable file gives <see cref="ImageMetadata.Empty"/>.</remarks>
+    public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata) =>
+        ImageDecoderFallback.TryReadNoMetadata(TryReadInfo, data, out metadata);
+
+    /// <inheritdoc />
+    /// <remarks>Netpbm carries no embedded previews: always false.</remarks>
+    public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail) =>
+        ImageDecoderFallback.NoThumbnail(out thumbnail);
 
     /// <summary>
     /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA: <paramref name="rgbaDestination"/> must be at
     /// least <c>Width * Height * 4</c> bytes.
     /// </summary>
     public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
-        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
+        TryDecodeInto(data, rgbaDestination, 0, PixelFormat.Rgba32);
 }
 
 /// <summary>
@@ -47,6 +68,10 @@ public sealed class PnmImageDecoder : IImageDecoder
 /// </summary>
 public sealed class PfmImageDecoder : IImageDecoder
 {
+    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    public static ImageDecoderRegistration Registration { get; } = new(ImageFormat.Pfm, CanDecode, TryReadInfo,
+        TryGetClosestSize, TryDecode, TryDecodeInto, TryReadMetadata, TryDecodeThumbnail);
+
     /// <inheritdoc />
     /// <remarks><c>Pf</c> or <c>PF</c> and a whitespace byte.</remarks>
     public static int SignatureLength => 3;
@@ -58,12 +83,29 @@ public sealed class PfmImageDecoder : IImageDecoder
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info) => PnmAdapter.TryReadInfo(data, pfm: true, out info);
 
     /// <inheritdoc />
-    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image) =>
-        PnmAdapter.TryDecode(data, pfm: true, out image);
+    public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
+        out int width, out int height, out int scaleDenominator) =>
+        ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
 
     /// <inheritdoc />
-    /// <remarks>Always false: float samples have no 8-bit form without a tone policy.</remarks>
-    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format) => false;
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        PnmAdapter.TryDecode(data, pfm: true, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>Always false: float samples have no integer projection without an explicit tone policy.</remarks>
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) => false;
+
+    /// <inheritdoc />
+    /// <remarks>PFM carries no metadata blocks: a readable file gives <see cref="ImageMetadata.Empty"/>.</remarks>
+    public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata) =>
+        ImageDecoderFallback.TryReadNoMetadata(TryReadInfo, data, out metadata);
+
+    /// <inheritdoc />
+    /// <remarks>PFM carries no embedded previews: always false.</remarks>
+    public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail) =>
+        ImageDecoderFallback.NoThumbnail(out thumbnail);
 }
 
 internal static class PnmAdapter
@@ -86,6 +128,7 @@ internal static class PnmAdapter
             {
                 Format = pfm ? ImageFormat.Pfm : ImageFormat.Pnm,
                 BitDepth = pfm ? 32 : 32 - BitOperations.LeadingZeroCount((uint)pnm.MaxValue),
+                ColorEncoding = pfm ? LinearFloat : ColorEncoding.AssumedSrgb,
             };
             return true;
         }
@@ -96,31 +139,59 @@ internal static class PnmAdapter
         }
     }
 
-    public static bool TryDecode(ReadOnlySpan<byte> data, bool pfm, [NotNullWhen(true)] out IDecodedImage? image)
+    public static bool TryDecode(ReadOnlySpan<byte> data, bool pfm, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
+        image = null;
+        cancellationToken.ThrowIfCancellationRequested();
+        PnmInfo info;
+        int offset;
         try
         {
-            var info = Read(data, pfm, out var offset);
-            image = new RasterImage(info.Width, info.Height, info.Channels, info.SampleFormat, PnmPixels.Decode(data, info, offset),
-                colorEncoding: pfm ? LinearFloat : null);
-            return true;
+            info = Read(data, pfm, out offset);
         }
         catch (InvalidDataException)
         {
-            image = null;
             return false;
         }
-    }
 
-    public static bool TryDecodeInto(ReadOnlySpan<byte> data, bool pfm, Span<byte> destination, int stride, ImagePixelFormat format)
-    {
+        options?.Validate(info.Width, info.Height, supportsScale: false);
+        int bitDepth = pfm ? 32 : (32 - BitOperations.LeadingZeroCount((uint)info.MaxValue));
+        var raster = RasterImage.Create(info.Width, info.Height, info.Channels, info.SampleFormat, options?.Pool,
+            colorEncoding: pfm ? LinearFloat : null, bitDepth: bitDepth);
         try
         {
-            var info = Read(data, pfm, out var offset);
-            if (info.SampleFormat == SampleFormat.Float32
-                || !PixelConverter.TryGetLayout(info.Width, info.Height, format, stride, destination.Length, out var rowStride))
+            PnmPixels.Decode(data, info, offset, raster.WritablePixels, cancellationToken);
+        }
+        catch (Exception e)
+        {
+            raster.Dispose();
+            if (e is InvalidDataException)
                 return false;
-            PnmPixels.DecodeTo(data, info, offset, destination, rowStride, format);
+            throw;
+        }
+        image = DecodeOptions.Apply(raster, options);
+        return true;
+    }
+
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, bool pfm, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        if (pfm) return false;
+        cancellationToken.ThrowIfCancellationRequested();
+        if (options is { IsFullImage: false })
+            return ImageDecoderFallback.TryDecodeInto(PnmImageDecoder.TryDecode, data, destination, stride, format, options, cancellationToken);
+        try
+        {
+            var info = Read(data, pfm: false, out var offset);
+            if (info.SampleFormat == SampleFormat.Float32)
+                return false;
+            if (info.SampleFormat == SampleFormat.UInt16 && format.Sample == SampleFormat.UInt16)
+                return ImageDecoderFallback.TryDecodeInto(PnmImageDecoder.TryDecode, data, destination, stride, format, options, cancellationToken);
+
+            if (!PixelConverter.TryGetLayout(info.Width, info.Height, format, stride, destination.Length, out var rowStride))
+                return false;
+            PnmPixels.DecodeTo(data, info, offset, destination, rowStride, format, cancellationToken);
             return true;
         }
         catch (InvalidDataException)

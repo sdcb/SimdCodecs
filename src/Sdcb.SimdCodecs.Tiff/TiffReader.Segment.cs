@@ -44,7 +44,27 @@ public sealed class TiffPageLayout
         TileHeight = ifd.IsTiled ? ifd.TileHeight : 0;
         Photometric = ifd.Photometric;
         Orientation = ifd.Orientation;
+        IccProfile = ifd.Icc;
+        Xmp = ifd.Xmp;
+        XResolution = ifd.XResolution;
+        YResolution = ifd.YResolution;
+        ResolutionUnit = ifd.ResolutionUnit;
     }
+
+    /// <summary>The embedded ICC profile (tag 34675), or null.</summary>
+    internal byte[]? IccProfile { get; }
+
+    /// <summary>The raw XMP packet (tag 700), or null.</summary>
+    internal byte[]? Xmp { get; }
+
+    /// <summary>XResolution (tag 282) in pixels per <see cref="ResolutionUnit"/>; 0 when absent or unusable.</summary>
+    internal double XResolution { get; }
+
+    /// <summary>YResolution (tag 283) in pixels per <see cref="ResolutionUnit"/>; 0 when absent or unusable.</summary>
+    internal double YResolution { get; }
+
+    /// <summary>ResolutionUnit (tag 296): 1 none, 2 inch (the default), 3 centimetre.</summary>
+    internal int ResolutionUnit { get; }
 
     public int PageIndex { get; }
     public bool FileIsLittleEndian { get; }

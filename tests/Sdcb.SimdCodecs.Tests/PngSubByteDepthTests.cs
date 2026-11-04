@@ -56,6 +56,6 @@ public sealed class PngSubByteDepthTests
         using var expected = new MagickImage(png);
         using var expectedPixels = expected.GetPixels();
         rgba.ShouldBe(expectedPixels.ToByteArray(PixelMapping.RGBA));
-        PngReader.Decode(png).SourceBitDepth.ShouldBe(depth);
+        PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).SourceBitDepth.ShouldBe(depth);
     }
 }

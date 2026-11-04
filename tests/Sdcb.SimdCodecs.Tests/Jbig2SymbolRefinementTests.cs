@@ -31,7 +31,7 @@ public sealed class Jbig2SymbolRefinementTests(ITestOutputHelper output)
     {
         var (stream, expected) = BuildTextRefinement();
 
-        Jbig2Decoder.Decode(stream, expected.Width, expected.Height).Bits.ToArray().ShouldBe(expected.Data);
+        Jbig2Decoder.Decode(stream, expected.Width, expected.Height, cancellationToken: TestContext.Current.CancellationToken).Bits.ToArray().ShouldBe(expected.Data);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class Jbig2SymbolRefinementTests(ITestOutputHelper output)
     {
         var (stream, expected) = BuildDictionaryRefinement();
 
-        Jbig2Decoder.Decode(stream, expected.Width, expected.Height).Bits.ToArray().ShouldBe(expected.Data);
+        Jbig2Decoder.Decode(stream, expected.Width, expected.Height, cancellationToken: TestContext.Current.CancellationToken).Bits.ToArray().ShouldBe(expected.Data);
     }
 
     [Fact]

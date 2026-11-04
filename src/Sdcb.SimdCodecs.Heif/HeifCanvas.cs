@@ -4,7 +4,7 @@ using Sdcb.SimdCodecs.Heif.Hevc;
 namespace Sdcb.SimdCodecs.Heif;
 
 /// <summary>
-/// The output of one decode: a caller's buffer in an 8-bit <see cref="ImagePixelFormat"/> with a row stride, and the
+/// The output of one decode: a caller's buffer in a <see cref="PixelFormat"/> with a row stride, and the
 /// mapping from the canvas (the grid image before its transformative properties) to it. Each coded image (grid
 /// tile) is converted straight into the rectangle of the output it covers as soon as it is decoded
 /// (<see cref="WriteTile"/>), so no canvas-sized intermediate exists and tiles can be written in parallel: they
@@ -22,10 +22,11 @@ namespace Sdcb.SimdCodecs.Heif;
 /// </para>
 /// <para>
 /// <b>Pixels.</b> Each pixel's bytes come from the frozen <see cref="HeifColor"/> conversion. Rgba32 and Bgra32
-/// are written by the row kernel itself; Rgb24 and Bgr24 by converting the row to RGBA and packing it with
-/// <see cref="PixelConverter.ConvertRow"/>; Gray8 is <see cref="HeifColor.ToGrayRow"/> (the stored luma), except for
-/// the identity matrix, whose Y plane is G: that takes the luma of the RGBA row through
-/// <see cref="PixelConverter.ConvertRow"/>. Those are exactly the bytes of decoding to RGBA and converting.
+/// are written by the row kernel itself; Gray8 is <see cref="HeifColor.ToGrayRow"/> (the stored luma), except for
+/// the identity matrix, whose Y plane is G: that takes the luma of the RGBA row; every other 8-bit format converts
+/// the RGBA row with <see cref="PixelConverter"/>. 16-bit formats come from the 16-bit conversion
+/// (<see cref="HeifColor.ToRgba64420Row"/>), RGBA64 written directly, the others converted from its row. Those
+/// are exactly the bytes of decoding to RGBA (8- or 16-bit) and converting.
 /// </para>
 /// </remarks>
 internal sealed unsafe class HeifCanvas
@@ -35,9 +36,11 @@ internal sealed unsafe class HeifCanvas
     private readonly byte* _destination;
     private readonly long _length;
     private readonly int _stride;
-    private readonly ImagePixelFormat _format;
+    private readonly PixelFormat _format;
     private readonly int _bpp;
     private readonly HeifColor.Coefficients _k;
+    private readonly bool _wide; // 16-bit output: _k is the 16-bit coefficient set
+    private readonly CancellationToken _cancellationToken;
 
     // output = (a·x + b·y + c, d·x + e·y + f) for canvas (x, y) inside the region.
     private readonly int _a, _b, _c, _d, _e, _f;
@@ -53,15 +56,17 @@ internal sealed unsafe class HeifCanvas
     /// Sets up the output for <paramref name="container"/>'s canvas. <paramref name="destination"/> must stay pinned
     /// while tiles are written; it must hold the display size at <paramref name="stride"/> bytes per row.
     /// </summary>
-    internal HeifCanvas(HeifContainer container, byte* destination, long length, int stride, ImagePixelFormat format,
-        in HeifColor.Coefficients coefficients)
+    internal HeifCanvas(HeifContainer container, byte* destination, long length, int stride, PixelFormat format,
+        in HeifColor.Coefficients coefficients, CancellationToken cancellationToken = default, PixelRect? region = null)
     {
         _destination = destination;
         _length = length;
         _stride = stride;
         _format = format;
-        _bpp = PixelConverter.BytesPerPixel(format);
+        _bpp = format.BytesPerPixel;
         _k = coefficients;
+        _wide = format.Sample == SampleFormat.UInt16;
+        _cancellationToken = cancellationToken;
 
         int canvasW = container.CanvasWidth, canvasH = container.CanvasHeight;
         int a = 1, b = 0, c = 0, d = 0, e = 1, f = 0;
@@ -102,6 +107,17 @@ internal sealed unsafe class HeifCanvas
                     break;
             }
         }
+        // A region of the displayed image is one more translation: output' = output − (X, Y), on a Width × Height
+        // rectangle. The preimage below then shrinks to the canvas pixels that land in it, so tiles outside it are
+        // skipped (Intersects) and only its pixels are converted.
+        if (region is { } r)
+        {
+            if (!r.FitsIn(width, height))
+                throw new ArgumentException($"The region {r} does not lie inside the {width}x{height} image.");
+            c -= r.X;
+            f -= r.Y;
+            (width, height) = (r.Width, r.Height);
+        }
         (_a, _b, _c, _d, _e, _f) = (a, b, c, d, e, f);
         Width = width;
         Height = height;
@@ -125,6 +141,10 @@ internal sealed unsafe class HeifCanvas
             throw new ArgumentException("The destination does not fit the image.");
         }
     }
+
+    /// <summary>True when canvas pixels [x, x + w) × [y, y + h) reach the output: a tile outside the region is skipped.</summary>
+    internal bool Intersects(int x, int y, int w, int h) =>
+        x < _regionX1 && x + w > _regionX0 && y < _regionY1 && y + h > _regionY0;
 
     /// <summary>Narrows [lo, hi) to the values v with 0 ≤ s·v + offset &lt; size (s = ±1).</summary>
     private static void Clip(int s, int offset, int size, ref int lo, ref int hi)
@@ -151,6 +171,7 @@ internal sealed unsafe class HeifCanvas
     /// </summary>
     internal void WriteTile(HevcPicture picture, int canvasX, int canvasY, int tileW, int tileH, bool parallel = false)
     {
+        _cancellationToken.ThrowIfCancellationRequested();
         var ys = Math.Max(canvasY, _regionY0);
         var ye = Math.Min(canvasY + tileH, _regionY1);
         const int Band = 64;
@@ -160,7 +181,7 @@ internal sealed unsafe class HeifCanvas
             return;
         }
         // Bands of rows write disjoint output pixels.
-        Parallel.For(0, (ye - ys + Band - 1) / Band, band =>
+        Parallel.For(0, (ye - ys + Band - 1) / Band, new ParallelOptions { CancellationToken = _cancellationToken }, band =>
             WriteTileRows(picture, canvasX, canvasY, tileW, ys + band * Band, Math.Min(ys + (band + 1) * Band, ye)));
     }
 
@@ -216,9 +237,14 @@ internal sealed unsafe class HeifCanvas
     private void ConvertRow(HevcPicture p, int row, int column, int count, Span<byte> target)
     {
         var yRow = p.Planes[0].AsSpan((p.CropTop + row) * p.Width + p.CropLeft + column, count);
-        if (_format == ImagePixelFormat.Gray8 && !_k.Identity)
+        if (_format == PixelFormat.Gray8 && !_k.Identity)
         {
             HeifColor.ToGrayRow(yRow, target, count, _k);
+            return;
+        }
+        if (_wide)
+        {
+            ConvertRow16(p, row, column, count, yRow, target);
             return;
         }
 
@@ -227,7 +253,7 @@ internal sealed unsafe class HeifCanvas
         var chromaRow = (p.CropTop / p.SubHeightC + (row >> 1)) * p.ChromaWidth + p.CropLeft / p.SubWidthC;
         var cb = p.Planes[1].AsSpan(chromaRow);
         var cr = p.Planes[2].AsSpan(chromaRow);
-        var native = _format is ImagePixelFormat.Rgba32 or ImagePixelFormat.Bgra32;
+        var native = _format == PixelFormat.Rgba32 || _format == PixelFormat.Bgra32;
         Span<byte> chunk = stackalloc byte[native ? 0 : ChunkPixels * 4];
         var done = 0;
         while (done < count)
@@ -239,13 +265,47 @@ internal sealed unsafe class HeifCanvas
             var crSeg = cr.Slice(x >> 1);
             if (native)
             {
-                HeifColor.ToRgba420Row(ySeg, cbSeg, crSeg, target.Slice(done * 4, run * 4), run, _k, _format == ImagePixelFormat.Bgra32);
+                HeifColor.ToRgba420Row(ySeg, cbSeg, crSeg, target.Slice(done * 4, run * 4), run, _k, _format == PixelFormat.Bgra32);
             }
             else
             {
                 var rgba = chunk[..(run * 4)];
                 HeifColor.ToRgba420Row(ySeg, cbSeg, crSeg, rgba, run, _k);
-                PixelConverter.ConvertRow(rgba, 4, SampleFormat.UInt8, target.Slice(done * _bpp, run * _bpp), _format, run);
+                PixelConverter.ConvertRow(rgba, PixelFormat.Rgba32, target.Slice(done * _bpp, run * _bpp), _format, run);
+            }
+            done += run;
+        }
+    }
+
+    // The 16-bit twin of ConvertRow: RGBA64 rows from HeifColor.ToRgba64420Row, then the output layout. Grey from a
+    // non-identity matrix takes the luma of that RGBA64 row too (the 8-bit path's stored-luma shortcut has no 16-bit
+    // counterpart in the frozen conversion), via PixelConverter.
+    private void ConvertRow16(HevcPicture p, int row, int column, int count, ReadOnlySpan<ushort> yRow, Span<byte> target)
+    {
+        var chromaRow = (p.CropTop / p.SubHeightC + (row >> 1)) * p.ChromaWidth + p.CropLeft / p.SubWidthC;
+        var cb = p.Planes[1].AsSpan(chromaRow);
+        var cr = p.Planes[2].AsSpan(chromaRow);
+        var native = _format == PixelFormat.Rgba64 || _format == PixelFormat.Bgra64;
+        Span<ushort> chunk = stackalloc ushort[native ? 0 : ChunkPixels * 4];
+        var done = 0;
+        while (done < count)
+        {
+            var x = column + done;
+            var run = (x & 1) != 0 ? 1 : Math.Min(count - done, ChunkPixels);
+            var ySeg = yRow.Slice(done, run);
+            var cbSeg = cb.Slice(x >> 1);
+            var crSeg = cr.Slice(x >> 1);
+            if (native)
+            {
+                var out16 = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ushort>(target.Slice(done * 8, run * 8));
+                HeifColor.ToRgba64420Row(ySeg, cbSeg, crSeg, out16, run, _k, _format == PixelFormat.Bgra64);
+            }
+            else
+            {
+                var rgba = chunk[..(run * 4)];
+                HeifColor.ToRgba64420Row(ySeg, cbSeg, crSeg, rgba, run, _k);
+                PixelConverter.ConvertRow(System.Runtime.InteropServices.MemoryMarshal.AsBytes(rgba), PixelFormat.Rgba64,
+                    target.Slice(done * _bpp, run * _bpp), _format, run);
             }
             done += run;
         }

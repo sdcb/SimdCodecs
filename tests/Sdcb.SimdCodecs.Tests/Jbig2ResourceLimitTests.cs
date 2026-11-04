@@ -208,13 +208,13 @@ public sealed class Jbig2ResourceLimitTests
             Jbig2StreamBuilder.Segment(0, SegmentType.PageInformation, 1,
                 Jbig2StreamBuilder.PageInformation(width, height)));
 
-        Jbig2ImageDecoder.TryDecode(file, out var image).ShouldBeFalse();
+        Jbig2ImageDecoder.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         image.ShouldBeNull();
         Jbig2ImageDecoder.TryReadInfo(file, out _).ShouldBeFalse();
         Jbig2ImageDecoder.TryDecodeIntoRgba8(file, new byte[64]).ShouldBeFalse();
 
         // And through the facade, which is where a consumer actually meets it.
-        SimdCodecs.TryDecode(file, out var viaFacade).ShouldBeFalse();
+        SimdCodecs.TryDecode(file, out var viaFacade, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         viaFacade.ShouldBeNull();
     }
 
@@ -223,8 +223,8 @@ public sealed class Jbig2ResourceLimitTests
     {
         var file = FileWithRegion(pageWidth: 32, pageHeight: 16, regionWidth: 46340, regionHeight: 46340);
 
-        Jbig2ImageDecoder.TryDecode(file, out _).ShouldBeFalse();
-        SimdCodecs.TryDecode(file, out _).ShouldBeFalse();
+        Jbig2ImageDecoder.TryDecode(file, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        SimdCodecs.TryDecode(file, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     // ---- the budget's own arithmetic ----------------------------------------
@@ -291,7 +291,7 @@ public sealed class Jbig2ResourceLimitTests
     public void CommittedEncoderFixtures_StillDecode(string name)
     {
         var bytes = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "jbig2", name));
-        var image = Jbig2Decoder.DecodeFile(bytes);
+        var image = Jbig2Decoder.DecodeFile(bytes, cancellationToken: TestContext.Current.CancellationToken);
 
         image.Width.ShouldBeGreaterThan(0);
         image.Height.ShouldBeGreaterThan(0);

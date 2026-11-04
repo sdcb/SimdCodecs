@@ -22,11 +22,13 @@ public static class QoiEncoder
     /// <param name="pixels">The image, top row first.</param>
     /// <param name="width">Width in pixels.</param>
     /// <param name="height">Height in pixels.</param>
-    /// <param name="format">The input layout.</param>
+    /// <param name="format">The input layout: any <see cref="PixelFormat"/>. QOI stores 8-bit RGB or RGBA, so 16-bit
+    /// input keeps its high byte, premultiplied input is unpremultiplied, grey is stored as RGB and an alpha channel
+    /// makes a 4-channel file (all by <see cref="PixelConverter"/>).</param>
     /// <param name="colorSpace">The colour space byte to write; it does not change the pixels.</param>
     /// <param name="stride">Bytes from one input row to the next; 0 means tightly packed.</param>
     /// <exception cref="ArgumentException">The size or buffer does not fit.</exception>
-    public static byte[] Encode(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format,
+    public static byte[] Encode(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format,
         QoiColorSpace colorSpace = QoiColorSpace.Srgb, int stride = 0)
     {
         var rowStride = Validate(pixels, width, height, format, colorSpace, stride);
@@ -58,12 +60,12 @@ public static class QoiEncoder
     /// <param name="pixels">The image, top row first.</param>
     /// <param name="width">Width in pixels.</param>
     /// <param name="height">Height in pixels.</param>
-    /// <param name="format">The input layout.</param>
+    /// <param name="format">The input layout: any <see cref="PixelFormat"/> (see the other overload).</param>
     /// <param name="output">Where the file is written, from its current position.</param>
     /// <param name="colorSpace">The colour space byte to write; it does not change the pixels.</param>
     /// <param name="stride">Bytes from one input row to the next; 0 means tightly packed.</param>
     /// <exception cref="ArgumentException">The size or buffer does not fit.</exception>
-    public static void Encode(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, Stream output,
+    public static void Encode(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, Stream output,
         QoiColorSpace colorSpace = QoiColorSpace.Srgb, int stride = 0)
     {
         ArgumentNullException.ThrowIfNull(output);
@@ -73,7 +75,19 @@ public static class QoiEncoder
         writer.Flush();
     }
 
-    private static int Validate(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, QoiColorSpace colorSpace, int stride)
+    /// <summary>
+    /// Encodes a QOI file into <paramref name="output"/>, checking <paramref name="cancellationToken"/> every 64 rows:
+    /// the writer behind the encoder abstraction's QOI session.
+    /// </summary>
+    internal static void Encode(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, IBufferWriter<byte> output,
+        QoiColorSpace colorSpace, int stride, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+        var rowStride = Validate(pixels, width, height, format, colorSpace, stride);
+        Write(pixels, width, height, format, colorSpace, rowStride, output, cancellationToken);
+    }
+
+    private static int Validate(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, QoiColorSpace colorSpace, int stride)
     {
         if (width <= 0 || height <= 0 || (long)width * height > QoiCodec.MaximumPixels)
             throw new ArgumentException($"QOI size {width}x{height} must be positive and at most {QoiCodec.MaximumPixels:N0} pixels.");
@@ -84,42 +98,37 @@ public static class QoiEncoder
         return rowStride;
     }
 
-    private static void Write(ReadOnlySpan<byte> pixels, int width, int height, ImagePixelFormat format, QoiColorSpace colorSpace,
-        int rowStride, IBufferWriter<byte> output)
+    private static void Write(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, QoiColorSpace colorSpace,
+        int rowStride, IBufferWriter<byte> output, CancellationToken cancellationToken = default)
     {
         var header = output.GetSpan(QoiCodec.HeaderSize);
         "qoif"u8.CopyTo(header);
         BinaryPrimitives.WriteUInt32BigEndian(header[4..], (uint)width);
         BinaryPrimitives.WriteUInt32BigEndian(header[8..], (uint)height);
-        header[12] = format is ImagePixelFormat.Rgba32 or ImagePixelFormat.Bgra32 ? (byte)4 : (byte)3;
+        header[12] = format.HasAlpha ? (byte)4 : (byte)3;
         header[13] = (byte)colorSpace;
         output.Advance(QoiCodec.HeaderSize);
 
-        // B, G, R(, A) reads as R, G, B(, A) after the same swap that makes BGRA from RGBA.
-        var convert = format is ImagePixelFormat.Bgra32 or ImagePixelFormat.Bgr24 ? ImagePixelFormat.Bgra32 : ImagePixelFormat.Rgba32;
-        var channels = format switch
-        {
-            ImagePixelFormat.Rgba32 or ImagePixelFormat.Bgra32 => 4,
-            ImagePixelFormat.Rgb24 or ImagePixelFormat.Bgr24 => 3,
-            _ => 1,
-        };
-        var bpp = PixelConverter.BytesPerPixel(format);
+        // Every pixel goes to the encoder as straight 8-bit RGBA; RGBA32 input already is.
+        var bpp = format.BytesPerPixel;
         Span<uint> rgba = stackalloc uint[Chunk];
         var state = new Writer();
         for (var y = 0; y < height; y++)
         {
+            if ((y & 63) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
             var row = pixels.Slice(y * rowStride, width * bpp);
             for (var x = 0; x < width; x += Chunk)
             {
                 var n = Math.Min(Chunk, width - x);
                 scoped ReadOnlySpan<uint> chunk;
-                if (format == ImagePixelFormat.Rgba32)
+                if (format == PixelFormat.Rgba32)
                 {
                     chunk = MemoryMarshal.Cast<byte, uint>(row.Slice(x * 4, n * 4));
                 }
                 else
                 {
-                    PixelConverter.ConvertRow(row.Slice(x * bpp, n * bpp), channels, SampleFormat.UInt8, MemoryMarshal.AsBytes(rgba), convert, n);
+                    PixelConverter.ConvertRow(row.Slice(x * bpp, n * bpp), format, MemoryMarshal.AsBytes(rgba), PixelFormat.Rgba32, n);
                     chunk = rgba[..n];
                 }
                 var span = output.GetSpan(ChunkOutput);

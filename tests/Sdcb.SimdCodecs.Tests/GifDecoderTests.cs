@@ -70,7 +70,7 @@ public sealed class GifDecoderTests
             for (var i = 0; i < reader.FrameCount; i++)
             {
                 var rgba = new byte[info.Width * info.Height * 4];
-                reader.TryDecodeFrameInto(i, rgba, 0, ImagePixelFormat.Rgba32).ShouldBeTrue($"frame {i}");
+                reader.TryDecodeFrameInto(i, rgba, 0, PixelFormat.Rgba32).ShouldBeTrue($"frame {i}");
                 frames.Add(rgba);
             }
             return frames;
@@ -183,7 +183,7 @@ public sealed class GifDecoderTests
             foreach (var i in Enumerable.Range(0, reader.FrameCount).Reverse().Concat([1, 1, 0, reader.FrameCount - 1]))
             {
                 var rgba = new byte[inOrder[0].Length];
-                reader.TryDecodeFrameInto(i, rgba, 0, ImagePixelFormat.Rgba32).ShouldBeTrue();
+                reader.TryDecodeFrameInto(i, rgba, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
                 rgba.ShouldBe(inOrder[i], $"frame {i}");
             }
         }

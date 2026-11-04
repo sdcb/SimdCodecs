@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 
 namespace Sdcb.SimdCodecs.Jpeg2000;
 
@@ -80,7 +81,7 @@ public sealed record Jpeg2000Info(
     internal Rect Region { get; init; }
 
     /// <summary>
-    /// The size <see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, int)"/> produces at this
+    /// The size <see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, int, CancellationToken)"/> produces at this
     /// reduction, clamped as it clamps: each level left out halves each side, rounding up on the
     /// reference grid (T.800 Equation B-14), so a caller can know what a decode will cost before it
     /// runs one.
@@ -136,9 +137,12 @@ public static class Jpeg2000Decoder
     /// Decodes a JPEG 2000 image: a raw codestream, or a JP2 file, whose colour specification
     /// comes back on <see cref="Jpeg2000Image.Colour"/>.
     /// </summary>
+    /// <param name="data">The JPEG 2000 image data.</param>
+    /// <param name="cancellationToken">A cancellation token to monitor for cancellation requests.</param>
     /// <exception cref="InvalidDataException">The data is malformed, truncated or over the resource limits.</exception>
     /// <exception cref="NotSupportedException">It is well-formed but uses a feature this decoder does not implement.</exception>
-    public static Jpeg2000Image Decode(ReadOnlySpan<byte> data) => Decode(data, reduce: 0);
+    public static Jpeg2000Image Decode(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default) =>
+        Decode(data, reduce: 0, cancellationToken);
 
     /// <summary>
     /// Decodes a JPEG 2000 image at reduced resolution: the <paramref name="reduce"/> finest
@@ -155,16 +159,19 @@ public static class Jpeg2000Decoder
     /// <c>opj_decompress</c>'s <c>-r</c>, and checked against it.
     /// </para>
     /// </summary>
+    /// <param name="data">The JPEG 2000 image data.</param>
+    /// <param name="reduce">How many resolution levels to leave out (0 for full resolution).</param>
+    /// <param name="cancellationToken">A cancellation token to monitor for cancellation requests.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="reduce"/> is negative.</exception>
     /// <exception cref="InvalidDataException">The data is malformed, truncated or over the resource limits.</exception>
     /// <exception cref="NotSupportedException">It is well-formed but uses a feature this decoder does not implement.</exception>
-    public static Jpeg2000Image Decode(ReadOnlySpan<byte> data, int reduce)
+    public static Jpeg2000Image Decode(ReadOnlySpan<byte> data, int reduce, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(reduce);
-        if (!Jp2Reader.LooksLikeJp2(data)) return DecodeCodestream(data, reduce);
+        if (!Jp2Reader.LooksLikeJp2(data)) return DecodeCodestream(data, reduce, cancellationToken);
 
         var layout = Jp2Reader.Read(data);
-        return DecodeCodestream(data.Slice(layout.CodestreamStart, layout.CodestreamLength), reduce) with
+        return DecodeCodestream(data.Slice(layout.CodestreamStart, layout.CodestreamLength), reduce, cancellationToken) with
         {
             Colour = layout.Colour,
         };
@@ -200,7 +207,7 @@ public static class Jpeg2000Decoder
     }
 
     /// <summary>
-    /// The largest reduction for <see cref="Decode(ReadOnlySpan{byte}, int)"/> that still leaves an
+    /// The largest reduction for <see cref="Decode(ReadOnlySpan{byte}, int, CancellationToken)"/> that still leaves an
     /// image whose longer side is at least <paramref name="minLongEdge"/>: what a caller wants that
     /// will shrink the result to its own size, as a thumbnail does, and wants no less detail than
     /// that size can show.
@@ -221,7 +228,7 @@ public static class Jpeg2000Decoder
         return reduce;
     }
 
-    private static Jpeg2000Image DecodeCodestream(ReadOnlySpan<byte> data, int reduce)
+    private static Jpeg2000Image DecodeCodestream(ReadOnlySpan<byte> data, int reduce, CancellationToken cancellationToken = default)
     {
         var header = CodestreamReader.Read(data);
         var siz = header.Siz;
@@ -238,10 +245,12 @@ public static class Jpeg2000Decoder
         var components = new TileComponent[siz.Components.Length];
         for (var c = 0; c < components.Length; c++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             components[c] = TileComponent.Build(
                 header, c, budget, header.ComponentCoding[c].ResolutionCount - reduce);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         var part = header.TileParts[0];
         var tilePartData = data.Slice(part.Start, part.Length);
 
@@ -257,6 +266,7 @@ public static class Jpeg2000Decoder
         var blockState = new BlockState();
         for (var c = 0; c < components.Length; c++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var tile = components[c];
             for (var r = 0; r < tile.DecodedResolutions; r++)
             {

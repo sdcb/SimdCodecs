@@ -4,6 +4,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
+using System.Threading;
 using Sdcb.SimdCodecs.Abstractions;
 
 namespace Sdcb.SimdCodecs.Png;
@@ -53,11 +54,12 @@ public static class PngReader
     /// RGBA8 display ones in <see cref="PngImageDecoder"/>, which refuse cICP PQ/HLG, and a float one
     /// that would decode those.
     /// </summary>
-    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out PngImage? image)
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out PngImage? image,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            image = Decode(data);
+            image = Decode(data, cancellationToken);
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
@@ -74,14 +76,15 @@ public static class PngReader
     /// preserve bit patterns exactly (see <see cref="PngImage.AsUInt16Samples"/>
     /// for a native-endian view).
     /// </summary>
-    public static PngImage Decode(ReadOnlySpan<byte> data)
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled (checked every 64 rows).</exception>
+    public static PngImage Decode(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default)
     {
         var header = ReadHeader(data, out var idat);
         return header with
         {
             Pixels = header.Interlaced
-                ? InflateAdam7(data, idat, header.Width, header.Height, header.SourceBitDepth, header.ColorType)
-                : InflateAndUnfilter(data, idat, header.Width, header.Height, header.SourceBitDepth, header.ColorType),
+                ? InflateAdam7(data, idat, header.Width, header.Height, header.SourceBitDepth, header.ColorType, cancellationToken)
+                : InflateAndUnfilter(data, idat, header.Width, header.Height, header.SourceBitDepth, header.ColorType, cancellationToken),
         };
     }
 
@@ -376,11 +379,11 @@ public static class PngReader
     /// into a new array: the image's bytes three or four times over before the samples existed.</para>
     /// </summary>
     private static unsafe byte[] InflateAndUnfilter(ReadOnlySpan<byte> data, List<(int Offset, int Length)> idat,
-        int width, int height, int bitDepth, int colorType)
+        int width, int height, int bitDepth, int colorType, CancellationToken cancellationToken)
     {
         if (bitDepth < 8)
         {
-            return InflateAndUnfilterSubByte(data, idat, width, height, bitDepth, colorType);
+            return InflateAndUnfilterSubByte(data, idat, width, height, bitDepth, colorType, cancellationToken);
         }
         var bytesPerPixel = SamplesPerPixel(colorType) * (bitDepth / 8);
         var rowBytes = checked(width * bytesPerPixel);
@@ -392,6 +395,8 @@ public static class PngReader
             using var rows = new RowInflater(pinned, idat, ((long)rowBytes + 1) * height, width, height, bytesPerPixel);
             for (var y = 0; y < height; y++)
             {
+                if ((y & 63) == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
                 var row = pixels.AsSpan(y * rowBytes, rowBytes);
                 var filterType = rows.Read(row);
 
@@ -417,7 +422,7 @@ public static class PngReader
     /// Emoji's U+1F6D1), which the reader refused.
     /// </summary>
     private static unsafe byte[] InflateAndUnfilterSubByte(ReadOnlySpan<byte> data, List<(int Offset, int Length)> idat,
-        int width, int height, int bitDepth, int colorType)
+        int width, int height, int bitDepth, int colorType, CancellationToken cancellationToken)
     {
         var packedBytes = checked((int)(((long)width * bitDepth + 7) / 8));
         var pixels = new byte[checked((long)width * height)];
@@ -429,6 +434,8 @@ public static class PngReader
             using var rows = new RowInflater(pinned, idat, ((long)packedBytes + 1) * height, width, height, 1);
             for (var y = 0; y < height; y++)
             {
+                if ((y & 63) == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
                 PngPredictor.UnfilterRow(rows.Read(row), row, above, 1);
                 PngRgba8Expander.UnpackSubByte(row, pixels.AsSpan(y * width, width), width, bitDepth, scaleGray: colorType == 0);
                 (row, above) = (above, row);
@@ -445,11 +452,11 @@ public static class PngReader
     /// of <see cref="PngImage.ExpandToRgba8"/>.
     /// </summary>
     internal static void DecodeRgba8(ReadOnlySpan<byte> data, PngImage header, List<(int Offset, int Length)> idat,
-        Span<byte> destination, PngAblation ablation = PngAblation.None)
+        Span<byte> destination, PngAblation ablation = PngAblation.None, CancellationToken cancellationToken = default)
     {
         if (destination.Length < (long)header.Width * header.Height * 4)
             throw new ArgumentException($"Destination too small: {destination.Length} < {(long)header.Width * header.Height * 4} (Width*Height*4).", nameof(destination));
-        DecodeInto(data, header, idat, destination, 0, ImagePixelFormat.Rgba32, ablation);
+        DecodeInto(data, header, idat, destination, 0, PixelFormat.Rgba32, ablation, cancellationToken);
     }
 
     /// <summary>
@@ -464,21 +471,24 @@ public static class PngReader
     /// </summary>
     /// <exception cref="ArgumentException">The destination does not fit (see <see cref="PixelConverter.TryGetLayout"/>).</exception>
     internal static unsafe void DecodeInto(ReadOnlySpan<byte> data, PngImage header, List<(int Offset, int Length)> idat,
-        Span<byte> destination, int stride, ImagePixelFormat format, PngAblation ablation = PngAblation.None)
+        Span<byte> destination, int stride, PixelFormat format, PngAblation ablation = PngAblation.None,
+        CancellationToken cancellationToken = default)
     {
+        if (!format.IsBasic8)
+            throw new ArgumentException($"DecodeInto writes the five basic 8-bit formats only, not {format}.", nameof(format));
         var unfilter = (ablation & PngAblation.SkipUnfilter) == 0;
         var expand = (ablation & PngAblation.SkipExpand) == 0;
         int width = header.Width, height = header.Height, bitDepth = header.SourceBitDepth, colorType = header.ColorType;
         if (!PixelConverter.TryGetLayout(width, height, format, stride, destination.Length, out var dstStride))
             throw new ArgumentException($"The destination does not fit a {width}x{height} {format} image at stride {stride}.", nameof(destination));
-        var dstRowBytes = width * PixelConverter.BytesPerPixel(format);
+        var dstRowBytes = width * format.BytesPerPixel;
 
         var expander = new PngRgba8Expander(colorType, bitDepth, header.Palette, header.PaletteAlpha, header.TransparentColor);
         if (header.Interlaced)
         {
-            if (format == ImagePixelFormat.Rgba32)
+            if (format == PixelFormat.Rgba32)
             {
-                DecodeRgba8Adam7(data, header, idat, destination, dstStride, expander, unfilter, expand);
+                DecodeRgba8Adam7(data, header, idat, destination, dstStride, expander, unfilter, expand, cancellationToken);
                 return;
             }
 
@@ -486,9 +496,11 @@ public static class PngReader
             var rgba = ArrayPool<byte>.Shared.Rent(checked(width * height * 4));
             try
             {
-                DecodeRgba8Adam7(data, header, idat, rgba, width * 4, expander, unfilter, expand);
+                DecodeRgba8Adam7(data, header, idat, rgba, width * 4, expander, unfilter, expand, cancellationToken);
                 for (var y = 0; y < height; y++)
                 {
+                    if ((y & 63) == 0)
+                        cancellationToken.ThrowIfCancellationRequested();
                     PixelConverter.ConvertRow(rgba.AsSpan(y * width * 4, width * 4), 4, SampleFormat.UInt8,
                         destination.Slice(y * dstStride, dstRowBytes), format, width);
                 }
@@ -506,16 +518,18 @@ public static class PngReader
         // transparent colour. The RGBA expansion of those is the samples themselves (plus alpha 255), so
         // converting from the row gives the same bytes as converting the expansion. RGBA itself keeps the
         // expander, whose kernels are the tuned RGBA path.
-        var direct = format != ImagePixelFormat.Rgba32 && bitDepth == 8 && colorType != 3 && header.TransparentColor is null;
+        var direct = format != PixelFormat.Rgba32 && bitDepth == 8 && colorType != 3 && header.TransparentColor is null;
 
         fixed (byte* pinned = data)
         {
             using var rows = new RowInflater(pinned, idat, ((long)rowBytes + 1) * height, width, height, bytesPerPixel);
-            if (colorType == 6 && bitDepth == 8 && format == ImagePixelFormat.Rgba32)
+            if (colorType == 6 && bitDepth == 8 && format == PixelFormat.Rgba32)
             {
                 var firstRowAbove = new byte[rowBytes];
                 for (var y = 0; y < height; y++)
                 {
+                    if ((y & 63) == 0)
+                        cancellationToken.ThrowIfCancellationRequested();
                     var row = destination.Slice(y * dstStride, rowBytes);
                     var above = y == 0 ? firstRowAbove : destination.Slice((y - 1) * dstStride, rowBytes);
                     var filterType = rows.Read(row);
@@ -525,7 +539,7 @@ public static class PngReader
             }
             else
             {
-                var rgbaBytes = direct || format == ImagePixelFormat.Rgba32 ? 0 : checked(width * 4);
+                var rgbaBytes = direct || format == PixelFormat.Rgba32 ? 0 : checked(width * 4);
                 var scratch = ArrayPool<byte>.Shared.Rent(checked(2 * rowBytes + rgbaBytes));
                 try
                 {
@@ -535,6 +549,8 @@ public static class PngReader
                     above.Clear();
                     for (var y = 0; y < height; y++)
                     {
+                        if ((y & 63) == 0)
+                            cancellationToken.ThrowIfCancellationRequested();
                         var filterType = rows.Read(current);
                         if (unfilter)
                             PngPredictor.UnfilterRow(filterType, current, above, bytesPerPixel);
@@ -545,7 +561,7 @@ public static class PngReader
                             {
                                 PixelConverter.ConvertRow(current, SamplesPerPixel(colorType), SampleFormat.UInt8, target, format, width);
                             }
-                            else if (format == ImagePixelFormat.Rgba32)
+                            else if (format == PixelFormat.Rgba32)
                             {
                                 expander.Expand(current, target, width);
                             }
@@ -610,7 +626,7 @@ public static class PngReader
     /// the same image would give them.
     /// </summary>
     private static unsafe byte[] InflateAdam7(ReadOnlySpan<byte> data, List<(int Offset, int Length)> idat,
-        int width, int height, int bitDepth, int colorType)
+        int width, int height, int bitDepth, int colorType, CancellationToken cancellationToken)
     {
         var samplesPerPixel = SamplesPerPixel(colorType);
         var filterBpp = bitDepth < 8 ? 1 : samplesPerPixel * (bitDepth / 8);
@@ -637,6 +653,8 @@ public static class PngReader
                     above.Clear();
                     for (var r = 0; r < passHeight; r++)
                     {
+                        if ((r & 63) == 0)
+                            cancellationToken.ThrowIfCancellationRequested();
                         PngPredictor.UnfilterRow(rows.Read(current), current, above, filterBpp);
                         var y = y0 + r * dy;
                         var target = pixels.AsSpan((y * width + x0) * pixelBytes);
@@ -673,7 +691,8 @@ public static class PngReader
     /// expanded straight into the destination rows.
     /// </summary>
     private static unsafe void DecodeRgba8Adam7(ReadOnlySpan<byte> data, PngImage header, List<(int Offset, int Length)> idat,
-        Span<byte> destination, int dstStride, PngRgba8Expander expander, bool unfilter, bool expand)
+        Span<byte> destination, int dstStride, PngRgba8Expander expander, bool unfilter, bool expand,
+        CancellationToken cancellationToken)
     {
         int width = header.Width, height = header.Height, bitDepth = header.SourceBitDepth, colorType = header.ColorType;
         var filterBpp = bitDepth < 8 ? 1 : SamplesPerPixel(colorType) * (bitDepth / 8);
@@ -698,6 +717,8 @@ public static class PngReader
                     above.Clear();
                     for (var r = 0; r < passHeight; r++)
                     {
+                        if ((r & 63) == 0)
+                            cancellationToken.ThrowIfCancellationRequested();
                         var filterType = rows.Read(current);
                         if (unfilter)
                             PngPredictor.UnfilterRow(filterType, current, above, filterBpp);

@@ -37,13 +37,24 @@ File.WriteAllBytes("photo.jpg", jpeg);
 
 门面的其他入口：
 
-- `SimdCodecs.TryDecodeInto(file, buffer, stride, format)`：按任意行跨度直接写出 BGRA（Windows / WPF /
-  Skia）、RGB、BGR（OpenCV）或灰度（OCR）。JPEG 和 PNG 原生输出这些布局，不经过 RGBA 整帧；彩色 JPEG
-  的灰度就是它的 Y 平面。
-- `SimdCodecs.TryDecode(file, out image)`：保留原始布局：通道数（灰度 JPEG 为 1，彩色 JPEG 为 3）、
-  8/16 位或浮点采样、ICC 配置文件。
-- `SimdCodecs.TryReadInfo(file, out info)`：只读文件头：格式、存储位深、EXIF 方向（只报告，不旋转像素）、
-  帧数或页数。
+- `SimdCodecs.TryDecodeInto(file, buffer, stride, format)`：按任意行跨度，把任意 `PixelFormat` 直接写进你的缓冲区：
+  BGRA（Windows / Skia）、`Bgra32Premultiplied`（WPF、Direct2D、合成器）、RGB、BGR（OpenCV）、灰度（OCR），以及
+  它们的 16 位版本（`Rgba64`、`Gray16` 等），16 位 PNG、10 位 HEIC 的精度不会丢失。JPEG 和 PNG 原生输出 8 位布局，
+  不经过 RGBA 整帧；彩色 JPEG 的灰度就是它的 Y 平面。
+- `SimdCodecs.TryDecode(file, out image, options, cancellationToken)`：保留原始布局：通道数、8/16 位或浮点采样、
+  真实位深、ICC、Exif / XMP（`image.Metadata`）。`DecodeOptions` 可以只解一个区域、缩放解码（JPEG 在 DCT 域
+  1/2 到 1/8；`TryGetClosestSize` 告诉你 codec 原生能做到什么）或使用池化内存（释放图像即归还）。所有入口都接受
+  `CancellationToken`。
+- `SimdCodecs.TryReadInfo(file, out info)`：只读文件头：格式、存储位深、颜色编码（是不是 PQ / HLG HDR）、分辨率
+  （DPI）、EXIF 方向（只报告，不旋转像素）、帧数或页数、有没有缩略图。
+- `SimdCodecs.TryReadMetadata(file, out metadata)` / `TryDecodeThumbnail(file, out thumb)`：取出 Exif、XMP、ICC
+  原始块供转码透传，以及内嵌的预览图（Exif IFD1、HEIF `thmb`）。
+- `ImageDecoder.Open(stream | path | memory)`：WIC 式的会话：`Format`、`FrameCount`，再 `GetFrame(i).Decode(options)`
+  或 `.CopyPixels(region, format, buffer, stride)`；不可寻址的流用 `OpenAsync`。
+- `SimdCodecs.Encode(image, ImageFormat.Png, stream)` / `CreateEncoder(format, writer)`：编码器抽象：每个编码器都接收
+  任意 `PixelFormat`（包括 UI 框架的预乘 BGRA），按任意跨度逐行推送，并写入图像的元数据；只能存 8 位的格式会在哪里
+  降精度，用 `GetClosestInputFormat` 可以先看到。
+- `SimdCodecs.TryReadPlanarInfo` / `TryDecodePlanes`：按编码原样输出 YCbCr 平面（HEIF），供视频管线和 GPU 上传使用。
 - `SimdCodecs.DetectFormat(file)`：还能认出不支持解码的格式（AVIF、JPEG XL 等）；
   `SimdCodecs.IsDecodable(format)` 判断某个格式能否解码。HEIF 在注册它的包之后即可解码。
 - `SimdCodecs.Register(HeifImageDecoder.Registration)`：让上面所有入口都能处理 HEIF / HEIC。HEVC 有专利负担，
@@ -51,6 +62,8 @@ File.WriteAllBytes("photo.jpg", jpeg);
 - `SimdCodecs.TryOpenFrames(file, out reader)`：按索引、以任意布局逐帧解码：动画 WebP / GIF 是合成好的帧
   及其时长，多页 TIFF 是各页，图标是其中的每张图（其他图片就是一帧）；`reader.EnumerateFramesInto(buffer, stride, format)`
   用同一块缓冲区按顺序播放。
+
+从 1.x 升级：见 [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md)。
 
 每种格式也有独立的包，API 更丰富：JPEG 缩放解码、TIFF 按块读取、WebP 动画按时间戳定位、Ultra HDR 等。
 
@@ -70,7 +83,7 @@ File.WriteAllBytes("photo.jpg", jpeg);
 | Netpbm | ✅ | ✅ | PBM、PGM、PPM 的 ASCII 和二进制格式，maxval 最高 65535；1–4 通道的 PAM；PFM 浮点；可得到原生的 8/16 位或浮点样本，也可零分配地以任意布局解码进调用方缓冲区；所有变体都能编码 |
 | JPEG 2000 | ✅ | — | Part 1（T.800），用于 PDF 的 `/JPXDecode` |
 | JBIG2 | ✅ | — | T.88，用于 PDF 的 `/JBIG2Decode` |
-| HEIF / HEIC | ✅ | — | 独立包，需显式注册（HEVC 专利；不授予专利许可）。HEVC Main / Main 10 / Main Still Picture 静态图及手机拍照的网格拼图，与 ffmpeg 逐字节一致；ICC、nclx、`clap` / `irot` / `imir`；输出 8 位 |
+| HEIF / HEIC | ✅ | — | 独立包，需显式注册（HEVC 专利；不授予专利许可）。HEVC Main / Main 10 / Main Still Picture 静态图及手机拍照的网格拼图，与 ffmpeg 逐字节一致；ICC、nclx、Exif / XMP item、`thmb` 缩略图、`clap` / `irot` / `imir`；输出 8 位，Main 10 输出 16 位；可输出 YCbCr 平面 |
 | EXIF | ✅ | ✅ | 读取 JPEG、TIFF、PNG、WebP 中的 EXIF；`ExifWriter` 生成可交给 JPEG 编码器的数据块 |
 | ICC 配置文件 | ✅ | ✅ | 解码器返回内嵌的配置文件；`IccProfiles.Describe` 读出其名称；内置 sRGB v4；可把配置文件写入现有 JPEG |
 
@@ -155,7 +168,7 @@ HEIF 的 HEVC 平面与 ffmpeg 逐字节一致；HEIF 是这里唯一用满所�
 | `Sdcb.SimdCodecs.Heif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Heif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Heif) | HEIF / HEIC 解码器（HEVC）。`Sdcb.SimdCodecs` 不引用它：安装后调用 `SimdCodecs.Register(HeifImageDecoder.Registration)`。不授予 HEVC 专利许可 |
 | `Sdcb.SimdCodecs.Exif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Exif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Exif) | EXIF 读写 |
 | `Sdcb.SimdCodecs.Color.Icc` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Color.Icc.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Color.Icc) | sRGB v4 ICC 配置文件、`cicp` 标签注入 |
-| `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | 公共类型：`IImageDecoder`、`RasterImage`、`ImagePixelFormat` / `PixelConverter`、`IImageFrameReader`（帧与页）、H.273 色彩描述 |
+| `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | 公共类型：`IImageDecoder` / `IImageEncoder`、`IDecodedImage` / `RasterImage`、`PixelFormat` / `PixelConverter`、`DecodeOptions`、`ImageMetadata`、`IPlanarImageDecoder`、`IImageFrameReader`（帧与页）、H.273 色彩描述 |
 
 <details>
 <summary>各包的详细特性</summary>
@@ -180,12 +193,12 @@ HEIF 的 HEVC 平面与 ffmpeg 逐字节一致；HEIF 是这里唯一用满所�
   Wu 量化（可选 Floyd–Steinberg 抖动），不透明动画只写变化的矩形。
 - **Bmp**：Windows DIB 和 OS/2 位图：core、OS/2 2.x、40 字节、V2–V5 各版头部；1/2/4/8 位调色板和 16/24/32 位；
   `BI_BITFIELDS` / `BI_ALPHABITFIELDS`；带 delta 的 RLE4 / RLE8、OS/2 RLE24 和 Huffman 1D；`BI_PNG`；自顶向下的行；
-  V5 ICC；packed DIB（剪贴板、图标图像）。可直接解码成任意 `ImagePixelFormat` 且不分配内存；与 WIC 逐像素比对过。
+  V5 ICC；packed DIB（剪贴板、图标图像）。可直接解码成任意 `PixelFormat` 且不分配内存；与 WIC 逐像素比对过。
   文档没有定死的行为列在包的 README 里。
 - **Ico**：基于 Bmp 和 Png 的图标和光标：读出每张图，默认取最大、位深最高的一张，带热点坐标；编码多尺寸图标和光标，
   每张图可选 PNG 或 1/4/8/24/32 位 DIB。
 - **Qoi**：按 QOI 规范实现：3 通道和 4 通道图像；会报告色彩空间（线性色彩空间报告为线性传递函数）；可直接解码成任意
-  `ImagePixelFormat` 且不分配内存；编码输入可以是 RGBA、BGRA、RGB、BGR 或灰度。
+  `PixelFormat` 且不分配内存；编码输入可以是 RGBA、BGRA、RGB、BGR 或灰度。
 - **Pnm**：Netpbm：P1–P6 的 ASCII 和二进制格式，maxval 最高 65535（大于 255 时为 16 位样本）；1–4 通道的 PAM（P7）；
   PFM（`Pf` / `PF`）读出浮点样本；文件里只读第一张图。所有格式都能编码，ASCII 输出每行不超过 70 个字符。
   格式说明没有定死的行为列在包的 README 里。

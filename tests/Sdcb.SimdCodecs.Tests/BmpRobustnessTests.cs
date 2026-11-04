@@ -31,10 +31,10 @@ public sealed class BmpRobustnessTests
         {
             if (rle && format is not (BmpEncodeFormat.Indexed4 or BmpEncodeFormat.Indexed8)) continue;
             var options = new BmpEncodeOptions { Format = format, Rle = rle, Header = format == BmpEncodeFormat.Rgb565 ? BmpHeaderVersion.V5 : BmpHeaderVersion.Auto };
-            seeds.Add(($"{format} RLE {rle}", BmpEncoder.Encode(rgba, 23, 9, ImagePixelFormat.Rgba32, options), false));
+            seeds.Add(($"{format} RLE {rle}", BmpEncoder.Encode(rgba, 23, 9, PixelFormat.Rgba32, options), false));
         }
-        seeds.Add(("core 4-bit", BmpEncoder.Encode(rgba, 23, 9, ImagePixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed4, Header = BmpHeaderVersion.Core }), false));
-        seeds.Add(("V5 ICC", BmpEncoder.Encode(rgba, 23, 9, ImagePixelFormat.Rgba32, new BmpEncodeOptions { IccProfile = new byte[64] }), false));
+        seeds.Add(("core 4-bit", BmpEncoder.Encode(rgba, 23, 9, PixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed4, Header = BmpHeaderVersion.Core }), false));
+        seeds.Add(("V5 ICC", BmpEncoder.Encode(rgba, 23, 9, PixelFormat.Rgba32, new BmpEncodeOptions { IccProfile = new byte[64] }), false));
         seeds.Add(("4444 alphabitfields", W.File(W.InfoHeader(40, 7, 3, 16, 6), W.Masks(0x0F00, 0x00F0, 0x000F, 0xF000),
             W.Rows(7, 3, 16, (x, y) => (uint)(x * 977 + y * 31)), null), false));
         seeds.Add(("RLE24", W.File(W.InfoHeader(64, 7, 3, 24, 4), [],
@@ -45,8 +45,8 @@ public sealed class BmpRobustnessTests
         seeds.Add(("Huffman", W.File(W.InfoHeader(64, 70, 3, 1, 3), W.Palette([0xFFFFFF, 0]),
             BmpDecoderTests.HuffmanStream(bits, 70, 3, eols: true)), false));
         seeds.Add(("BI_PNG", W.File(W.InfoHeader(40, 5, 4, 0, 5), [], Png.PngWriter.Encode(new byte[5 * 4 * 4], 5, 4)), false));
-        seeds.Add(("icon 32", BmpEncoder.EncodeDib(rgba, 23, 9, ImagePixelFormat.Rgba32, iconImage: true), true));
-        seeds.Add(("icon 4", BmpEncoder.EncodeDib(rgba, 23, 9, ImagePixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed4 }, iconImage: true), true));
+        seeds.Add(("icon 32", BmpEncoder.EncodeDib(rgba, 23, 9, PixelFormat.Rgba32, iconImage: true), true));
+        seeds.Add(("icon 4", BmpEncoder.EncodeDib(rgba, 23, 9, PixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed4 }, iconImage: true), true));
         return seeds;
     }
 
@@ -56,7 +56,7 @@ public sealed class BmpRobustnessTests
         foreach (var (name, data, icon) in Seeds())
         {
             if (icon) BmpDecoder.DecodeDib(data, iconImage: true).Width.ShouldBe(23, name);
-            else BmpImageDecoder.TryDecode(data, out _).ShouldBeTrue(name);
+            else BmpImageDecoder.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue(name);
         }
     }
 
@@ -158,9 +158,9 @@ public sealed class BmpRobustnessTests
             {
                 BmpImageDecoder.TryDecode(data, out _);
                 var rgba = new byte[info.Width * info.Height * 4];
-                BmpImageDecoder.TryDecodeInto(data, rgba, 0, ImagePixelFormat.Rgba32);
+                BmpImageDecoder.TryDecodeInto(data, rgba, 0, PixelFormat.Rgba32);
                 var gray = new byte[info.Width * info.Height];
-                BmpImageDecoder.TryDecodeInto(data, gray, 0, ImagePixelFormat.Gray8);
+                BmpImageDecoder.TryDecodeInto(data, gray, 0, PixelFormat.Gray8);
             }
         }
         catch (InvalidDataException)
@@ -184,17 +184,17 @@ public sealed class BmpRobustnessTests
         foreach (var rle in new[] { false, true })
         {
             if (rle && format is not (BmpEncodeFormat.Indexed4 or BmpEncodeFormat.Indexed8)) continue;
-            var bmp = BmpEncoder.Encode(rgba, 640, 48, ImagePixelFormat.Rgba32, new BmpEncodeOptions { Format = format, Rle = rle });
-            foreach (var target in Enum.GetValues<ImagePixelFormat>())
+            var bmp = BmpEncoder.Encode(rgba, 640, 48, PixelFormat.Rgba32, new BmpEncodeOptions { Format = format, Rle = rle });
+            foreach (var target in PixelConverterTests.Formats)
             {
                 var destination = new byte[640 * 48 * 4];
-                for (var i = 0; i < 3; i++) BmpImageDecoder.TryDecodeInto(bmp, destination, 0, target).ShouldBeTrue();
+                for (var i = 0; i < 3; i++) BmpImageDecoder.TryDecodeInto(bmp, destination, 0, target, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
                 var best = long.MaxValue;
                 // Best of several: a pooled row can miss the pool under parallel test load.
                 for (var attempt = 0; attempt < 8 && best > 0; attempt++)
                 {
                     var before = GC.GetAllocatedBytesForCurrentThread();
-                    BmpImageDecoder.TryDecodeInto(bmp, destination, 0, target);
+                    BmpImageDecoder.TryDecodeInto(bmp, destination, 0, target, cancellationToken: TestContext.Current.CancellationToken);
                     best = Math.Min(best, GC.GetAllocatedBytesForCurrentThread() - before);
                 }
                 best.ShouldBe(0, $"{format}, RLE {rle} into {target}");

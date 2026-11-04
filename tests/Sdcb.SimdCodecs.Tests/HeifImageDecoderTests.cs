@@ -8,7 +8,7 @@ namespace Sdcb.SimdCodecs.Tests;
 
 /// <summary>
 /// The <see cref="HeifImageDecoder"/> adapter against the 1.x <see cref="IImageDecoder"/> contract: header info
-/// agrees with the decode, every <see cref="ImagePixelFormat"/> at every stride is exactly
+/// agrees with the decode, every <see cref="PixelFormat"/> at every stride is exactly
 /// <see cref="IDecodedImage.ToRgba8"/> through <see cref="PixelConverter.ConvertRow"/> (Gray8 is the stored luma,
 /// pinned by its own golden), malformed or unsupported input and an HDR transfer function make the <c>Try</c>
 /// methods return false.
@@ -54,8 +54,8 @@ public sealed class HeifImageDecoderTests
     private const string PqFixture = "synth-screen-testsrc2-640x360-pq-vui.heic";
     private const string HlgFixture = "synth-screen-testsrc2-640x360-hlg-nclx.heic";
 
-    private static readonly ImagePixelFormat[] AllFormats =
-        [ImagePixelFormat.Rgba32, ImagePixelFormat.Bgra32, ImagePixelFormat.Rgb24, ImagePixelFormat.Bgr24, ImagePixelFormat.Gray8];
+    private static readonly PixelFormat[] AllFormats =
+        [PixelFormat.Rgba32, PixelFormat.Bgra32, PixelFormat.Rgb24, PixelFormat.Bgr24, PixelFormat.Gray8];
 
     public static IEnumerable<object[]> Decodable() => DecodableFixtures.Select(static f => new object[] { f });
 
@@ -85,7 +85,7 @@ public sealed class HeifImageDecoderTests
         byte[] data = HeifTests.ReadFixture(fixture);
         HeifImageDecoder.TryReadInfo(data, out var info).ShouldBeTrue();
         var gray = new byte[info.Width * info.Height];
-        HeifImageDecoder.TryDecodeInto(data, gray, 0, ImagePixelFormat.Gray8).ShouldBeTrue();
+        HeifImageDecoder.TryDecodeInto(data, gray, 0, PixelFormat.Gray8, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         CheckGolden(fixture, "gray8", info.Width, info.Height, gray);
     }
 
@@ -98,17 +98,17 @@ public sealed class HeifImageDecoderTests
     public void Gray8_IsCloseToTheLumaOfTheRgb(string fixture)
     {
         byte[] data = HeifTests.ReadFixture(fixture);
-        HeifImageDecoder.TryDecode(data, out var image).ShouldBeTrue();
+        HeifImageDecoder.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         int w = image.Width, h = image.Height;
         var expected = new byte[w * h];
         var rgba = image.ToRgba8();
         for (int y = 0; y < h; y++)
         {
-            PixelConverter.ConvertRow(rgba.AsSpan(y * w * 4, w * 4), 4, SampleFormat.UInt8, expected.AsSpan(y * w, w), ImagePixelFormat.Gray8, w);
+            PixelConverter.ConvertRow(rgba.AsSpan(y * w * 4, w * 4), 4, SampleFormat.UInt8, expected.AsSpan(y * w, w), PixelFormat.Gray8, w);
         }
 
         var gray = new byte[w * h];
-        HeifImageDecoder.TryDecodeInto(data, gray, 0, ImagePixelFormat.Gray8).ShouldBeTrue();
+        HeifImageDecoder.TryDecodeInto(data, gray, 0, PixelFormat.Gray8, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         long sum = 0;
         for (int i = 0; i < gray.Length; i++) sum += Math.Abs(gray[i] - expected[i]);
         ((double)sum / gray.Length).ShouldBeLessThan(2.0, $"{fixture}: mean |Gray8 - luma(RGB)|");
@@ -123,18 +123,21 @@ public sealed class HeifImageDecoderTests
         byte[] data = HeifTests.ReadFixture(fixture);
         HeifImageDecoder.CanDecode(data).ShouldBeTrue();
         HeifImageDecoder.TryReadInfo(data, out var info).ShouldBeTrue();
-        HeifImageDecoder.TryDecode(data, out var image).ShouldBeTrue();
+        HeifImageDecoder.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using var _ = image as IDisposable;
 
+        var native = HeifDecoder.ReadInfo(data);
+        // 2.0: a Main 10 image decodes to 16-bit samples holding its 10 bits; an 8-bit one to 8-bit samples.
+        var sample = native.BitDepth > 8 ? SampleFormat.UInt16 : SampleFormat.UInt8;
         info.Format.ShouldBe(ImageFormat.Heif);
         info.Channels.ShouldBe(3);
-        info.SampleFormat.ShouldBe(SampleFormat.UInt8);
-        info.BitDepth.ShouldBe(8);
+        info.SampleFormat.ShouldBe(sample);
+        info.BitDepth.ShouldBe(native.BitDepth);
         info.Orientation.ShouldBe(ImageOrientation.Normal);
         info.FrameCount.ShouldBe(1);
-        (image.Width, image.Height, image.Channels, image.SampleFormat).ShouldBe((info.Width, info.Height, 3, SampleFormat.UInt8));
+        (image.Width, image.Height, image.Channels, image.SampleFormat, image.BitDepth)
+            .ShouldBe((info.Width, info.Height, 3, sample, native.BitDepth));
 
-        var native = HeifDecoder.ReadInfo(data);
         (native.Width, native.Height).ShouldBe((info.Width, info.Height));
         image.IccProfile.ToArray().ShouldBe(native.IccProfile ?? []);
         image.ColorEncoding.FullRange.ShouldBeTrue();
@@ -142,21 +145,28 @@ public sealed class HeifImageDecoderTests
 
     [Theory]
     [MemberData(nameof(Layouts))]
-    public void TryDecodeInto_IsToRgba8ThroughConvertRow(string fixture, ImagePixelFormat format, bool padded)
+    public void TryDecodeInto_IsToRgba8ThroughConvertRow(string fixture, PixelFormat format, bool padded)
     {
         byte[] data = HeifTests.ReadFixture(fixture);
-        HeifImageDecoder.TryDecode(data, out var image).ShouldBeTrue();
-        int w = image.Width, h = image.Height, bpp = PixelConverter.BytesPerPixel(format);
+        HeifImageDecoder.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        int w = image.Width, h = image.Height, bpp = format.BytesPerPixel;
         int stride = padded ? w * bpp + 13 : 0;
         int rowStride = padded ? stride : w * bpp;
         const byte Sentinel = 0xA5;
         var destination = new byte[rowStride * (h - 1) + w * bpp];
         destination.AsSpan().Fill(Sentinel);
-        HeifImageDecoder.TryDecodeInto(data, destination, stride, format).ShouldBeTrue();
+        HeifImageDecoder.TryDecodeInto(data, destination, stride, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
-        byte[] rgba = image.ToRgba8();
+        // The 8-bit outputs are the frozen 8-bit conversion of the coded samples (HeifDecoder.Decode's RGBA). For an
+        // 8-bit image that is ToRgba8 of the decoded image; for a Main 10 one, whose decoded image is 16-bit, the
+        // 8-bit conversion rounds once from 10 bits instead of truncating the 16-bit result (see HeifImageDecoder).
+        byte[] rgba = HeifDecoder.Decode(data).Rgba.ToArray();
+        if (image.SampleFormat == SampleFormat.UInt8)
+            rgba.ShouldBe(image.ToRgba8());
+        else
+            MaxDifference(rgba, image.ToRgba8()).ShouldBeLessThanOrEqualTo(1);
         var expectedRow = new byte[w * bpp];
-        var gray = format == ImagePixelFormat.Gray8 ? GrayGolden(data, w, h) : null;
+        var gray = format == PixelFormat.Gray8 ? GrayGolden(data, w, h) : null;
         for (int y = 0; y < h; y++)
         {
             if (gray is null)
@@ -188,12 +198,12 @@ public sealed class HeifImageDecoderTests
         HeifImageDecoder.TryReadInfo(data, out var info).ShouldBeTrue();
         foreach (var format in AllFormats)
         {
-            int bpp = PixelConverter.BytesPerPixel(format);
+            int bpp = format.BytesPerPixel;
             int exact = info.Width * info.Height * bpp;
-            HeifImageDecoder.TryDecodeInto(data, new byte[exact - 1], 0, format).ShouldBeFalse($"{format}: one byte short");
-            HeifImageDecoder.TryDecodeInto(data, new byte[exact], info.Width * bpp - 1, format).ShouldBeFalse($"{format}: stride below a row");
-            HeifImageDecoder.TryDecodeInto(data, new byte[exact], -1, format).ShouldBeFalse($"{format}: negative stride");
-            HeifImageDecoder.TryDecodeInto(data, new byte[exact * 2], info.Width * bpp * 2, format).ShouldBeTrue($"{format}: doubled stride");
+            HeifImageDecoder.TryDecodeInto(data, new byte[exact - 1], 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse($"{format}: one byte short");
+            HeifImageDecoder.TryDecodeInto(data, new byte[exact], info.Width * bpp - 1, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse($"{format}: stride below a row");
+            HeifImageDecoder.TryDecodeInto(data, new byte[exact], -1, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse($"{format}: negative stride");
+            HeifImageDecoder.TryDecodeInto(data, new byte[exact * 2], info.Width * bpp * 2, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue($"{format}: doubled stride");
         }
     }
 
@@ -203,10 +213,10 @@ public sealed class HeifImageDecoderTests
     {
         byte[] data = HeifTests.ReadFixture(fixture);
         HeifImageDecoder.CanDecode(data).ShouldBeTrue();
-        HeifImageDecoder.TryDecode(data, out var image).ShouldBeFalse();
+        HeifImageDecoder.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         image.ShouldBeNull();
-        HeifImageDecoder.TryDecodeInto(data, new byte[64 << 20], 0, ImagePixelFormat.Rgba32).ShouldBeFalse();
-        HeifImageDecoder.TryDecodeInto(data, new byte[16 << 20], 0, ImagePixelFormat.Gray8).ShouldBeFalse();
+        HeifImageDecoder.TryDecodeInto(data, new byte[64 << 20], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        HeifImageDecoder.TryDecodeInto(data, new byte[16 << 20], 0, PixelFormat.Gray8, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         if (fixture.EndsWith(".heics", StringComparison.Ordinal))
         {
             HeifImageDecoder.TryReadInfo(data, out _).ShouldBeFalse();
@@ -220,8 +230,8 @@ public sealed class HeifImageDecoderTests
         foreach (int length in new[] { 0, 8, 16, 64, 300, data.Length / 2, data.Length - 1 })
         {
             var slice = data.AsSpan(0, length);
-            HeifImageDecoder.TryDecode(slice, out _).ShouldBeFalse($"length {length}");
-            HeifImageDecoder.TryDecodeInto(slice, new byte[1600 * 900 * 4], 0, ImagePixelFormat.Rgba32).ShouldBeFalse($"length {length}");
+            HeifImageDecoder.TryDecode(slice, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse($"length {length}");
+            HeifImageDecoder.TryDecodeInto(slice, new byte[1600 * 900 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse($"length {length}");
         }
     }
 
@@ -235,13 +245,13 @@ public sealed class HeifImageDecoderTests
         byte[] data = HeifTests.ReadFixture(fixture);
         HeifImageDecoder.TryReadInfo(data, out var info).ShouldBeTrue();
         (info.Width, info.Height).ShouldBe((640, 360));
-        HeifImageDecoder.TryDecode(data, out var image).ShouldBeTrue();
+        HeifImageDecoder.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.ColorEncoding.Transfer.ShouldBe(transfer);
         image.ColorEncoding.Primaries.ShouldBe(ColorPrimaries.BT2020);
         image.ColorEncoding.FullRange.ShouldBeTrue("limited-range Y'CbCr is expanded to full-range RGB");
         foreach (var format in AllFormats)
         {
-            HeifImageDecoder.TryDecodeInto(data, new byte[640 * 360 * 4], 0, format).ShouldBeFalse($"{format}");
+            HeifImageDecoder.TryDecodeInto(data, new byte[640 * 360 * 4], 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse($"{format}");
         }
     }
 
@@ -256,7 +266,7 @@ public sealed class HeifImageDecoderTests
     public void ColourSignalling_Precedence(string fixture, ColorPrimaries primaries, TransferFunction transfer)
     {
         byte[] data = HeifTests.ReadFixture(fixture);
-        HeifImageDecoder.TryDecode(data, out var image).ShouldBeTrue();
+        HeifImageDecoder.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.ColorEncoding.ShouldBe(new ColorEncoding { Primaries = primaries, Transfer = transfer, FullRange = true });
         if (image.IccProfile.Length > 0) image.ColorEncoding.ShouldBeSameAs(ColorEncoding.AssumedSrgb);
     }
@@ -276,10 +286,10 @@ public sealed class HeifImageDecoderTests
         BinaryPrimitives.WriteUInt16BigEndian(data.AsSpan(at + 8), (ushort)primaries);
         BinaryPrimitives.WriteUInt16BigEndian(data.AsSpan(at + 10), (ushort)transfer);
 
-        HeifImageDecoder.TryDecode(data, out var image).ShouldBeTrue();
+        HeifImageDecoder.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.ColorEncoding.Primaries.ShouldBe((ColorPrimaries)(primaries > 255 ? 2 : primaries));
         image.ColorEncoding.Transfer.ShouldBe((TransferFunction)(transfer > 255 ? 2 : transfer));
-        HeifImageDecoder.TryDecodeInto(data, new byte[640 * 360 * 4], 0, ImagePixelFormat.Rgba32).ShouldBe(displayable);
+        HeifImageDecoder.TryDecodeInto(data, new byte[640 * 360 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBe(displayable);
     }
 
     // ───────────────────────────── sniffing ─────────────────────────────
@@ -325,7 +335,7 @@ public sealed class HeifImageDecoderTests
     private static byte[] GrayGolden(byte[] data, int width, int height)
     {
         var gray = new byte[width * height];
-        HeifImageDecoder.TryDecodeInto(data, gray, 0, ImagePixelFormat.Gray8).ShouldBeTrue();
+        HeifImageDecoder.TryDecodeInto(data, gray, 0, PixelFormat.Gray8).ShouldBeTrue();
         return gray;
     }
 
@@ -385,5 +395,14 @@ public sealed class HeifImageDecoderTests
         {
             writer.WriteLine($"{key}\t{value}");
         }
+    }
+
+    private static int MaxDifference(byte[] a, byte[] b)
+    {
+        a.Length.ShouldBe(b.Length);
+        var max = 0;
+        for (var i = 0; i < a.Length; i++)
+            max = Math.Max(max, Math.Abs(a[i] - b[i]));
+        return max;
     }
 }

@@ -5,7 +5,7 @@ using System.Runtime.Intrinsics;
 namespace Sdcb.SimdCodecs.Heif;
 
 /// <summary>
-/// Y′CbCr → RGBA8 conversion for decoded HEVC images. H.265 defines the decoded samples, not this step, so
+/// Y′CbCr → RGBA8 and RGBA16 conversion for decoded HEVC images. H.265 defines the decoded samples, not this step, so
 /// it is defined here and frozen (like <c>JpegColor</c>): any change to the arithmetic is an output change.
 /// </summary>
 /// <remarks>
@@ -90,6 +90,93 @@ internal static class HeifColor
     }
 
     private static int Fixed(double value) => (int)Math.Round(value * 65536, MidpointRounding.AwayFromZero);
+
+    /// <summary>
+    /// The coefficients of the 16-bit conversion (<see cref="ToRgba64420Row"/>): the same matrix, offsets and rounding
+    /// as <see cref="For"/>, with 65535 in place of 255 as the output scale — full range 65535 / (2^b − 1), limited
+    /// range 65535 / (219·2^(b−8)) and 65535 / (224·2^(b−8)). Every coefficient still fits an int; the products are
+    /// taken in 64 bits.
+    /// </summary>
+    internal static Coefficients For16(int matrixCoefficients, bool fullRange, int bitDepth)
+    {
+        var scale = 1 << (bitDepth - 8);
+        double yMul, cMul;
+        int yOffset;
+        if (fullRange)
+        {
+            yMul = cMul = 65535.0 / ((1 << bitDepth) - 1);
+            yOffset = 0;
+        }
+        else
+        {
+            yMul = 65535.0 / (219 * scale);
+            cMul = 65535.0 / (224 * scale);
+            yOffset = 16 * scale;
+        }
+        var cOffset = 1 << (bitDepth - 1);
+
+        if (matrixCoefficients == 0)
+            return new Coefficients(yOffset, yOffset, Fixed(yMul), 0, 0, 0, 0, true);
+
+        var (kr, kb) = matrixCoefficients switch
+        {
+            1 => (0.2126, 0.0722),
+            4 => (0.30, 0.11),
+            7 => (0.212, 0.087),
+            9 or 10 => (0.2627, 0.0593),
+            _ => (0.299, 0.114),
+        };
+        var kg = 1 - kr - kb;
+        return new Coefficients(
+            yOffset,
+            cOffset,
+            Fixed(yMul),
+            Fixed(2 * (1 - kr) * cMul),
+            Fixed(2 * kb * (1 - kb) / kg * cMul),
+            Fixed(2 * kr * (1 - kr) / kg * cMul),
+            Fixed(2 * (1 - kb) * cMul),
+            false);
+    }
+
+    /// <summary>
+    /// The 16-bit conversion of one 4:2:0 row (frozen like the 8-bit one): each output is
+    /// clamp((Σ coefficient·(sample − offset) + 2^15) &gt;&gt; 16, 0, 65535) in 64-bit integers, with the
+    /// <see cref="For16"/> coefficients. Writes 4 samples per pixel, R G B A (B G R A when <paramref name="bgr"/> is
+    /// set), alpha 65535. Scalar only: it serves the 16-bit output of &gt; 8-bit images, a fidelity path.
+    /// </summary>
+    internal static void ToRgba64420Row(ReadOnlySpan<ushort> y, ReadOnlySpan<ushort> cbRow, ReadOnlySpan<ushort> crRow,
+        Span<ushort> outRow, int width, in Coefficients k, bool bgr = false)
+    {
+        var chroma = (width + 1) >> 1;
+        if (width < 0 || y.Length < width || cbRow.Length < chroma || crRow.Length < chroma || outRow.Length < (long)width * 4)
+            throw new ArgumentException("The colour row does not fit its buffers.");
+        var rAt = bgr ? 2 : 0;
+        var bAt = bgr ? 0 : 2;
+        for (var x = 0; x < width; x++)
+        {
+            long luma = y[x] - k.YOffset;
+            long u = cbRow[x >> 1] - k.COffset;
+            long v = crRow[x >> 1] - k.COffset;
+            long r, g, b;
+            if (k.Identity)
+            {
+                r = (k.Y * v + 32768) >> 16;
+                g = (k.Y * luma + 32768) >> 16;
+                b = (k.Y * u + 32768) >> 16;
+            }
+            else
+            {
+                var yy = k.Y * luma + 32768;
+                r = (yy + k.CrR * v) >> 16;
+                g = (yy - k.CbG * u - k.CrG * v) >> 16;
+                b = (yy + k.CbB * u) >> 16;
+            }
+            outRow[x * 4 + rAt] = (ushort)Math.Clamp(r, 0, 65535);
+            outRow[x * 4 + 1] = (ushort)Math.Clamp(g, 0, 65535);
+            outRow[x * 4 + bAt] = (ushort)Math.Clamp(b, 0, 65535);
+            outRow[x * 4 + 3] = 65535;
+        }
+    }
 
     /// <summary>
     /// Converts one row of <paramref name="width"/> pixels of a 4:2:0 image: luma <paramref name="y"/>[x] takes chroma

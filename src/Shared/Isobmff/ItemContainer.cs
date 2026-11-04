@@ -41,6 +41,9 @@ internal sealed class ItemContainer
         internal uint Type;
         internal int ConstructionMethod;
 
+        /// <summary>For a <c>mime</c> item, its content_type (e.g. <c>application/rdf+xml</c> for XMP); else null.</summary>
+        internal string? ContentType;
+
         /// <summary>Item data location, in order; a zero-length extent is an offset-only entry.</summary>
         internal readonly List<Extent> Extents = [];
     }
@@ -319,6 +322,16 @@ internal sealed class ItemContainer
             // item_name is a null-terminated UTF-8 string; its length is not needed, only skipped.
             if (cursor > entryEnd) throw new InvalidDataException("Truncated 'infe' box.");
             _ = SkipCString(data, ref cursor, entryEnd);
+
+            // A 'mime' item then names its content_type (14496-12 §8.11.6.2), the same null-terminated way. A writer
+            // that leaves it out leaves the item untyped rather than the file unreadable.
+            if (item.Type == 0x6D696D65 /* 'mime' */ && cursor < entryEnd)
+            {
+                var start = cursor;
+                var end = data[start..entryEnd].IndexOf((byte)0);
+                if (end > 0)
+                    item.ContentType = System.Text.Encoding.ASCII.GetString(data.Slice(start, Math.Min(end, 255)));
+            }
 
             if (item.Id != 0 && !_itemsById.TryAdd(item.Id, item)) item.Id = 0;
             if (item.Id != 0) Items.Add(item);

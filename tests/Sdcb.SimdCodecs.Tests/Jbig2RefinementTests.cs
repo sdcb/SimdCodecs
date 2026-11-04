@@ -72,7 +72,7 @@ public sealed class Jbig2RefinementTests
             Jbig2StreamBuilder.Segment(2, SegmentType.ImmediateRefinementRegion, 1,
                 Jbig2StreamBuilder.RefinementRegionSegment(target, reference), referredTo: [1]));
 
-        Jbig2Decoder.Decode(stream, 40, 24).Bits.ToArray().ShouldBe(target.Data);
+        Jbig2Decoder.Decode(stream, 40, 24, cancellationToken: TestContext.Current.CancellationToken).Bits.ToArray().ShouldBe(target.Data);
     }
 
     /// <summary>
@@ -96,7 +96,7 @@ public sealed class Jbig2RefinementTests
                 Jbig2StreamBuilder.RefinementRegionSegment(
                     target, reference, op: CombinationOperator.Replace)));
 
-        Jbig2Decoder.Decode(stream, 40, 24).Bits.ToArray().ShouldBe(target.Data);
+        Jbig2Decoder.Decode(stream, 40, 24, cancellationToken: TestContext.Current.CancellationToken).Bits.ToArray().ShouldBe(target.Data);
     }
 
     /// <summary>
@@ -125,7 +125,7 @@ public sealed class Jbig2RefinementTests
                 Jbig2StreamBuilder.RefinementRegionSegment(
                     target, reference, x: 10, y: 1, op: CombinationOperator.Replace)));
 
-        Jbig2StreamBuilder.ToRows(16, 4, Jbig2Decoder.Decode(stream, 16, 4).Bits).ShouldBe(
+        Jbig2StreamBuilder.ToRows(16, 4, Jbig2Decoder.Decode(stream, 16, 4, cancellationToken: TestContext.Current.CancellationToken).Bits).ShouldBe(
         [
             "................",
             "..####..........",

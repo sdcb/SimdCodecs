@@ -58,7 +58,7 @@ namespace Sdcb.SimdCodecs;
 /// Float-sample content (e.g. float TIFF) decodes through
 /// <see cref="TryDecode"/> with <see cref="IDecodedImage.ColorEncoding"/>
 /// declaring its meaning; <see cref="TryDecodeInto"/> serves the
-/// integer-sample display path only - projecting HDR float to 8 bits is a
+/// integer-sample path only (8- and 16-bit <see cref="PixelFormat"/>s) - projecting HDR float to integers is a
 /// consumer tone/stretch decision, not a codec one. For viewing,
 /// <see cref="PixelConverter.StretchToRgba8(IDecodedImage, bool)"/> stretches the colour range linearly onto 0..255.
 /// </para>
@@ -71,12 +71,13 @@ namespace Sdcb.SimdCodecs;
 /// are unaffected.
 /// </para>
 /// </summary>
-public static class SimdCodecs
+public static partial class SimdCodecs
 {
     // Explicit registry: IImageDecoder's static-abstract members are not enumerable
     // and reflection-scanning for implementors is not AOT-safe, so each codec is
-    // registered by hand. Each delegate is bound to the concrete type's method group,
-    // never inside a generic method (Register<T>() => new(T.CanDecode, ...)): Mono AOT
+    // registered by hand, through its Registration property. Each codec builds that from
+    // its concrete type's method groups, never inside a generic method
+    // (Register<T>() => new(T.CanDecode, ...)): Mono AOT
     // (browser-wasm, iOS, Android) compiles a delegate over a static abstract member
     // of a type parameter into a call that traps with "function signature mismatch".
     // tests/Sdcb.SimdCodecs.WasmSmoke runs every entry point under Mono AOT.
@@ -86,26 +87,26 @@ public static class SimdCodecs
     // iterates whichever snapshot it read, without a lock.
     private static ImageDecoderRegistration[] s_registry =
     [
-        new(ImageFormat.Png, PngImageDecoder.CanDecode, PngImageDecoder.TryReadInfo, PngImageDecoder.TryDecode, PngImageDecoder.TryDecodeInto),
+        PngImageDecoder.Registration,
         // GainMap must precede the plain JPEG decoder: both answer the FF D8 FF
         // signature, but GainMapImageDecoder.CanDecode only claims a JPEG that
         // actually carries a locatable gain map, so ordinary JPEGs fall through.
         // It makes ToFloats() reconstruct the authored HDR while the 8-bit path
         // keeps returning the SDR base.
-        new(ImageFormat.Jpeg, GainMapImageDecoder.CanDecode, GainMapImageDecoder.TryReadInfo, GainMapImageDecoder.TryDecode, GainMapImageDecoder.TryDecodeInto),
-        new(ImageFormat.Jpeg, JpegImageDecoder.CanDecode, JpegImageDecoder.TryReadInfo, JpegImageDecoder.TryDecode, JpegImageDecoder.TryDecodeInto),
-        new(ImageFormat.Tiff, TiffImageDecoder.CanDecode, TiffImageDecoder.TryReadInfo, TiffImageDecoder.TryDecode, TiffImageDecoder.TryDecodeInto, TiffImageDecoder.TryOpenFrames),
-        new(ImageFormat.Jbig2, Jbig2ImageDecoder.CanDecode, Jbig2ImageDecoder.TryReadInfo, Jbig2ImageDecoder.TryDecode, Jbig2ImageDecoder.TryDecodeInto),
-        new(ImageFormat.Jpeg2000, Jpeg2000ImageDecoder.CanDecode, Jpeg2000ImageDecoder.TryReadInfo, Jpeg2000ImageDecoder.TryDecode, Jpeg2000ImageDecoder.TryDecodeInto),
-        new(ImageFormat.Webp, WebpImageDecoder.CanDecode, WebpImageDecoder.TryReadInfo, WebpImageDecoder.TryDecode, WebpImageDecoder.TryDecodeInto, WebpImageDecoder.TryOpenFrames),
-        new(ImageFormat.Gif, GifImageDecoder.CanDecode, GifImageDecoder.TryReadInfo, GifImageDecoder.TryDecode, GifImageDecoder.TryDecodeInto, GifImageDecoder.TryOpenFrames),
-        new(ImageFormat.Bmp, BmpImageDecoder.CanDecode, BmpImageDecoder.TryReadInfo, BmpImageDecoder.TryDecode, BmpImageDecoder.TryDecodeInto),
-        new(ImageFormat.Ico, IcoImageDecoder.CanDecode, IcoImageDecoder.TryReadInfo, IcoImageDecoder.TryDecode, IcoImageDecoder.TryDecodeInto, IcoImageDecoder.TryOpenFrames),
-        new(ImageFormat.Cur, CurImageDecoder.CanDecode, CurImageDecoder.TryReadInfo, CurImageDecoder.TryDecode, CurImageDecoder.TryDecodeInto, CurImageDecoder.TryOpenFrames),
-        new(ImageFormat.Qoi, QoiImageDecoder.CanDecode, QoiImageDecoder.TryReadInfo, QoiImageDecoder.TryDecode, QoiImageDecoder.TryDecodeInto),
+        GainMapImageDecoder.Registration,
+        JpegImageDecoder.Registration,
+        TiffImageDecoder.Registration,
+        Jbig2ImageDecoder.Registration,
+        Jpeg2000ImageDecoder.Registration,
+        WebpImageDecoder.Registration,
+        GifImageDecoder.Registration,
+        BmpImageDecoder.Registration,
+        IcoImageDecoder.Registration,
+        CurImageDecoder.Registration,
+        QoiImageDecoder.Registration,
         // Netpbm signatures are two ASCII bytes and a space: sniffed last, after every binary magic.
-        new(ImageFormat.Pnm, PnmImageDecoder.CanDecode, PnmImageDecoder.TryReadInfo, PnmImageDecoder.TryDecode, PnmImageDecoder.TryDecodeInto),
-        new(ImageFormat.Pfm, PfmImageDecoder.CanDecode, PfmImageDecoder.TryReadInfo, PfmImageDecoder.TryDecode, PfmImageDecoder.TryDecodeInto),
+        PnmImageDecoder.Registration,
+        PfmImageDecoder.Registration,
     ];
 
     private static readonly Lock s_registerLock = new();
@@ -167,8 +168,11 @@ public static class SimdCodecs
     private static bool IsSameCodec(ImageDecoderRegistration a, ImageDecoderRegistration b) =>
         ReferenceEquals(a, b)
         || (a.Format == b.Format && a.CanDecode.Equals(b.CanDecode) && a.TryReadInfo.Equals(b.TryReadInfo)
+            && a.TryGetClosestSize.Equals(b.TryGetClosestSize)
             && a.TryDecode.Equals(b.TryDecode) && a.TryDecodeInto.Equals(b.TryDecodeInto)
-            && Equals(a.TryOpenFrames, b.TryOpenFrames));
+            && a.TryReadMetadata.Equals(b.TryReadMetadata) && a.TryDecodeThumbnail.Equals(b.TryDecodeThumbnail)
+            && Equals(a.TryOpenFrames, b.TryOpenFrames) && Equals(a.TryReadPlanarInfo, b.TryReadPlanarInfo)
+            && Equals(a.TryDecodePlanes, b.TryDecodePlanes));
 
     /// <summary>
     /// Opens a reader over every frame of <paramref name="data"/> — an animated WebP's frames, a multi-page
@@ -211,16 +215,18 @@ public static class SimdCodecs
             return true;
         }
 
-        public bool TryDecodeFrame(int index, [NotNullWhen(true)] out IDecodedImage? image)
+        public bool TryDecodeFrame(int index, [NotNullWhen(true)] out IDecodedImage? image,
+            DecodeOptions? options = null, CancellationToken cancellationToken = default)
         {
             Check(index);
-            return entry.TryDecode(data.Span, out image);
+            return entry.TryDecode(data.Span, out image, options, cancellationToken);
         }
 
-        public bool TryDecodeFrameInto(int index, Span<byte> destination, int stride, ImagePixelFormat format)
+        public bool TryDecodeFrameInto(int index, Span<byte> destination, int stride, PixelFormat format,
+            DecodeOptions? options = null, CancellationToken cancellationToken = default)
         {
             Check(index);
-            return entry.TryDecodeInto(data.Span, destination, stride, format);
+            return entry.TryDecodeInto(data.Span, destination, stride, format, options, cancellationToken);
         }
 
         public void Dispose() => _disposed = true;
@@ -233,19 +239,35 @@ public static class SimdCodecs
         }
     }
 
-    /// <summary>
-    /// Decodes <paramref name="data"/> into a codec-neutral <see cref="IDecodedImage"/>
-    /// (fidelity tier - preserves source bit depth and channel count). Returns false
-    /// when no registered codec recognises the stream or the payload is undecodable.
-    /// </summary>
-    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image)
+    /// <summary>The registry entry that claims <paramref name="data"/>, or null.</summary>
+    internal static ImageDecoderRegistration? Find(ReadOnlySpan<byte> data)
     {
         foreach (var entry in Registry)
         {
             if (entry.CanDecode(data))
-                return entry.TryDecode(data, out image);
+                return entry;
         }
+        return null;
+    }
 
+    /// <summary>
+    /// Decodes <paramref name="data"/> into a codec-neutral <see cref="IDecodedImage"/>
+    /// (fidelity tier - preserves source bit depth and channel count). Returns false
+    /// when no registered codec recognises the stream or the payload is undecodable.
+    /// Dispose the image when done with it (it returns pooled memory, see <see cref="DecodeOptions.Pool"/>).
+    /// </summary>
+    /// <param name="data">The complete encoded image.</param>
+    /// <param name="image">The decoded image.</param>
+    /// <param name="options">Scale, region and pool; null for the whole image at full size.</param>
+    /// <param name="cancellationToken">Checked between coarse units of work.</param>
+    /// <exception cref="NotSupportedException">The codec cannot produce <see cref="DecodeOptions.ScaleDenominator"/>.</exception>
+    /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the image.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        if (Find(data) is { } entry)
+            return entry.TryDecode(data, out image, options, cancellationToken);
         image = null;
         return false;
     }
@@ -257,35 +279,45 @@ public static class SimdCodecs
     /// </summary>
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
     {
-        foreach (var entry in Registry)
-        {
-            if (entry.CanDecode(data))
-                return entry.TryReadInfo(data, out info);
-        }
-
+        if (Find(data) is { } entry)
+            return entry.TryReadInfo(data, out info);
         info = default;
         return false;
     }
 
     /// <summary>
-    /// Decodes directly into a caller-provided 8-bit destination in <paramref name="format"/>, rows
-    /// <paramref name="stride"/> bytes apart (0: tightly packed) — the display hot path, straight into a
-    /// UI surface (<see cref="ImagePixelFormat.Bgra32"/>), an OpenCV <c>Mat</c>
-    /// (<see cref="ImagePixelFormat.Bgr24"/>) or an OCR input (<see cref="ImagePixelFormat.Gray8"/>).
-    /// Size the destination via <see cref="TryReadInfo"/> and <see cref="PixelConverter.TryGetLayout"/>.
-    /// See <see cref="IImageDecoder.TryDecodeInto"/> for what the pixels are. Returns false when no codec
-    /// recognises the stream, the destination does not fit, or the payload is undecodable.
+    /// The size closest to <paramref name="requestedWidth"/> × <paramref name="requestedHeight"/> that the codec decodes
+    /// to natively, and the <see cref="DecodeOptions.ScaleDenominator"/> that gives it (see
+    /// <see cref="IImageDecoder.TryGetClosestSize"/>): the stored size and 1 for a codec that does not scale. False when
+    /// no codec recognises the stream or the header is malformed.
     /// </summary>
-    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, ImagePixelFormat format)
+    public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
+        out int width, out int height, out int scaleDenominator)
     {
-        foreach (var entry in Registry)
-        {
-            if (entry.CanDecode(data))
-                return entry.TryDecodeInto(data, destination, stride, format);
-        }
-
+        if (Find(data) is { } entry)
+            return entry.TryGetClosestSize(data, requestedWidth, requestedHeight, out width, out height, out scaleDenominator);
+        width = height = 0;
+        scaleDenominator = 1;
         return false;
     }
+
+    /// <summary>
+    /// Decodes directly into a caller-provided destination in <paramref name="format"/>, rows
+    /// <paramref name="stride"/> bytes apart (0: tightly packed) — the display hot path, straight into a
+    /// UI surface (<see cref="PixelFormat.Bgra32"/>, or <see cref="PixelFormat.Bgra32Premultiplied"/> for WPF,
+    /// Direct2D and most compositors), an OpenCV <c>Mat</c> (<see cref="PixelFormat.Bgr24"/>), an OCR input
+    /// (<see cref="PixelFormat.Gray8"/>) or a 16-bit pipeline (<see cref="PixelFormat.Rgba64"/>).
+    /// Size the destination via <see cref="TryReadInfo"/> (and <see cref="DecodeOptions.GetOutputSize"/> with options)
+    /// and <see cref="PixelConverter.TryGetLayout"/>. See <see cref="IImageDecoder.TryDecodeInto"/> for what the
+    /// pixels are. Returns false when no codec recognises the stream, the destination does not fit, or the payload is
+    /// undecodable.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The codec cannot produce <see cref="DecodeOptions.ScaleDenominator"/>.</exception>
+    /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the image.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        Find(data) is { } entry && entry.TryDecodeInto(data, destination, stride, format, options, cancellationToken);
 
     /// <summary>
     /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA (row-major, 4 bytes/pixel, R,G,B,A byte
@@ -293,7 +325,53 @@ public static class SimdCodecs
     /// via <see cref="TryReadInfo"/>).
     /// </summary>
     public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
-        TryDecodeInto(data, rgbaDestination, 0, ImagePixelFormat.Rgba32);
+        TryDecodeInto(data, rgbaDestination, 0, PixelFormat.Rgba32);
+
+    /// <summary>
+    /// Extracts the metadata blocks (Exif, XMP, ICC) of <paramref name="data"/> without decoding pixels — what a
+    /// transcoder hands to an encoder. False when no codec recognises the stream or the file is malformed.
+    /// </summary>
+    public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata)
+    {
+        if (Find(data) is { } entry)
+            return entry.TryReadMetadata(data, out metadata);
+        metadata = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Decodes the reduced-size preview <paramref name="data"/> embeds (Exif IFD1, a HEIF <c>thmb</c> item), when
+    /// <see cref="ImageInfo.HasThumbnail"/> says there is one. False otherwise.
+    /// </summary>
+    public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail)
+    {
+        if (Find(data) is { } entry)
+            return entry.TryDecodeThumbnail(data, out thumbnail);
+        thumbnail = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Describes the YCbCr planes the codec decodes <paramref name="data"/> to before colour conversion (see
+    /// <see cref="IPlanarImageDecoder"/>). False when no codec recognises the stream, the codec has no planar output,
+    /// or this image is not available as planes.
+    /// </summary>
+    public static bool TryReadPlanarInfo(ReadOnlySpan<byte> data, out PlanarInfo info)
+    {
+        if (Find(data) is { TryReadPlanarInfo: { } read })
+            return read(data, out info);
+        info = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Decodes the YCbCr planes of <paramref name="data"/> as coded (see <see cref="IPlanarImageDecoder.TryDecodePlanes"/>);
+    /// size them from <see cref="TryReadPlanarInfo"/>. False when the image is not available as planes, a plane is too
+    /// small or the payload is undecodable.
+    /// </summary>
+    public static bool TryDecodePlanes(ReadOnlySpan<byte> data, Span<ushort> y, Span<ushort> cb, Span<ushort> cr,
+        CancellationToken cancellationToken = default) =>
+        Find(data) is { TryDecodePlanes: { } decode } && decode(data, y, cb, cr, cancellationToken);
 
     /// <summary>
     /// The format of <paramref name="data"/> by its leading signature: one the facade decodes (the

@@ -29,7 +29,7 @@ public sealed class PngReaderStreamingTests
             new Random(filterType * 100 + colorType).NextBytes(samples);
 
             var png = Png(w, h, colorType, bitDepth, Filtered(samples, w * bpp, h, bpp, filterType));
-            var img = PngReader.Decode(png);
+            var img = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken);
 
             img.Pixels.ShouldBe(samples, $"filter {filterType}, colour type {colorType}, {bitDepth}-bit");
         }
@@ -45,7 +45,7 @@ public sealed class PngReaderStreamingTests
         var raw = Filtered(samples, w * 4, h, 4, filterType: 4);
 
         foreach (var chunk in new[] { 1, 2, 7, 64, int.MaxValue })
-            PngReader.Decode(Png(w, h, 6, 8, raw, chunk)).Pixels.ShouldBe(samples, $"IDATs of {chunk} bytes");
+            PngReader.Decode(Png(w, h, 6, 8, raw, chunk), cancellationToken: TestContext.Current.CancellationToken).Pixels.ShouldBe(samples, $"IDATs of {chunk} bytes");
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class PngReaderStreamingTests
         var png = Png(w, h + 1, 2, 8, raw);
 
         Should.Throw<InvalidDataException>(() => PngReader.Decode(png));
-        PngReader.TryDecode(png, out _).ShouldBeFalse();
+        PngReader.TryDecode(png, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public sealed class PngReaderStreamingTests
         var png = Png(w, h, 2, 8, [.. raw, 0]);
 
         Should.Throw<InvalidDataException>(() => PngReader.Decode(png));
-        PngReader.TryDecode(png, out _).ShouldBeFalse();
+        PngReader.TryDecode(png, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     /// <summary>Every row filtered with <paramref name="filterType"/>, each prefixed with it (PNG §9.2).</summary>

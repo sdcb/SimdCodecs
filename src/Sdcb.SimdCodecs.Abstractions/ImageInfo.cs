@@ -11,10 +11,10 @@ namespace Sdcb.SimdCodecs.Abstractions;
 /// <para>
 /// <see cref="Width"/>, <see cref="Height"/>, <see cref="Channels"/> and <see cref="SampleFormat"/>
 /// describe exactly the raster <see cref="IImageDecoder.TryDecode"/> returns. The init-only
-/// properties describe the file: <see cref="Format"/>, <see cref="BitDepth"/>, <see cref="Orientation"/>
-/// and <see cref="FrameCount"/>. Left unset they read as the plain case (<see cref="ImageFormat.Unknown"/>,
-/// the format's full depth, <see cref="ImageOrientation.Normal"/>, one frame), so an implementation that
-/// predates them keeps its meaning.
+/// properties describe the file: <see cref="Format"/>, <see cref="BitDepth"/>, <see cref="Orientation"/>,
+/// <see cref="FrameCount"/>, <see cref="ColorEncoding"/>, <see cref="Resolution"/> and <see cref="HasThumbnail"/>.
+/// Left unset they read as the plain case (<see cref="ImageFormat.Unknown"/>, the format's full depth,
+/// <see cref="ImageOrientation.Normal"/>, one frame, sRGB, no declared density, no thumbnail).
 /// </para>
 /// </summary>
 /// <param name="Width">Pixel width, as stored (before <see cref="Orientation"/> is applied).</param>
@@ -29,6 +29,9 @@ public readonly record struct ImageInfo(int Width, int Height, int Channels, Sam
     private readonly byte _format;       // ImageFormat
     private readonly byte _orientation;  // ImageOrientation - 1
     private readonly int _extraFrames;   // FrameCount - 1
+    private readonly ColorEncoding? _color; // null: ColorEncoding.AssumedSrgb
+    private readonly Resolution? _resolution;
+    private readonly bool _hasThumbnail;
 
     /// <summary>
     /// The file format, set by the decoder that read the header. Defaults to <see cref="ImageFormat.Unknown"/>.
@@ -98,6 +101,33 @@ public readonly record struct ImageInfo(int Width, int Height, int Channels, Sam
         }
     }
 
+    /// <summary>
+    /// How the decoded samples will encode colour, known before decoding: what
+    /// <see cref="IDecodedImage.ColorEncoding"/> of the decoded image will report (PNG cICP / gAMA, HEIF nclx, …), so a
+    /// caller can tell an HDR (PQ / HLG) file apart up front. Defaults to <see cref="ColorEncoding.AssumedSrgb"/>.
+    /// </summary>
+    public ColorEncoding ColorEncoding
+    {
+        get => _color ?? ColorEncoding.AssumedSrgb;
+        init => _color = value;
+    }
+
+    /// <summary>The pixel density the file declares (PNG pHYs, JFIF / Exif resolution, TIFF XResolution, BMP
+    /// pixels per metre); null when it declares none.</summary>
+    public Resolution? Resolution
+    {
+        get => _resolution;
+        init => _resolution = value;
+    }
+
+    /// <summary>True when the file embeds a reduced-size preview that <see cref="IImageDecoder.TryDecodeThumbnail"/>
+    /// returns (an Exif IFD1 JPEG, a HEIF <c>thmb</c> item, a TIFF reduced-resolution subfile).</summary>
+    public bool HasThumbnail
+    {
+        get => _hasThumbnail;
+        init => _hasThumbnail = value;
+    }
+
     /// <summary>True when the displayed image is the stored one turned a quarter: <see cref="Orientation"/> 5..8,
     /// where the displayed width is <see cref="Height"/>.</summary>
     public bool SwapsDimensions => Orientation >= ImageOrientation.Transpose;
@@ -114,9 +144,11 @@ public readonly record struct ImageInfo(int Width, int Height, int Channels, Sam
     public bool Equals(ImageInfo other) =>
         Width == other.Width && Height == other.Height && Channels == other.Channels
         && SampleFormat == other.SampleFormat && BitDepth == other.BitDepth
-        && Orientation == other.Orientation && FrameCount == other.FrameCount && Format == other.Format;
+        && Orientation == other.Orientation && FrameCount == other.FrameCount && Format == other.Format
+        && ColorEncoding == other.ColorEncoding && Resolution == other.Resolution && HasThumbnail == other.HasThumbnail;
 
     /// <inheritdoc />
     public override int GetHashCode() =>
-        HashCode.Combine(Width, Height, Channels, SampleFormat, BitDepth, Orientation, FrameCount, Format);
+        HashCode.Combine(HashCode.Combine(Width, Height, Channels, SampleFormat, BitDepth, Orientation, FrameCount, Format),
+            ColorEncoding, Resolution, HasThumbnail);
 }

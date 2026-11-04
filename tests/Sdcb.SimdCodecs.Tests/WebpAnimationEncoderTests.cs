@@ -78,7 +78,7 @@ public sealed class WebpAnimationEncoderTests
         var encoder = new WebpAnimationEncoder(w, h, options);
         foreach (byte[] frame in frames)
         {
-            encoder.AddFrame(frame, ImagePixelFormat.Rgba32, TimeSpan.FromMilliseconds(Duration));
+            encoder.AddFrame(frame, PixelFormat.Rgba32, TimeSpan.FromMilliseconds(Duration));
         }
 
         return encoder.Encode();
@@ -246,8 +246,8 @@ public sealed class WebpAnimationEncoderTests
             var canvas = new byte[96 * 64 * 4];
             for (int k = decoder.FrameCount - 1; k >= 0; k--)
             {
-                decoder.Seek(k);
-                decoder.TryDecodeNextFrame(canvas, out _).ShouldBeTrue();
+                decoder.Seek(k, cancellationToken: TestContext.Current.CancellationToken);
+                decoder.TryDecodeNextFrame(canvas, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
                 canvas.ShouldBe(sequential[k].Canvas, $"distance {distance} seek {k}");
             }
         }
@@ -425,7 +425,7 @@ public sealed class WebpAnimationEncoderTests
         encoder.AddFrame(new WebpAnimationFrame { Pixels = frames[0], Width = w, Height = h, Duration = TimeSpan.FromMilliseconds(Duration), DisposeToBackground = true });
         for (int f = 1; f < frames.Count; f++)
         {
-            encoder.AddFrame(frames[f], ImagePixelFormat.Rgba32, TimeSpan.FromMilliseconds(Duration));
+            encoder.AddFrame(frames[f], PixelFormat.Rgba32, TimeSpan.FromMilliseconds(Duration));
         }
 
         List<byte[]> shown = CheckDecoders(encoder.Encode(), w, h, frames.Count, "mixed APIs");
@@ -480,10 +480,10 @@ public sealed class WebpAnimationEncoderTests
         var options = new WebpAnimationEncodeOptions { Mode = WebpAnimationMode.Mixed };
         byte[] expected = EncodeIncrementally(frames, w, h, options);
         WebpEncoder.EncodeAnimation([.. frames.Select(f => new WebpAnimationCanvasFrame(f, TimeSpan.FromMilliseconds(Duration)))], w, h,
-            ImagePixelFormat.Rgba32, options).ShouldBe(expected);
+            PixelFormat.Rgba32, options).ShouldBe(expected);
         using var stream = new MemoryStream();
         WebpEncoder.EncodeAnimation([.. frames.Select(f => new WebpAnimationCanvasFrame(f, TimeSpan.FromMilliseconds(Duration)))], w, h,
-            ImagePixelFormat.Rgba32, stream, options);
+            PixelFormat.Rgba32, stream, options);
         stream.ToArray().ShouldBe(expected);
 
         // BGRA with a padded stride.
@@ -501,7 +501,7 @@ public sealed class WebpAnimationEncoderTests
                 }
             }
 
-            encoder.AddFrame(bgra, ImagePixelFormat.Bgra32, TimeSpan.FromMilliseconds(Duration), stride);
+            encoder.AddFrame(bgra, PixelFormat.Bgra32, TimeSpan.FromMilliseconds(Duration), stride);
         }
 
         encoder.Encode().ShouldBe(expected);
@@ -522,9 +522,9 @@ public sealed class WebpAnimationEncoderTests
 
         var encoder = new WebpAnimationEncoder(8, 8);
         Should.Throw<InvalidOperationException>(() => encoder.Encode()); // no frames
-        Should.Throw<ArgumentException>(() => encoder.AddFrame(pixels.AsSpan(0, 10), ImagePixelFormat.Rgba32, d));
-        Should.Throw<ArgumentOutOfRangeException>(() => encoder.AddFrame(pixels, ImagePixelFormat.Rgba32, TimeSpan.FromMilliseconds(-1)));
-        Should.Throw<ArgumentOutOfRangeException>(() => encoder.AddFrame(pixels, ImagePixelFormat.Rgba32, TimeSpan.FromMilliseconds(16777216)));
+        Should.Throw<ArgumentException>(() => encoder.AddFrame(pixels.AsSpan(0, 10), PixelFormat.Rgba32, d));
+        Should.Throw<ArgumentOutOfRangeException>(() => encoder.AddFrame(pixels, PixelFormat.Rgba32, TimeSpan.FromMilliseconds(-1)));
+        Should.Throw<ArgumentOutOfRangeException>(() => encoder.AddFrame(pixels, PixelFormat.Rgba32, TimeSpan.FromMilliseconds(16777216)));
         Should.Throw<ArgumentException>(() => encoder.AddFrame(new WebpAnimationFrame { Pixels = pixels, X = 1, Width = 2, Height = 2, Duration = d }));
         Should.Throw<ArgumentException>(() => encoder.AddFrame(new WebpAnimationFrame { Pixels = pixels, X = 6, Width = 4, Height = 2, Duration = d }));
         Should.Throw<ArgumentException>(() => encoder.AddFrame(new WebpAnimationFrame { Pixels = pixels, Width = 0, Height = 2, Duration = d }));
@@ -532,9 +532,9 @@ public sealed class WebpAnimationEncoderTests
         Should.Throw<ArgumentOutOfRangeException>(() => encoder.AddFrame(new WebpAnimationFrame { Pixels = pixels, Width = 2, Height = 2, Duration = d, Quality = -1 }));
         encoder.FrameCount.ShouldBe(0);
 
-        encoder.AddFrame(pixels, ImagePixelFormat.Rgba32, d);
+        encoder.AddFrame(pixels, PixelFormat.Rgba32, d);
         encoder.Encode();
-        Should.Throw<InvalidOperationException>(() => encoder.AddFrame(pixels, ImagePixelFormat.Rgba32, d));
-        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeAnimation([], 8, 8, ImagePixelFormat.Rgba32));
+        Should.Throw<InvalidOperationException>(() => encoder.AddFrame(pixels, PixelFormat.Rgba32, d));
+        Should.Throw<ArgumentException>(() => WebpEncoder.EncodeAnimation([], 8, 8, PixelFormat.Rgba32));
     }
 }

@@ -93,14 +93,14 @@ internal sealed record DecodeCase(string Content, string Format, Writer Writer, 
         }
         return Format switch
         {
-            "rgb24-topdown" => BmpEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Rgb24, TopDown = true }),
-            "argb32-v4" => BmpEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Argb32, Header = BmpHeaderVersion.V4 }),
-            "rgb565" => BmpEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Rgb565 }),
-            "rle8" => BmpEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed8, Rle = true }),
-            "rle4" => BmpEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed4, Rle = true }),
-            "ico256-bmp32" => IcoEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, IcoImageEncoding.Bmp32),
-            "ico256-png" => IcoEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, IcoImageEncoding.Png),
-            "ico48-bmp8" => IcoEncoder.Encode(rgba, w, h, ImagePixelFormat.Rgba32, IcoImageEncoding.Bmp8),
+            "rgb24-topdown" => BmpEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Rgb24, TopDown = true }),
+            "argb32-v4" => BmpEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Argb32, Header = BmpHeaderVersion.V4 }),
+            "rgb565" => BmpEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Rgb565 }),
+            "rle8" => BmpEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed8, Rle = true }),
+            "rle4" => BmpEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed4, Rle = true }),
+            "ico256-bmp32" => IcoEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, IcoImageEncoding.Bmp32),
+            "ico256-png" => IcoEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, IcoImageEncoding.Png),
+            "ico48-bmp8" => IcoEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, IcoImageEncoding.Bmp8),
             _ => throw new InvalidOperationException(Format),
         };
     }

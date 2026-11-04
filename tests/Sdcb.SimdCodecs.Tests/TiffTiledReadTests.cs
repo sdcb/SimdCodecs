@@ -276,7 +276,7 @@ public sealed class TiffTiledReadTests
             TileHeight = 16,
         });
 
-        var fromPng = PngReader.Decode(png).AsUInt16Samples();
+        var fromPng = PngReader.Decode(png, cancellationToken: TestContext.Current.CancellationToken).AsUInt16Samples();
         var fromTiff = MemoryMarshal.Cast<byte, ushort>(TiffReader.Read(tiff).Pages[0].Pixels.AsSpan()).ToArray();
 
         fromTiff.ShouldBe(fromPng);

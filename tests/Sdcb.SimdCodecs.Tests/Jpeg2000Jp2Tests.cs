@@ -37,7 +37,7 @@ public class Jpeg2000Jp2Tests
         Jpeg2000Decoder.IsJp2(bytes).ShouldBeTrue();
         Jpeg2000Decoder.IsCodestream(bytes).ShouldBeFalse();
 
-        var decoded = Jpeg2000Decoder.Decode(bytes);
+        var decoded = Jpeg2000Decoder.Decode(bytes, cancellationToken: TestContext.Current.CancellationToken);
         decoded.Components.ShouldBe(expected.Components);
         decoded.Samples.ShouldBe(expected.Samples);
         decoded.Colour.ShouldNotBeNull();
@@ -49,7 +49,7 @@ public class Jpeg2000Jp2Tests
     [Fact]
     public void ARawCodestream_ReportsNoColour()
     {
-        Jpeg2000Decoder.Decode(Codestream("rgb-struct64")).Colour.ShouldBeNull();
+        Jpeg2000Decoder.Decode(Codestream("rgb-struct64"), cancellationToken: TestContext.Current.CancellationToken).Colour.ShouldBeNull();
     }
 
     /// <summary>
@@ -62,7 +62,7 @@ public class Jpeg2000Jp2Tests
         var codestream = Codestream("rgb-struct64");
         var wrapped = Jp2(Header(ImageHeader(), EnumeratedColour(16)), Box("jp2c", codestream));
 
-        Jpeg2000Decoder.Decode(wrapped).Samples.ShouldBe(Jpeg2000Decoder.Decode(codestream).Samples);
+        Jpeg2000Decoder.Decode(wrapped, cancellationToken: TestContext.Current.CancellationToken).Samples.ShouldBe(Jpeg2000Decoder.Decode(codestream, cancellationToken: TestContext.Current.CancellationToken).Samples);
     }
 
     /// <summary>A restricted ICC profile (method 2) comes back as its bytes, unread.</summary>
@@ -74,7 +74,7 @@ public class Jpeg2000Jp2Tests
             Header(ImageHeader(), Box("colr", [2, 0, 0, .. profile])),
             Box("jp2c", Codestream("rgb-struct64")));
 
-        var colour = Jpeg2000Decoder.Decode(wrapped).Colour;
+        var colour = Jpeg2000Decoder.Decode(wrapped, cancellationToken: TestContext.Current.CancellationToken).Colour;
 
         colour.ShouldNotBeNull();
         colour.Method.ShouldBe(2);
@@ -90,7 +90,7 @@ public class Jpeg2000Jp2Tests
             Header(ImageHeader(), EnumeratedColour(18), EnumeratedColour(16)),
             Box("jp2c", Codestream("rgb-struct64")));
 
-        Jpeg2000Decoder.Decode(wrapped).Colour!.EnumeratedColourSpace.ShouldBe(Jp2EnumeratedColourSpace.Sycc);
+        Jpeg2000Decoder.Decode(wrapped, cancellationToken: TestContext.Current.CancellationToken).Colour!.EnumeratedColourSpace.ShouldBe(Jp2EnumeratedColourSpace.Sycc);
     }
 
     /// <summary>
@@ -119,14 +119,14 @@ public class Jpeg2000Jp2Tests
     public void ACodestreamBox_MayUseALongOrAnOpenLength()
     {
         var codestream = Codestream("rgb-struct64");
-        var expected = Jpeg2000Decoder.Decode(codestream).Samples;
+        var expected = Jpeg2000Decoder.Decode(codestream, cancellationToken: TestContext.Current.CancellationToken).Samples;
 
         byte[] extended = [0, 0, 0, 1, .. "jp2c"u8, .. BigEndian64(16 + codestream.Length), .. codestream];
-        Jpeg2000Decoder.Decode(Jp2(Header(ImageHeader(), EnumeratedColour(16)), extended))
+        Jpeg2000Decoder.Decode(Jp2(Header(ImageHeader(), EnumeratedColour(16)), extended), cancellationToken: TestContext.Current.CancellationToken)
             .Samples.ShouldBe(expected);
 
         byte[] open = [0, 0, 0, 0, .. "jp2c"u8, .. codestream];
-        Jpeg2000Decoder.Decode(Jp2(Header(ImageHeader(), EnumeratedColour(16)), open))
+        Jpeg2000Decoder.Decode(Jp2(Header(ImageHeader(), EnumeratedColour(16)), open), cancellationToken: TestContext.Current.CancellationToken)
             .Samples.ShouldBe(expected);
     }
 

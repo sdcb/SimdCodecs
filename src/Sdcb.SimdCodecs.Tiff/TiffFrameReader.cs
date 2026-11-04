@@ -24,20 +24,19 @@ internal sealed class TiffFrameReader(ReadOnlyMemory<byte> data, int pages) : II
         return ok;
     }
 
-    public bool TryDecodeFrame(int index, [NotNullWhen(true)] out IDecodedImage? image)
+    public bool TryDecodeFrame(int index, [NotNullWhen(true)] out IDecodedImage? image,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         Check(index);
-        var ok = TiffImageDecoder.TryDecodePage(data.Span, index, out var raster);
-        image = raster;
-        return ok;
+        return TiffImageDecoder.TryDecodePage(data.Span, index, options, cancellationToken, out image);
     }
 
-    /// <remarks>False for float pages, as <see cref="TiffImageDecoder.TryDecodeInto"/>.</remarks>
-    public bool TryDecodeFrameInto(int index, Span<byte> destination, int stride, ImagePixelFormat format)
+    /// <remarks>The generic decode-then-convert path, as <see cref="TiffImageDecoder.TryDecodeInto"/>.</remarks>
+    public bool TryDecodeFrameInto(int index, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         Check(index);
-        return TiffImageDecoder.TryDecodePage(data.Span, index, out var image)
-            && PixelConverter.TryConvert(image, destination, stride, format);
+        return ImageDecoderFallback.TryDecodeFrameInto(this, index, destination, stride, format, options, cancellationToken);
     }
 
     public void Dispose() => _disposed = true;

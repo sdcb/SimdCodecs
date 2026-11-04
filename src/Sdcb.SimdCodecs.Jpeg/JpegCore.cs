@@ -100,6 +100,9 @@ internal ref struct JpegCore
     /// <summary>Measurement-only stage switches (see <see cref="JpegAblation"/>).</summary>
     internal JpegAblation Ablation;
 
+    /// <summary>Checked once per MCU row: a coarse point, so the check costs nothing measurable.</summary>
+    internal CancellationToken CancellationToken;
+
     public JpegCore(ReadOnlySpan<byte> data, int scale)
     {
         _data = data;
@@ -392,6 +395,7 @@ internal ref struct JpegCore
     /// </summary>
     private void CommitMcuRow(int m)
     {
+        CancellationToken.ThrowIfCancellationRequested();
         for (var k = 0; k < ImgN; ++k)
         {
             var c = _comp[k];
@@ -542,7 +546,7 @@ internal ref struct JpegCore
     private readonly void PackRow(int j, ReadOnlySpan<byte> rgba)
     {
         if (_format == JpegPixelFormat.Gray8)
-            PixelConverter.ConvertRow(rgba, 4, SampleFormat.UInt8, _dest.Slice(j * _stride, OutX), ImagePixelFormat.Gray8, OutX);
+            PixelConverter.ConvertRow(rgba, PixelFormat.Rgba32, _dest.Slice(j * _stride, OutX), PixelFormat.Gray8, OutX);
         else
             JpegColor.PackRgb24(_dest.Slice(j * _stride, OutX * 3), rgba, OutX);
     }

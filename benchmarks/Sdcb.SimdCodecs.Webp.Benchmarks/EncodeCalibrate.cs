@@ -85,7 +85,7 @@ internal static class EncodeCalibrate
         if (!Cache.TryGetValue(index, out long bytes))
         {
             var config = Vp8EncoderConfig.For(75, 4) with { QuantIndex = index };
-            bytes = images.Sum(i => (long)WebpEncoder.EncodeLossy(i.Rgba, i.Width, i.Height, ImagePixelFormat.Rgba32, config).Length);
+            bytes = images.Sum(i => (long)WebpEncoder.EncodeLossy(i.Rgba, i.Width, i.Height, PixelFormat.Rgba32, config).Length);
             Cache[index] = bytes;
         }
 

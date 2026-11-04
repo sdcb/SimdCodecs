@@ -63,14 +63,15 @@ public static class IcoDecoder
     /// <exception cref="ArgumentOutOfRangeException">The index is not an image's.</exception>
     /// <exception cref="ArgumentException">The destination is too small, or the stride shorter than a row.</exception>
     public static void DecodeTo(ReadOnlySpan<byte> data, int index, Span<byte> destination,
-        ImagePixelFormat format = ImagePixelFormat.Rgba32, int stride = 0)
+        PixelFormat? format = null, int stride = 0)
     {
+        var target = format ?? PixelFormat.Rgba32;
         var container = IcoContainer.Read(data);
         ArgumentOutOfRangeException.ThrowIfNegative(index);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, container.Entries.Length);
         var entry = container.Entries[index];
-        if (!PixelConverter.TryGetLayout(entry.Width, entry.Height, format, stride, destination.Length, out var rowStride))
-            throw new ArgumentException($"The destination does not hold a {entry.Width}x{entry.Height} {format} image with stride {stride}.", nameof(destination));
-        container.DecodeInto(data, index, destination, rowStride, format);
+        if (!PixelConverter.TryGetLayout(entry.Width, entry.Height, target, stride, destination.Length, out var rowStride))
+            throw new ArgumentException($"The destination does not hold a {entry.Width}x{entry.Height} {target} image with stride {stride}.", nameof(destination));
+        container.DecodeInto(data, index, destination, rowStride, target);
     }
 }

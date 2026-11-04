@@ -55,13 +55,13 @@ internal sealed record Case(string Content, string Format)
     public SourceImage Image => SourceImage.Get(Content, Settings.Size.Width, Settings.Size.Height);
 
     /// <summary>The input an encoder gets, and its layout: RGBA, RGB, grey, 16-bit RGB or float RGB.</summary>
-    public (byte[] Pixels, ImagePixelFormat Format) Input() => Format switch
+    public (byte[] Pixels, PixelFormat Format) Input() => Format switch
     {
-        "qoi-rgba" or "pam-rgba" => (Image.Rgba8(alpha: true), ImagePixelFormat.Rgba32),
-        "pgm" or "pbm" => (Image.Gray8(), ImagePixelFormat.Gray8),
-        "ppm16" => (MemoryMarshal.AsBytes(Image.Rgb16().AsSpan()).ToArray(), ImagePixelFormat.Rgb24),
-        "pfm" => (MemoryMarshal.AsBytes(Image.Rgb8().Select(v => v / 255f).ToArray().AsSpan()).ToArray(), ImagePixelFormat.Rgb24),
-        _ => (Image.Rgb8(), ImagePixelFormat.Rgb24),
+        "qoi-rgba" or "pam-rgba" => (Image.Rgba8(alpha: true), PixelFormat.Rgba32),
+        "pgm" or "pbm" => (Image.Gray8(), PixelFormat.Gray8),
+        "ppm16" => (MemoryMarshal.AsBytes(Image.Rgb16().AsSpan()).ToArray(), PixelFormat.Rgb24),
+        "pfm" => (MemoryMarshal.AsBytes(Image.Rgb8().Select(v => v / 255f).ToArray().AsSpan()).ToArray(), PixelFormat.Rgb24),
+        _ => (Image.Rgb8(), PixelFormat.Rgb24),
     };
 
     public PnmEncodeOptions PnmOptions => new()
@@ -79,7 +79,7 @@ internal sealed record Case(string Content, string Format)
     /// <summary>Our encoder on the case's input.</summary>
     public byte[] EncodeOurs() => EncodeOurs(Input());
 
-    public byte[] EncodeOurs((byte[] Pixels, ImagePixelFormat Format) input)
+    public byte[] EncodeOurs((byte[] Pixels, PixelFormat Format) input)
     {
         var (pixels, format) = input;
         var (w, h) = Settings.Size;
@@ -93,7 +93,7 @@ internal sealed record Case(string Content, string Format)
     }
 
     /// <summary>ImageSharp's encoder for this case and an image of the input built beforehand, or null.</summary>
-    public (Image Image, IImageEncoder Encoder)? ImageSharpEncoder()
+    public (Image Image, SixLabors.ImageSharp.Formats.IImageEncoder Encoder)? ImageSharpEncoder()
     {
         if (!ImageSharpWrites) return null;
         var (pixels, _) = Input();
@@ -106,7 +106,7 @@ internal sealed record Case(string Content, string Format)
             "ppm16" => SixLabors.ImageSharp.Image.LoadPixelData<Rgb48>(config, pixels, w, h),
             _ => SixLabors.ImageSharp.Image.LoadPixelData<Rgb24>(config, pixels, w, h),
         };
-        IImageEncoder encoder = Format switch
+        SixLabors.ImageSharp.Formats.IImageEncoder encoder = Format switch
         {
             "qoi-rgba" => new IsQoiEncoder { Channels = IsQoiChannels.Rgba },
             "qoi-rgb" => new IsQoiEncoder { Channels = IsQoiChannels.Rgb },
@@ -158,7 +158,7 @@ internal sealed class Setup(Case c)
         }
 
         var rgba = new byte[w * h * 4];
-        bool Ours(byte[] o) => c.Qoi ? QoiImageDecoder.TryDecodeInto(data, o, 0, ImagePixelFormat.Rgba32) : PnmImageDecoder.TryDecodeInto(data, o, 0, ImagePixelFormat.Rgba32);
+        bool Ours(byte[] o) => c.Qoi ? QoiImageDecoder.TryDecodeInto(data, o, 0, PixelFormat.Rgba32) : PnmImageDecoder.TryDecodeInto(data, o, 0, PixelFormat.Rgba32);
         if (!Ours(rgba)) throw new InvalidOperationException($"{c.Name}: current does not decode the file");
         if (c.Format is "qoi-rgba" or "qoi-rgb" or "ppm" or "pam-rgba")
         {

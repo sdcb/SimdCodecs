@@ -141,7 +141,7 @@ public sealed class IcoTests
     public void Corrupt_directories_are_refused(string name, byte[] ico)
     {
         Should.Throw<InvalidDataException>(() => IcoDecoder.Decode(ico), name);
-        IcoImageDecoder.TryDecode(ico, out _).ShouldBeFalse(name);
+        IcoImageDecoder.TryDecode(ico, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(name);
         IcoImageDecoder.TryOpenFrames(ico, out _).ShouldBeFalse(name);
     }
 
@@ -211,10 +211,10 @@ public sealed class IcoTests
                     (frame.Info.Width, frame.Info.Height, frame.Info.Format, frame.Duration).ShouldBe(
                         (frames[i].Width, frames[i].Height, cursor ? ImageFormat.Cur : ImageFormat.Ico, (TimeSpan?)null));
                     var bgra = new byte[frames[i].Width * frames[i].Height * 4 + 7];
-                    reader.TryDecodeFrameInto(i, bgra, 0, ImagePixelFormat.Bgra32).ShouldBeTrue();
-                    reader.TryDecodeFrame(i, out var decoded).ShouldBeTrue();
+                    reader.TryDecodeFrameInto(i, bgra, 0, PixelFormat.Bgra32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+                    reader.TryDecodeFrame(i, out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
                     var expected = new byte[bgra.Length];
-                    PixelConverter.TryConvert(decoded!, expected, 0, ImagePixelFormat.Bgra32).ShouldBeTrue();
+                    PixelConverter.TryConvert(decoded!, expected, 0, PixelFormat.Bgra32).ShouldBeTrue();
                     bgra.ShouldBe(expected, $"frame {i}");
                 }
             }

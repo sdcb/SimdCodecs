@@ -34,7 +34,7 @@ public sealed class WebpEncoderContainerTests
     [Fact]
     public void Without_metadata_the_file_is_the_simple_format()
     {
-        byte[] webp = WebpEncoder.EncodeLossless(Source(alpha: true), 45, 21, ImagePixelFormat.Rgba32);
+        byte[] webp = WebpEncoder.EncodeLossless(Source(alpha: true), 45, 21, PixelFormat.Rgba32);
         webp.AsSpan(12, 4).SequenceEqual("VP8L"u8).ShouldBeTrue();
         BitConverter.ToUInt32(webp, 4).ShouldBe((uint)(webp.Length - 8));
     }
@@ -55,7 +55,7 @@ public sealed class WebpEncoderContainerTests
             Exif = exif ? Exif : null,
             Xmp = xmp ? Xmp : null,
         };
-        byte[] webp = WebpEncoder.EncodeLossless(source, 45, 21, ImagePixelFormat.Rgba32, options);
+        byte[] webp = WebpEncoder.EncodeLossless(source, 45, 21, PixelFormat.Rgba32, options);
 
         // Chunk walk: order, sizes, padding, and the VP8X flags and canvas.
         List<(string FourCc, int Offset, int Length)> chunks = Chunks(webp);
@@ -72,7 +72,7 @@ public sealed class WebpEncoderContainerTests
         (webp[chunks[0].Offset + 7] | webp[chunks[0].Offset + 8] << 8 | webp[chunks[0].Offset + 9] << 16).ShouldBe(20);
 
         // Our decoder: pixels and every metadata block, byte for byte.
-        WebpImage decoded = WebpDecoder.Decode(webp);
+        WebpImage decoded = WebpDecoder.Decode(webp, cancellationToken: TestContext.Current.CancellationToken);
         decoded.Rgba.ShouldBe(source);
         decoded.IccProfile.ShouldBe(icc ? iccBytes : null);
         decoded.Exif.ShouldBe(exif ? Exif : null);
@@ -114,7 +114,7 @@ public sealed class WebpEncoderContainerTests
         foreach ((string name, WebpLosslessEncodeOptions options, bool alpha) in layouts)
         {
             string file = Path.Combine(directory, $"{name}-{Guid.NewGuid():N}.webp");
-            File.WriteAllBytes(file, WebpEncoder.EncodeLossless(Source(alpha), 45, 21, ImagePixelFormat.Rgba32, options));
+            File.WriteAllBytes(file, WebpEncoder.EncodeLossless(Source(alpha), 45, 21, PixelFormat.Rgba32, options));
             try
             {
                 (int exit, string output) = Run(webpinfo, "-diag", file);
