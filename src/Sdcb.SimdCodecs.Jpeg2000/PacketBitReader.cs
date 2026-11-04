@@ -89,9 +89,9 @@ internal ref struct PacketBitReader(ReadOnlySpan<byte> data)
 /// <b>Hazard 5.</b> That kept state spans the packets of successive quality
 /// layers, not just the leaves within one packet. Re-creating the trees per
 /// packet decodes layer 0 correctly and every later layer wrongly, and a
-/// single-layer fixture cannot tell the difference — which is why rung 1 owning
-/// this class does not mean rung 1 has tested it. That is rung 3's job, and it
-/// needs a multi-layer fixture built for the purpose.
+/// single-layer fixture cannot tell the difference, which is why the multi-layer
+/// fixtures exist. The trees belong to a precinct (<see cref="PrecinctBand"/>)
+/// and live as long as it does.
 /// </para>
 /// </summary>
 internal sealed class TagTree

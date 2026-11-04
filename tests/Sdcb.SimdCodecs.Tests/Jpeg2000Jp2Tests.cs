@@ -94,21 +94,52 @@ public class Jpeg2000Jp2Tests
     }
 
     /// <summary>
-    /// The three boxes that change what the components mean are refused by name. Skipped, each
-    /// would hand back samples whose meaning had silently changed: palette indices as if they were
-    /// colour, channels out of order, an alpha channel drawn as colour.
+    /// The channel definition box is refused by name: skipped, it would hand back an alpha channel
+    /// drawn as colour, or channels out of order. (The palette and component mapping boxes are
+    /// decoded; <see cref="Jpeg2000TilingAndProgressionTests.PalettedJp2_DecodesAsOpenJpegDoes"/>.)
     /// </summary>
-    [Theory]
-    [InlineData("pclr", "palette")]
-    [InlineData("cmap", "component mapping")]
-    [InlineData("cdef", "channel definition")]
-    public void BoxesThatChangeTheMeaningOfComponents_AreRefused(string type, string named)
+    [Fact]
+    public void ChannelDefinition_IsRefused()
     {
         var wrapped = Jp2(
-            Header(ImageHeader(), EnumeratedColour(16), Box(type, [0, 0, 0, 0])),
+            Header(ImageHeader(), EnumeratedColour(16), Box("cdef", [0, 0, 0, 0])),
             Box("jp2c", Codestream("rgb-struct64")));
 
-        Should.Throw<NotSupportedException>(() => Jpeg2000Decoder.Decode(wrapped)).Message.ShouldContain(named);
+        Should.Throw<NotSupportedException>(() => Jpeg2000Decoder.Decode(wrapped)).Message.ShouldContain("channel definition");
+    }
+
+    /// <summary>
+    /// Palette and component mapping boxes that do not describe a palette are malformed: an empty
+    /// palette, a palette with no mapping, a mapping into a column the palette lacks, a palette
+    /// shorter than its entries, an undefined mapping type, a mapping naming a missing component.
+    /// </summary>
+    [Theory]
+    [InlineData("empty palette")]
+    [InlineData("palette without mapping")]
+    [InlineData("missing column")]
+    [InlineData("short palette")]
+    [InlineData("bad mapping type")]
+    [InlineData("missing component")]
+    [InlineData("too many entries")]
+    public void MalformedPaletteOrMapping_IsInvalid(string what)
+    {
+        byte[] palette = [0, 2, 1, 7, 10, 20];
+        byte[][] boxes = what switch
+        {
+            "empty palette" => [Box("pclr", [0, 0, 0, 0]), Box("cmap", [0, 0, 1, 0])],
+            "palette without mapping" => [Box("pclr", palette)],
+            "missing column" => [Box("pclr", palette), Box("cmap", [0, 0, 1, 1])],
+            "short palette" => [Box("pclr", [0, 200, 1, 7, 1, 2, 3]), Box("cmap", [0, 0, 1, 0])],
+            "bad mapping type" => [Box("pclr", palette), Box("cmap", [0, 0, 2, 0])],
+            "too many entries" => [Box("pclr", [0xFF, 0xFF, 1, 7]), Box("cmap", [0, 0, 1, 0])],
+            _ => [Box("pclr", palette), Box("cmap", [0, 9, 1, 0])],
+        };
+
+        var wrapped = Jp2(
+            Header([ImageHeader(), EnumeratedColour(16), .. boxes]),
+            Box("jp2c", Codestream("rgb-struct64")));
+
+        Should.Throw<InvalidDataException>(() => Jpeg2000Decoder.Decode(wrapped));
     }
 
     /// <summary>

@@ -248,7 +248,7 @@ internal static class InverseWavelet
 
         if (length == 1)
         {
-            RefuseALoneHighPassSample(i0);
+            if ((i0 & 1) != 0) signal[0] >>= 1;
             return;
         }
 
@@ -302,7 +302,7 @@ internal static class InverseWavelet
         var height = y1 - y0;
         if (height <= 1)
         {
-            if (height == 1) RefuseALoneHighPassSample(y0);
+            if (height == 1 && (y0 & 1) != 0) HalveRow(samples[..width]);
             return;
         }
 
@@ -374,7 +374,7 @@ internal static class InverseWavelet
 
         if (length == 1)
         {
-            RefuseALoneHighPassSample(i0);
+            if ((i0 & 1) != 0) signal[0] *= 0.5f;
             return;
         }
 
@@ -419,7 +419,7 @@ internal static class InverseWavelet
         var height = y1 - y0;
         if (height <= 1)
         {
-            if (height == 1) RefuseALoneHighPassSample(y0);
+            if (height == 1 && (y0 & 1) != 0) HalveRow(samples[..width]);
             return;
         }
 
@@ -464,23 +464,22 @@ internal static class InverseWavelet
         }
     }
 
-    /// <summary>
-    /// F.3.7's degenerate case. An even index is a lone low-pass sample and passes
-    /// through untouched; that happens for any image one sample wide, so it is
-    /// ordinary and reachable. An odd index is a lone HIGH-pass sample. The spec
-    /// halves it, but reaching this needs an odd image origin, which nothing
-    /// available here can encode — so there is no way to check it against the
-    /// reference. Refusing beats emitting a number no oracle has ever confirmed;
-    /// the whole family's discipline.
-    /// </summary>
-    private static void RefuseALoneHighPassSample(int i0)
-    {
-        if ((i0 & 1) == 0) return;
+    // F.3.7's degenerate case, a signal one sample long. At an even index it is a lone low-pass
+    // sample and passes through untouched, which happens for any image one sample wide. At an odd
+    // index it is a lone HIGH-pass sample, which the forward transform doubled, so it is halved.
+    // That needs an odd tile or image origin on a resolution one sample across, which a tiled
+    // image whose tile size is odd reaches at its low resolutions.
 
-        throw new NotSupportedException(
-            "JPEG 2000: a subband one sample wide starting at an odd coordinate is not implemented. " +
-            "It needs an odd image or tile origin, which opj_compress cannot emit, so this path has " +
-            "no reference to be validated against.");
+    /// <summary>Halves a one-row signal that is a lone high-pass row, for the reversible filter.</summary>
+    private static void HalveRow(Span<int> row)
+    {
+        for (var x = 0; x < row.Length; x++) row[x] >>= 1;
+    }
+
+    /// <summary>Halves a one-row signal that is a lone high-pass row, for the irreversible filter.</summary>
+    private static void HalveRow(Span<float> row)
+    {
+        for (var x = 0; x < row.Length; x++) row[x] *= 0.5f;
     }
 
     /// <summary>

@@ -56,8 +56,8 @@ internal readonly record struct Rect(int X0, int Y0, int X1, int Y1)
 /// <para>
 /// Mutable, and deliberately so — <see cref="Included"/>, <see cref="LBlock"/>
 /// and <see cref="PassCount"/> persist <em>across</em> the packets of successive
-/// quality layers, which is the state that makes tier-2 stateful. Rung 1 has one
-/// layer and so cannot exercise it, which is exactly why hazard 5 warns that a
+/// quality layers, which is the state that makes tier-2 stateful. A one-layer
+/// codestream cannot exercise it, which is exactly why hazard 5 warns that a
 /// single-layer fixture proves nothing about this.
 /// </para>
 /// </summary>
@@ -142,35 +142,20 @@ internal sealed class Subband
     /// </summary>
     public required float[] Values { get; init; }
 
-    /// <summary>
-    /// The precinct's inclusion tag tree: for each code-block, the quality layer
-    /// that first carries it.
-    /// </summary>
-    public TagTree? InclusionTree { get; private set; }
+    /// <summary>T.800 Table A.19 code-block style flags of the tile-component this band belongs to.</summary>
+    public required int CodeBlockStyle { get; init; }
 
-    /// <summary>
-    /// The precinct's imsb tag tree: for each code-block, how many leading
-    /// magnitude bit-planes are entirely zero.
-    /// </summary>
-    public TagTree? ZeroBitPlaneTree { get; private set; }
+    /// <summary>xcb', the code-block width exponent after the precinct cap of Equation B-16.</summary>
+    public required int BlockWidthExponent { get; init; }
 
-    /// <summary>
-    /// Creates the pair once, on first use.
-    /// <para>
-    /// One pair per <em>band</em> is correct only because rung 1 has maximal
-    /// precincts, which makes each resolution a single precinct. The trees
-    /// genuinely belong to a precinct, and rung 3 must move them there when
-    /// custom precinct sizes arrive. What must not change either way is the
-    /// lifetime: they persist across the packets of successive quality layers,
-    /// and rebuilding them per packet decodes layer 0 correctly and everything
-    /// after it wrongly.
-    /// </para>
-    /// </summary>
-    public void EnsureTagTrees()
-    {
-        InclusionTree ??= new TagTree(BlocksWide, BlocksHigh);
-        ZeroBitPlaneTree ??= new TagTree(BlocksWide, BlocksHigh);
-    }
+    /// <summary>ycb', the code-block height exponent after the precinct cap.</summary>
+    public required int BlockHeightExponent { get; init; }
+
+    /// <summary>The absolute column of the first code-block, on the grid anchored at the band origin.</summary>
+    public required int FirstBlockColumn { get; init; }
+
+    /// <summary>The absolute row of the first code-block.</summary>
+    public required int FirstBlockRow { get; init; }
 }
 
 /// <summary>
@@ -187,6 +172,71 @@ internal sealed class Resolution
 
     /// <summary>One band (LL) at level 0, three (HL, LH, HH) above it.</summary>
     public required Subband[] Bands { get; init; }
+
+    /// <summary>
+    /// The resolution's precincts in raster order (T.800 B.6), which is the order their index k
+    /// counts them in. Empty when the resolution itself is empty: such a resolution has no packets.
+    /// </summary>
+    public required Precinct[] Precincts { get; init; }
+}
+
+/// <summary>
+/// One precinct of one resolution (T.800 B.6): the unit a packet carries. It holds, for each band
+/// of its resolution, the rectangle of code-blocks that fall inside it and that band's two tag
+/// trees, which belong to the precinct and persist across the packets of successive layers.
+/// </summary>
+internal sealed class Precinct
+{
+    /// <summary>One entry per band of the resolution, in the band order the packet codes them.</summary>
+    public required PrecinctBand[] Bands { get; init; }
+
+    /// <summary>
+    /// Where the position-driven progressions (RPCL, PCRL, CPRL; T.800 B.12.1.3 to B.12.1.5) visit
+    /// this precinct on the reference grid: the precinct's top-left corner scaled up to the reference
+    /// grid, clipped to the tile's corner. Those orders walk the reference grid and take a precinct
+    /// at the first point that falls on it, which is exactly this point.
+    /// </summary>
+    public required long VisitX { get; init; }
+
+    /// <summary>The vertical counterpart of <see cref="VisitX"/>.</summary>
+    public required long VisitY { get; init; }
+}
+
+/// <summary>The code-blocks one precinct takes from one band, and that band's tag trees for the precinct.</summary>
+internal sealed class PrecinctBand
+{
+    /// <summary>The band.</summary>
+    public required Subband Band { get; init; }
+
+    /// <summary>The first code-block column, as an index into <see cref="Subband.Blocks"/>' grid.</summary>
+    public required int BlockX0 { get; init; }
+
+    /// <summary>The first code-block row, likewise.</summary>
+    public required int BlockY0 { get; init; }
+
+    /// <summary>Code-blocks across this precinct in this band; zero when none fall inside it.</summary>
+    public required int BlocksWide { get; init; }
+
+    /// <summary>Code-blocks down.</summary>
+    public required int BlocksHigh { get; init; }
+
+    /// <summary>
+    /// The inclusion tag tree over this precinct's code-blocks: for each, the layer that first carries it.
+    /// </summary>
+    public TagTree? InclusionTree { get; private set; }
+
+    /// <summary>The imsb tag tree: for each code-block, how many leading magnitude bit-planes are zero.</summary>
+    public TagTree? ZeroBitPlaneTree { get; private set; }
+
+    /// <summary>
+    /// Creates the pair once, on first use. They persist across the packets of successive quality
+    /// layers: rebuilding them per packet decodes layer 0 correctly and every later layer wrongly.
+    /// </summary>
+    public void EnsureTagTrees()
+    {
+        InclusionTree ??= new TagTree(BlocksWide, BlocksHigh);
+        ZeroBitPlaneTree ??= new TagTree(BlocksWide, BlocksHigh);
+    }
 }
 
 /// <summary>
@@ -194,7 +244,7 @@ internal sealed class Resolution
 /// tier-2 and the DWT both need (T.800 Annex B).
 /// <para>
 /// Everything here is computed from declared numbers before a coded byte is
-/// read, which is why <see cref="Build"/> is where the resource ceilings are
+/// read, which is why <see cref="Build(CodestreamHeader, int, Rect, Jpeg2000SampleBudget, int)"/> is where the resource ceilings are
 /// charged. Hazard 6's point exactly: a <c>SIZ</c> and a <c>COD</c> alone can
 /// ask for an arbitrarily large object graph, and no amount of running out of
 /// input will stop it.
@@ -220,30 +270,41 @@ internal sealed class TileComponent
     public required int DecodedResolutions { get; init; }
 
     /// <summary>
-    /// Builds the geometry for one component of a single-tile codestream, from that component's own
-    /// coding style and quantization (COD and QCD with its COC and QCC applied).
+    /// <see cref="Build(CodestreamHeader, int, Rect, Jpeg2000SampleBudget, int)"/> for the tile that
+    /// covers the whole image region: the only tile of a single-tile codestream.
     /// </summary>
+    public static TileComponent Build(
+        CodestreamHeader header, int componentIndex, Jpeg2000SampleBudget budget, int decodedResolutions)
+    {
+        var siz = header.Siz;
+        return Build(header, componentIndex, new Rect(siz.X0, siz.Y0, siz.X1, siz.Y1), budget, decodedResolutions);
+    }
+
+    /// <summary>
+    /// Builds the geometry for one component of one tile, from that component's own coding style
+    /// and quantization (COD and QCD with its COC and QCC applied).
+    /// </summary>
+    /// <param name="tile">The tile's extent on the reference grid (T.800 Equation B-7).</param>
     /// <param name="decodedResolutions">
     /// How many resolution levels from 0 will be reconstructed; only their subbands get coefficient
     /// storage, and only theirs are charged to the budget as samples.
     /// </param>
     public static TileComponent Build(
-        CodestreamHeader header, int componentIndex, Jpeg2000SampleBudget budget, int decodedResolutions)
+        CodestreamHeader header, int componentIndex, Rect tile, Jpeg2000SampleBudget budget, int decodedResolutions)
     {
         var siz = header.Siz;
         var cod = header.ComponentCoding[componentIndex];
         var quantization = header.ComponentQuantization[componentIndex];
         var component = siz.Components[componentIndex];
 
-        // T.800 Equation B-12. With one tile the tile IS the image region, and
-        // with no subsampling the separation divides out to 1 -- but the formula
-        // is written in full because the coordinates, not the sizes, are what
-        // later equations consume.
+        // T.800 Equation B-12: the tile divided by the component's subsampling, rounding up. The
+        // formula is written in full because the coordinates, not the sizes, are what later
+        // equations consume.
         var bounds = new Rect(
-            CeilDiv(siz.X0, component.HorizontalSeparation),
-            CeilDiv(siz.Y0, component.VerticalSeparation),
-            CeilDiv(siz.X1, component.HorizontalSeparation),
-            CeilDiv(siz.Y1, component.VerticalSeparation));
+            CeilDiv(tile.X0, component.HorizontalSeparation),
+            CeilDiv(tile.Y0, component.VerticalSeparation),
+            CeilDiv(tile.X1, component.HorizontalSeparation),
+            CeilDiv(tile.Y1, component.VerticalSeparation));
 
         if (bounds.Area > Jpeg2000Limits.MaxTileComponentSamples)
             throw new InvalidDataException(
@@ -301,7 +362,13 @@ internal sealed class TileComponent
                 bands[b] = band;
             }
 
-            resolutions[r] = new Resolution { Index = r, Bounds = resolutionBounds, Bands = bands };
+            resolutions[r] = new Resolution
+            {
+                Index = r,
+                Bounds = resolutionBounds,
+                Bands = bands,
+                Precincts = BuildPrecincts(resolutionBounds, bands, cod, r, levels, tile, component, budget),
+            };
         }
 
         return new TileComponent
@@ -311,6 +378,88 @@ internal sealed class TileComponent
             Irreversible = cod.Transform == WaveletTransform.Irreversible97,
             DecodedResolutions = decodedResolutions,
         };
+    }
+
+    /// <summary>
+    /// T.800 B.6: partitions a resolution into precincts of 2^PPx x 2^PPy on the resolution grid,
+    /// anchored at its origin, and finds, for each precinct, the code-blocks of every band that fall
+    /// inside it. A band above resolution 0 sees the precinct at half size, 2^(PPx-1), because band
+    /// coordinates are resolution coordinates halved; and since Equation B-16 caps the code-block size
+    /// at that, code-blocks nest inside precincts exactly.
+    /// </summary>
+    private static Precinct[] BuildPrecincts(
+        Rect resolution, Subband[] bands, CodingStyle cod, int r, int levels, Rect tile, ComponentInfo component,
+        Jpeg2000SampleBudget budget)
+    {
+        if (resolution.IsEmpty) return [];
+
+        var ppx = cod.PrecinctWidthExponent(r);
+        var ppy = cod.PrecinctHeightExponent(r);
+        var firstX = FloorDiv(resolution.X0, 1 << ppx);
+        var firstY = FloorDiv(resolution.Y0, 1 << ppy);
+        var wide = CeilDiv(resolution.X1, 1 << ppx) - firstX;
+        var high = CeilDiv(resolution.Y1, 1 << ppy) - firstY;
+
+        // A precinct is a handful of objects, so the count is booked against the code-block
+        // ceiling: a header with tiny precincts on a large image must not buy an object graph its
+        // data could never fill.
+        var count = (long)wide * high;
+        if (count > Jpeg2000Limits.MaxCodeBlocks)
+            throw new InvalidDataException(
+                $"JPEG 2000: a resolution declares {count:N0} precincts, more than the " +
+                $"{Jpeg2000Limits.MaxCodeBlocks:N0} ceiling.");
+        budget.ChargeCodeBlocks((int)count);
+
+        var bandPpx = r == 0 ? ppx : ppx - 1;
+        var bandPpy = r == 0 ? ppy : ppy - 1;
+        var scale = levels - r;
+
+        var precincts = new Precinct[count];
+        for (var py = 0; py < high; py++)
+        {
+            for (var px = 0; px < wide; px++)
+            {
+                long column = firstX + px;
+                long row = firstY + py;
+
+                var precinctBands = new PrecinctBand[bands.Length];
+                for (var b = 0; b < bands.Length; b++)
+                {
+                    var band = bands[b];
+
+                    // The precinct's code-blocks on the band's absolute block grid, clipped to the
+                    // blocks the band has.
+                    var x0 = Math.Max(band.FirstBlockColumn, (column << bandPpx) >> band.BlockWidthExponent);
+                    var x1 = Math.Min(band.FirstBlockColumn + band.BlocksWide,
+                        ((column + 1) << bandPpx) >> band.BlockWidthExponent);
+                    var y0 = Math.Max(band.FirstBlockRow, (row << bandPpy) >> band.BlockHeightExponent);
+                    var y1 = Math.Min(band.FirstBlockRow + band.BlocksHigh,
+                        ((row + 1) << bandPpy) >> band.BlockHeightExponent);
+
+                    var empty = x1 <= x0 || y1 <= y0;
+                    precinctBands[b] = new PrecinctBand
+                    {
+                        Band = band,
+                        BlockX0 = empty ? 0 : (int)(x0 - band.FirstBlockColumn),
+                        BlockY0 = empty ? 0 : (int)(y0 - band.FirstBlockRow),
+                        BlocksWide = empty ? 0 : (int)(x1 - x0),
+                        BlocksHigh = empty ? 0 : (int)(y1 - y0),
+                    };
+                }
+
+                // Where B.12.1.3's walk over the reference grid first lands in this precinct: its
+                // corner on the resolution grid times 2^(NL - r) and the subsampling, or the tile's
+                // corner for the precinct that starts before the tile does.
+                precincts[py * wide + px] = new Precinct
+                {
+                    Bands = precinctBands,
+                    VisitX = Math.Max(tile.X0, ((column << ppx) << scale) * component.HorizontalSeparation),
+                    VisitY = Math.Max(tile.Y0, ((row << ppy) << scale) * component.VerticalSeparation),
+                };
+            }
+        }
+
+        return precincts;
     }
 
     private static Subband BuildBand(
@@ -375,6 +524,11 @@ internal sealed class TileComponent
             Blocks = blocks,
             Irreversible = irreversible,
             StepSize = stepSize,
+            CodeBlockStyle = cod.CodeBlockStyle,
+            BlockWidthExponent = blockWidthExponent,
+            BlockHeightExponent = blockHeightExponent,
+            FirstBlockColumn = firstColumn,
+            FirstBlockRow = firstRow,
             Coefficients = decoded && !irreversible ? new int[bounds.Area] : [],
             Values = decoded && irreversible ? new float[bounds.Area] : [],
         };

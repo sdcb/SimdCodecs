@@ -169,9 +169,51 @@ public class Jpeg2000ResourceLimitTests
     [InlineData("cblk4-struct64")]
     [InlineData("odd37x23")]
     [InlineData("flat64")]
-    public void SingleByteMutations_NeverEscapeTheContract(string name)
+    public void SingleByteMutations_NeverEscapeTheContract(string name) => Mutate(Fixture(name));
+
+    /// <summary>
+    /// The same sweep over a codestream using every tier-2 feature at once: tiles of odd sizes, an
+    /// odd origin, tile-parts, precincts, a position-driven progression, SOP and EPH markers and
+    /// segmentation symbols. Made live by <c>opj_compress</c>, so it needs the oracle.
+    /// </summary>
+    [Fact]
+    public void SingleByteMutations_OfATiledPrecinctCodestream_NeverEscapeTheContract()
     {
-        var original = Fixture(name);
+        OpenJpegOracle.RequireOrSkip();
+
+        Mutate(OpenJpegOracle.Compress(Jpeg2000TilingAndProgressionTests.Picture(53, 41, 1),
+            "-t", "23,19", "-d", "1,2", "-T", "1,1", "-n", "3", "-c", "[16,16]", "-p", "RPCL", "-TP", "R",
+            "-SOP", "-EPH", "-M", "34", "-r", "10,1"));
+    }
+
+    /// <summary>
+    /// A header declaring thousands of tiles in front of the data for one. Every tile needs a
+    /// tile-part, so it is refused as soon as the tile-parts are counted, before any geometry is
+    /// built for the tiles that are missing.
+    /// </summary>
+    [Fact]
+    public void ManyDeclaredTiles_WithTheDataForOne_AreRefused()
+    {
+        var bytes = Fixture("dwt5-struct64");
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(24), 1);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(28), 1);
+
+        Should.Throw<InvalidDataException>(() => Jpeg2000Decoder.Decode(bytes)).Message.ShouldContain("tile-parts");
+    }
+
+    /// <summary>More tiles than a 16-bit tile index can name is not a JPEG 2000 codestream.</summary>
+    [Fact]
+    public void MoreTilesThanATileIndexCanName_AreRefused()
+    {
+        var bytes = WithDeclaredSize("dwt5-struct64", 1000, 1000);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(24), 1);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(28), 1);
+
+        Should.Throw<InvalidDataException>(() => Jpeg2000Decoder.Decode(bytes)).Message.ShouldContain("65,535");
+    }
+
+    private static void Mutate(byte[] original)
+    {
 
         // A fixed sweep rather than a random one: the same bytes are tried on
         // every run, so a failure is reproducible from the test name alone.
@@ -187,7 +229,7 @@ public class Jpeg2000ResourceLimitTests
                     var image = Jpeg2000Decoder.Decode(mutated, cancellationToken: TestContext.Current.CancellationToken);
 
                     // If it decoded, the result must at least be self-consistent.
-                    image.Samples.Length.ShouldBe(image.Width * image.Height);
+                    image.Samples.Length.ShouldBe(image.Width * image.Height * image.Components);
                 }
                 catch (InvalidDataException)
                 {

@@ -209,6 +209,28 @@ internal sealed record CodingStyle(
         PrecinctSizes.Length == 0 ? 15 : (PrecinctSizes[Math.Min(resolution, PrecinctSizes.Length - 1)] >> 4) & 0x0F;
 }
 
+/// <summary>The code-block style flags of T.800 Table A.19.</summary>
+internal static class CodeBlockStyles
+{
+    /// <summary>Selective arithmetic coding bypass.</summary>
+    public const int Bypass = 0x01;
+
+    /// <summary>Reset the context probabilities at the end of every coding pass.</summary>
+    public const int ResetContexts = 0x02;
+
+    /// <summary>Terminate the codeword at the end of every coding pass.</summary>
+    public const int TerminateEachPass = 0x04;
+
+    /// <summary>Vertically causal context formation.</summary>
+    public const int VerticallyCausal = 0x08;
+
+    /// <summary>Predictable termination: a constraint on the encoder, invisible to a decoder.</summary>
+    public const int PredictableTermination = 0x10;
+
+    /// <summary>A four-symbol segmentation marker after every cleanup pass.</summary>
+    public const int SegmentationSymbols = 0x20;
+}
+
 /// <summary>Quantization style (T.800 Table A.28), the low five bits of <c>Sqcd</c>.</summary>
 internal enum QuantizationStyle
 {

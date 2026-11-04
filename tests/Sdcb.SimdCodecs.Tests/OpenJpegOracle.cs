@@ -91,6 +91,75 @@ internal static class OpenJpegOracle
         }
     }
 
+    /// <summary>
+    /// <see cref="Decode(byte[], string, string[])"/> for a file whose format <c>opj_decompress</c>
+    /// must be told by its name: <paramref name="inputExtension"/> is <c>.jp2</c> for a JP2 file.
+    /// </summary>
+    public static Pnm.Image DecodeFile(byte[] file, string inputExtension, string outputExtension)
+    {
+        var tools = Resolved.Value;
+        if (tools.Decompress is null) throw new InvalidOperationException("OpenJPEG oracle is not available.");
+
+        var scratch = Path.Combine(AppContext.BaseDirectory, "jpeg2000-oracle-tmp");
+        Directory.CreateDirectory(scratch);
+        var stem = Path.Combine(scratch, Guid.NewGuid().ToString("n"));
+        var input = stem + inputExtension;
+        var output = stem + outputExtension;
+
+        try
+        {
+            File.WriteAllBytes(input, file);
+            var (exitCode, log) = Run(tools.Decompress, ["-i", input, "-o", output], tools.LibraryPath);
+            if (!File.Exists(output))
+                throw new InvalidOperationException(
+                    $"opj_decompress produced no output (exit {exitCode}).{Environment.NewLine}{log}");
+
+            return Pnm.Read(output);
+        }
+        finally
+        {
+            TryDelete(input);
+            TryDelete(output);
+        }
+    }
+
+    /// <summary>
+    /// Encodes a binary PNM with <c>opj_compress</c> and returns the raw codestream it wrote, so a
+    /// test can make the exact coding options it needs (tiles, precincts, progression orders,
+    /// markers) rather than depend on committed bytes.
+    /// </summary>
+    /// <param name="pnm">A <c>P5</c> or <c>P6</c> file.</param>
+    /// <param name="args">opj_compress options, after <c>-i</c> and <c>-o</c>.</param>
+    public static byte[] Compress(byte[] pnm, params string[] args)
+    {
+        var tools = Resolved.Value;
+        if (tools.Compress is null) throw new InvalidOperationException("OpenJPEG oracle is not available.");
+
+        var scratch = Path.Combine(AppContext.BaseDirectory, "jpeg2000-oracle-tmp");
+        Directory.CreateDirectory(scratch);
+        var stem = Path.Combine(scratch, Guid.NewGuid().ToString("n"));
+        var input = stem + (pnm[1] == (byte)'6' ? ".ppm" : ".pgm");
+        var output = stem + ".j2k";
+
+        try
+        {
+            File.WriteAllBytes(input, pnm);
+            var all = new List<string> { "-i", input, "-o", output };
+            all.AddRange(args);
+            var (exitCode, log) = Run(tools.Compress, all, tools.LibraryPath);
+            if (!File.Exists(output))
+                throw new InvalidOperationException(
+                    $"opj_compress produced no output (exit {exitCode}).{Environment.NewLine}{log}");
+
+            return File.ReadAllBytes(output);
+        }
+        finally
+        {
+            TryDelete(input);
+            TryDelete(output);
+        }
+    }
+
     private static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }

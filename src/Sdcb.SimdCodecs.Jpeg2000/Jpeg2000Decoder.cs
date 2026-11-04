@@ -1,4 +1,6 @@
 using System;
+using System.Buffers;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 
@@ -100,15 +102,23 @@ public sealed record Jpeg2000Info(
 /// 15444-1, Part 1).
 /// <para>
 /// <b>What this decodes today.</b> A raw J2K codestream, or one in a JP2 file
-/// with no palette, component mapping or channel definition, holding any number of
-/// 1-to-16-bit unsigned components of one precision, in a single tile, at full
-/// resolution, coded in any number of quality layers with maximal precincts and
-/// LRCP progression: losslessly with the reversible 5/3 wavelet, or lossily with
-/// the irreversible 9/7 wavelet and scalar quantization, with or without the
-/// matching component transform (RCT or ICT). Quality layers are supported
-/// because every <c>/JPXDecode</c> image measured in real PDFs has several.
-/// Anything outside it raises <see cref="NotSupportedException"/> naming the
-/// feature and the rung that owns it — never a plausible-looking wrong raster.
+/// (with or without a palette and component mapping, but no channel definition),
+/// holding any number of 1-to-16-bit unsigned components of one precision, in any
+/// number of tiles and tile-parts, coded in any number of quality layers, with any
+/// precinct sizes, in any of the five progression orders, with or without SOP and
+/// EPH markers: losslessly with the reversible 5/3 wavelet, or lossily with the
+/// irreversible 9/7 wavelet and scalar quantization, with or without the matching
+/// component transform (RCT or ICT). Of the code-block styles, context reset,
+/// predictable termination and segmentation symbols are decoded. Anything outside
+/// it (POC, PPM / PPT, RGN, tile-part header overrides, the bypass, per-pass
+/// termination and vertically causal code-block styles, subsampling, signed or
+/// mixed-precision components) raises <see cref="NotSupportedException"/> naming
+/// the feature — never a plausible-looking wrong raster.
+/// </para>
+/// <para>
+/// Issue #1's JPEG 2000 files are the real-world check on all of that; see
+/// <c>Issue1Jpeg2000CorpusTests</c> in the test project for how to run them after
+/// changing this decoder.
 /// </para>
 /// <para>
 /// <b>Why there is no partial-credit mode.</b> JPEG 2000 has no early pipeline
@@ -171,10 +181,9 @@ public static class Jpeg2000Decoder
         if (!Jp2Reader.LooksLikeJp2(data)) return DecodeCodestream(data, reduce, cancellationToken);
 
         var layout = Jp2Reader.Read(data);
-        return DecodeCodestream(data.Slice(layout.CodestreamStart, layout.CodestreamLength), reduce, cancellationToken) with
-        {
-            Colour = layout.Colour,
-        };
+        var image = DecodeCodestream(data.Slice(layout.CodestreamStart, layout.CodestreamLength), reduce, cancellationToken);
+        if (layout.Channels is { } channels) image = ApplyChannels(image, channels);
+        return image with { Colour = layout.Colour };
     }
 
     /// <summary>
@@ -188,11 +197,13 @@ public static class Jpeg2000Decoder
     {
         var codestream = data;
         Jp2Colour? colour = null;
+        Jp2ChannelMapping? channels = null;
         if (Jp2Reader.LooksLikeJp2(data))
         {
             var layout = Jp2Reader.Read(data);
             codestream = data.Slice(layout.CodestreamStart, layout.CodestreamLength);
             colour = layout.Colour;
+            channels = layout.Channels;
         }
 
         var header = CodestreamReader.Read(codestream);
@@ -200,7 +211,15 @@ public static class Jpeg2000Decoder
         var levels = int.MaxValue;
         foreach (var coding in header.ComponentCoding) levels = Math.Min(levels, coding.DecompositionLevels);
 
-        return new Jpeg2000Info(siz.Width, siz.Height, siz.Components.Length, siz.Components[0].BitDepth, levels, colour)
+        var components = siz.Components.Length;
+        var depth = siz.Components[0].BitDepth;
+        if (channels is not null)
+        {
+            depth = channels.OutputDepth(ComponentDepths(components, depth));
+            components = channels.Map.Length;
+        }
+
+        return new Jpeg2000Info(siz.Width, siz.Height, components, depth, levels, colour)
         {
             Region = new Rect(siz.X0, siz.Y0, siz.X1, siz.Y1),
         };
@@ -228,6 +247,42 @@ public static class Jpeg2000Decoder
         return reduce;
     }
 
+    private static int[] ComponentDepths(int components, int depth)
+    {
+        var depths = new int[components];
+        Array.Fill(depths, depth);
+        return depths;
+    }
+
+    /// <summary>
+    /// The JP2 component mapping (T.800 I.5.3.5) applied to the decoded components: each output
+    /// channel is either a component as it is or a palette column looked up by a component's sample.
+    /// An index past the last palette entry takes the last entry, which only a damaged file needs.
+    /// </summary>
+    private static Jpeg2000Image ApplyChannels(Jpeg2000Image image, Jp2ChannelMapping channels)
+    {
+        var depth = channels.OutputDepth(ComponentDepths(image.Components, image.BitDepth));
+        var map = channels.Map;
+        var pixels = (long)image.Width * image.Height;
+        var output = new ushort[pixels * map.Length];
+
+        for (var i = 0; i < map.Length; i++)
+        {
+            var (component, column) = map[i];
+            var source = image.Samples;
+            var stride = image.Components;
+            for (long p = 0, o = i, s = component; p < pixels; p++, o += map.Length, s += stride)
+            {
+                var value = source[s];
+                output[o] = column < 0
+                    ? value
+                    : channels.Values[Math.Min(value, channels.Entries - 1) * channels.Columns + column];
+            }
+        }
+
+        return new Jpeg2000Image(image.Width, image.Height, depth, output, map.Length);
+    }
+
     private static Jpeg2000Image DecodeCodestream(ReadOnlySpan<byte> data, int reduce, CancellationToken cancellationToken = default)
     {
         var header = CodestreamReader.Read(data);
@@ -239,70 +294,179 @@ public static class Jpeg2000Decoder
         foreach (var coding in header.ComponentCoding) levels = Math.Min(levels, coding.DecompositionLevels);
         reduce = Math.Min(reduce, levels);
 
+        var tiles = GroupTileParts(header);
+        var componentCount = siz.Components.Length;
+
+        // The decoded image's region on the reference grid at this reduction (Equation B-14): the
+        // tiles' reduced regions, rounded the same way, cover it exactly.
+        var region = new Rect(
+            TileComponent.CeilDivPow2(siz.X0, reduce), TileComponent.CeilDivPow2(siz.Y0, reduce),
+            TileComponent.CeilDivPow2(siz.X1, reduce), TileComponent.CeilDivPow2(siz.Y1, reduce));
+        var total = region.Area * componentCount;
+        if (total > Array.MaxLength)
+            throw new InvalidDataException(
+                $"JPEG 2000: a {region.Width}x{region.Height} image of {componentCount} components is " +
+                $"{total:N0} samples, more than one array can hold.");
+
+        // Allocated once and written tile by tile, so a decode holds the output and one tile's
+        // working set at a time. A codestream must carry at least one tile-part per tile (checked
+        // above), so the tile count, and with it this loop, is bounded by the data itself.
+        var output = new ushort[total];
+        var blockState = new BlockState();
+        var tilesWide = (int)siz.TilesWide;
+
+        for (var t = 0; t < tiles.Length; t++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // T.800 Equation B-7: the tile's extent, clipped to the image region.
+            var p = t % tilesWide;
+            var q = t / tilesWide;
+            var tile = new Rect(
+                (int)Math.Max(siz.TileX0 + (long)p * siz.TileWidth, siz.X0),
+                (int)Math.Max(siz.TileY0 + (long)q * siz.TileHeight, siz.Y0),
+                (int)Math.Min(siz.TileX0 + (long)(p + 1) * siz.TileWidth, siz.X1),
+                (int)Math.Min(siz.TileY0 + (long)(q + 1) * siz.TileHeight, siz.Y1));
+
+            DecodeTile(header, data, tiles[t], tile, reduce, region, output, blockState, cancellationToken);
+        }
+
+        return new Jpeg2000Image(region.Width, region.Height, siz.Components[0].BitDepth, output, componentCount);
+    }
+
+    /// <summary>
+    /// Every tile's tile-parts, in TPsot order. T.800 A.4.2 lets the parts of different tiles
+    /// interleave, but each tile's own parts carry its packets in sequence, and every tile has at
+    /// least one.
+    /// </summary>
+    private static List<TilePart>[] GroupTileParts(CodestreamHeader header)
+    {
+        var count = (int)header.Siz.TileCount;
+        if (header.TileParts.Count < count)
+            throw new InvalidDataException(
+                $"JPEG 2000: SIZ declares {count:N0} tiles, but the codestream has only " +
+                $"{header.TileParts.Count:N0} tile-parts.");
+
+        var tiles = new List<TilePart>[count];
+        foreach (var part in header.TileParts) (tiles[part.TileIndex] ??= []).Add(part);
+
+        for (var t = 0; t < count; t++)
+        {
+            var parts = tiles[t]
+                ?? throw new InvalidDataException($"JPEG 2000: tile {t} has no tile-part.");
+            parts.Sort(static (a, b) => a.PartIndex.CompareTo(b.PartIndex));
+            for (var i = 0; i < parts.Count; i++)
+            {
+                if (parts[i].PartIndex != i)
+                    throw new InvalidDataException(
+                        $"JPEG 2000: tile {t}'s tile-parts are numbered {parts[i].PartIndex} where {i} was due.");
+            }
+        }
+
+        return tiles;
+    }
+
+    /// <summary>One tile, from its packets to its samples in <paramref name="output"/>.</summary>
+    private static void DecodeTile(
+        CodestreamHeader header, ReadOnlySpan<byte> data, List<TilePart> parts, Rect tile, int reduce, Rect region,
+        ushort[] output, BlockState blockState, CancellationToken cancellationToken)
+    {
+        var siz = header.Siz;
+
+        // Each tile is metered against its own extent: the budget bounds amplification, which is
+        // per tile, and a tile's buffers are released before the next one is built.
         var budget = new Jpeg2000SampleBudget(
-            Jpeg2000Limits.BudgetFor(siz.Width, siz.Height, siz.Components.Length));
+            Jpeg2000Limits.BudgetFor(tile.Width, tile.Height, siz.Components.Length));
 
         var components = new TileComponent[siz.Components.Length];
         for (var c = 0; c < components.Length; c++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             components[c] = TileComponent.Build(
-                header, c, budget, header.ComponentCoding[c].ResolutionCount - reduce);
+                header, c, tile, budget, header.ComponentCoding[c].ResolutionCount - reduce);
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        var part = header.TileParts[0];
-        var tilePartData = data.Slice(part.Start, part.Length);
-
-        // Tier-2 first, over the whole tile-part: it discovers which code-blocks
-        // carry data and where, without decoding any of it. The components'
-        // packets are interleaved in the tile-part, so it reads them all at once.
-        Tier2.ReadPackets(header, components, tilePartData);
-
-        // Then tier-1, block by block, and the inverse wavelet, component by
-        // component: in integers for a 5/3 component, in floats for a 9/7 one.
-        var integers = new int[components.Length][];
-        var reals = new float[components.Length][];
-        var blockState = new BlockState();
-        for (var c = 0; c < components.Length; c++)
+        // The packets run on from one tile-part into the next, so a tile split into parts is read
+        // as their bytes put back together.
+        byte[]? rented = null;
+        ReadOnlySpan<byte> tileData;
+        if (parts.Count == 1)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var tile = components[c];
-            for (var r = 0; r < tile.DecodedResolutions; r++)
+            tileData = data.Slice(parts[0].Start, parts[0].Length);
+        }
+        else
+        {
+            var length = 0;
+            foreach (var part in parts) length += part.Length;
+            rented = ArrayPool<byte>.Shared.Rent(length);
+            var offset = 0;
+            foreach (var part in parts)
             {
-                foreach (var band in tile.Resolutions[r].Bands)
-                {
-                    foreach (var block in band.Blocks)
-                    {
-                        BlockDecoder.Decode(band, block, tilePartData, blockState);
-                    }
-                }
+                data.Slice(part.Start, part.Length).CopyTo(rented.AsSpan(offset));
+                offset += part.Length;
             }
 
-            var decodedBounds = tile.Resolutions[tile.DecodedResolutions - 1].Bounds;
-            budget.Charge(decodedBounds.Width, decodedBounds.Height);
-            if (tile.Irreversible) reals[c] = InverseWavelet.ReconstructIrreversible(tile, tile.DecodedResolutions);
-            else integers[c] = InverseWavelet.Reconstruct(tile, tile.DecodedResolutions);
+            tileData = rented.AsSpan(0, length);
         }
 
-        // G.1.2: the component transform comes between the wavelet and the
-        // level shift. The reader has already checked that components 0 to 2
-        // share one wavelet, which picks RCT for the 5/3 and ICT for the 9/7.
-        if (header.MultipleComponentTransform)
+        try
         {
-            if (components[0].Irreversible) ComponentTransform.InverseIct(reals[0], reals[1], reals[2]);
-            else ComponentTransform.InverseRct(integers[0], integers[1], integers[2]);
-        }
+            // Tier-2 first, over the whole tile: it discovers which code-blocks carry data and
+            // where, without decoding any of it. The components' packets are interleaved, so it
+            // reads them all at once.
+            Tier2.ReadPackets(header, components, tileData, tile);
 
-        var first = components[0];
-        return LevelShift(
-            integers, reals, first.Resolutions[first.DecodedResolutions - 1].Bounds, siz.Components[0].BitDepth);
+            // Then tier-1, block by block, and the inverse wavelet, component by component: in
+            // integers for a 5/3 component, in floats for a 9/7 one.
+            var integers = new int[components.Length][];
+            var reals = new float[components.Length][];
+            for (var c = 0; c < components.Length; c++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var tileComponent = components[c];
+                for (var r = 0; r < tileComponent.DecodedResolutions; r++)
+                {
+                    foreach (var band in tileComponent.Resolutions[r].Bands)
+                    {
+                        foreach (var block in band.Blocks)
+                        {
+                            BlockDecoder.Decode(band, block, tileData, blockState);
+                        }
+                    }
+                }
+
+                var decodedBounds = tileComponent.Resolutions[tileComponent.DecodedResolutions - 1].Bounds;
+                budget.Charge(decodedBounds.Width, decodedBounds.Height);
+                if (tileComponent.Irreversible)
+                    reals[c] = InverseWavelet.ReconstructIrreversible(tileComponent, tileComponent.DecodedResolutions);
+                else
+                    integers[c] = InverseWavelet.Reconstruct(tileComponent, tileComponent.DecodedResolutions);
+            }
+
+            // G.1.2: the component transform comes between the wavelet and the level shift. The
+            // reader has already checked that components 0 to 2 share one wavelet, which picks RCT
+            // for the 5/3 and ICT for the 9/7.
+            if (header.MultipleComponentTransform)
+            {
+                if (components[0].Irreversible) ComponentTransform.InverseIct(reals[0], reals[1], reals[2]);
+                else ComponentTransform.InverseRct(integers[0], integers[1], integers[2]);
+            }
+
+            var first = components[0];
+            LevelShift(integers, reals, first.Resolutions[first.DecodedResolutions - 1].Bounds,
+                siz.Components[0].BitDepth, output, region);
+        }
+        finally
+        {
+            if (rented is not null) ArrayPool<byte>.Shared.Return(rented);
+        }
     }
 
     /// <summary>
     /// T.800 G.1.2: undo the DC level shift the encoder applied to make an
     /// unsigned component signed, then clamp to the declared precision, and
-    /// interleave the components into one sample per component per pixel.
+    /// interleave the components into one sample per component per pixel, at the
+    /// tile's place in the image.
     /// <para>
     /// The clamp is not belt-and-braces. A lossless codestream reconstructs
     /// exactly and needs none, but a truncated or hostile one can produce
@@ -318,33 +482,38 @@ public static class Jpeg2000Decoder
     /// </summary>
     /// <param name="integers">Each reversible component's samples, null for an irreversible one.</param>
     /// <param name="reals">Each irreversible component's samples, null for a reversible one.</param>
-    private static Jpeg2000Image LevelShift(int[]?[] integers, float[]?[] reals, Rect bounds, int bitDepth)
+    /// <param name="bounds">The tile's decoded extent, on the same grid as <paramref name="region"/>.</param>
+    /// <param name="output">The whole image's interleaved samples.</param>
+    /// <param name="region">The whole image's decoded extent.</param>
+    private static void LevelShift(
+        int[]?[] integers, float[]?[] reals, Rect bounds, int bitDepth, ushort[] output, Rect region)
     {
         var shift = 1 << (bitDepth - 1);
         var maximum = (1 << bitDepth) - 1;
         var count = integers.Length;
+        var width = bounds.Width;
 
-        var output = new ushort[(long)bounds.Width * bounds.Height * count];
         for (var c = 0; c < count; c++)
         {
-            if (integers[c] is { } plane)
+            for (var y = 0; y < bounds.Height; y++)
             {
-                for (int i = 0, o = c; i < plane.Length; i++, o += count)
+                var o = (((long)(bounds.Y0 - region.Y0 + y) * region.Width) + (bounds.X0 - region.X0)) * count + c;
+                var i = y * width;
+                if (integers[c] is { } plane)
                 {
-                    output[o] = (ushort)Math.Clamp(plane[i] + shift, 0, maximum);
+                    for (var x = 0; x < width; x++, i++, o += count)
+                        output[o] = (ushort)Math.Clamp(plane[i] + shift, 0, maximum);
                 }
-            }
-            else
-            {
-                var real = reals[c]!;
-                for (int i = 0, o = c; i < real.Length; i++, o += count)
+                else
                 {
-                    // Clamped as a float, so a value no int can hold still lands on a rail.
-                    output[o] = (ushort)Math.Clamp(MathF.Round(real[i]) + shift, 0f, maximum);
+                    var real = reals[c]!;
+                    for (var x = 0; x < width; x++, i++, o += count)
+                    {
+                        // Clamped as a float, so a value no int can hold still lands on a rail.
+                        output[o] = (ushort)Math.Clamp(MathF.Round(real[i]) + shift, 0f, maximum);
+                    }
                 }
             }
         }
-
-        return new Jpeg2000Image(bounds.Width, bounds.Height, bitDepth, output, count);
     }
 }
