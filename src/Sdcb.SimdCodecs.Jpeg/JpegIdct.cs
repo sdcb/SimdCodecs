@@ -527,8 +527,8 @@ internal static class JpegIdct
         var bias = Vector128.Create(Bias);
         for (var y = 0; y < 8; y++)
         {
-            var a = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(Vector128.Create<float>(o.Slice(y * 8)) + bias, lo), hi));
-            var b = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(Vector128.Create<float>(o.Slice(y * 8 + 4)) + bias, lo), hi));
+            var a = V128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(Vector128.Create<float>(o.Slice(y * 8)) + bias, lo), hi));
+            var b = V128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(Vector128.Create<float>(o.Slice(y * 8 + 4)) + bias, lo), hi));
             var w = Vector128.Narrow(a, b).AsUInt16();
             var bytes = Vector128.Narrow(w, w).AsUInt64();
             MemoryMarshal.Write(outPlane.AsSpan(outOffset + y * outStride, 8), bytes.GetElement(0));
@@ -586,7 +586,7 @@ internal static class JpegIdct
     private static Vector128<float> LoadHalf128(ReadOnlySpan<short> data, int row, int half)
     {
         var s = Vector128.Create(data.Slice(row * 8, 8));
-        return Vector128.ConvertToSingle(half == 0 ? Vector128.WidenLower(s) : Vector128.WidenUpper(s));
+        return V128.ConvertToSingle(half == 0 ? Vector128.WidenLower(s) : Vector128.WidenUpper(s));
     }
 
     // Reduced-IDCT basis tables, T[u * B + p] = (c_u / 2) * cos((2p+1) u π / (2B)).
@@ -702,10 +702,10 @@ internal static class JpegIdct
         var lo = Vector128<float>.Zero;
         var hi = Vector128.Create(Max);
         var bias = Vector128.Create(Bias);
-        var i0 = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s0 + bias, lo), hi));
-        var i1 = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s1 + bias, lo), hi));
-        var i2 = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s2 + bias, lo), hi));
-        var i3 = Vector128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s3 + bias, lo), hi));
+        var i0 = V128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s0 + bias, lo), hi));
+        var i1 = V128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s1 + bias, lo), hi));
+        var i2 = V128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s2 + bias, lo), hi));
+        var i3 = V128.ConvertToInt32Native(Vector128.MinNative(Vector128.MaxNative(s3 + bias, lo), hi));
 
         // Every lane is 0..255 here, so the truncating narrows are exact.
         var bytes = Vector128.Narrow(Vector128.Narrow(i0, i1).AsUInt16(), Vector128.Narrow(i2, i3).AsUInt16()).AsUInt32();
@@ -751,7 +751,7 @@ internal static class JpegIdct
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static Vector128<float> Pass1(ReadOnlySpan<short> row, Vector128<float> t0, Vector128<float> t1, Vector128<float> t2, Vector128<float> t3)
         {
-            var x = Vector128.ConvertToSingle(Vector128.WidenLower(Vector128.Create(row)));
+            var x = V128.ConvertToSingle(Vector128.WidenLower(Vector128.Create(row)));
             var acc = Vector128<float>.Zero + t0 * Vector128.Shuffle(x, Vector128.Create(0));
             acc += t1 * Vector128.Shuffle(x, Vector128.Create(1));
             acc += t2 * Vector128.Shuffle(x, Vector128.Create(2));
