@@ -30,13 +30,13 @@ void Main()
 	foreach (var (name, options) in layouts)
 	{
 		var sw = Stopwatch.StartNew();
-		byte[] bmp = BmpEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32, options);
+		byte[] bmp = BmpEncoder.Encode(rgba, width, height, PixelFormat.Rgba32, options);
 		double encodeMs = sw.Elapsed.TotalMilliseconds;
 
 		BmpInfo info = BmpDecoder.ReadInfo(bmp);
 		var decoded = new byte[width * height * 4];
 		sw.Restart();
-		BmpDecoder.DecodeTo(bmp, decoded, ImagePixelFormat.Rgba32);
+		BmpDecoder.DecodeTo(bmp, decoded, PixelFormat.Rgba32);
 		double decodeMs = sw.Elapsed.TotalMilliseconds;
 
 		rows.Add(new

@@ -24,7 +24,7 @@ byte[] data = File.ReadAllBytes("photo.heic");
 if (SimdCodecs.TryReadInfo(data, out var info))
 {
     var bgra = new byte[info.Width * info.Height * 4];
-    SimdCodecs.TryDecodeInto(data, bgra, 0, ImagePixelFormat.Bgra32);
+    SimdCodecs.TryDecodeInto(data, bgra, 0, PixelFormat.Bgra32);
 }
 ```
 
@@ -44,24 +44,33 @@ HeifInfo header = HeifDecoder.ReadInfo(data);       // size, coded bit depth, ti
 ## What the facade returns
 
 - `TryReadInfo`: the **displayed** size (`clap`, `irot` and `imir` are already applied, so `Orientation` is
-  always `Normal`), 3 channels, `UInt8`, `BitDepth` 8, one frame, `Format = Heif`.
-- `TryDecode`: an 8-bit RGB `RasterImage` with the container's ICC profile passed through. `ColorEncoding`
+  always `Normal`), 3 channels, one frame, `Format = Heif`; `UInt8` / `BitDepth` 8 for a Main image, `UInt16` /
+  `BitDepth` 10 for a Main 10 one; `ColorEncoding`; `HasThumbnail` when a `thmb` item exists.
+- `TryDecode`: an RGB `RasterImage` (8-bit, or 16-bit holding the 10 bits of a Main 10 image) with the container's
+  ICC profile and its Exif / XMP items (`Metadata`) passed through. `ColorEncoding`
   comes from the `colr` nclx box (primaries, transfer); with only an ICC profile it is the assumed-sRGB
   default (it is never derived from a profile); with no `colr` box it comes from the HEVC VUI. It is always
   full range: limited-range Y′CbCr is expanded by the conversion.
-- `TryDecodeInto`: every `ImagePixelFormat`, any stride. The pixels equal `ToRgba8()` of the decoded image
-  converted by `PixelConverter.ConvertRow`, except `Gray8`, which is the stored luma (Y) range-mapped to
-  8 bits — the formula is frozen in `HeifColor` — rather than the luma of the RGB; an identity-matrix (GBR)
-  image takes the luma of the RGB. A PQ or HLG transfer function returns false (its code values are encoded
+- `TryDecodeInto`: every `PixelFormat`, any stride, written a tile at a time straight from the coded samples:
+  8-bit formats by the frozen 8-bit conversion, 16-bit ones (`Rgba64`, …) by the 16-bit one. For an 8-bit image
+  the pixels equal the decoded image converted by `PixelConverter`; for a Main 10 image the 8-bit formats round once
+  from 10 bits, so they can differ by one code value from narrowing the 16-bit image. `Gray8` is the stored luma (Y)
+  range-mapped to 8 bits — the formula is frozen in `HeifColor` — rather than the luma of the RGB; an
+  identity-matrix (GBR) image takes the luma of the RGB. A PQ or HLG transfer function returns false (its code values are encoded
   for an HDR display), as PNG does for cICP PQ / HLG; `TryDecode` still decodes it and reports the transfer.
 - `TryOpenFrames`: a one-frame reader over the still image.
+- `TryReadMetadata`: the `Exif` item (from its TIFF header) and the XMP `mime` item linked to the primary image by
+  `cdsc`, and the ICC profile. The Exif orientation tag is passed through as is, although the pixels are already
+  turned by `irot` / `imir`: a transcoder should rewrite it to 1.
+- `TryDecodeThumbnail`: the primary image's `thmb` item.
+- `TryReadPlanarInfo` / `TryDecodePlanes` (`IPlanarImageDecoder`): the Y, Cb, Cr planes of the canvas as coded
+  (4:2:0, coded bit depth, low-bit aligned), for an image without `clap` / `irot` / `imir`.
+- `DecodeOptions`: a region (decoded whole, then cropped) and a pool; no native scaling.
 
-## Limitations in 1.4
+## Limitations
 
-- **10-bit sources are output as 8-bit samples.** Main 10 decodes exactly, but the 1.x interfaces get 8-bit
-  RGB; a 16-bit fidelity output is planned for 2.0.
 - **Not decoded:** alpha auxiliary images (the colour image decodes, opaque), HDR gain maps, depth maps and
-  other auxiliary items; Exif is not read.
+  other auxiliary items.
 - **Not supported:** image sequences (`.heics`, `msf1`) and the HEVC range-extension profiles (Main 10 Intra,
   Main 12, 4:4:4, …) — `InvalidDataException`, or false from the `Try*` methods.
 
@@ -101,7 +110,8 @@ The package ships two runnable samples in `linqpad-samples/`:
   (`prof` / `rICC`, returned on `HeifImage.IccProfile`, not applied)
 - `clap` clean aperture, `irot` rotation and `imir` mirroring, applied in association order
   so the pixels come out as the file intends them to be displayed
-- Output is 8-bit; 10-bit input is converted with the correct matrix and range
+- Output is 8-bit for Main images and 16-bit (10 bits of precision) for Main 10, converted with the correct
+  matrix and range
 
 ## Output contract
 

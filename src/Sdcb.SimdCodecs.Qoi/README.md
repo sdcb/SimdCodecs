@@ -13,7 +13,7 @@ QoiInfo info = QoiDecoder.ReadInfo(data);       // size, channels, colour space
 QoiImage image = QoiDecoder.Decode(data);       // RGB or RGBA, as the header declares
 
 var bgra = new byte[info.Width * info.Height * 4];
-QoiDecoder.DecodeTo(data, bgra, ImagePixelFormat.Bgra32);
+QoiDecoder.DecodeTo(data, bgra, PixelFormat.Bgra32);
 ```
 
 Malformed data throws `InvalidDataException`, and the `Try` methods and the `QoiImageDecoder` adapter return
@@ -22,10 +22,10 @@ Malformed data throws `InvalidDataException`, and the `Try` methods and the `Qoi
 ## Encoding
 
 ```csharp
-byte[] qoi = QoiEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32);
+byte[] qoi = QoiEncoder.Encode(rgba, width, height, PixelFormat.Rgba32);
 
 using var file = File.Create("image.qoi");
-QoiEncoder.Encode(bgr, width, height, ImagePixelFormat.Bgr24, file, QoiColorSpace.Linear);
+QoiEncoder.Encode(bgr, width, height, PixelFormat.Bgr24, file, QoiColorSpace.Linear);
 ```
 
 The encoder takes RGBA, BGRA, RGB, BGR or grey input at any row stride. RGBA and BGRA input is written with 4

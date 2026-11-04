@@ -13,7 +13,7 @@ BmpInfo info = BmpDecoder.ReadInfo(data);       // size, depth, compression, hea
 BmpImage image = BmpDecoder.Decode(data);       // RGB, or RGBA when the bitmap can carry alpha
 
 var bgra = new byte[info.Width * info.Height * 4];
-BmpDecoder.DecodeTo(data, bgra, ImagePixelFormat.Bgra32);
+BmpDecoder.DecodeTo(data, bgra, PixelFormat.Bgra32);
 ```
 
 What it reads:
@@ -34,9 +34,9 @@ allocates.
 ## Encoding
 
 ```csharp
-byte[] bmp = BmpEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32);
+byte[] bmp = BmpEncoder.Encode(rgba, width, height, PixelFormat.Rgba32);
 
-byte[] rle = BmpEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32,
+byte[] rle = BmpEncoder.Encode(rgba, width, height, PixelFormat.Rgba32,
     new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed8, Rle = true, Dither = true });
 ```
 
@@ -48,7 +48,7 @@ byte[] rle = BmpEncoder.Encode(rgba, width, height, ImagePixelFormat.Rgba32,
 | `TopDown` | A negative height, top row first |
 | `IccProfile` | Embedded in a V5 header |
 
-Input is any `ImagePixelFormat` (B, G, R input written as 24- or 32-bit is copied as it is), or 1 / 3 / 4
+Input is any `PixelFormat` (B, G, R input written as 24- or 32-bit is copied as it is), or 1 / 3 / 4
 channels. `BmpEncoder.EncodeDib` writes a packed DIB; with `iconImage: true`, an icon or cursor image: a 40-byte
 header with the doubled height, then the AND mask (alpha below 128 is transparent).
 
