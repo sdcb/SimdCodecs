@@ -52,11 +52,16 @@ public sealed class PngImageEncoder : IImageEncoder
 
     private sealed class Session(IBufferWriter<byte> output, PngWriteOptions options) : BufferedEncoderSession(output)
     {
-        public override int MaxFrames => 1;
+        public override int MaxFrames => int.MaxValue;
 
         protected override void Encode(IReadOnlyList<BufferedFrame> frames, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (frames.Count > 1)
+            {
+                EncodeAnimation(frames, cancellationToken);
+                return;
+            }
             var frame = frames[0];
             var native = Native(frame.Format);
             var pixels = frame.PixelsAs(native);
@@ -78,6 +83,24 @@ public sealed class PngImageEncoder : IImageEncoder
                     _ => PngWriter.EncodeGrayAlpha8(pixels, w, h, o),
                 };
             WriteOutput(file);
+        }
+
+        // Several frames are an animated PNG: the first frame's size is the canvas, every frame is a whole canvas shown for its
+        // duration (100 ms when none is given), and one 16-bit frame makes the animation 16-bit.
+        private void EncodeAnimation(IReadOnlyList<BufferedFrame> frames, CancellationToken cancellationToken)
+        {
+            var first = frames[0];
+            var wide = frames.Any(f => f.Format.Sample == SampleFormat.UInt16);
+            var encoder = new PngAnimationEncoder(first.Width, first.Height, WithFrame(options, first), wide);
+            for (var i = 0; i < frames.Count; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var f = frames[i];
+                if (f.Width != first.Width || f.Height != first.Height)
+                    throw new ArgumentException($"Frame {i} is {f.Width}x{f.Height}, but the animation canvas is {first.Width}x{first.Height}.");
+                encoder.AddFrame(f.Pixels, f.Format, f.Duration ?? TimeSpan.FromMilliseconds(100));
+            }
+            WriteOutput(encoder.Encode());
         }
 
         // The frame's metadata and colour override the options': ICC, Exif, an XMP iTXt, cICP.

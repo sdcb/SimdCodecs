@@ -75,6 +75,22 @@ internal static class FacadeSmoke
             encoded.Add($"{format}={Hash(file)}/{SimdCodecs.GetClosestInputFormat(format, PixelFormat.Rgba64)}");
         }
 
+        // Several frames to the PNG encoder through the session: an APNG, opened again through the facade.
+        var apng = new System.Buffers.ArrayBufferWriter<byte>();
+        using (var animation = SimdCodecs.CreateEncoder(ImageFormat.Png, apng, new PngWriteOptions { LoopCount = 3 }))
+        {
+            for (var f = 0; f < 3; f++)
+            {
+                var copy = (byte[])rgb.Clone();
+                copy[f * 3] ^= 0x40;
+                animation.AddFrame(w, h, PixelFormat.Rgb24, duration: TimeSpan.FromMilliseconds(40 + f)).WriteRows(copy, h, 0);
+            }
+            animation.Commit();
+        }
+        Check(SimdCodecs.TryOpenFrames(apng.WrittenMemory, out var apngFrames), "v2", "TryOpenFrames (APNG session)");
+        using (apngFrames)
+            Check(apngFrames.FrameCount == 3 && apngFrames.LoopCount == 3, "v2", "APNG frames");
+        encoded.Add($"apng-session={Hash(apng.WrittenSpan.ToArray())}");
         Console.WriteLine($"facade v2 closest={cw}x{ch}/{scale} scaled={scaled.Width}x{scaled.Height} region={region.Width}x{region.Height}" +
             $"	{Hash(Pixels(scaled))} {Hash(Pixels(region))} {Hash(wide)} {Hash(pre)} {Hash(Pixels(frame))} {Hash(crop)}");
         Console.WriteLine($"facade v2-encode	{string.Join(' ', encoded)}");
@@ -165,6 +181,8 @@ internal static class FacadeSmoke
         return
         [
             ("png", PngWriter.Encode(rgba, w, h)),
+            ("apng", Apng(rgba, w, h, wide: false)),
+            ("apng-16", Apng(rgba, w, h, wide: true)),
             ("jpeg", JpegEncoder.Encode(rgb, w, h, 3, new JpegEncodeOptions { Quality = 80 })),
             ("tiff", tiff.ToArray()),
             ("jbig2", Fixture("sym.jb2")),
@@ -200,6 +218,17 @@ internal static class FacadeSmoke
         ];
     }
 
+    // An animated PNG of three frames (the second a mirror, the third changing a corner only), through the encoder class.
+    private static byte[] Apng(byte[] rgba, int w, int h, bool wide)
+    {
+        var encoder = new PngAnimationEncoder(w, h, new PngWriteOptions { LoopCount = 2 }, sixteenBit: wide);
+        var third = (byte[])rgba.Clone();
+        third[0] ^= 0x55;
+        third[4] ^= 0x55;
+        foreach (var frame in new[] { rgba, rgba.Reverse().ToArray(), third })
+            encoder.AddFrame(frame, PixelFormat.Rgba32, TimeSpan.FromMilliseconds(50));
+        return encoder.Encode();
+    }
     // The test project's fixtures, embedded by file name (see the .csproj): browser-wasm has no file system.
     private static byte[] Fixture(string name)
     {

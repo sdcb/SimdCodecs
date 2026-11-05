@@ -26,7 +26,7 @@ namespace Sdcb.SimdCodecs.Png;
 /// at the facade boundary.
 /// </para>
 /// </summary>
-public sealed class PngImageDecoder : IImageDecoder
+public sealed class PngImageDecoder : IMultiFrameImageDecoder
 {
     /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
@@ -39,6 +39,7 @@ public sealed class PngImageDecoder : IImageDecoder
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
+        TryOpenFrames = TryOpenFrames,
     };
 
     private static ReadOnlySpan<byte> Signature => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
@@ -106,7 +107,7 @@ public sealed class PngImageDecoder : IImageDecoder
     public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail) =>
         ImageDecoderFallback.NoThumbnail(out thumbnail);
 
-    private static ImageMetadata MetadataOf(PngImage png)
+    internal static ImageMetadata MetadataOf(PngImage png)
     {
         ReadOnlyMemory<byte> xmp = default;
         foreach (var text in png.Text)
@@ -118,6 +119,27 @@ public sealed class PngImageDecoder : IImageDecoder
             }
         }
         return new ImageMetadata { Exif = png.Exif, Xmp = xmp, Icc = png.IccProfile };
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// An APNG's frames are the composited canvas (see <see cref="PngAnimationDecoder"/>): RGBA, or RGB when nothing in the
+    /// animation is transparent, 8-bit or 16-bit as the file is, each with the canvas's size. When the default image is not
+    /// part of the animation the frames are the animation's own and <see cref="TryDecode"/> still returns the default image.
+    /// A PNG that is not animated is one frame, the image <see cref="TryDecode"/> returns.
+    /// </remarks>
+    public static bool TryOpenFrames(ReadOnlyMemory<byte> data, [NotNullWhen(true)] out IImageFrameReader? reader)
+    {
+        try
+        {
+            reader = PngFrameReader.Open(data);
+            return true;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            reader = null;
+            return false;
+        }
     }
 
     /// <inheritdoc />
@@ -399,7 +421,7 @@ public sealed class PngImageDecoder : IImageDecoder
     // that. Anything else (sRGB chunk, gAMA ~1/2.2, untagged) lands on the sRGB
     // assumption; the raw gAMA / cHRM values stay available via PngReader for
     // consumers that need them.
-    private static ColorEncoding MapColorEncoding(CicpChunk? cicpChunk, double? gamma)
+    internal static ColorEncoding MapColorEncoding(CicpChunk? cicpChunk, double? gamma)
     {
         if (cicpChunk is { } cicp)
             return new ColorEncoding

@@ -165,4 +165,10 @@ public sealed record PngWriteOptions : Sdcb.SimdCodecs.Abstractions.EncodeOption
     /// and a fragment must hold at least two rows.</para>
     /// </remarks>
     public int ParallelFragments { get; init; } = 1;
+
+    /// <summary>
+    /// For an animation (<see cref="PngAnimationEncoder"/>, or a session of several frames): how many times it plays, the
+    /// <c>num_plays</c> of the <c>acTL</c> chunk. 0 (the default) is forever. Ignored for a still image.
+    /// </summary>
+    public int LoopCount { get; init; }
 }
