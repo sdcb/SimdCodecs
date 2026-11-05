@@ -1,6 +1,25 @@
-# JBIG2：已知缺口与局限
+# JBIG2：支持情况与已知缺口
 
-条目约定（“不支持”“门面不提供”“未调优”）和跨格式的门面限制见 [总览](../known-gaps.md)。
+条目约定（“不支持”“门面不提供”“未调优”）和跨格式的门面限制见 [总览](../known-gaps.md)。表中 ✅ 支持，⚠️ 部分支持（见说明），❌ 不支持。
+
+## 支持情况
+
+| 功能 | 状态 | 说明 |
+|---|:-:|---|
+| 独立 `.jb2` 文件 | ✅ | |
+| 多页 | ⚠️ | `Jbig2Decoder.DecodeFile(file, pageNumber)` 可取任意页，门面只给第 1 页 |
+| PDF 内嵌流（`/JBIG2Decode`，含 globals） | ✅ | 直接调用 `Jbig2Decoder.Decode`，门面不识别 |
+| 通用区域：算术编码、MMR | ✅ | MMR 的 2D 扩展码不支持 |
+| 通用区域 EXTTEMPLATE | ❌ | |
+| 符号字典、文本区域 | ✅ | |
+| 引用或保留算术上下文的符号字典 | ❌ | |
+| 精细化区域 | ✅ | |
+| 半色调区域、模式字典 | ✅ | |
+| Huffman 编码（标准表、自定义表） | ⚠️ | Huffman 符号字典的精细化 / 聚合和文本区域的逐实例精细化没有经过对照验证 |
+| 与 jbig2dec 对照 | ✅ | issue #1 语料 114 个文件中 112 个逐页逐像素一致，其余 2 个双方都判为坏流 |
+| 已调优 | ❌ | |
+
+## 已知缺口与局限
 
 - **门面只解码独立 `.jb2` 文件的第 1 页。** 其他页用 `Jbig2Decoder.DecodeFile(file, pageNumber)`，页数由 `Jbig2Decoder.TryReadFileInfo(file, out w, out h, out pages)` 给出。PDF 内嵌的 JBIG2 流没有文件头可供识别， 需要直接调用 `Jbig2Decoder.Decode(embedded, globals, width, height)`，门面不处理。
 - **不支持**：

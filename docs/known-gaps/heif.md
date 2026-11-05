@@ -1,6 +1,46 @@
-# HEIF / HEIC：已知缺口与局限
+# HEIF / HEIC：支持情况与已知缺口
 
-条目约定（“不支持”“门面不提供”“未调优”）和跨格式的门面限制见 [总览](../known-gaps.md)。
+条目约定（“不支持”“门面不提供”“未调优”）和跨格式的门面限制见 [总览](../known-gaps.md)。表中 ✅ 支持，⚠️ 部分支持（见说明），❌ 不支持。
+
+## 支持情况
+
+### 解码
+
+| 功能 | 状态 | 说明 |
+|---|:-:|---|
+| HEVC Main、Main 10、Main Still Picture，4:2:0 | ✅ | Y / Cb / Cr 与 ffmpeg 8.1.2 逐字节一致 |
+| HEVC 帧内语法全集（WPP、sign data hiding、AMP、transform skip、去块、SAO 等） | ✅ | |
+| 网格（`grid`）拼图 | ✅ | 手机拍照的格式 |
+| `clap`、`irot`、`imir` | ✅ | 按关联顺序应用，像素按显示方向输出 |
+| 10 位输出为 16 位样本 | ✅ | |
+| 输出 YCbCr 平面 | ⚠️ | 只给没有 `clap` / `irot` / `imir` 的图 |
+| 图像序列（`.heics`） | ❌ | |
+| HEVC 范围扩展 profile（Main 12、4:4:4 等） | ❌ | |
+| alpha、增益图、深度图等辅助图像 | ❌ | 主图照常按不透明解码 |
+| AVIF | ❌ | |
+
+### 色彩与元数据
+
+| 功能 | 状态 | 说明 |
+|---|:-:|---|
+| nclx `colr` 盒、HEVC VUI | ✅ | 决定矩阵、范围和 `ColorEncoding` |
+| ICC（`prof` / `rICC`） | ✅ | 透传，不应用 |
+| PQ / HLG | ⚠️ | `TryDecode` 照常解码，`TryDecodeInto` 返回 `false` |
+| Exif、XMP item | ✅ | Exif 方向原样透传 |
+| `thmb` 缩略图 | ✅ | 门面 `TryDecodeThumbnail` |
+
+### 门面与性能
+
+| 功能 | 状态 | 说明 |
+|---|:-:|---|
+| 需显式注册 | — | HEVC 专利原因，不在元包里 |
+| 区域解码只解相交的 tile | ✅ | |
+| `TryDecodeInto` 直写调用方缓冲区 | ✅ | 所有 `PixelFormat`，每个 tile 解完立即写入 |
+| 原生缩放解码 | ❌ | |
+| 多核并行（tile 并行、WPP wavefront） | ✅ | |
+| 已调优 | ✅ | 8 核到 RGBA 约为 libheif 的 0.20–0.32× |
+
+## 已知缺口与局限
 
 - **只解码 HEVC 静态图**（Main、Main 10、Main Still Picture，4:2:0），含网格（`grid`）拼图和 `clap` / `irot` / `imir`。**不支持**：图像序列（`.heics`，主品牌 `msf1` 等，`CanDecode` 认得但不解码）、HEVC 范围扩展 profile（Main 10 Intra、Main 12、4:4:4 等）、AVIF。
 - **不解码辅助图像**：alpha（彩色主图照常解码，按不透明输出，`Channels` 为 3）、HDR 增益图、深度图。

@@ -1,6 +1,72 @@
-# TIFF：已知缺口与局限
+# TIFF：支持情况与已知缺口
 
-条目约定（“不支持”“门面不提供”“未调优”）和跨格式的门面限制见 [总览](../known-gaps.md)。
+条目约定（“不支持”“门面不提供”“未调优”）和跨格式的门面限制见 [总览](../known-gaps.md)。表中 ✅ 支持，⚠️ 部分支持（见说明），❌ 不支持。
+
+## 支持情况
+
+### 容器与布局
+
+| 功能 | 状态 | 说明 |
+|---|:-:|---|
+| 经典 TIFF，两种字节序 | ✅ | |
+| BigTIFF | ✅ | 只读，写入器不写 |
+| 多页（IFD 链） | ✅ | 门面 `TryOpenFrames` 逐页 |
+| 条带和分块 | ✅ | 可只读单个条带 / 分块（`ReadSegment`） |
+| PlanarConfiguration 1 和 2 | ✅ | 子采样 YCbCr 和 JPEG YCbCr 不支持分离平面 |
+
+### 采样与颜色
+
+| 功能 | 状态 | 说明 |
+|---|:-:|---|
+| 8 / 16 / 32 位整数（无符号、有符号） | ✅ | 有符号和 32 位无符号门面不呈现 |
+| 16 / 32 位浮点 | ✅ | |
+| 1 / 2 / 4 位 | ⚠️ | 只支持每像素一个采样 |
+| 灰度（MinIsWhite / MinIsBlack）、RGB | ✅ | |
+| 调色板 | ✅ | |
+| CMYK | ⚠️ | 简单公式转换，不做 ICC 色彩管理 |
+| YCbCr（含子采样） | ⚠️ | 色度复制到整个数据单元，不插值 |
+| alpha（ExtraSamples） | ✅ | 只取第一个 alpha；预乘的会还原 |
+| CIELab | ❌ | |
+
+### 压缩（读取）
+
+| 功能 | 状态 | 说明 |
+|---|:-:|---|
+| 不压缩、LZW、Deflate / Adobe Deflate、PackBits | ✅ | |
+| predictor 2（水平差分）和 3（浮点） | ✅ | |
+| CCITT Modified Huffman、Group 3（1D / 2D）、Group 4 | ✅ | 2D 扩展码（uncompressed mode）不支持 |
+| JPEG（Compression 7，含 JPEGTables） | ✅ | |
+| 旧式 JPEG（Compression 6） | ❌ | |
+
+### 写入
+
+| 功能 | 状态 | 说明 |
+|---|:-:|---|
+| 经典 TIFF，条带或分块 | ✅ | |
+| 8 / 16 / 32 位整数和浮点 | ✅ | |
+| 不压缩、Deflate | ✅ | |
+| LZW、PackBits、CCITT、JPEG 压缩 | ❌ | |
+| BigTIFF | ❌ | |
+| ICC、XMP、Exif | ✅ | Exif 合并进页面 IFD，见下 |
+
+### 元数据
+
+| 功能 | 状态 | 说明 |
+|---|:-:|---|
+| ICC、XMP | ✅ | |
+| Exif / GPS / Interoperability IFD | ⚠️ | 重组为一个 Exif 块，部分内容不保留，见下 |
+| 分辨率、方向 | ✅ | |
+
+### 门面与性能
+
+| 功能 | 状态 | 说明 |
+|---|:-:|---|
+| 区域解码只读相交的条带 / 分块 | ✅ | |
+| `TryDecodeInto` 直写调用方缓冲区 | ⚠️ | 整数页面按条带写入；浮点页面不投影到 8 位 |
+| 原生缩放解码 | ❌ | |
+| 已调优 | ❌ | |
+
+## 已知缺口与局限
 
 - **读取不支持**：
   - 旧式 JPEG 压缩（Compression=6，已被 TIFF Technical Note 2 的 Compression=7 取代），给出明确的 `NotSupportedException`；
