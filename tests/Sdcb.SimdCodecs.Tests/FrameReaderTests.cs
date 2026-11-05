@@ -186,9 +186,9 @@ public sealed class FrameReaderTests
     {
         using var collection = new MagickImageCollection();
         collection.Add(new MagickImage(MagickColors.Red, 4, 2));
-        var palette = new MagickImage(MagickColors.Blue, 3, 3);
-        palette.ColorType = ColorType.Palette; // a photometric the adapter refuses
-        collection.Add(palette);
+        var lab = new MagickImage(MagickColors.Blue, 3, 3);
+        lab.ColorSpace = ColorSpace.Lab; // CIELab: a photometric the adapter refuses
+        collection.Add(lab);
         collection.Add(new MagickImage(MagickColors.Green, 2, 5));
         var tiff = collection.ToByteArray(MagickFormat.Tiff);
 
@@ -320,9 +320,9 @@ public sealed class FrameReaderTests
     {
         using var collection = new MagickImageCollection();
         collection.Add(new MagickImage(MagickColors.Red, 4, 2));
-        var palette = new MagickImage(MagickColors.Blue, 3, 3);
-        palette.ColorType = ColorType.Palette;
-        collection.Add(palette);
+        var lab = new MagickImage(MagickColors.Blue, 3, 3);
+        lab.ColorSpace = ColorSpace.Lab;
+        collection.Add(lab);
         SimdCodecs.TryOpenFrames(collection.ToByteArray(MagickFormat.Tiff), out var reader).ShouldBeTrue();
         using (reader)
         {

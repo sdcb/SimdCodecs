@@ -43,7 +43,97 @@ public static class JpegDecoder
     }
 
     /// <summary>
-    /// <see cref="ReadInfo"/> for untrusted input: false, rather than an exception, when the stream is
+    /// <see cref="ReadInfo(ReadOnlySpan{byte})"/> of a stream whose tables may be stored apart from it
+    /// (<see cref="JpegDecodeOptions.Tables"/>).
+    /// </summary>
+    /// <exception cref="InvalidDataException">The stream, or its tables, are not decodable JPEG.</exception>
+    public static JpegInfo ReadInfo(ReadOnlySpan<byte> data, JpegDecodeOptions? options)
+    {
+        var core = new JpegCore(data, 1);
+        try
+        {
+            Apply(ref core, options);
+            return core.ParseInfo();
+        }
+        finally
+        {
+            core.ReturnBuffers();
+        }
+    }
+
+    /// <summary>
+    /// <see cref="Decode(ReadOnlySpan{byte}, JpegScale)"/> with separately stored tables and an explicit colour
+    /// interpretation (<see cref="JpegDecodeOptions"/>).
+    /// </summary>
+    /// <exception cref="InvalidDataException">The stream, or its tables, are not decodable JPEG.</exception>
+    public static JpegImage Decode(ReadOnlySpan<byte> data, JpegDecodeOptions? options, JpegScale scale)
+    {
+        var core = new JpegCore(data, ValidateScale(scale));
+        try
+        {
+            Apply(ref core, options);
+            core.Begin();
+            core.EnsureFitsOneBuffer(4);
+            var pixels = new byte[core.OutX * core.OutY * 4];
+            core.DecodeInto(pixels, core.OutX * 4);
+            return new JpegImage(core.OutX, core.OutY, pixels);
+        }
+        finally
+        {
+            core.ReturnBuffers();
+        }
+    }
+
+    /// <summary>
+    /// <see cref="DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, JpegPixelFormat, JpegScale, CancellationToken)"/> with
+    /// separately stored tables and an explicit colour interpretation (<see cref="JpegDecodeOptions"/>): how a TIFF
+    /// reader decodes a JPEG-compressed strip or tile (TIFF Technical Note 2).
+    /// </summary>
+    /// <exception cref="InvalidDataException">The stream, or its tables, are not decodable JPEG.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The stride is shorter than a row, or the format is unknown.</exception>
+    /// <exception cref="ArgumentException">The destination is too small.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    public static (int Width, int Height) DecodeTo(ReadOnlySpan<byte> data, Span<byte> destination, int stride, JpegPixelFormat format,
+        JpegDecodeOptions? options, JpegScale scale, CancellationToken cancellationToken)
+    {
+        var bytesPerPixel = BytesPerPixel(format);
+        var core = new JpegCore(data, ValidateScale(scale));
+        try
+        {
+            Apply(ref core, options);
+            core.Begin();
+            var rowBytes = (long)core.OutX * bytesPerPixel;
+            if (stride < rowBytes)
+                throw new ArgumentOutOfRangeException(nameof(stride), stride, $"Stride must be at least {rowBytes} bytes for a {core.OutX}-pixel {format} row.");
+            var required = (long)stride * (core.OutY - 1) + rowBytes;
+            if (destination.Length < required)
+            {
+                throw new ArgumentException(
+                    $"Destination needs {required} bytes for {core.OutX}×{core.OutY} {format} at stride {stride}, got {destination.Length}.",
+                    nameof(destination));
+            }
+
+            core.CancellationToken = cancellationToken;
+            core.DecodeInto(destination, stride, format);
+            return (core.OutX, core.OutY);
+        }
+        finally
+        {
+            core.ReturnBuffers();
+        }
+    }
+
+    private static void Apply(ref JpegCore core, JpegDecodeOptions? options)
+    {
+        if (options is null) return;
+        if (!Enum.IsDefined(options.ColorTransform))
+            throw new ArgumentOutOfRangeException(nameof(options), options.ColorTransform, "Unknown colour transform.");
+        core.Tables = options.Tables.Span;
+        core.ColorTransform = options.ColorTransform;
+    }
+
+    /// <summary>
+    /// <see cref="ReadInfo(ReadOnlySpan{byte})"/> for untrusted input: false, rather than an exception, when the stream is
     /// not a decodable JPEG.
     /// </summary>
     public static bool TryReadInfo(ReadOnlySpan<byte> data, [NotNullWhen(true)] out JpegInfo? info)
@@ -140,7 +230,7 @@ public static class JpegDecoder
     }
 
     /// <summary>
-    /// Decodes into a caller-supplied buffer (use <see cref="ReadInfo"/> +
+    /// Decodes into a caller-supplied buffer (use <see cref="ReadInfo(ReadOnlySpan{byte})"/> +
     /// <see cref="JpegInfo.ScaledSize"/> to size it: width × height × 4 bytes).
     /// Returns the actual output dimensions. Rows are written tightly packed.
     /// </summary>
@@ -172,7 +262,7 @@ public static class JpegDecoder
     /// <summary>
     /// Decodes into a caller-supplied buffer in the given pixel <paramref name="format"/>,
     /// row <c>y</c> starting at byte <c>y × <paramref name="stride"/></c> (padding
-    /// between rows is left untouched). Size it with <see cref="ReadInfo"/> +
+    /// between rows is left untouched). Size it with <see cref="ReadInfo(ReadOnlySpan{byte})"/> +
     /// <see cref="JpegInfo.ScaledSize"/>: at least
     /// <c>stride × (height − 1) + width × bytesPerPixel</c> bytes.
     /// </summary>

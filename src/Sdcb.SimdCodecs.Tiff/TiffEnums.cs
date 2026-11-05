@@ -7,6 +7,7 @@ public enum TiffCompression : ushort
     CcittT4      = 3,    // CCITT Group 3 / ITU-T T.4 (TIFF 6.0 section 11); bilevel only
     CcittT6      = 4,    // CCITT Group 4 / ITU-T T.6 (TIFF 6.0 section 11); bilevel only
     Lzw          = 5,
+    OldJpeg      = 6,    // Old-style JPEG (TIFF 6.0 section 22, superseded by Technical Note #2); refused on read
     Jpeg         = 7,    // New-style JPEG (TIFF Technical Note #2)
     Deflate      = 8,    // Adobe Deflate
     ZlibPkzip    = 32946, // PKZIP / zlib (identical bytes to Deflate=8)

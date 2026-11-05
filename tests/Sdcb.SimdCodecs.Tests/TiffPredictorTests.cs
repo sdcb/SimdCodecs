@@ -73,6 +73,50 @@ public sealed class TiffPredictorTests
     }
 
     /// <summary>
+    /// CCITT fax codes bilevel runs, not sample bytes, so a Predictor tag on such a page means nothing and is
+    /// ignored -- whatever its value (24016 is what a real writer left on a JPEG page). libtiff's Group 4 strips are
+    /// re-wrapped with the tag added, and must decode exactly as without it.
+    /// </summary>
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(24016)]
+    public void OnAFaxPage_ThePredictorIsIgnored(int predictor)
+    {
+        var grey = new byte[29 * 11];
+        for (var i = 0; i < grey.Length; i++) grey[i] = (i * 7 % 13) < 5 ? (byte)0 : (byte)255;
+        using var image = new ImageMagick.MagickImage(grey, new ImageMagick.MagickReadSettings
+        {
+            Format = ImageMagick.MagickFormat.Gray, Width = 29, Height = 11, Depth = 8,
+        });
+        image.ColorType = ImageMagick.ColorType.Bilevel;
+        image.Depth = 1;
+        image.Settings.Compression = ImageMagick.CompressionMethod.Group4;
+        var reference = image.ToByteArray(ImageMagick.MagickFormat.Tiff);
+        var layout = TiffReader.ReadLayout(reference);
+        layout.Compression.ShouldBe(TiffCompression.CcittT6, "premise: libtiff wrote Group 4");
+
+        var strips = new byte[layout.Offsets.Length][];
+        for (var i = 0; i < strips.Length; i++)
+            strips[i] = reference.AsSpan((int)layout.Offsets[i], (int)layout.ByteCounts[i]).ToArray();
+        var tags = TestTiffBuilder.Basic(29, 11, 1, 1, TiffCompression.CcittT6, layout.Photometric, layout.RowsPerStrip);
+        tags.Add(TestTiffBuilder.Short(TiffTag.Predictor, predictor));
+        var rewrapped = new TestTiffBuilder().AddPage(tags, strips).Build();
+
+        TiffReader.ReadLayout(rewrapped).Predictor.ShouldBe(TiffPredictor.None);
+        var ct = TestContext.Current.CancellationToken;
+        TiffReader.ReadPage(rewrapped, 0, ct).Pixels.ShouldBe(TiffReader.ReadPage(reference, 0, ct).Pixels);
+    }
+
+    [Fact]
+    public void OnADeflatePage_AnUnknownPredictorIsStillRefused()
+    {
+        var original = BuildRamp(4, 3, 1, 8);
+        var tiff = BuildDeflateTiff(original, 4, 3, 1, 8, (TiffPredictor)24016);
+        Should.Throw<NotSupportedException>(() => TiffReader.Read(tiff)).Message.ShouldContain("Predictor");
+    }
+
+    /// <summary>
     /// A deterministic ramp with a deliberate mid-row jump, so the stored differences are large
     /// enough to wrap the sample width. Wrapping is the case worth covering: the encoder computed
     /// the differences modulo the sample width, so only unchecked addition reverses them, and a

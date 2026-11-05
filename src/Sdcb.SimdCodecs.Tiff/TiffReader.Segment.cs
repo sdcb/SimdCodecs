@@ -19,14 +19,16 @@ public readonly record struct TiffSegmentRect(int X, int Y, int Width, int Heigh
 public sealed class TiffPageLayout
 {
     private readonly TiffSegmentGeometry _geometry;
-    internal readonly uint[] Offsets;
-    internal readonly uint[] ByteCounts;
+    internal readonly long[] Offsets;
+    internal readonly long[] ByteCounts;
 
-    internal TiffPageLayout(int pageIndex, bool fileIsLittleEndian, ParsedIfd ifd, long ifdOffset)
+    internal TiffPageLayout(int pageIndex, TiffFormat format, ParsedIfd ifd, long ifdOffset)
     {
         PageIndex = pageIndex;
         IfdOffset = ifdOffset;
-        FileIsLittleEndian = fileIsLittleEndian;
+        Ifd = ifd;
+        Format = format;
+        FileIsLittleEndian = format.LittleEndian;
         _geometry = ifd.Geometry;
         Offsets = ifd.SegmentOffsets;
         ByteCounts = ifd.SegmentByteCounts;
@@ -70,8 +72,17 @@ public sealed class TiffPageLayout
     /// <summary>ResolutionUnit (tag 296): 1 none, 2 inch (the default), 3 centimetre.</summary>
     internal int ResolutionUnit { get; }
 
+    /// <summary>The parsed directory this layout was built from.</summary>
+    internal ParsedIfd Ifd { get; }
+
+    /// <summary>Byte order and classic / BigTIFF: how the file's directories are laid out.</summary>
+    internal TiffFormat Format { get; }
+
     public int PageIndex { get; }
     public bool FileIsLittleEndian { get; }
+
+    /// <summary>True when the file is a BigTIFF (version 43, 64-bit offsets) rather than a classic TIFF.</summary>
+    public bool IsBigTiff => Format.BigTiff;
     public int Width { get; }
     public int Height { get; }
     public int SamplesPerPixel { get; }
@@ -146,7 +157,8 @@ public sealed class TiffPageLayout
     public int SegmentBytes(int segmentIndex)
     {
         var r = SegmentRectangle(segmentIndex);
-        return checked(r.Width * r.Height * BytesPerPixel);
+        // At most one decoded segment, which TiffIfdParser.Parse bounded to one array's length.
+        return (int)((long)r.Width * r.Height * BytesPerPixel);
     }
 
     internal TiffSegmentGeometry Geometry => _geometry;
@@ -244,7 +256,7 @@ public static partial class TiffReader
     private static TiffPageLayout ReadLayoutCore<T>(ref T src, int pageIndex) where T : ITiffBytes, allows ref struct
     {
         ArgumentOutOfRangeException.ThrowIfNegative(pageIndex);
-        var (fileIsLE, ifdOffset) = TiffIfdParser.ReadHeader(ref src);
+        var (format, ifdOffset) = TiffIfdParser.ReadHeader(ref src);
 
         // Pages before the wanted one are walked by their next-IFD pointer alone, never interpreted. A
         // looping chain has only the pages before the loop, as TiffReader.Read counts them.
@@ -253,12 +265,12 @@ public static partial class TiffReader
         {
             if (ifdOffset == 0 || !visited.Add(ifdOffset))
                 throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
-            ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, fileIsLE);
+            ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, format);
         }
         if (ifdOffset == 0 || visited.Contains(ifdOffset))
             throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
 
-        return new TiffPageLayout(pageIndex, fileIsLE, TiffIfdParser.Parse(ref src, ifdOffset, fileIsLE), ifdOffset);
+        return new TiffPageLayout(pageIndex, format, TiffIfdParser.Parse(ref src, ifdOffset, format), ifdOffset);
     }
 
     private static TiffSegmentRect ReadSegmentCore<T>(ref T src, TiffPageLayout layout, int segmentIndex,
@@ -266,7 +278,7 @@ public static partial class TiffReader
     {
         var rect = layout.SegmentRectangle(segmentIndex);   // throws ArgumentOutOfRangeException
         var bytesPerPixel = layout.BytesPerPixel;
-        var needed = checked(rect.Width * rect.Height * bytesPerPixel);
+        var needed = layout.SegmentBytes(segmentIndex);
         if (destination.Length < needed)
             throw new ArgumentException(
                 $"Destination holds {destination.Length} bytes but segment {segmentIndex} ({rect.Width}x{rect.Height}) needs {needed}",
@@ -295,8 +307,7 @@ public static partial class TiffReader
         var needsSwap = layout.FileIsLittleEndian != BitConverter.IsLittleEndian && bitsPerSample > 8
             && predictor != TiffPredictor.FloatingPoint;
         var needsPredictor = predictor != TiffPredictor.None;
-        var format = new SegmentFormat(compression, layout.StoredBitsPerSample, storedWidth, layout.LsbFirst,
-            layout.FaxOptions);
+        var format = SegmentFormat.For(layout.Ifd);
         var staging = format.NeedsStaging ? new SegmentStaging() : null;
 
         var scratch = ArrayPool<byte>.Shared.Rent(capacity);
@@ -313,7 +324,7 @@ public static partial class TiffReader
                 var offset = layout.Offsets[index];
                 var count = layout.ByteCounts[index];
                 // Declared, attacker-chosen: refuse before sizing a buffer off it.
-                if (count > src.Length || offset + (long)count > src.Length)
+                if (count > Array.MaxLength || offset > src.Length || count > src.Length - offset)
                     throw new InvalidDataException($"Segment {index} extents out of bounds");
 
                 if (raw is null || raw.Length < count)

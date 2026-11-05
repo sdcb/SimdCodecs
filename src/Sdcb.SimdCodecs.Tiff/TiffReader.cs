@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
+using Sdcb.SimdCodecs.Jpeg;
 
 namespace Sdcb.SimdCodecs.Tiff;
 
@@ -44,19 +45,20 @@ namespace Sdcb.SimdCodecs.Tiff;
 ///       from a span, a seekable stream or a file path, reading only that segment's bytes (every
 ///       plane's, for a planar page). It runs the same decode, swap, predictor and interleave as
 ///       <see cref="ReadInto{TSink}"/>, so it equals that rectangle of the whole page.</item>
+/// <item>Classic TIFF and BigTIFF (version 43: 8-byte offsets and entry counts, 20-byte entries, LONG8 / IFD8),
+///       read by the same directory parser; <see cref="TiffPage.IsBigTiff"/> says which a file was. The writer
+///       stays classic.</item>
 /// </list>
-/// JPEG / BigTIFF are out of scope -- when they are needed, add them
-/// here (the existing code loops over segments and dispatches on compression).
 /// </summary>
 public static partial class TiffReader
 {
     /// <summary>Decode every page from a TIFF in-memory.</summary>
     public static TiffDocument Read(ReadOnlySpan<byte> tiff)
     {
-        var fileIsLE = ReadHeader(tiff);
+        var (format, firstIfd) = ReadHeader(tiff);
 
         var sink = new BufferingSink();
-        return ReadCore(tiff, fileIsLE, ref sink, attachPixels: true);
+        return ReadCore(tiff, format, firstIfd, ref sink, attachPixels: true);
     }
 
     /// <summary>
@@ -78,23 +80,23 @@ public static partial class TiffReader
     public static TiffDocument ReadInto<TSink>(ReadOnlySpan<byte> tiff, ref TSink sink)
         where TSink : ITiffStripSink
     {
-        var fileIsLE = ReadHeader(tiff);
-        return ReadCore(tiff, fileIsLE, ref sink, attachPixels: false);
+        var (format, firstIfd) = ReadHeader(tiff);
+        return ReadCore(tiff, format, firstIfd, ref sink, attachPixels: false);
     }
 
-    private static TiffDocument ReadCore<TSink>(ReadOnlySpan<byte> tiff, bool fileIsLE, ref TSink sink,
-        bool attachPixels)
+    private static TiffDocument ReadCore<TSink>(ReadOnlySpan<byte> tiff, TiffFormat format, long firstIfd,
+        ref TSink sink, bool attachPixels)
         where TSink : ITiffStripSink
     {
         var pages = new List<TiffPage>();
-        var ifdOffset = (int)ReadUInt32(tiff.Slice(4, 4), fileIsLE);
+        var ifdOffset = firstIfd;
         var pageIndex = 0;
         // A next-IFD pointer back into the chain would otherwise re-read the same pages forever: the
         // walk ends at the first IFD it has already read, keeping every page reachable before it.
         var visited = new HashSet<long>();
         while (ifdOffset != 0 && visited.Add(ifdOffset))
         {
-            var (page, nextOffset) = ReadPage(tiff, ifdOffset, fileIsLE, pageIndex, ref sink);
+            var (page, nextOffset) = ReadPage(tiff, ifdOffset, format, pageIndex, ref sink);
             // Only the buffering path re-attaches pixels, and it is the sink that holds them: a
             // streaming caller has already consumed them and gets metadata alone.
             pages.Add(attachPixels && sink is BufferingSink buffered
@@ -107,27 +109,14 @@ public static partial class TiffReader
     }
 
     /// <summary>
-    /// Validates the 8-byte header and reports the file's byte order. Split out so
-    /// <see cref="ReadInto{TSink}"/> and <see cref="Read(ReadOnlySpan{byte})"/> cannot come to disagree
-    /// about what a valid TIFF is.
+    /// Validates the header (classic or BigTIFF) and reports the file's format and first IFD. One parser
+    /// (<see cref="TiffIfdParser.ReadHeader{T}"/>) serves every entry point, so none can come to disagree about
+    /// what a valid TIFF is.
     /// </summary>
-    private static bool ReadHeader(ReadOnlySpan<byte> tiff)
+    private static (TiffFormat Format, long FirstIfd) ReadHeader(ReadOnlySpan<byte> tiff)
     {
-        if (tiff.Length < 8) throw new InvalidDataException("TIFF too small for header");
-
-        // Detect byte order from header bytes 0-1. "II" = little-endian,
-        // "MM" = big-endian (TIFF 6.0 §2). All multi-byte values in the file
-        // — including the magic, the IFD offsets, every IFD entry, every
-        // pixel sample of width > 8 bits — follow this same order.
-        bool fileIsLE;
-        if (tiff[0] == (byte)'I' && tiff[1] == (byte)'I') fileIsLE = true;
-        else if (tiff[0] == (byte)'M' && tiff[1] == (byte)'M') fileIsLE = false;
-        else throw new InvalidDataException($"Unknown TIFF byte order tag {tiff[0]:X2}{tiff[1]:X2}");
-
-        if (ReadUInt16(tiff.Slice(2, 2), fileIsLE) != 42)
-            throw new InvalidDataException("TIFF magic mismatch");
-
-        return fileIsLE;
+        var src = new SpanBytes(tiff);
+        return TiffIfdParser.ReadHeader(ref src);
     }
 
     /// <summary>
@@ -141,8 +130,14 @@ public static partial class TiffReader
 
         public bool BeginPage(int pageIndex, TiffPage description)
         {
-            _pixels = new byte[checked(description.Width * description.Height
-                * description.SamplesPerPixel * (description.BitsPerSample / 8))];
+            // The page's raster as one array: sized in long, since every factor is a file value. The parser has
+            // already bounded a row; the whole page is bounded here, where it is allocated.
+            var bytes = (long)description.Width * description.Height * description.SamplesPerPixel
+                * (description.BitsPerSample / 8);
+            if (bytes > Array.MaxLength)
+                throw new InvalidDataException(
+                    $"The {description.Width}x{description.Height} page decodes to {bytes} bytes, more than one array holds; read it by segment (ReadSegment) or stream it (ReadInto)");
+            _pixels = new byte[bytes];
             _position = 0;
             return true;
         }
@@ -176,18 +171,17 @@ public static partial class TiffReader
     public static TiffPage ReadPage(ReadOnlySpan<byte> tiff, int pageIndex = 0, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(pageIndex);
-        var fileIsLE = ReadHeader(tiff);
+        var (format, ifdOffset) = ReadHeader(tiff);
         var src = new SpanBytes(tiff);
-        long ifdOffset = ReadUInt32(tiff.Slice(4, 4), fileIsLE);
         // A looping chain has only the pages before the loop, as Read counts them.
         var visited = new HashSet<long>();
         for (var i = 0; i < pageIndex && ifdOffset != 0 && visited.Add(ifdOffset); i++)
-            ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, fileIsLE);
+            ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, format);
         if (ifdOffset == 0 || visited.Contains(ifdOffset))
             throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
 
         var sink = new BufferingSink();
-        var (page, _) = ReadPage(tiff, (int)ifdOffset, fileIsLE, pageIndex, ref sink, cancellationToken);
+        var (page, _) = ReadPage(tiff, ifdOffset, format, pageIndex, ref sink, cancellationToken);
         return page with { Pixels = sink.TakePixels() };
     }
 
@@ -199,14 +193,14 @@ public static partial class TiffReader
     internal static int CountPages(ReadOnlySpan<byte> tiff)
     {
         var src = new SpanBytes(tiff);
-        var (fileIsLE, ifdOffset) = TiffIfdParser.ReadHeader(ref src);
+        var (format, ifdOffset) = TiffIfdParser.ReadHeader(ref src);
         var visited = new HashSet<long>();
         var pages = 0;
         while (ifdOffset != 0 && visited.Add(ifdOffset))
         {
             try
             {
-                ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, fileIsLE);
+                ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, format);
             }
             catch (InvalidDataException)
             {
@@ -232,14 +226,15 @@ public static partial class TiffReader
         return Read(ms.GetBuffer().AsSpan(0, (int)ms.Length));
     }
 
-    private static (TiffPage Page, int NextIfdOffset) ReadPage<TSink>(ReadOnlySpan<byte> tiff, int ifdOffset,
-        bool fileIsLE, int pageIndex, ref TSink sink, CancellationToken cancellationToken = default)
+    private static (TiffPage Page, long NextIfdOffset) ReadPage<TSink>(ReadOnlySpan<byte> tiff, long ifdOffset,
+        TiffFormat fileFormat, int pageIndex, ref TSink sink, CancellationToken cancellationToken = default)
         where TSink : ITiffStripSink
     {
         cancellationToken.ThrowIfCancellationRequested();
         // ---- Parse and validate the IFD (shared with the on-demand segment read) ----
         var src = new SpanBytes(tiff);
-        var ifd = TiffIfdParser.Parse(ref src, ifdOffset, fileIsLE);
+        var ifd = TiffIfdParser.Parse(ref src, ifdOffset, fileFormat);
+        var fileIsLE = fileFormat.LittleEndian;
         var width = ifd.Width;
         var height = ifd.Height;
         var samplesPerPixel = ifd.SamplesPerPixel;
@@ -260,7 +255,7 @@ public static partial class TiffReader
         var icc = ifd.Icc;
         var exifIfdOffset = ifd.ExifIfdOffset;
         var gpsIfdOffset = ifd.GpsInfoIfdOffset;
-        var nextIfdOffset = (int)ifd.NextIfdOffset;
+        var nextIfdOffset = ifd.NextIfdOffset;
         var planar = geometry.IsPlanar;
         var planes = geometry.PlaneCount;
         var tilesAcross = geometry.SegmentsAcross;
@@ -285,12 +280,15 @@ public static partial class TiffReader
             SMinSampleValue: sMin,
             SMaxSampleValue: sMax,
             IccProfile: icc,
-            ExifIfdOffset: exifIfdOffset,
-            GpsInfoIfdOffset: gpsIfdOffset,
+            ExifIfdOffset: exifIfdOffset <= int.MaxValue ? (int?)exifIfdOffset : null,
+            GpsInfoIfdOffset: gpsIfdOffset <= int.MaxValue ? (int?)gpsIfdOffset : null,
             FileIsLittleEndian: fileIsLE,
             TileWidth: isTiled ? tileWidth : 0,
             TileHeight: isTiled ? tileHeight : 0,
-            StoredBitsPerSample: ifd.BitsPerSample);
+            StoredBitsPerSample: ifd.BitsPerSample)
+        {
+            IsBigTiff = fileFormat.BigTiff,
+        };
 
         if (!sink.BeginPage(pageIndex, page))
         {
@@ -313,8 +311,7 @@ public static partial class TiffReader
         var needsSwap = fileIsLE != BitConverter.IsLittleEndian && bitsPerSample > 8
             && predictor != TiffPredictor.FloatingPoint;
         var needsPredictor = predictor != TiffPredictor.None;
-        var format = new SegmentFormat(compression, ifd.BitsPerSample, isTiled ? tileWidth : width, ifd.LsbFirst,
-            ifd.FaxOptions);
+        var format = SegmentFormat.For(ifd);
 
         // THE FAST CASE, and the reason ReadInto exists: nothing to decompress and nothing to rewrite,
         // so the sink gets a slice of the INPUT and no scratch is allocated at all. Reading a
@@ -331,9 +328,10 @@ public static partial class TiffReader
         // which also stops a page that declares a tile taller than itself from sizing the buffers off
         // that declaration rather than off the picture.
         var tileRowBytes = tileWidth * segBytesPerPixel;
+        // TiffIfdParser.Parse bounded both products to one array's length, so neither wraps.
         var segmentCapacity = isTiled
-            ? checked(tileRowBytes * bandRows)
-            : checked(bandRows * width * segBytesPerPixel);
+            ? tileRowBytes * bandRows
+            : bandRows * width * segBytesPerPixel;
 
         // ONE scratch buffer for every segment, plus ONE MemoryStream for the inflate path -- not one
         // of each per segment. A writer emitting ZIP almost always emits RowsPerStrip=1, so a real
@@ -348,17 +346,19 @@ public static partial class TiffReader
         // assembled unconditionally: a tile as wide as the image would already BE a band and could go
         // straight through, but that needs width to be a multiple of 16 (the spec's tile rule) and is
         // not worth a second path through this loop.
-        byte[]? band = isTiled || planar ? ArrayPool<byte>.Shared.Rent(checked(bandRows * bytesPerRow)) : null;
+        byte[]? band = isTiled || planar ? ArrayPool<byte>.Shared.Rent(bandRows * bytesPerRow) : null;
 
         byte[]? inflateSource = null;
         MemoryStream? scratchStream = null;
         var staging = format.NeedsStaging ? new SegmentStaging() : null;
         if (compression is TiffCompression.Deflate or TiffCompression.ZlibPkzip)
         {
-            var maxSegment = 0;
+            // Sized from the declared byte counts, which are not validated until each segment is read: a count
+            // past the end of the file is clamped to the file, since DecodeSegment refuses it before any copy.
+            var maxSegment = 0L;
             foreach (var byteCount in segmentByteCounts)
-                maxSegment = Math.Max(maxSegment, (int)byteCount);
-            inflateSource = ArrayPool<byte>.Shared.Rent(maxSegment);
+                maxSegment = Math.Max(maxSegment, Math.Min(byteCount, tiff.Length));
+            inflateSource = ArrayPool<byte>.Shared.Rent((int)maxSegment);
             // writable + publiclyVisible so each segment is presented by moving Length/Position
             // rather than by constructing a new stream over a new array.
             scratchStream = new MemoryStream(inflateSource, 0, inflateSource.Length, writable: true,
@@ -482,15 +482,15 @@ public static partial class TiffReader
     /// <paramref name="staging"/> as packed rows first and then expanded into the scratch at one byte per
     /// sample, so from the caller's side it is an 8-bit page like any other.
     /// </remarks>
-    private static ReadOnlySpan<byte> DecodeSegment(ReadOnlySpan<byte> tiff, uint offset, uint byteCount,
+    private static ReadOnlySpan<byte> DecodeSegment(ReadOnlySpan<byte> tiff, long offset, long byteCount,
         int index, SegmentFormat format, SegmentStaging? staging, bool passFileBytesThrough, byte[]? scratch,
         byte[]? inflateSource, MemoryStream? scratchStream, int capacity)
     {
-        var start = (int)offset;
-        var length = (int)byteCount;
-        if (start < 0 || length < 0 || start + length > tiff.Length)
+        // Both are non-negative (the parser refuses offsets past long.MaxValue), so the test cannot wrap.
+        if (offset > tiff.Length || byteCount > tiff.Length - offset)
             throw new InvalidDataException($"Segment {index} extents out of bounds");
-        var segment = tiff.Slice(start, length);
+        var length = (int)byteCount;
+        var segment = tiff.Slice((int)offset, length);
 
         if (passFileBytesThrough)
             return segment[..Math.Min(segment.Length, capacity)];
@@ -504,13 +504,133 @@ public static partial class TiffReader
             segment = reversed;
         }
 
+        if (format.Compression == TiffCompression.Jpeg)
+            return scratch.AsSpan(0, DecodeJpegSegment(segment, format, scratch.AsSpan(0, capacity)));
+
+        if (format.IsYCbCrUnits)
+        {
+            // Subsampled YCbCr (TIFF 6.0 section 21): the segment codes data units -- SubsampleV rows of
+            // SubsampleH luma samples, then one Cb and one Cr -- covering the segment's rows rounded up to whole
+            // units. They are decompressed whole, then expanded to chunky Y, Cb, Cr rows.
+            var rowsOut = capacity / (format.StoredWidth * 3);
+            var units = format.UnitBytes(rowsOut);
+            var coded = staging!.Packed(units);
+            var got = Decompress(segment, format, coded, inflateSource, scratchStream);
+            coded[got..].Clear();
+            ExpandYCbCrUnits(coded, scratch.AsSpan(0, capacity), format.StoredWidth, rowsOut, format.SubsampleH, format.SubsampleV);
+            return scratch.AsSpan(0, capacity);
+        }
+
         if (!format.IsPacked)
             return scratch.AsSpan(0, Decompress(segment, format, scratch!.AsSpan(0, capacity), inflateSource, scratchStream));
 
         var rows = capacity / format.StoredWidth;
         var packed = staging!.Packed(rows * format.PackedRowBytes);
         var decoded = Decompress(segment, format, packed, inflateSource, scratchStream);
-        return scratch.AsSpan(0, ExpandSubByteRows(packed[..decoded], scratch!, format.StoredWidth, format.StoredBits));
+        return scratch.AsSpan(0, ExpandSubByteRows(packed[..decoded], scratch!, format.StoredWidth, format.StoredBits,
+            format.RawIndices));
+    }
+
+    /// <summary>
+    /// One JPEG-compressed strip or tile (TIFF Technical Note 2): a JPEG stream, decoded with the page's JPEGTables
+    /// and colour interpretation into <paramref name="target"/> at the stored width, one, three or four bytes per
+    /// pixel. The stream's frame may be taller than the rows wanted -- a last strip coded at full RowsPerStrip, a tile
+    /// below the image -- and those rows are clipped; it may not be wider than the segment or taller than its stored
+    /// height. Returns the bytes of whole rows written (fewer rows than wanted leave the rest to the caller's zero
+    /// fill, as a short segment of any compression does).
+    /// </summary>
+    private static int DecodeJpegSegment(ReadOnlySpan<byte> segment, SegmentFormat format, Span<byte> target)
+    {
+        var samples = format.SegmentSamples;
+        var pixelFormat = samples switch
+        {
+            1 => JpegPixelFormat.Gray8,
+            3 => JpegPixelFormat.Rgb24,
+            4 => JpegPixelFormat.Rgba32,
+            _ => throw new NotSupportedException($"A JPEG segment of {samples} samples per pixel is not supported"),
+        };
+        var options = format.Jpeg!;
+        var info = JpegDecoder.ReadInfo(segment, options);
+        if (info.Components != samples)
+            throw new InvalidDataException($"The JPEG segment has {info.Components} components, the page {samples} samples per pixel");
+        if (info.Width > format.StoredWidth || info.Height > format.StoredHeight)
+            throw new InvalidDataException(
+                $"The JPEG segment is {info.Width}x{info.Height}, larger than the page's {format.StoredWidth}x{format.StoredHeight} segments");
+
+        var stride = format.StoredWidth * samples;
+        var rows = target.Length / stride;
+        if (info.Height <= rows)
+        {
+            JpegDecoder.DecodeTo(segment, target, stride, pixelFormat, options, JpegScale.Full, default);
+            if (info.Width < format.StoredWidth)
+            {
+                for (var y = 0; y < info.Height; y++)
+                    target.Slice((y * stride) + (info.Width * samples), (format.StoredWidth - info.Width) * samples).Clear();
+            }
+            return info.Height * stride;
+        }
+
+        // Taller than wanted: decode the frame whole, keep its first rows. Bounded by the stored segment size above.
+        // The frame's header is a few bytes of the file, so the scratch it asks for is capped by what is wanted: a
+        // generous multiple of it (a 256-row tile over a 10-row image is 26x), never an unbounded allocation.
+        var frameBytes = (long)info.Width * info.Height * samples;
+        if (frameBytes > Math.Max(64L * target.Length, 1L << 24) || frameBytes > Array.MaxLength)
+            throw new InvalidDataException(
+                $"The JPEG segment's {info.Width}x{info.Height} frame is far larger than the {rows} rows it supplies");
+        var frame = ArrayPool<byte>.Shared.Rent((int)frameBytes);
+        try
+        {
+            var frameStride = info.Width * samples;
+            JpegDecoder.DecodeTo(segment, frame, frameStride, pixelFormat, options, JpegScale.Full, default);
+            for (var y = 0; y < rows; y++)
+            {
+                var row = target.Slice(y * stride, stride);
+                frame.AsSpan(y * frameStride, frameStride).CopyTo(row);
+                row[frameStride..].Clear();
+            }
+            return rows * stride;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(frame);
+        }
+    }
+
+    /// <summary>
+    /// Expands <paramref name="rows"/> rows of YCbCr data units (TIFF 6.0 section 21: for PlanarConfiguration 1 the
+    /// samples of a unit are its <paramref name="h"/> x <paramref name="v"/> luma samples row by row, then Cb, then Cr;
+    /// units run left to right, then top to bottom) into chunky Y, Cb, Cr pixels, <paramref name="width"/> per row.
+    /// Each chroma sample is repeated over the luma samples of its unit: no filtering, so the reader's output is the
+    /// stored samples and nothing else. Units overhanging the right or bottom edge (padding) are dropped.
+    /// </summary>
+    private static void ExpandYCbCrUnits(ReadOnlySpan<byte> units, Span<byte> destination, int width, int rows, int h, int v)
+    {
+        var unitsAcross = (width + h - 1) / h;
+        var unitsDown = (rows + v - 1) / v;
+        var unitSize = (h * v) + 2;
+        for (var uy = 0; uy < unitsDown; uy++)
+        {
+            for (var ux = 0; ux < unitsAcross; ux++)
+            {
+                var unit = units.Slice(((uy * unitsAcross) + ux) * unitSize, unitSize);
+                var cb = unit[h * v];
+                var cr = unit[(h * v) + 1];
+                for (var j = 0; j < v; j++)
+                {
+                    var y = (uy * v) + j;
+                    if (y >= rows) break;
+                    for (var i = 0; i < h; i++)
+                    {
+                        var x = (ux * h) + i;
+                        if (x >= width) break;
+                        var at = ((y * width) + x) * 3;
+                        destination[at] = unit[(j * h) + i];
+                        destination[at + 1] = cb;
+                        destination[at + 2] = cr;
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>Decompresses one segment's coded bytes into <paramref name="target"/>, returning the bytes written.</summary>
@@ -557,17 +677,19 @@ public static partial class TiffReader
     /// per sample, scaled to the full 8-bit range so that the maximum code becomes 255. Whole rows only;
     /// returns the bytes written.
     /// </summary>
-    private static int ExpandSubByteRows(ReadOnlySpan<byte> packed, Span<byte> destination, int width, int bits)
+    private static int ExpandSubByteRows(ReadOnlySpan<byte> packed, Span<byte> destination, int width, int bits,
+        bool rawIndices)
     {
         var rowBytes = ((width * bits) + 7) / 8;
         var rows = packed.Length / rowBytes;
-        var scale = 255 / ((1 << bits) - 1);
+        // Palette indices are indices: expanded to one byte each but never scaled.
+        var scale = rawIndices ? 1 : 255 / ((1 << bits) - 1);
         var mask = (1 << bits) - 1;
         for (var y = 0; y < rows; y++)
         {
             var src = packed.Slice(y * rowBytes, rowBytes);
             var dst = destination.Slice(y * width, width);
-            if (bits == 1)
+            if (bits == 1 && !rawIndices)
             {
                 for (var x = 0; x < width; x++)
                     dst[x] = (byte)(0 - ((src[x >> 3] >> (7 - (x & 7))) & 1));
@@ -593,13 +715,37 @@ public static partial class TiffReader
     /// <summary>What turning a page's segment bytes into samples needs to know beyond the compression.</summary>
     /// <param name="StoredBits">Bits per sample in the file: 1/2/4 are packed and expanded on read.</param>
     /// <param name="StoredWidth">Pixels per stored row: the tile width for a tiled page, else the image width.</param>
+    /// <param name="RawIndices">Sub-byte samples are palette indices: expanded, not scaled to the full 8-bit range.</param>
+    /// <param name="SubsampleH">YCbCr chroma subsampling across (1 when the page is not subsampled YCbCr).</param>
+    /// <param name="SubsampleV">YCbCr chroma subsampling down.</param>
+    /// <param name="SegmentSamples">Samples per pixel inside one segment (1 for a plane of a planar page).</param>
+    /// <param name="StoredHeight">Rows a segment is stored with: the tile height, or the strip's RowsPerStrip.</param>
+    /// <param name="Jpeg">For a JPEG page: its JPEGTables and colour interpretation.</param>
     private readonly record struct SegmentFormat(TiffCompression Compression, int StoredBits, int StoredWidth,
-        bool LsbFirst, uint FaxOptions)
+        bool LsbFirst, uint FaxOptions, bool RawIndices = false, int SubsampleH = 1, int SubsampleV = 1,
+        int SegmentSamples = 1, int StoredHeight = 0, JpegDecodeOptions? Jpeg = null)
     {
+        public static SegmentFormat For(ParsedIfd ifd) => new(ifd.Compression, ifd.BitsPerSample,
+            ifd.IsTiled ? ifd.TileWidth : ifd.Width, ifd.LsbFirst, ifd.FaxOptions,
+            RawIndices: ifd.Photometric == TiffPhotometric.Palette,
+            SubsampleH: ifd.Color.SubsampleH, SubsampleV: ifd.Color.SubsampleV,
+            SegmentSamples: ifd.Geometry.SegmentSamplesPerPixel,
+            StoredHeight: ifd.IsTiled ? ifd.TileHeight : ifd.Geometry.SegmentHeight,
+            Jpeg: ifd.Compression == TiffCompression.Jpeg
+                ? new JpegDecodeOptions { Tables = ifd.Color.JpegTables, ColorTransform = ifd.JpegTransform }
+                : null);
+
         public bool IsPacked => StoredBits < 8;
 
+        /// <summary>Subsampled YCbCr: the segment codes data units, not rows.</summary>
+        public bool IsYCbCrUnits => SubsampleH * SubsampleV > 1;
+
+        /// <summary>Coded bytes of the data units covering <paramref name="rows"/> rows.</summary>
+        public int UnitBytes(int rows) => ((StoredWidth + SubsampleH - 1) / SubsampleH)
+            * ((rows + SubsampleV - 1) / SubsampleV) * ((SubsampleH * SubsampleV) + 2);
+
         /// <summary>The coded bytes or the decoded rows have to go through a buffer of their own first.</summary>
-        public bool NeedsStaging => IsPacked || LsbFirst;
+        public bool NeedsStaging => IsPacked || LsbFirst || IsYCbCrUnits;
 
         public int PackedRowBytes => ((StoredWidth * StoredBits) + 7) / 8;
     }
@@ -841,34 +987,22 @@ public static partial class TiffReader
         // must not take the shared source with it.
         using var z = new ZLibStream(src, CompressionMode.Decompress, leaveOpen: true);
         var written = 0;
-        while (written < dst.Length)
+        try
         {
-            var n = z.Read(dst.Slice(written));
-            if (n == 0) break;
-            written += n;
+            while (written < dst.Length)
+            {
+                var n = z.Read(dst.Slice(written));
+                if (n == 0) break;
+                written += n;
+            }
+        }
+        catch (IOException e)
+        {
+            // zlib reports some corrupt streams as ZLibException (an IOException) rather than InvalidDataException.
+            throw new InvalidDataException("Deflate segment is corrupt", e);
         }
         return written;
     }
-
-    private static ushort ReadUInt16(ReadOnlySpan<byte> bytes, bool fileIsLE) => fileIsLE
-        ? BinaryPrimitives.ReadUInt16LittleEndian(bytes)
-        : BinaryPrimitives.ReadUInt16BigEndian(bytes);
-
-    private static uint ReadUInt32(ReadOnlySpan<byte> bytes, bool fileIsLE) => fileIsLE
-        ? BinaryPrimitives.ReadUInt32LittleEndian(bytes)
-        : BinaryPrimitives.ReadUInt32BigEndian(bytes);
-
-    private static float ReadSingle(ReadOnlySpan<byte> bytes, bool fileIsLE) => fileIsLE
-        ? BinaryPrimitives.ReadSingleLittleEndian(bytes)
-        : BinaryPrimitives.ReadSingleBigEndian(bytes);
-
-    private static uint ReadScalar(TiffFieldType type, ReadOnlySpan<byte> valueOrOffset, bool fileIsLE) => type switch
-    {
-        TiffFieldType.Byte  => valueOrOffset[0],
-        TiffFieldType.Short => ReadUInt16(valueOrOffset.Slice(0, 2), fileIsLE),
-        TiffFieldType.Long  => ReadUInt32(valueOrOffset.Slice(0, 4), fileIsLE),
-        _ => throw new NotSupportedException($"Scalar tag has unexpected type {type}"),
-    };
 }
 
 /// <summary>
@@ -908,4 +1042,8 @@ public sealed record TiffPage(
     bool FileIsLittleEndian,
     int TileWidth = 0,
     int TileHeight = 0,
-    int StoredBitsPerSample = 0);
+    int StoredBitsPerSample = 0)
+{
+    /// <summary>True when the file is a BigTIFF (version 43, 64-bit offsets) rather than a classic TIFF.</summary>
+    public bool IsBigTiff { get; init; }
+}

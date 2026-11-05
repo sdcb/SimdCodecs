@@ -30,9 +30,17 @@ internal readonly struct TiffSegmentGeometry
             ? Math.Min(tileHeight, height)
             : rowsPerStrip > 0 && rowsPerStrip <= height ? rowsPerStrip : height;
 
-        SegmentsAcross = isTiled ? (width + tileWidth - 1) / tileWidth : 1;
-        SegmentsDown = (height + SegmentHeight - 1) / SegmentHeight;
+        // Rounded up in long: width and height come from the file and may sit near int.MaxValue, where
+        // the int sum wraps negative. Both quotients are at most the dividend, so they fit an int.
+        SegmentsAcross = isTiled ? (int)(((long)width + tileWidth - 1) / tileWidth) : 1;
+        SegmentsDown = (int)(((long)height + SegmentHeight - 1) / SegmentHeight);
     }
+
+    /// <summary>
+    /// Segments in all planes, in long arithmetic: the int <see cref="TotalSegments"/> is only meaningful once
+    /// the parser has checked this against the offset array's length.
+    /// </summary>
+    public long TotalSegmentsLong => (long)PlaneCount * SegmentsAcross * SegmentsDown;
 
     public int Width { get; }
     public int Height { get; }

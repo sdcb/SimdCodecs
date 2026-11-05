@@ -29,7 +29,14 @@ public static class TiffTag
     public const ushort TileLength        = 323;
     public const ushort TileOffsets       = 324;
     public const ushort TileByteCounts    = 325;
+    public const ushort ColorMap          = 320;
+    public const ushort InkSet            = 332;
     public const ushort ExtraSamples      = 338;
+    public const ushort JpegTables        = 347;
+    public const ushort YCbCrCoefficients = 529;
+    public const ushort YCbCrSubSampling  = 530;
+    public const ushort YCbCrPositioning  = 531;
+    public const ushort ReferenceBlackWhite = 532;
     public const ushort SampleFormat      = 339;
     public const ushort SMinSampleValue   = 340;
     public const ushort SMaxSampleValue   = 341;

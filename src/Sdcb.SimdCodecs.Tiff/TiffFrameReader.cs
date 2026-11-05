@@ -32,12 +32,12 @@ internal sealed class TiffFrameReader(ReadOnlyMemory<byte> data, int pages) : II
         return TiffImageDecoder.TryDecodePage(data.Span, index, options, cancellationToken, out image);
     }
 
-    /// <remarks>The generic decode-then-convert path, as <see cref="TiffImageDecoder.TryDecodeInto"/>.</remarks>
+    /// <remarks>Written strip by strip into the destination, as <see cref="TiffImageDecoder.TryDecodeInto"/>.</remarks>
     public bool TryDecodeFrameInto(int index, Span<byte> destination, int stride, PixelFormat format,
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         Check(index);
-        return ImageDecoderFallback.TryDecodeFrameInto(this, index, destination, stride, format, options, cancellationToken);
+        return TiffImageDecoder.TryDecodePageInto(data.Span, index, destination, stride, format, options, cancellationToken);
     }
 
     public void Dispose() => _disposed = true;

@@ -20,4 +20,16 @@ public enum TiffFieldType : ushort
     SRational = 10,
     Float     = 11,
     Double    = 12,
+
+    /// <summary>A 32-bit offset to a sub-IFD (TIFF Technical Note 1).</summary>
+    Ifd       = 13,
+
+    /// <summary>BigTIFF: unsigned 64-bit integer.</summary>
+    Long8     = 16,
+
+    /// <summary>BigTIFF: signed 64-bit integer.</summary>
+    SLong8    = 17,
+
+    /// <summary>BigTIFF: a 64-bit offset to a sub-IFD.</summary>
+    Ifd8      = 18,
 }
