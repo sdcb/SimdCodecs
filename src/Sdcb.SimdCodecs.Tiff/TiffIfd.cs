@@ -77,6 +77,12 @@ internal static class TiffIfdParser
 {
     private const int EntrySize = 12;
 
+    /// <summary>
+    /// Samples per pixel a page may declare. Far above any real layout (RGB plus a few extra channels, or a
+    /// multispectral stack), and low enough that a pixel's bytes are a small number.
+    /// </summary>
+    internal const int MaxSamplesPerPixel = 256;
+
     /// <summary>Parses the 8-byte header at the start of <paramref name="src"/>; returns byte order and the first IFD's offset.</summary>
     public static (bool FileIsLE, long FirstIfd) ReadHeader<T>(ref T src) where T : ITiffBytes, allows ref struct
     {
@@ -221,6 +227,8 @@ internal static class TiffIfdParser
         // ---- Validate the layout we're willing to handle ------------------
         if (width <= 0 || height <= 0)
             throw new InvalidDataException("ImageWidth/ImageLength missing or invalid");
+        if (samplesPerPixel is < 1 or > MaxSamplesPerPixel)
+            throw new InvalidDataException($"SamplesPerPixel={samplesPerPixel} is outside 1..{MaxSamplesPerPixel}");
         if (planarConfig is not (TiffPlanarConfig.Contig or TiffPlanarConfig.Separate))
             throw new NotSupportedException($"PlanarConfig={(ushort)planarConfig} not supported");
 
@@ -250,8 +258,9 @@ internal static class TiffIfdParser
             planarConfig == TiffPlanarConfig.Separate, isTiled, rowsPerStrip, tileWidth, tileHeight);
 
         // Tiled pages and planar strips are checked exactly; a chunky strip list stays lenient (a short
-        // one delivers the rows it covers), as it always has.
-        if ((isTiled || geometry.IsPlanar) && segmentOffsets.Length < geometry.TotalSegments)
+        // one delivers the rows it covers), as it always has. In long: a tiny TileWidth on a wide page
+        // makes the int product wrap.
+        if ((isTiled || geometry.IsPlanar) && segmentOffsets.Length < geometry.TotalSegmentsLong)
             throw new InvalidDataException(isTiled
                 ? $"Tiled page lists {segmentOffsets.Length} tiles, but {geometry.SegmentsAcross}x{geometry.SegmentsDown}x{geometry.PlaneCount} plane(s) are needed to cover {width}x{height}"
                 : $"Planar page lists {segmentOffsets.Length} strips, but {geometry.SegmentsDown}x{geometry.PlaneCount} planes are needed");
@@ -287,6 +296,18 @@ internal static class TiffIfdParser
                 throw new NotSupportedException(
                     $"Predictor={predictor} not supported for {bitsPerSample}-bit {sampleFormat} samples");
         }
+
+        // Every buffer a reader sizes from this page, bounded once, in long arithmetic: width, height, tile size
+        // and samples per pixel are all file values, and their int products wrap. A decoded segment and a band of
+        // whole rows (what a tiled or planar page is assembled in) must each fit one .NET array.
+        var outBytesPerSample = (bitsPerSample < 8 ? 8 : bitsPerSample) / 8;
+        var bytesPerPixel = (long)samplesPerPixel * outBytesPerSample;
+        var segmentBytesPerPixel = geometry.IsPlanar ? outBytesPerSample : bytesPerPixel;
+        var segmentBytes = (isTiled ? tileWidth : (long)width) * segmentBytesPerPixel * geometry.SegmentHeight;
+        var bandBytes = width * bytesPerPixel * geometry.SegmentHeight;
+        if (segmentBytes > Array.MaxLength || bandBytes > Array.MaxLength)
+            throw new InvalidDataException(
+                $"A {(isTiled ? "tile" : "strip")} of this {width}x{height} page decodes to more than {Array.MaxLength} bytes");
 
         return new ParsedIfd(width, height, samplesPerPixel, bitsPerSample, compression, photometric,
             sampleFormat, planarConfig, predictor, rowsPerStrip, isTiled, tileWidth, tileHeight,

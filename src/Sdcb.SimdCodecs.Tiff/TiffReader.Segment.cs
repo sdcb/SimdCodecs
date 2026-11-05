@@ -146,7 +146,8 @@ public sealed class TiffPageLayout
     public int SegmentBytes(int segmentIndex)
     {
         var r = SegmentRectangle(segmentIndex);
-        return checked(r.Width * r.Height * BytesPerPixel);
+        // At most one decoded segment, which TiffIfdParser.Parse bounded to one array's length.
+        return (int)((long)r.Width * r.Height * BytesPerPixel);
     }
 
     internal TiffSegmentGeometry Geometry => _geometry;
@@ -266,7 +267,7 @@ public static partial class TiffReader
     {
         var rect = layout.SegmentRectangle(segmentIndex);   // throws ArgumentOutOfRangeException
         var bytesPerPixel = layout.BytesPerPixel;
-        var needed = checked(rect.Width * rect.Height * bytesPerPixel);
+        var needed = layout.SegmentBytes(segmentIndex);
         if (destination.Length < needed)
             throw new ArgumentException(
                 $"Destination holds {destination.Length} bytes but segment {segmentIndex} ({rect.Width}x{rect.Height}) needs {needed}",
@@ -313,7 +314,7 @@ public static partial class TiffReader
                 var offset = layout.Offsets[index];
                 var count = layout.ByteCounts[index];
                 // Declared, attacker-chosen: refuse before sizing a buffer off it.
-                if (count > src.Length || offset + (long)count > src.Length)
+                if (count > src.Length || count > Array.MaxLength || offset + (long)count > src.Length)
                     throw new InvalidDataException($"Segment {index} extents out of bounds");
 
                 if (raw is null || raw.Length < count)

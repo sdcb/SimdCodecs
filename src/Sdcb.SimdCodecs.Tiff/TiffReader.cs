@@ -141,8 +141,14 @@ public static partial class TiffReader
 
         public bool BeginPage(int pageIndex, TiffPage description)
         {
-            _pixels = new byte[checked(description.Width * description.Height
-                * description.SamplesPerPixel * (description.BitsPerSample / 8))];
+            // The page's raster as one array: sized in long, since every factor is a file value. The parser has
+            // already bounded a row; the whole page is bounded here, where it is allocated.
+            var bytes = (long)description.Width * description.Height * description.SamplesPerPixel
+                * (description.BitsPerSample / 8);
+            if (bytes > Array.MaxLength)
+                throw new InvalidDataException(
+                    $"The {description.Width}x{description.Height} page decodes to {bytes} bytes, more than one array holds; read it by segment (ReadSegment) or stream it (ReadInto)");
+            _pixels = new byte[bytes];
             _position = 0;
             return true;
         }
@@ -331,9 +337,10 @@ public static partial class TiffReader
         // which also stops a page that declares a tile taller than itself from sizing the buffers off
         // that declaration rather than off the picture.
         var tileRowBytes = tileWidth * segBytesPerPixel;
+        // TiffIfdParser.Parse bounded both products to one array's length, so neither wraps.
         var segmentCapacity = isTiled
-            ? checked(tileRowBytes * bandRows)
-            : checked(bandRows * width * segBytesPerPixel);
+            ? tileRowBytes * bandRows
+            : bandRows * width * segBytesPerPixel;
 
         // ONE scratch buffer for every segment, plus ONE MemoryStream for the inflate path -- not one
         // of each per segment. A writer emitting ZIP almost always emits RowsPerStrip=1, so a real
@@ -348,17 +355,19 @@ public static partial class TiffReader
         // assembled unconditionally: a tile as wide as the image would already BE a band and could go
         // straight through, but that needs width to be a multiple of 16 (the spec's tile rule) and is
         // not worth a second path through this loop.
-        byte[]? band = isTiled || planar ? ArrayPool<byte>.Shared.Rent(checked(bandRows * bytesPerRow)) : null;
+        byte[]? band = isTiled || planar ? ArrayPool<byte>.Shared.Rent(bandRows * bytesPerRow) : null;
 
         byte[]? inflateSource = null;
         MemoryStream? scratchStream = null;
         var staging = format.NeedsStaging ? new SegmentStaging() : null;
         if (compression is TiffCompression.Deflate or TiffCompression.ZlibPkzip)
         {
-            var maxSegment = 0;
+            // Sized from the declared byte counts, which are not validated until each segment is read: a count
+            // past the end of the file is clamped to the file, since DecodeSegment refuses it before any copy.
+            var maxSegment = 0L;
             foreach (var byteCount in segmentByteCounts)
-                maxSegment = Math.Max(maxSegment, (int)byteCount);
-            inflateSource = ArrayPool<byte>.Shared.Rent(maxSegment);
+                maxSegment = Math.Max(maxSegment, Math.Min(byteCount, tiff.Length));
+            inflateSource = ArrayPool<byte>.Shared.Rent((int)maxSegment);
             // writable + publiclyVisible so each segment is presented by moving Length/Position
             // rather than by constructing a new stream over a new array.
             scratchStream = new MemoryStream(inflateSource, 0, inflateSource.Length, writable: true,
@@ -486,11 +495,11 @@ public static partial class TiffReader
         int index, SegmentFormat format, SegmentStaging? staging, bool passFileBytesThrough, byte[]? scratch,
         byte[]? inflateSource, MemoryStream? scratchStream, int capacity)
     {
-        var start = (int)offset;
-        var length = (int)byteCount;
-        if (start < 0 || length < 0 || start + length > tiff.Length)
+        // In long: offset and count are file values, and their int sum wraps.
+        if ((long)offset + byteCount > tiff.Length)
             throw new InvalidDataException($"Segment {index} extents out of bounds");
-        var segment = tiff.Slice(start, length);
+        var length = (int)byteCount;
+        var segment = tiff.Slice((int)offset, length);
 
         if (passFileBytesThrough)
             return segment[..Math.Min(segment.Length, capacity)];
@@ -841,11 +850,19 @@ public static partial class TiffReader
         // must not take the shared source with it.
         using var z = new ZLibStream(src, CompressionMode.Decompress, leaveOpen: true);
         var written = 0;
-        while (written < dst.Length)
+        try
         {
-            var n = z.Read(dst.Slice(written));
-            if (n == 0) break;
-            written += n;
+            while (written < dst.Length)
+            {
+                var n = z.Read(dst.Slice(written));
+                if (n == 0) break;
+                written += n;
+            }
+        }
+        catch (IOException e)
+        {
+            // zlib reports some corrupt streams as ZLibException (an IOException) rather than InvalidDataException.
+            throw new InvalidDataException("Deflate segment is corrupt", e);
         }
         return written;
     }
