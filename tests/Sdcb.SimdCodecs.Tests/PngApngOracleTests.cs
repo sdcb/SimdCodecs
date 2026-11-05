@@ -205,7 +205,7 @@ public sealed class PngApngOracleTests
         ours[0].ShouldBe(theirs.AsSpan(0, w * h * 4).ToArray());
 
         // The specification gives OVER in real numbers and leaves the rounding of the integer samples to the decoder. ffmpeg 8.1.2
-        // computes the colour in its own integer approximation (a little under the exact value); we round to nearest (see
+        // computes the colour in its own integer approximation; we round to nearest (see
         // PngAnimationDecoder). The alpha of the result is exactly the same, so are all pixels whose source is transparent or opaque or whose
         // backdrop is transparent, and no colour sample is more than 2 apart.
         var second = theirs.AsSpan(w * h * 4, w * h * 4);

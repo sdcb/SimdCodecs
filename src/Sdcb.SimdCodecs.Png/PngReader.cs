@@ -809,7 +809,16 @@ public static class PngReader
 
         public byte Read(Span<byte> row)
         {
-            var got = ReadFully(_z, _filterType) + ReadFully(_z, row);
+            int got;
+            try
+            {
+                got = ReadFully(_z, _filterType) + ReadFully(_z, row);
+            }
+            catch (IOException e)
+            {
+                // zlib's own error codes (a corrupt stream that is none of the cases DeflateStream names) arrive as an IOException.
+                throw new InvalidDataException("The image data is not a valid zlib stream", e);
+            }
             _inflated += got;
             if (got != row.Length + 1)
                 throw LengthMismatch(_inflated, expected, width, height, bytesPerPixel);
@@ -819,7 +828,16 @@ public static class PngReader
         public void Finish()
         {
             // A byte past the last row is as much a mismatch as a row short.
-            if (_z.Read(_filterType) != 0)
+            int extra;
+            try
+            {
+                extra = _z.Read(_filterType);
+            }
+            catch (IOException e)
+            {
+                throw new InvalidDataException("The image data is not a valid zlib stream", e);
+            }
+            if (extra != 0)
                 throw LengthMismatch(expected + 1, expected, width, height, bytesPerPixel);
         }
 
