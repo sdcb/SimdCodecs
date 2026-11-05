@@ -33,7 +33,7 @@ namespace Sdcb.SimdCodecs.Png;
 /// </summary>
 public static class PngWriter
 {
-    private static readonly byte[] Signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    internal static readonly byte[] Signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
     /// <summary>
     /// Encode an 8-bit RGBA pixel buffer (row-major, no padding) as a PNG.
@@ -268,11 +268,7 @@ public static class PngWriter
         int sampleBytes, int srcChannels, int dstChannels, PngWriteOptions options)
     {
         // Refuse a bad keyword before the pixels are deflated, not after: the text is written last.
-        if (options.Text is { Count: > 0 } textToCheck)
-        {
-            foreach (var entry in textToCheck)
-                ValidateKeyword(entry.Keyword);
-        }
+        ValidateText(options);
 
         PngEncodePlan plan;
         if (options.LosslessReduction)
@@ -291,7 +287,25 @@ public static class PngWriter
 
         using var ms = new MemoryStream();
         ms.Write(Signature);
+        WritePreImageChunks(ms, width, height, plan, options);
+        WriteIdatChunk(ms, samples, width, height, plan, options);
+        WritePostImageChunks(ms, options);
+        return ms.ToArray();
+    }
 
+    /// <summary>Throws for a text keyword the spec does not allow, before any pixel is deflated: the text is written last.</summary>
+    internal static void ValidateText(PngWriteOptions options)
+    {
+        if (options.Text is { Count: > 0 } textToCheck)
+        {
+            foreach (var entry in textToCheck)
+                ValidateKeyword(entry.Keyword);
+        }
+    }
+
+    /// <summary>IHDR, the colour-space, resolution and palette chunks: everything that precedes the image data, after the signature.</summary>
+    internal static void WritePreImageChunks(MemoryStream ms, int width, int height, PngEncodePlan plan, PngWriteOptions options)
+    {
         // IHDR: width, height, bit depth, color type, compression (0=deflate),
         // filter (0=adaptive), interlace (0).
         Span<byte> ihdr = stackalloc byte[13];
@@ -370,9 +384,11 @@ public static class PngWriter
             WriteChunk(ms, "PLTE"u8, palette);
         if (plan.Transparency is { } transparency)
             WriteChunk(ms, "tRNS"u8, transparency);
+    }
 
-        WriteIdatChunk(ms, samples, width, height, plan, options);
-
+    /// <summary>The chunks after the image data: eXIf, text, IEND.</summary>
+    internal static void WritePostImageChunks(MemoryStream ms, PngWriteOptions options)
+    {
         // eXIf is allowed before OR after IDAT per the PNG extensions; we put
         // it after so the pixel-critical chunks aren't pushed further from
         // the header. Mirror chunk consumers expect either order.
@@ -388,7 +404,6 @@ public static class PngWriter
         }
 
         WriteChunk(ms, "IEND"u8, ReadOnlySpan<byte>.Empty);
-        return ms.ToArray();
     }
 
     /// <summary>
@@ -408,7 +423,15 @@ public static class PngWriter
     /// the bytes while they are still in registers.</para>
     /// </remarks>
     private static void WriteIdatChunk(MemoryStream ms, ReadOnlySpan<byte> samples, int width, int height,
-        PngEncodePlan plan, PngWriteOptions options)
+        PngEncodePlan plan, PngWriteOptions options) =>
+        WriteImageDataChunk(ms, "IDAT"u8, null, samples, width, height, plan, options);
+
+    /// <summary>
+    /// <see cref="WriteIdatChunk"/> for any image-data chunk: an <c>fdAT</c> carries its sequence number
+    /// (<paramref name="sequence"/>) before the zlib stream, which the chunk length and CRC cover.
+    /// </summary>
+    internal static void WriteImageDataChunk(MemoryStream ms, ReadOnlySpan<byte> type, uint? sequence,
+        ReadOnlySpan<byte> samples, int width, int height, PngEncodePlan plan, PngWriteOptions options)
     {
         var stride = plan.RowBytes(width);
 
@@ -416,7 +439,14 @@ public static class PngWriter
         Span<byte> placeholder = stackalloc byte[4];
         ms.Write(placeholder);
         long typeAndDataStart = ms.Position;
-        ms.Write("IDAT"u8);
+        ms.Write(type);
+        if (sequence is { } number)
+        {
+            Span<byte> sequenceBytes = stackalloc byte[4];
+            WriteBE(sequenceBytes, number);
+            ms.Write(sequenceBytes);
+        }
+
 
         var fragments = EffectiveFragmentCount(options.ParallelFragments, height, stride);
         if (fragments > 1)
@@ -432,7 +462,7 @@ public static class PngWriter
         }
 
         long idatEnd = ms.Position;
-        long idatDataLength = idatEnd - typeAndDataStart - 4; // -4 for "IDAT" type
+        long idatDataLength = idatEnd - typeAndDataStart - type.Length; // the type is not data; an fdAT's sequence number is
         Span<byte> lenBuf = stackalloc byte[4];
         WriteBE(lenBuf, (uint)idatDataLength);
         ms.Position = lengthFieldPos;
@@ -488,7 +518,7 @@ public static class PngWriter
     /// re-reads one source row and proceeds. That is the property that makes the parallel path
     /// possible at all, and it is a fact about the format rather than anything arranged here.
     /// </remarks>
-    private static uint CompressRows(Stream destination, ReadOnlySpan<byte> samples,
+    internal static uint CompressRows(Stream destination, ReadOnlySpan<byte> samples,
         int firstRow, int rowCount, int width, PngEncodePlan plan, CompressionLevel level, bool checksum)
     {
         // Indexed and sub-byte rows are written unfiltered too (PngEncodePlan.Filtered).
@@ -860,7 +890,7 @@ public static class PngWriter
                 nameof(PngWriteOptions.Text));
     }
 
-    private static void WriteChunk(Stream output, ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)
+    internal static void WriteChunk(Stream output, ReadOnlySpan<byte> type, ReadOnlySpan<byte> data)
     {
         Span<byte> lenBuf = stackalloc byte[4];
         WriteBE(lenBuf, (uint)data.Length);
@@ -875,7 +905,7 @@ public static class PngWriter
         output.Write(crcBuf);
     }
 
-    private static void WriteBE(Span<byte> dst, uint value)
+    internal static void WriteBE(Span<byte> dst, uint value)
     {
         dst[0] = (byte)(value >> 24);
         dst[1] = (byte)(value >> 16);

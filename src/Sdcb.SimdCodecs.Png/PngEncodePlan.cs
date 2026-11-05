@@ -134,6 +134,59 @@ internal sealed class PngEncodePlan
         var pixels = width * height;
         var sourceIsGrey = channels <= 2;
         var s = ops.Scan(samples, pixels, trackPalette: !(keepColourModel && sourceIsGrey));
+        return Choose(ops, s, channels, stride, sampleBytes, keepColourModel, samples, pixels, null);
+    }
+
+    /// <summary>
+    /// The smallest exact layout that holds every pixel of every part: <see cref="Analyze(ReadOnlySpan{byte}, int, int, int, int, int, bool)"/>
+    /// over the union of the parts (the rectangles of an animation's frames, all in one source layout), without joining them in memory.
+    /// </summary>
+    public static PngEncodePlan AnalyzeUnion(IReadOnlyList<ReadOnlyMemory<byte>> parts, int channels, int stride, int sampleBytes,
+        bool keepColourModel)
+    {
+        var ops = OpsFor(channels, stride, sampleBytes);
+        var sourceIsGrey = channels <= 2;
+        var pixelBytes = stride * sampleBytes;
+        Stats? merged = null;
+        foreach (var part in parts)
+        {
+            var s = ops.Scan(part.Span, part.Length / pixelBytes, trackPalette: !(keepColourModel && sourceIsGrey));
+            merged = merged is { } m ? Merge(m, s) : s;
+        }
+        if (merged is not { } stats)
+            throw new ArgumentException("An image needs at least one part", nameof(parts));
+        return Choose(ops, stats, channels, stride, sampleBytes, keepColourModel, default, 0, parts);
+    }
+
+    // What one scan learned, joined with what another learned: every property is a conjunction, the grey depth a maximum,
+    // the transparent colour must be the same one, and the palette the union (gone past 256 colours).
+    private static Stats Merge(Stats a, Stats b)
+    {
+        var merged = new Stats
+        {
+            Opaque = a.Opaque && b.Opaque,
+            BinaryAlpha = a.BinaryAlpha && b.BinaryAlpha,
+            Grey = a.Grey && b.Grey,
+            Fits8 = a.Fits8 && b.Fits8,
+            KeyCandidate = a.KeyCandidate && b.KeyCandidate,
+            SawTransparent = a.SawTransparent || b.SawTransparent,
+            GreyDepth = Math.Max(a.GreyDepth, b.GreyDepth),
+            KeyR = a.SawTransparent ? a.KeyR : b.KeyR,
+            KeyG = a.SawTransparent ? a.KeyG : b.KeyG,
+            KeyB = a.SawTransparent ? a.KeyB : b.KeyB,
+        };
+        if (a.SawTransparent && b.SawTransparent && (a.KeyR != b.KeyR || a.KeyG != b.KeyG || a.KeyB != b.KeyB))
+            merged.KeyCandidate = false;
+        if (a.Map is not null && b.Map is not null && a.Map.TryAddAll(b.Map))
+            merged.Map = a.Map;
+        return merged;
+    }
+
+    // `samples` / `parts`: the pixels again, for the one question the scans cannot answer (does an opaque pixel have the transparent colour).
+    private static PngEncodePlan Choose(IOps ops, Stats s, int channels, int stride, int sampleBytes, bool keepColourModel,
+        ReadOnlySpan<byte> samples, int pixels, IReadOnlyList<ReadOnlyMemory<byte>>? parts)
+    {
+        var sourceIsGrey = channels <= 2;
         var wide = sampleBytes == 2 && !s.Fits8;
         var hasAlpha = channels is 2 or 4;
         var needAlpha = hasAlpha && !s.Opaque;
@@ -143,7 +196,9 @@ internal sealed class PngEncodePlan
         var keyable = needAlpha && s.BinaryAlpha && s.KeyCandidate
             && !(s.Map is { } seen
                 ? seen.IndexOf((uint)((s.KeyR >> shift) | ((s.KeyG >> shift) << 8) | ((s.KeyB >> shift) << 16) | (0xFFu << 24))) >= 0
-                : ops.OpaqueHasColour(samples, pixels, s.KeyR, s.KeyG, s.KeyB));
+                : parts is null
+                    ? ops.OpaqueHasColour(samples, pixels, s.KeyR, s.KeyG, s.KeyB)
+                    : parts.Any(part => ops.OpaqueHasColour(part.Span, part.Length / (stride * sampleBytes), s.KeyR, s.KeyG, s.KeyB)));
 
         // Candidates in tie-break order: greyscale, indexed, truecolour.
         (byte ColorType, byte Depth, bool Key) best = default;
@@ -684,6 +739,17 @@ internal sealed class PngEncodePlan
         private readonly List<uint> _colours = [];
 
         public int Count => _colours.Count;
+
+        /// <summary>Adds every colour of <paramref name="other"/>; false when that takes the palette past 256 colours.</summary>
+        public bool TryAddAll(PaletteMap other)
+        {
+            foreach (var colour in other._colours)
+            {
+                if (Add(colour) < 0)
+                    return false;
+            }
+            return true;
+        }
 
         private static int Home(uint colour) => (int)((colour * 0x9E3779B1u) >> 23);
 
