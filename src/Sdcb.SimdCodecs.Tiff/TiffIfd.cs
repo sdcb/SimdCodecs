@@ -279,6 +279,16 @@ internal static class TiffIfdParser
         if (fillOrder is not (1 or 2))
             throw new InvalidDataException($"FillOrder={fillOrder} is not 1 or 2");
 
+        // A predictor is a transform of the SAMPLES before a lossless byte coder. TIFF 6.0 section 14 defines it
+        // for LZW and the Adobe Deflate technical note for Deflate; it is also honoured for uncompressed and
+        // PackBits data, which are byte-transparent, so a writer that differenced before them meant it. For the
+        // codings that never see samples as bytes -- CCITT fax (bilevel runs) and JPEG (DCT coefficients) -- the
+        // tag has no meaning: it is ignored, as are whatever values a writer left in it (seen in the wild:
+        // Predictor=24016 on a JPEG page).
+        if (compression is not (TiffCompression.Uncompressed or TiffCompression.Lzw or TiffCompression.Deflate
+            or TiffCompression.ZlibPkzip or TiffCompression.PackBits))
+            predictor = TiffPredictor.None;
+
         // Refuse an unhandled predictor rather than decoding past it. An un-inverted predictor
         // yields a full-size, entirely plausible buffer of WRONG pixels -- no exception, no
         // short read, correct dimensions -- so staying quiet here is indistinguishable from
