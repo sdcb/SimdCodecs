@@ -44,7 +44,7 @@ public sealed class RasterImage : IDecodedImage
         Channels = channels;
         SampleFormat = sampleFormat;
         _bitDepth = bitDepth;
-        _length = checked(width * height * channels * BytesPerSample(sampleFormat));
+        _length = RasterSize.Elements(width, height, channels * BytesPerSample(sampleFormat));
         ColorEncoding = colorEncoding ?? ColorEncoding.AssumedSrgb;
         Metadata = metadata ?? ImageMetadata.Empty;
     }
@@ -62,7 +62,8 @@ public sealed class RasterImage : IDecodedImage
     /// <param name="colorEncoding">How the samples encode colour; null means <see cref="ColorEncoding.AssumedSrgb"/>.</param>
     /// <param name="bitDepth">Bits of real precision per sample; 0 means the full width of <paramref name="sampleFormat"/>.</param>
     /// <param name="metadata">The file's metadata blocks (Exif, XMP, ICC profile).</param>
-    /// <exception cref="ArgumentException">An argument is out of range, or <paramref name="pixels"/> is too small.</exception>
+    /// <exception cref="ArgumentException">An argument is out of range (the image needs more than <see cref="Array.MaxLength"/>
+    /// bytes, among others), or <paramref name="pixels"/> is too small.</exception>
     public static RasterImage Wrap(int width, int height, int channels, SampleFormat sampleFormat, byte[] pixels,
         ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null)
     {
@@ -106,6 +107,8 @@ public sealed class RasterImage : IDecodedImage
     /// <param name="colorEncoding">How the samples encode colour; null means <see cref="ColorEncoding.AssumedSrgb"/>.</param>
     /// <param name="bitDepth">Bits of real precision per sample; 0 means the full width of <paramref name="sampleFormat"/>.</param>
     /// <param name="metadata">The file's metadata blocks (Exif, XMP, ICC profile).</param>
+    /// <exception cref="ArgumentOutOfRangeException">An argument is out of range, or the image needs more than
+    /// <see cref="Array.MaxLength"/> bytes (2 GB), the most one array holds.</exception>
     public static RasterImage Allocate(int width, int height, int channels, SampleFormat sampleFormat,
         ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null)
     {
@@ -127,6 +130,8 @@ public sealed class RasterImage : IDecodedImage
     /// <param name="colorEncoding">How the samples encode colour; null means <see cref="ColorEncoding.AssumedSrgb"/>.</param>
     /// <param name="bitDepth">Bits of real precision per sample; 0 means the full width of <paramref name="sampleFormat"/>.</param>
     /// <param name="metadata">The file's metadata blocks (Exif, XMP, ICC profile).</param>
+    /// <exception cref="ArgumentOutOfRangeException">An argument is out of range, or the image needs more than
+    /// <see cref="Array.MaxLength"/> bytes (2 GB), the most one array holds.</exception>
     public static RasterImage Rent(int width, int height, int channels, SampleFormat sampleFormat, ArrayPool<byte>? pool = null,
         ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null)
     {
@@ -140,6 +145,8 @@ public sealed class RasterImage : IDecodedImage
     /// Creates an image in new or pooled memory: <see cref="Rent"/> from <paramref name="pool"/> when it is not null,
     /// otherwise <see cref="Allocate"/>. What a codec calls with <see cref="DecodeOptions.Pool"/>.
     /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">An argument is out of range, or the image needs more than
+    /// <see cref="Array.MaxLength"/> bytes (2 GB), the most one array holds.</exception>
     public static RasterImage Create(int width, int height, int channels, SampleFormat sampleFormat, ArrayPool<byte>? pool,
         ColorEncoding? colorEncoding = null, int bitDepth = 0, ImageMetadata? metadata = null) =>
         pool is null
@@ -227,7 +234,7 @@ public sealed class RasterImage : IDecodedImage
             throw new NotSupportedException(
                 $"{SampleFormat} rasters cannot be expanded to 8-bit RGBA without an explicit tone/stretch policy; read Pixels instead.");
         }
-        var dst = new byte[checked(Width * Height * 4)];
+        var dst = new byte[RasterSize.Elements(Width, Height, 4)];
         // Tightly packed on both sides, so the whole raster is one long row.
         PixelConverter.ConvertRow(Pixels, Channels, SampleFormat, dst, PixelFormat.Rgba32, Width * Height);
         return dst;
@@ -238,7 +245,7 @@ public sealed class RasterImage : IDecodedImage
     {
         if (SampleFormat == SampleFormat.Float32)
             throw new NotSupportedException($"{SampleFormat} rasters have no integer projection without a tone/stretch policy; read Pixels instead.");
-        var dst = new ushort[checked(Width * Height * 4)];
+        var dst = new ushort[RasterSize.Elements(Width, Height, 4, sizeof(ushort))];
         PixelConverter.ConvertRow(Pixels, Channels, SampleFormat, MemoryMarshal.AsBytes(dst.AsSpan()), PixelFormat.Rgba64, Width * Height);
         return dst;
     }
@@ -250,7 +257,7 @@ public sealed class RasterImage : IDecodedImage
     /// <inheritdoc />
     public float[] ToFloats()
     {
-        var dst = new float[checked(Width * Height * 4)];
+        var dst = new float[RasterSize.Elements(Width, Height, 4, sizeof(float))];
         ExpandToFloats(dst);
         return dst;
     }
@@ -265,7 +272,7 @@ public sealed class RasterImage : IDecodedImage
     public void ExpandToFloats(Span<float> destination)
     {
         var pixelCount = Width * Height;
-        if (destination.Length < checked(pixelCount * 4))
+        if (destination.Length < (long)pixelCount * 4)
             throw new ArgumentException("Destination too small for Width*Height*4 RGBA floats.", nameof(destination));
 
         var pixels = Pixels;

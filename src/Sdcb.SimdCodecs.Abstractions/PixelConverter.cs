@@ -152,7 +152,7 @@ public static class PixelConverter
     {
         ArgumentOutOfRangeException.ThrowIfNegative(width);
         ArgumentOutOfRangeException.ThrowIfNegative(height);
-        var result = new byte[checked(width * height * destinationFormat.BytesPerPixel)];
+        var result = new byte[RasterSize.Elements(width, height, destinationFormat.BytesPerPixel)];
         Convert(source, sourceStride, sourceFormat, result, 0, destinationFormat, width, height);
         return result;
     }

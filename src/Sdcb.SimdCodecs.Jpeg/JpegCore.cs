@@ -237,6 +237,13 @@ internal ref struct JpegCore
     private byte[]? _packScratch;     // one RGBA row, for the 3- and 1-byte formats
     private bool _lumaOnly;           // Gray8 from a YCbCr frame: Y is the output, chroma is skipped
     private int _outRow;
+    private int _outBpp;              // bytes per pixel of _format
+    // Output window (SetOutputWindow): only rows _winY0.._winY1 and columns _winX0.._winX0+_winW are written, row
+    // _winY0 at the start of _dest. Rows outside it are neither upsampled nor colour-converted; every row inside is
+    // computed exactly as in a whole-image decode, so the window's pixels are the whole decode's.
+    private bool _hasWindow;
+    private int _winX0, _winY0, _winW, _winY1;
+    private byte[]? _winScratch;      // one full output row, when the window drops columns
     private bool _isRgb;
     private bool _chroma16;
 
@@ -287,8 +294,30 @@ internal ref struct JpegCore
         DecodeHeader(ScanMode.Load);
         OutX = (ImgX + _scale - 1) / _scale;
         OutY = (ImgY + _scale - 1) / _scale;
-        if ((long)OutX * OutY * 4 > int.MaxValue)
-            throw Err("too large");
+        // No limit on OutX × OutY here: the decoder only holds MCU-row strips, and the caller's destination (a span,
+        // so under 2 GB) bounds what is written. Callers that allocate a whole image check with EnsureFitsOneBuffer.
+    }
+
+    /// <summary>
+    /// Throws when an <see cref="OutX"/> × <see cref="OutY"/> image of <paramref name="bytesPerPixel"/>-byte pixels
+    /// does not fit one .NET array, pointing at scaled and region decoding.
+    /// </summary>
+    internal readonly void EnsureFitsOneBuffer(int bytesPerPixel)
+    {
+        var bytes = (long)OutX * OutY * bytesPerPixel;
+        if (bytes > Array.MaxLength)
+            throw new InvalidDataException(JpegDecoder.TooLargeMessage(OutX, OutY, bytesPerPixel, bytes));
+    }
+
+    /// <summary>
+    /// After <see cref="Begin"/>, before <see cref="DecodeInto"/>: write only the <paramref name="width"/> ×
+    /// <paramref name="height"/> output pixels at (<paramref name="x"/>, <paramref name="y"/>), row <paramref name="y"/>
+    /// landing at the start of the destination. The caller checks the window lies inside OutX × OutY.
+    /// </summary>
+    internal void SetOutputWindow(int x, int y, int width, int height)
+    {
+        _hasWindow = true;
+        (_winX0, _winY0, _winW, _winY1) = (x, y, width, y + height);
     }
 
     /// <summary>
@@ -302,6 +331,16 @@ internal ref struct JpegCore
         _stride = stride;
         _format = format;
         _outRow = 0;
+        _outBpp = format switch
+        {
+            JpegPixelFormat.Rgba32 or JpegPixelFormat.Bgra32 => 4,
+            JpegPixelFormat.Rgb24 or JpegPixelFormat.Bgr24 => 3,
+            _ => 1,
+        };
+        if (!_hasWindow)
+            (_winX0, _winY0, _winW, _winY1) = (0, 0, OutX, OutY);
+        if (_winX0 != 0 || _winW != OutX)
+            _winScratch = ArrayPool<byte>.Shared.Rent(OutX * _outBpp);
         _mode = _progressive ? DecodeMode.Coefficients : DecodeMode.Undecided;
         _streamDone = false;
         PrepareOutput();
@@ -417,6 +456,9 @@ internal ref struct JpegCore
     {
         for (; m < _imgMcuY; ++m)
         {
+            // Zero samples cannot fail: once a window's rows are written, the rest changes nothing.
+            if (_hasWindow && _outRow >= _winY1)
+                return;
             for (var k = 0; k < ImgN; ++k)
             {
                 var c = _comp[k];
@@ -453,6 +495,14 @@ internal ref struct JpegCore
     /// <summary>Upsamples + colour-converts output row <paramref name="j"/> into RGBA.</summary>
     private void EmitRow(int j)
     {
+        if (j < _winY0 || j >= _winY1)
+        {
+            // Outside the window: keep the vertical upsampling position in step, compute nothing.
+            for (var k = 0; k < ImgN; ++k)
+                AdvanceLine(_comp[k]);
+            return;
+        }
+
         var skipUpsample = (Ablation & JpegAblation.SkipUpsample) != 0;
         var skipColor = (Ablation & JpegAblation.SkipColor) != 0;
         var chroma16 = _chroma16;
@@ -497,12 +547,13 @@ internal ref struct JpegCore
         if (_format == JpegPixelFormat.Gray8 && (ImgN == 1 || _lumaOnly))
         {
             // A greyscale frame's samples, or a YCbCr frame's Y: the grey output as it is.
-            y[..OutX].CopyTo(_dest.Slice(j * _stride, OutX));
+            y[..OutX].CopyTo(TargetRow(j));
+            FlushRow(j);
             return;
         }
 
         var bgr = _format is JpegPixelFormat.Bgra32 or JpegPixelFormat.Bgr24;
-        var outRow = _packScratch != null ? _packScratch.AsSpan(0, OutX * 4) : _dest.Slice(j * _stride, OutX * 4);
+        var outRow = _packScratch != null ? _packScratch.AsSpan(0, OutX * 4) : TargetRow(j);
 
         if (ImgN == 3)
         {
@@ -539,6 +590,19 @@ internal ref struct JpegCore
 
         if (_packScratch != null)
             PackRow(j, outRow);
+        FlushRow(j);
+    }
+
+    /// <summary>Where output row <paramref name="j"/> (inside the window) is written: its destination row, or the
+    /// full-row scratch when the window drops columns.</summary>
+    private readonly Span<byte> TargetRow(int j) =>
+        _winScratch != null ? _winScratch.AsSpan(0, OutX * _outBpp) : _dest.Slice((j - _winY0) * _stride, OutX * _outBpp);
+
+    /// <summary>Copies the window's columns of row <paramref name="j"/> from the scratch row to the destination.</summary>
+    private readonly void FlushRow(int j)
+    {
+        if (_winScratch != null)
+            _winScratch.AsSpan(_winX0 * _outBpp, _winW * _outBpp).CopyTo(_dest.Slice((j - _winY0) * _stride, _winW * _outBpp));
     }
 
     /// <summary>Writes the RGBA (or BGRA) row <paramref name="rgba"/> as the 3- or 1-byte output format.</summary>
@@ -546,9 +610,9 @@ internal ref struct JpegCore
     private readonly void PackRow(int j, ReadOnlySpan<byte> rgba)
     {
         if (_format == JpegPixelFormat.Gray8)
-            PixelConverter.ConvertRow(rgba, PixelFormat.Rgba32, _dest.Slice(j * _stride, OutX), PixelFormat.Gray8, OutX);
+            PixelConverter.ConvertRow(rgba, PixelFormat.Rgba32, TargetRow(j), PixelFormat.Gray8, OutX);
         else
-            JpegColor.PackRgb24(_dest.Slice(j * _stride, OutX * 3), rgba, OutX);
+            JpegColor.PackRgb24(TargetRow(j), rgba, OutX);
     }
 
     private readonly ReadOnlySpan<byte> Row(int k) => _comp[k].RowArr.AsSpan(_comp[k].RowOff);
@@ -585,6 +649,12 @@ internal ref struct JpegCore
         {
             ArrayPool<byte>.Shared.Return(_packScratch);
             _packScratch = null;
+        }
+
+        if (_winScratch != null)
+        {
+            ArrayPool<byte>.Shared.Return(_winScratch);
+            _winScratch = null;
         }
 
         for (var i = 0; i < 4; ++i)
@@ -1668,6 +1738,10 @@ internal ref struct JpegCore
 
         for (var m = 0; m < _imgMcuY; ++m)
         {
+            // Every scan is decoded by now; the inverse transforms below cannot fail, so once a window's rows are
+            // written the remaining MCU rows change nothing.
+            if (_hasWindow && _outRow >= _winY1)
+                return;
             for (var n = 0; n < ImgN; ++n)
             {
                 var c = _comp[n];
@@ -1974,8 +2048,11 @@ internal ref struct JpegCore
         if (scan != ScanMode.Load)
             return;
 
-        if ((long)ImgX * ImgY * ImgN > int.MaxValue)
-            throw Err("too large");
+        // No limit on ImgX × ImgY here: a streamed frame holds only two MCU rows of samples per component. A frame
+        // that keeps its coefficients (progressive, or baseline split over several scans) is bounded where they are
+        // allocated (CheckCoefficientBudget).
+        if (_progressive)
+            CheckCoefficientBudget();
 
         var hMax = 1;
         var vMax = 1;
@@ -2036,6 +2113,20 @@ internal ref struct JpegCore
             comp.CoeffH = _imgMcuY * comp.V;
             if (_progressive)
                 AllocateCoefficients(comp, written: false);
+        }
+    }
+
+    /// <summary>
+    /// A frame whose coefficients are held whole (2 bytes per sample, every component at once) is limited to
+    /// <c>int.MaxValue</c> samples in all, as every frame used to be: the bound on what a short stream can make the
+    /// decoder allocate.
+    /// </summary>
+    private readonly void CheckCoefficientBudget()
+    {
+        if ((long)ImgX * ImgY * ImgN > int.MaxValue)
+        {
+            throw Err($"a {ImgX}x{ImgY} {ImgN}-component {(_progressive ? "progressive" : "multi-scan")} frame is too large: " +
+                      $"its coefficients are held whole, which is limited to {int.MaxValue} samples");
         }
     }
 
@@ -2124,6 +2215,7 @@ internal ref struct JpegCore
                     else
                     {
                         _mode = DecodeMode.Coefficients;
+                        CheckCoefficientBudget();
                         for (var i = 0; i < ImgN; ++i)
                             AllocateCoefficients(_comp[i], written: true);
                     }

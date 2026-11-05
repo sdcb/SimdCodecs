@@ -60,7 +60,7 @@ public sealed class RasterImageV2Tests
             Should.Throw<ArgumentOutOfRangeException>(() => RasterImage.Allocate(w, h, 1, SampleFormat.UInt8));
         foreach (var channels in new[] { 0, 5, -1 })
             Should.Throw<ArgumentOutOfRangeException>(() => RasterImage.Allocate(1, 1, channels, SampleFormat.UInt8));
-        Should.Throw<OverflowException>(() => RasterImage.Allocate(int.MaxValue, int.MaxValue, 4, SampleFormat.UInt16));
+        Should.Throw<ArgumentOutOfRangeException>(() => RasterImage.Allocate(int.MaxValue, int.MaxValue, 4, SampleFormat.UInt16));
     }
 
     [Fact]

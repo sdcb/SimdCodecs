@@ -93,11 +93,24 @@ public sealed class JpegImageDecoder : IImageDecoder
         // A one-component frame keeps its samples as stored (Gray8 output is exactly its Y);
         // every other frame is colour, written as RGB since JPEG carries no alpha.
         var (channels, format) = info.Components == 1 ? (1, JpegPixelFormat.Gray8) : (3, JpegPixelFormat.Rgb24);
-        var raster = RasterImage.Create(width, height, channels, SampleFormat.UInt8, options?.Pool,
+        // A region decodes natively (only the region's pixels are ever held), so the raster is the output's size. One
+        // that does not fit a single array (a gigapixel JPEG at 1/1) is refused before anything is allocated.
+        var region = options?.Region ?? new PixelRect(0, 0, width, height);
+        if ((long)region.Width * region.Height * channels > Array.MaxLength)
+            return false;
+        var raster = RasterImage.Create(region.Width, region.Height, channels, SampleFormat.UInt8, options?.Pool,
             metadata: ReadMetadata(data));
         try
         {
-            _ = JpegDecoder.DecodeTo(data, raster.WritablePixels, width * channels, format, scale, cancellationToken);
+            if (options?.Region is not null)
+            {
+                JpegDecoder.DecodeRegionTo(data, raster.WritablePixels, region.Width * channels, format, scale,
+                    region.X, region.Y, region.Width, region.Height, cancellationToken);
+            }
+            else
+            {
+                _ = JpegDecoder.DecodeTo(data, raster.WritablePixels, width * channels, format, scale, cancellationToken);
+            }
         }
         catch (Exception e)
         {
@@ -107,7 +120,7 @@ public sealed class JpegImageDecoder : IImageDecoder
             throw;
         }
 
-        image = options?.Region is { } region ? Crop(raster, region, options.Pool) : raster;
+        image = raster;
         return true;
     }
 
@@ -123,7 +136,7 @@ public sealed class JpegImageDecoder : IImageDecoder
         var scale = (JpegScale)(options?.ScaleDenominator ?? 1);
         var (width, height) = info.ScaledSize(scale);
         if (options?.Region is { } region)
-            return TryDecodeRegionInto(data, destination, stride, format, scale, width, height, region, cancellationToken);
+            return TryDecodeRegionInto(data, destination, stride, format, scale, region, cancellationToken);
         if (!PixelConverter.TryGetLayout(width, height, format, stride, destination.Length, out var rowStride))
             return false;
         try
@@ -137,34 +150,24 @@ public sealed class JpegImageDecoder : IImageDecoder
         }
     }
 
-    // A region: the native path for the format into a pooled full-size buffer, then the region copied out — so its
-    // pixels are exactly those of the whole decode, Gray8 included (still the stored Y plane). The whole frame is
-    // decoded: skipping MCU rows and columns outside the region is a 2.x performance item (known-gaps).
+    // A region: decoded natively straight into the destination. The decoder still entropy-decodes every MCU (a
+    // baseline stream has no index to seek by) but writes, upsamples and colour-converts only the region's rows and
+    // keeps only MCU-row strips, so a region of a gigapixel image needs no whole-image buffer. Its pixels are exactly
+    // those of the whole decode, Gray8 included (still the stored Y plane).
     private static bool TryDecodeRegionInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
-        JpegScale scale, int width, int height, PixelRect region, CancellationToken cancellationToken)
+        JpegScale scale, PixelRect region, CancellationToken cancellationToken)
     {
         if (!PixelConverter.TryGetLayout(region.Width, region.Height, format, stride, destination.Length, out var rowStride))
             return false;
-        var bpp = format.BytesPerPixel;
-        var rowBytes = width * bpp;
-        var band = System.Buffers.ArrayPool<byte>.Shared.Rent(checked(rowBytes * height));
         try
         {
-            _ = JpegDecoder.DecodeTo(data, band.AsSpan(0, rowBytes * height), rowBytes, ToJpegFormat(format), scale, cancellationToken);
-            for (var y = 0; y < region.Height; y++)
-            {
-                band.AsSpan((region.Y + y) * rowBytes + region.X * bpp, region.Width * bpp)
-                    .CopyTo(destination.Slice(y * rowStride, region.Width * bpp));
-            }
+            JpegDecoder.DecodeRegionTo(data, destination, rowStride, ToJpegFormat(format), scale,
+                region.X, region.Y, region.Width, region.Height, cancellationToken);
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException)
         {
             return false;
-        }
-        finally
-        {
-            System.Buffers.ArrayPool<byte>.Shared.Return(band);
         }
     }
 
@@ -217,10 +220,4 @@ public sealed class JpegImageDecoder : IImageDecoder
         Xmp = JpegMetadata.ReadXmp(data),
         Icc = JpegDecoder.TryReadIccProfile(data, out var icc) ? icc : default,
     };
-
-    private static RasterImage Crop(RasterImage raster, PixelRect region, System.Buffers.ArrayPool<byte>? pool)
-    {
-        using (raster)
-            return RasterImage.Crop(raster, region, pool);
-    }
 }

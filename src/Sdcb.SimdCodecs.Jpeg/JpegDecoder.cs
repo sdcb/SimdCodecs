@@ -128,6 +128,7 @@ public static class JpegDecoder
         try
         {
             core.Begin();
+            core.EnsureFitsOneBuffer(4);
             var pixels = new byte[core.OutX * core.OutY * 4];
             core.DecodeInto(pixels, core.OutX * 4);
             return new JpegImage(core.OutX, core.OutY, pixels);
@@ -192,13 +193,7 @@ public static class JpegDecoder
     public static (int Width, int Height) DecodeTo(ReadOnlySpan<byte> data, Span<byte> destination, int stride, JpegPixelFormat format,
         JpegScale scale, CancellationToken cancellationToken)
     {
-        var bytesPerPixel = format switch
-        {
-            JpegPixelFormat.Rgba32 or JpegPixelFormat.Bgra32 => 4,
-            JpegPixelFormat.Rgb24 or JpegPixelFormat.Bgr24 => 3,
-            JpegPixelFormat.Gray8 => 1,
-            _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unknown pixel format."),
-        };
+        var bytesPerPixel = BytesPerPixel(format);
         var core = new JpegCore(data, ValidateScale(scale));
         try
         {
@@ -223,6 +218,62 @@ public static class JpegDecoder
             core.ReturnBuffers();
         }
     }
+
+    /// <summary>
+    /// Decodes the <paramref name="width"/> × <paramref name="height"/> pixels at (<paramref name="x"/>,
+    /// <paramref name="y"/>) of the image at <paramref name="scale"/> into <paramref name="destination"/>, region row
+    /// <c>r</c> at byte <c>r × <paramref name="stride"/></c>: exactly those pixels of the whole decode. Holds only
+    /// MCU-row strips and one output row, never the whole image.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The stream is not a decodable JPEG.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The region does not lie inside the scaled image, or the stride is
+    /// shorter than a region row.</exception>
+    /// <exception cref="ArgumentException">The destination is too small.</exception>
+    internal static void DecodeRegionTo(ReadOnlySpan<byte> data, Span<byte> destination, int stride, JpegPixelFormat format,
+        JpegScale scale, int x, int y, int width, int height, CancellationToken cancellationToken)
+    {
+        var bytesPerPixel = BytesPerPixel(format);
+        var core = new JpegCore(data, ValidateScale(scale));
+        try
+        {
+            core.Begin();
+            if (x < 0 || y < 0 || width <= 0 || height <= 0 || x > core.OutX - width || y > core.OutY - height)
+                throw new ArgumentOutOfRangeException(nameof(x), $"The region ({x}, {y}, {width}x{height}) does not lie inside the {core.OutX}x{core.OutY} image.");
+            var rowBytes = (long)width * bytesPerPixel;
+            if (stride < rowBytes)
+                throw new ArgumentOutOfRangeException(nameof(stride), stride, $"Stride must be at least {rowBytes} bytes for a {width}-pixel {format} row.");
+            var required = (long)stride * (height - 1) + rowBytes;
+            if (destination.Length < required)
+            {
+                throw new ArgumentException(
+                    $"Destination needs {required} bytes for a {width}×{height} {format} region at stride {stride}, got {destination.Length}.",
+                    nameof(destination));
+            }
+
+            core.CancellationToken = cancellationToken;
+            core.SetOutputWindow(x, y, width, height);
+            core.DecodeInto(destination, stride, format);
+        }
+        finally
+        {
+            core.ReturnBuffers();
+        }
+    }
+
+    /// <summary>The message for an image too large for one .NET array (<see cref="Array.MaxLength"/> bytes).</summary>
+    internal static string TooLargeMessage(int width, int height, int bytesPerPixel, long bytes) =>
+        $"The requested image raster ({width}x{height}, {bytesPerPixel} bytes per pixel, {bytes} bytes) exceeds the maximum " +
+        $"single-buffer size of {Array.MaxLength} bytes (2 GB). Decode a gigapixel JPEG at a reduced scale " +
+        "(DecodeOptions.ScaleDenominator = 2, 4 or 8, or JpegScale.Half / Quarter / Eighth: scaled in the DCT domain, " +
+        "never at full size) or decode a region of it (DecodeOptions.Region).";
+
+    private static int BytesPerPixel(JpegPixelFormat format) => format switch
+    {
+        JpegPixelFormat.Rgba32 or JpegPixelFormat.Bgra32 => 4,
+        JpegPixelFormat.Rgb24 or JpegPixelFormat.Bgr24 => 3,
+        JpegPixelFormat.Gray8 => 1,
+        _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unknown pixel format."),
+    };
 
     private static int ValidateScale(JpegScale scale)
     {

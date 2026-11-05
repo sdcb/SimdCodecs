@@ -215,7 +215,20 @@ public sealed class ImageFrame
     public IDecodedImage Decode(DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         if (!_decoder.Frames.TryDecodeFrame(_index, out var image, options, cancellationToken))
+        {
+            // A codec returns false for an image whose raster does not fit one array; say so, and what to do instead.
+            var (w, h) = (options ?? DecodeOptions.Default).GetOutputSize(Info.Width, Info.Height);
+            var bytes = (Int128)w * h * Info.Channels * RasterImage.BytesPerSample(Info.SampleFormat);
+            if (bytes > Array.MaxLength)
+            {
+                throw new InvalidDataException(
+                    $"Frame {_index} could not be decoded: its raster ({w}x{h}, {Info.Channels} channels, {bytes} bytes) exceeds " +
+                    $"the maximum single-buffer size of {Array.MaxLength} bytes (2 GB). Decode it at a reduced scale " +
+                    "(DecodeOptions.ScaleDenominator = 2, 4 or 8 where the codec scales natively, as JPEG does; see " +
+                    "TryGetClosestSize) or decode a region of it (DecodeOptions.Region).");
+            }
             throw new InvalidDataException($"Frame {_index} could not be decoded.");
+        }
         return image;
     }
 

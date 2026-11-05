@@ -38,7 +38,13 @@ HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmar
 - **缩放解码只有 JPEG 是原生的。** `DecodeOptions.ScaleDenominator` 2、4、8 只有 JPEG 支持（DCT 域缩放），其他
   codec 抛出 `NotSupportedException`，`TryGetClosestSize` 报告原尺寸。JPEG 2000 的分辨率级别缩减（reduce）还没有实现。
 - **区域解码大多是“整幅解码再裁剪”。** `DecodeOptions.Region` 对所有 codec 都可用，但除了 HEIF（只解码与区域相交
-  的网格 tile，只转换区域内的像素）以外都是整幅解码后裁剪，语义一致，没有性能收益。JPEG 按 MCU 行跳过、TIFF 按 strip/tile 跳过留给 2.x。
+  的网格 tile，只转换区域内的像素）和 JPEG 以外都是整幅解码后裁剪，语义一致，没有性能收益。JPEG 只持有 MCU 行条带和
+  区域本身，只对区域内的行做上采样和色彩转换，所以超过 2 GB 的大图也能取区域；但每个 MCU 仍要熵解码和 IDCT（baseline
+  码流没有可跳转的索引），耗时接近整幅解码。按 restart 间隔跳过熵解码、TIFF 按 strip/tile 跳过留给 2.x。
+- **整幅输出受单个数组 2 GB 上限约束。** 输出光栅超过 `Array.MaxLength` 字节时，`TryDecode` 返回 false，
+  `ImageDecoder` 的 `Decode` 抛出 `InvalidDataException` 并提示改用缩放或区域解码；`RasterImage` 的工厂方法抛出
+  `ArgumentOutOfRangeException`。JPEG progressive 或分多次扫描的帧要整帧保存系数，总样本数上限为 `int.MaxValue`，
+  缩放解码也不例外。
 - **`Stream` 输入会先读进内存。** `ImageDecoder.Open(Stream)` 对可寻址的流按需读取的 `IByteSource` 已经就位，但
   2.0 里所有 codec 仍在整份文件上解码：可寻址的流一次读入，不可寻址的流先缓冲，文件路径用内存映射（不复制）。
   逐 codec 换成真正的增量输入是 2.x 的性能项。

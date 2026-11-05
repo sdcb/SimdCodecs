@@ -342,13 +342,28 @@ public sealed class DecodeOptionsTests
     [Fact]
     public void ARegionOfAPooledCodecReturnsTheIntermediateAtOnce()
     {
+        // QOI decodes the whole image, then crops it.
         var pool = new CountingArrayPool();
-        SimdCodecs.TryDecode(RentingCodecs["jpeg"], out var image, new DecodeOptions { Pool = pool, Region = new PixelRect(2, 3, 11, 5) },
+        SimdCodecs.TryDecode(RentingCodecs["qoi"], out var image, new DecodeOptions { Pool = pool, Region = new PixelRect(2, 3, 11, 5) },
             TestContext.Current.CancellationToken).ShouldBeTrue();
         pool.Rents.ShouldBe(2); // the full decode and the crop
         pool.Returns.ShouldBe(1); // the full decode, disposed once cropped
         image.Dispose();
         pool.Returns.ShouldBe(2);
+    }
+
+    [Fact]
+    public void AJpegRegionRentsOnlyTheRegion()
+    {
+        // JPEG decodes a region natively: no whole-image intermediate.
+        var pool = new CountingArrayPool();
+        SimdCodecs.TryDecode(RentingCodecs["jpeg"], out var image, new DecodeOptions { Pool = pool, Region = new PixelRect(2, 3, 11, 5) },
+            TestContext.Current.CancellationToken).ShouldBeTrue();
+        pool.Rents.ShouldBe(1);
+        pool.Returns.ShouldBe(0);
+        (image.Width, image.Height).ShouldBe((11, 5));
+        image.Dispose();
+        pool.Returns.ShouldBe(1);
     }
 
     [Fact]

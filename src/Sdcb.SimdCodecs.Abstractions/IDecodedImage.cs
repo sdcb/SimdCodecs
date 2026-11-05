@@ -91,7 +91,7 @@ public interface IDecodedImage : IDisposable
     {
         if (SampleFormat == SampleFormat.Float32)
             throw new NotSupportedException("Float32 rasters have no integer projection without a tone/stretch policy; read Pixels or ToFloats.");
-        var result = new ushort[checked(Width * Height * 4)];
+        var result = new ushort[RasterSize.Elements(Width, Height, 4, sizeof(ushort))];
         if (!TryCopyTo(System.Runtime.InteropServices.MemoryMarshal.AsBytes(result.AsSpan()), 0, PixelFormat.Rgba64))
             throw new InvalidOperationException("The image could not be converted to RGBA64.");
         return result;

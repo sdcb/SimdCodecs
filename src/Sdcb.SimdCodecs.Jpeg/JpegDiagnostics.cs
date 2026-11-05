@@ -56,6 +56,7 @@ internal static class JpegDiagnostics
         try
         {
             core.Begin();
+            core.EnsureFitsOneBuffer(4);
             core.DecodeInto(new byte[core.OutX * core.OutY * 4], core.OutX * 4);
             return core.ExportPlanes();
         }
