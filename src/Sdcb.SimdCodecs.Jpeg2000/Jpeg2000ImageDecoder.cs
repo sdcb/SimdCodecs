@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Sdcb.SimdCodecs.Abstractions;
@@ -24,6 +25,15 @@ namespace Sdcb.SimdCodecs.Jpeg2000;
 /// sYCC, whose samples are still YCbCr. A caller that needs those has
 /// <see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, CancellationToken)"/>, which hands back every component and
 /// reports the colour box without applying it.
+/// </para>
+/// /// <para>
+/// <b>Scaled decode.</b> <see cref="DecodeOptions.ScaleDenominator"/> is a resolution reduction: any
+/// power of two up to 2 to the codestream's decomposition levels, decoded by leaving the finer levels
+/// out (they are never entropy-decoded), with the same samples as <c>opj_decompress -r</c>. A
+/// <see cref="DecodeOptions.Region"/> is in the scaled image's coordinates and is cropped from it. An
+/// image whose SIZ image offset is not zero is decoded at scale 1 only: on the reference grid a
+/// halving rounds relative to the origin, which can differ by a pixel from the facade's
+/// <c>⌈w / d⌉</c> (the decoder's own <see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, int, CancellationToken)"/> still reduces it).
 /// </para>
 /// <para>
 /// Samples up to 8 bits come back as <see cref="SampleFormat.UInt8"/>, deeper ones as
@@ -54,24 +64,29 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
         Jpeg2000Decoder.IsCodestream(header) || Jpeg2000Decoder.IsJp2(header);
 
     /// <inheritdoc />
-    public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
+    public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info) =>
+        TryReadInfo(data, out info, out _);
+
+    private static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info, [NotNullWhen(true)] out Jpeg2000Info? j2k)
     {
         info = default;
+        j2k = null;
         if (!CanDecode(data)) return false;
 
         try
         {
             // ReadInfo, not SIZ alone: a JP2 palette changes how many channels, and of what depth,
             // the decoded image has.
-            var j2k = Jpeg2000Decoder.ReadInfo(data);
-            if (!Presentable(j2k.Components, j2k.Colour)) return false;
+            var read = Jpeg2000Decoder.ReadInfo(data);
+            if (!Presentable(read.Components, read.Colour)) return false;
 
-            var depth = j2k.BitDepth;
-            info = new ImageInfo(j2k.Width, j2k.Height, j2k.Components, FormatFor(depth))
+            var depth = read.BitDepth;
+            info = new ImageInfo(read.Width, read.Height, read.Components, FormatFor(depth))
             {
                 Format = ImageFormat.Jpeg2000,
                 BitDepth = depth,
             };
+            j2k = read;
             return true;
         }
         catch (Exception e) when (IsUndecodable(e))
@@ -80,10 +95,41 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
         }
     }
 
+    /// <summary>
+    /// The largest scale denominator this image decodes at natively: 2 to the number of resolution
+    /// levels that can be left out. A reduction halves each side on the reference grid (T.800 B-14),
+    /// which is the facade's <c>⌈w / d⌉</c> only when the image region starts at the origin; an image
+    /// whose SIZ offset is not zero can differ by a pixel at some scales, so it is decoded at 1 only
+    /// (<see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, int, CancellationToken)"/> still reduces it).
+    /// </summary>
+    private static int MaxScaleDenominator(Jpeg2000Info j2k) =>
+        j2k.Region.X0 == 0 && j2k.Region.Y0 == 0 ? 1 << Math.Min(j2k.DecompositionLevels, 30) : 1;
+
     /// <inheritdoc />
+    /// <remarks>The smallest image, a power-of-two reduction of the stored one, that is at least the requested
+    /// size in both directions (the stored size when the request is larger). A reduction costs only the
+    /// levels it keeps: the finer ones are never entropy-decoded.</remarks>
     public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
-        out int width, out int height, out int scaleDenominator) =>
-        ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
+        out int width, out int height, out int scaleDenominator)
+    {
+        width = height = 0;
+        scaleDenominator = 1;
+        if (!TryReadInfo(data, out var info, out var j2k)) return false;
+
+        (width, height) = (info.Width, info.Height);
+        var largest = MaxScaleDenominator(j2k);
+        for (var d = largest; d >= 2; d >>= 1)
+        {
+            var (w, h) = new DecodeOptions { ScaleDenominator = d }.GetScaledSize(info.Width, info.Height);
+            if (w >= requestedWidth && h >= requestedHeight)
+            {
+                (width, height, scaleDenominator) = (w, h, d);
+                break;
+            }
+        }
+
+        return true;
+    }
 
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
@@ -91,14 +137,15 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
     {
         image = null;
         if (!CanDecode(data)) return false;
-        if (!TryReadInfo(data, out var info)) return false;
+        if (!TryReadInfo(data, out var info, out var read)) return false;
 
-        options?.Validate(info.Width, info.Height, supportsScale: false);
+        options?.Validate(info.Width, info.Height, MaxScaleDenominator(read));
+        var reduce = options is null ? 0 : BitOperations.Log2((uint)options.ScaleDenominator);
 
         RasterImage? raster;
         try
         {
-            var j2k = Jpeg2000Decoder.Decode(data, cancellationToken);
+            var j2k = Jpeg2000Decoder.Decode(data, reduce, cancellationToken);
             raster = ToRaster(j2k, options?.Pool);
             if (raster is null) return false;
         }
@@ -109,7 +156,8 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
 
         try
         {
-            image = DecodeOptions.Apply(raster, options);
+            // The region is in the scaled image's coordinates, and the raster already is that image.
+            image = DecodeOptions.Apply(raster, options is { ScaleDenominator: > 1 } ? options with { ScaleDenominator = 1 } : options);
             return true;
         }
         catch
