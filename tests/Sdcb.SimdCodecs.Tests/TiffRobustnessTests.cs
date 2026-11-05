@@ -51,6 +51,25 @@ public sealed class TiffRobustnessTests
         foreach (var fax in new[] { CompressionMethod.Group4, CompressionMethod.Fax })
             seeds.Add(($"bilevel {fax}", Bilevel(rgb, fax)));
         seeds.Add(("multi-page", MultiPage(rgb)));
+        // Photometrics the facade converts: palette (libtiff), CMYK (libtiff), subsampled YCbCr (hand-built units).
+        using (var palette = new MagickImage())
+        {
+            palette.ReadPixels(rgb, new PixelReadSettings(W, H, StorageType.Char, "RGB"));
+            palette.ColorType = ColorType.Palette;
+            palette.Settings.Compression = CompressionMethod.LZW;
+            seeds.Add(("palette lzw", palette.ToByteArray(MagickFormat.Tiff)));
+        }
+        using (var cmyk = new MagickImage())
+        {
+            cmyk.ReadPixels(Noise4(random), new PixelReadSettings(W, H, StorageType.Char, "CMYK"));
+            cmyk.Settings.Compression = CompressionMethod.Zip;
+            seeds.Add(("cmyk zip", cmyk.ToByteArray(MagickFormat.Tiff)));
+        }
+        var ycc = B.Basic(W, H, 3, 8, TiffCompression.Uncompressed, TiffPhotometric.YCbCr, rowsPerStrip: 6);
+        var unitStrips = new List<byte[]>();
+        for (var y = 0; y < H; y += 6)
+            unitStrips.Add(rgb.AsSpan(0, ((W + 1) / 2) * ((Math.Min(6, H - y) + 1) / 2) * 6).ToArray());
+        seeds.Add(("ycbcr 2x2", new B().AddPage(ycc, [.. unitStrips]).Build()));
         seeds.Add(("BigTIFF lzw tiled", Magick(rgb, "RGB", 8, CompressionMethod.LZW, true, false, predictor: 2, bigTiff: true)));
         seeds.Add(("BigTIFF zip planar MM", Magick(rgb, "RGB", 8, CompressionMethod.Zip, false, true, predictor: 2, endian: "msb", bigTiff: true)));
 
@@ -66,6 +85,13 @@ public sealed class TiffRobustnessTests
             B.Basic(W, H, 1, 16, TiffCompression.Uncompressed, TiffPhotometric.MinIsBlack, rowsPerStrip: 4),
             Strips(gray16, W * 2, H, 4)).Build()));
         return seeds;
+    }
+
+    private static byte[] Noise4(Random random)
+    {
+        var bytes = new byte[W * H * 4];
+        random.NextBytes(bytes);
+        return bytes;
     }
 
     internal static byte[][] Strips(byte[] raster, int rowBytes, int height, int rowsPerStrip)

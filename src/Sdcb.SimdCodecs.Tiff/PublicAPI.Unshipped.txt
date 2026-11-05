@@ -10,3 +10,11 @@ Sdcb.SimdCodecs.Tiff.TiffFieldType.SLong8 = 17 -> Sdcb.SimdCodecs.Tiff.TiffField
 Sdcb.SimdCodecs.Tiff.TiffPage.IsBigTiff.get -> bool
 Sdcb.SimdCodecs.Tiff.TiffPage.IsBigTiff.init -> void
 Sdcb.SimdCodecs.Tiff.TiffPageLayout.IsBigTiff.get -> bool
+const Sdcb.SimdCodecs.Tiff.TiffTag.ColorMap = 320 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.InkSet = 332 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.JpegTables = 347 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.YCbCrCoefficients = 529 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.YCbCrSubSampling = 530 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.YCbCrPositioning = 531 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.ReferenceBlackWhite = 532 -> ushort
+Sdcb.SimdCodecs.Tiff.TiffCompression.OldJpeg = 6 -> Sdcb.SimdCodecs.Tiff.TiffCompression

@@ -84,10 +84,34 @@ internal sealed record ParsedIfd(
     long[] SegmentOffsets, long[] SegmentByteCounts, TiffSegmentGeometry Geometry,
     float? SMin, float? SMax, byte[]? Icc, long? ExifIfdOffset, long? GpsInfoIfdOffset,
     long NextIfdOffset, bool LsbFirst = false, uint FaxOptions = 0, int Orientation = 1,
-    byte[]? Xmp = null, double XResolution = 0, double YResolution = 0, int ResolutionUnit = 2)
+    byte[]? Xmp = null, double XResolution = 0, double YResolution = 0, int ResolutionUnit = 2,
+    TiffColorTags? ColorTags = null)
 {
+    /// <summary>The tags that say what the samples mean beyond <see cref="Photometric"/>.</summary>
+    public TiffColorTags Color => ColorTags ?? TiffColorTags.Defaults;
+
     /// <summary>Bits per sample of <see cref="TiffPage.Pixels"/>: a 1/2/4-bit page is expanded to 8.</summary>
     public int OutputBitsPerSample => BitsPerSample < 8 ? 8 : BitsPerSample;
+}
+
+/// <summary>
+/// The colour-describing tags of a page, as stored (defaults applied where TIFF 6.0 gives one). The reader uses the
+/// YCbCr subsampling (it changes the data layout) and the JPEG tables; the rest is for the facade's colour mapping.
+/// </summary>
+/// <param name="ColorMap">ColorMap (320): 3 * 2^BitsPerSample SHORTs, all reds, then greens, then blues; null when absent or unreadable.</param>
+/// <param name="InkSet">InkSet (332): 1 = CMYK (the default), 2 = not CMYK.</param>
+/// <param name="ExtraSamples">ExtraSamples (338), one value per extra sample; null when the tag is absent.</param>
+/// <param name="SubsampleH">YCbCrSubSampling (530) horizontal factor: 1, 2 or 4; the default is 2.</param>
+/// <param name="SubsampleV">YCbCrSubSampling vertical factor: 1, 2 or 4; the default is 2.</param>
+/// <param name="Positioning">YCbCrPositioning (531): 1 centred (the default), 2 cosited.</param>
+/// <param name="Coefficients">YCbCrCoefficients (529): LumaRed, LumaGreen, LumaBlue; default 0.299 / 0.587 / 0.114.</param>
+/// <param name="ReferenceBlackWhite">ReferenceBlackWhite (532): six values, a (black, white) pair per component; null when absent.</param>
+/// <param name="JpegTables">JPEGTables (347): an abbreviated table-specification JPEG stream; null when absent.</param>
+internal sealed record TiffColorTags(
+    ushort[]? ColorMap, int InkSet, ushort[]? ExtraSamples, int SubsampleH, int SubsampleV, int Positioning,
+    double[] Coefficients, double[]? ReferenceBlackWhite, byte[]? JpegTables)
+{
+    public static TiffColorTags Defaults { get; } = new(null, 1, null, 2, 2, 1, [0.299, 0.587, 0.114], null, null);
 }
 
 internal static class TiffIfdParser
@@ -194,6 +218,14 @@ internal static class TiffIfdParser
         byte[]? xmp = null;
         double xRes = 0, yRes = 0;
         var resUnit = 2;
+        ushort[]? colorMap = null;
+        var inkSet = 1;
+        ushort[]? extraSamples = null;
+        ushort[]? subsampling = null;
+        var positioning = 1;
+        double[]? coefficients = null;
+        double[]? referenceBlackWhite = null;
+        byte[]? jpegTables = null;
 
         for (var i = 0; i < entryCount; i++)
         {
@@ -258,6 +290,36 @@ internal static class TiffIfdParser
                     // Anything but one SHORT in 1..3 means the default (inch).
                     var ru = type == TiffFieldType.Short && count == 1 ? U16(valueSpan[..2], fileIsLE) : 0;
                     resUnit = ru is >= 1 and <= 3 ? ru : 2;
+                    break;
+                case TiffTag.ColorMap:
+                    try { colorMap = ShortArray(ref src, type, count, valueSpan, f); }
+                    catch (Exception e) when (e is InvalidDataException or NotSupportedException) { colorMap = null; }
+                    break;
+                case TiffTag.InkSet:
+                    inkSet = type == TiffFieldType.Short && count == 1 ? U16(valueSpan[..2], fileIsLE) : 0;
+                    break;
+                case TiffTag.ExtraSamples:
+                    try { extraSamples = ShortArray(ref src, type, count, valueSpan, f); }
+                    catch (Exception e) when (e is InvalidDataException or NotSupportedException) { extraSamples = null; }
+                    break;
+                case TiffTag.YCbCrSubSampling:
+                    // Changes the data layout of a YCbCr page, so a malformed one is refused there, not ignored.
+                    subsampling = ShortArray(ref src, type, count, valueSpan, f);
+                    break;
+                case TiffTag.YCbCrPositioning:
+                    positioning = type == TiffFieldType.Short && count == 1 ? U16(valueSpan[..2], fileIsLE) : 1;
+                    break;
+                case TiffTag.YCbCrCoefficients:
+                    try { coefficients = RationalArray(ref src, type, count, valueSpan, f); }
+                    catch (Exception e) when (e is InvalidDataException or NotSupportedException) { coefficients = null; }
+                    break;
+                case TiffTag.ReferenceBlackWhite:
+                    try { referenceBlackWhite = RationalArray(ref src, type, count, valueSpan, f); }
+                    catch (Exception e) when (e is InvalidDataException or NotSupportedException) { referenceBlackWhite = null; }
+                    break;
+                case TiffTag.JpegTables:
+                    try { jpegTables = ByteArray(ref src, type, count, valueSpan, f); }
+                    catch (Exception e) when (e is InvalidDataException or NotSupportedException) { jpegTables = null; }
                     break;
                 default:
                     // Unrecognised tag: TIFF spec says skip unknown tags.
@@ -350,6 +412,36 @@ internal static class TiffIfdParser
                     $"Predictor={predictor} not supported for {bitsPerSample}-bit {sampleFormat} samples");
         }
 
+        // YCbCr subsampling (TIFF 6.0 section 21) changes how a non-JPEG page's samples are laid out: the default
+        // is 2x2, so a page without the tag is subsampled too. JPEG pages carry their own sampling inside the
+        // stream, and the tag is ignored for them (and for every other photometric).
+        var subH = 2;
+        var subV = 2;
+        if (subsampling is not null)
+        {
+            if (subsampling.Length < 2) throw new InvalidDataException("YCbCrSubSampling needs two values");
+            (subH, subV) = (subsampling[0], subsampling[1]);
+        }
+        var isJpeg = compression is TiffCompression.Jpeg or TiffCompression.OldJpeg;
+        if (photometric == TiffPhotometric.YCbCr && !isJpeg)
+        {
+            if (subH is not (1 or 2 or 4) || subV is not (1 or 2 or 4))
+                throw new InvalidDataException($"YCbCrSubSampling={subH},{subV}; each factor must be 1, 2 or 4");
+            if ((subH, subV) != (1, 1))
+            {
+                if (samplesPerPixel != 3 || bitsPerSample != 8 || sampleFormat != TiffSampleFormat.Uint)
+                    throw new NotSupportedException($"Subsampled YCbCr is read for three 8-bit samples, not {samplesPerPixel}x{bitsPerSample}-bit");
+                if (planarConfig == TiffPlanarConfig.Separate)
+                    throw new NotSupportedException("Subsampled YCbCr in separate planes is not supported");
+                if (predictor != TiffPredictor.None)
+                    throw new NotSupportedException("A predictor on subsampled YCbCr data is not supported");
+            }
+        }
+        else
+        {
+            (subH, subV) = (1, 1);
+        }
+
         // Every buffer a reader sizes from this page, bounded once, in long arithmetic: width, height, tile size
         // and samples per pixel are all file values, and their int products wrap. A decoded segment and a band of
         // whole rows (what a tiled or planar page is assembled in) must each fit one .NET array.
@@ -358,7 +450,11 @@ internal static class TiffIfdParser
         var segmentBytesPerPixel = geometry.IsPlanar ? outBytesPerSample : bytesPerPixel;
         var segmentBytes = (isTiled ? tileWidth : (long)width) * segmentBytesPerPixel * geometry.SegmentHeight;
         var bandBytes = width * bytesPerPixel * geometry.SegmentHeight;
-        if (segmentBytes > Array.MaxLength || bandBytes > Array.MaxLength)
+        // A subsampled YCbCr segment is coded as data units (subH x subV luma samples, then Cb and Cr), which the
+        // reader decompresses whole before expanding them to rows.
+        var unitBytes = ((isTiled ? tileWidth : (long)width) + subH - 1) / subH
+            * ((geometry.SegmentHeight + subV - 1) / subV) * ((subH * subV) + 2);
+        if (segmentBytes > Array.MaxLength || bandBytes > Array.MaxLength || unitBytes > Array.MaxLength)
             throw new InvalidDataException(
                 $"A {(isTiled ? "tile" : "strip")} of this {width}x{height} page decodes to more than {Array.MaxLength} bytes");
 
@@ -367,7 +463,12 @@ internal static class TiffIfdParser
             segmentOffsets, segmentByteCounts, geometry, sMin, sMax, icc, exifIfdOffset, gpsIfdOffset,
             nextIfdOffset, LsbFirst: fillOrder == 2,
             FaxOptions: compression == TiffCompression.CcittT6 ? t6Options : t4Options, Orientation: orientation,
-            Xmp: xmp, XResolution: xRes, YResolution: yRes, ResolutionUnit: resUnit);
+            Xmp: xmp, XResolution: xRes, YResolution: yRes, ResolutionUnit: resUnit,
+            ColorTags: new TiffColorTags(colorMap, inkSet, extraSamples, subH, subV, positioning is 1 or 2 ? positioning : 1,
+                coefficients is { Length: 3 } && coefficients.All(double.IsFinite) && coefficients[1] != 0
+                    ? coefficients : TiffColorTags.Defaults.Coefficients,
+                referenceBlackWhite is { Length: 6 } && referenceBlackWhite.All(double.IsFinite) ? referenceBlackWhite : null,
+                jpegTables));
     }
 
     public static ushort U16(ReadOnlySpan<byte> b, bool le) =>
@@ -499,6 +600,22 @@ internal static class TiffIfdParser
         var result = new float[data.Length / 4];
         for (var i = 0; i < result.Length; i++)
             result[i] = BitConverter.Int32BitsToSingle((int)U32(data.AsSpan(i * 4, 4), f.LittleEndian));
+        return result;
+    }
+
+    private static double[] RationalArray<T>(ref T src, TiffFieldType type, ulong count, ReadOnlySpan<byte> valueSpan, TiffFormat f)
+        where T : ITiffBytes, allows ref struct
+    {
+        if (type != TiffFieldType.Rational) throw new NotSupportedException($"Expected RATIONAL, got {type}");
+        if (count == 0) throw new InvalidDataException("Empty RATIONAL array");
+        var data = Value(ref src, count, 8, valueSpan, f);
+        var result = new double[data.Length / 8];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var num = U32(data.AsSpan(i * 8, 4), f.LittleEndian);
+            var den = U32(data.AsSpan((i * 8) + 4, 4), f.LittleEndian);
+            result[i] = den == 0 ? double.NaN : (double)num / den;
+        }
         return result;
     }
 

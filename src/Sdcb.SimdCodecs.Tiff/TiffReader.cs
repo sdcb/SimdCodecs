@@ -310,8 +310,7 @@ public static partial class TiffReader
         var needsSwap = fileIsLE != BitConverter.IsLittleEndian && bitsPerSample > 8
             && predictor != TiffPredictor.FloatingPoint;
         var needsPredictor = predictor != TiffPredictor.None;
-        var format = new SegmentFormat(compression, ifd.BitsPerSample, isTiled ? tileWidth : width, ifd.LsbFirst,
-            ifd.FaxOptions);
+        var format = SegmentFormat.For(ifd);
 
         // THE FAST CASE, and the reason ReadInto exists: nothing to decompress and nothing to rewrite,
         // so the sink gets a slice of the INPUT and no scratch is allocated at all. Reading a
@@ -504,13 +503,65 @@ public static partial class TiffReader
             segment = reversed;
         }
 
+        if (format.IsYCbCrUnits)
+        {
+            // Subsampled YCbCr (TIFF 6.0 section 21): the segment codes data units -- SubsampleV rows of
+            // SubsampleH luma samples, then one Cb and one Cr -- covering the segment's rows rounded up to whole
+            // units. They are decompressed whole, then expanded to chunky Y, Cb, Cr rows.
+            var rowsOut = capacity / (format.StoredWidth * 3);
+            var units = format.UnitBytes(rowsOut);
+            var coded = staging!.Packed(units);
+            var got = Decompress(segment, format, coded, inflateSource, scratchStream);
+            coded[got..].Clear();
+            ExpandYCbCrUnits(coded, scratch.AsSpan(0, capacity), format.StoredWidth, rowsOut, format.SubsampleH, format.SubsampleV);
+            return scratch.AsSpan(0, capacity);
+        }
+
         if (!format.IsPacked)
             return scratch.AsSpan(0, Decompress(segment, format, scratch!.AsSpan(0, capacity), inflateSource, scratchStream));
 
         var rows = capacity / format.StoredWidth;
         var packed = staging!.Packed(rows * format.PackedRowBytes);
         var decoded = Decompress(segment, format, packed, inflateSource, scratchStream);
-        return scratch.AsSpan(0, ExpandSubByteRows(packed[..decoded], scratch!, format.StoredWidth, format.StoredBits));
+        return scratch.AsSpan(0, ExpandSubByteRows(packed[..decoded], scratch!, format.StoredWidth, format.StoredBits,
+            format.RawIndices));
+    }
+
+    /// <summary>
+    /// Expands <paramref name="rows"/> rows of YCbCr data units (TIFF 6.0 section 21: for PlanarConfiguration 1 the
+    /// samples of a unit are its <paramref name="h"/> x <paramref name="v"/> luma samples row by row, then Cb, then Cr;
+    /// units run left to right, then top to bottom) into chunky Y, Cb, Cr pixels, <paramref name="width"/> per row.
+    /// Each chroma sample is repeated over the luma samples of its unit: no filtering, so the reader's output is the
+    /// stored samples and nothing else. Units overhanging the right or bottom edge (padding) are dropped.
+    /// </summary>
+    private static void ExpandYCbCrUnits(ReadOnlySpan<byte> units, Span<byte> destination, int width, int rows, int h, int v)
+    {
+        var unitsAcross = (width + h - 1) / h;
+        var unitsDown = (rows + v - 1) / v;
+        var unitSize = (h * v) + 2;
+        for (var uy = 0; uy < unitsDown; uy++)
+        {
+            for (var ux = 0; ux < unitsAcross; ux++)
+            {
+                var unit = units.Slice(((uy * unitsAcross) + ux) * unitSize, unitSize);
+                var cb = unit[h * v];
+                var cr = unit[(h * v) + 1];
+                for (var j = 0; j < v; j++)
+                {
+                    var y = (uy * v) + j;
+                    if (y >= rows) break;
+                    for (var i = 0; i < h; i++)
+                    {
+                        var x = (ux * h) + i;
+                        if (x >= width) break;
+                        var at = ((y * width) + x) * 3;
+                        destination[at] = unit[(j * h) + i];
+                        destination[at + 1] = cb;
+                        destination[at + 2] = cr;
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>Decompresses one segment's coded bytes into <paramref name="target"/>, returning the bytes written.</summary>
@@ -557,17 +608,19 @@ public static partial class TiffReader
     /// per sample, scaled to the full 8-bit range so that the maximum code becomes 255. Whole rows only;
     /// returns the bytes written.
     /// </summary>
-    private static int ExpandSubByteRows(ReadOnlySpan<byte> packed, Span<byte> destination, int width, int bits)
+    private static int ExpandSubByteRows(ReadOnlySpan<byte> packed, Span<byte> destination, int width, int bits,
+        bool rawIndices)
     {
         var rowBytes = ((width * bits) + 7) / 8;
         var rows = packed.Length / rowBytes;
-        var scale = 255 / ((1 << bits) - 1);
+        // Palette indices are indices: expanded to one byte each but never scaled.
+        var scale = rawIndices ? 1 : 255 / ((1 << bits) - 1);
         var mask = (1 << bits) - 1;
         for (var y = 0; y < rows; y++)
         {
             var src = packed.Slice(y * rowBytes, rowBytes);
             var dst = destination.Slice(y * width, width);
-            if (bits == 1)
+            if (bits == 1 && !rawIndices)
             {
                 for (var x = 0; x < width; x++)
                     dst[x] = (byte)(0 - ((src[x >> 3] >> (7 - (x & 7))) & 1));
@@ -593,13 +646,28 @@ public static partial class TiffReader
     /// <summary>What turning a page's segment bytes into samples needs to know beyond the compression.</summary>
     /// <param name="StoredBits">Bits per sample in the file: 1/2/4 are packed and expanded on read.</param>
     /// <param name="StoredWidth">Pixels per stored row: the tile width for a tiled page, else the image width.</param>
+    /// <param name="RawIndices">Sub-byte samples are palette indices: expanded, not scaled to the full 8-bit range.</param>
+    /// <param name="SubsampleH">YCbCr chroma subsampling across (1 when the page is not subsampled YCbCr).</param>
+    /// <param name="SubsampleV">YCbCr chroma subsampling down.</param>
     private readonly record struct SegmentFormat(TiffCompression Compression, int StoredBits, int StoredWidth,
-        bool LsbFirst, uint FaxOptions)
+        bool LsbFirst, uint FaxOptions, bool RawIndices = false, int SubsampleH = 1, int SubsampleV = 1)
     {
+        public static SegmentFormat For(ParsedIfd ifd) => new(ifd.Compression, ifd.BitsPerSample,
+            ifd.IsTiled ? ifd.TileWidth : ifd.Width, ifd.LsbFirst, ifd.FaxOptions,
+            RawIndices: ifd.Photometric == TiffPhotometric.Palette,
+            SubsampleH: ifd.Color.SubsampleH, SubsampleV: ifd.Color.SubsampleV);
+
         public bool IsPacked => StoredBits < 8;
 
+        /// <summary>Subsampled YCbCr: the segment codes data units, not rows.</summary>
+        public bool IsYCbCrUnits => SubsampleH * SubsampleV > 1;
+
+        /// <summary>Coded bytes of the data units covering <paramref name="rows"/> rows.</summary>
+        public int UnitBytes(int rows) => ((StoredWidth + SubsampleH - 1) / SubsampleH)
+            * ((rows + SubsampleV - 1) / SubsampleV) * ((SubsampleH * SubsampleV) + 2);
+
         /// <summary>The coded bytes or the decoded rows have to go through a buffer of their own first.</summary>
-        public bool NeedsStaging => IsPacked || LsbFirst;
+        public bool NeedsStaging => IsPacked || LsbFirst || IsYCbCrUnits;
 
         public int PackedRowBytes => ((StoredWidth * StoredBits) + 7) / 8;
     }

@@ -26,6 +26,7 @@ public sealed class TiffPageLayout
     {
         PageIndex = pageIndex;
         IfdOffset = ifdOffset;
+        Ifd = ifd;
         Format = format;
         FileIsLittleEndian = format.LittleEndian;
         _geometry = ifd.Geometry;
@@ -70,6 +71,9 @@ public sealed class TiffPageLayout
 
     /// <summary>ResolutionUnit (tag 296): 1 none, 2 inch (the default), 3 centimetre.</summary>
     internal int ResolutionUnit { get; }
+
+    /// <summary>The parsed directory this layout was built from.</summary>
+    internal ParsedIfd Ifd { get; }
 
     /// <summary>Byte order and classic / BigTIFF: how the file's directories are laid out.</summary>
     internal TiffFormat Format { get; }
@@ -303,8 +307,7 @@ public static partial class TiffReader
         var needsSwap = layout.FileIsLittleEndian != BitConverter.IsLittleEndian && bitsPerSample > 8
             && predictor != TiffPredictor.FloatingPoint;
         var needsPredictor = predictor != TiffPredictor.None;
-        var format = new SegmentFormat(compression, layout.StoredBitsPerSample, storedWidth, layout.LsbFirst,
-            layout.FaxOptions);
+        var format = SegmentFormat.For(layout.Ifd);
         var staging = format.NeedsStaging ? new SegmentStaging() : null;
 
         var scratch = ArrayPool<byte>.Shared.Rent(capacity);

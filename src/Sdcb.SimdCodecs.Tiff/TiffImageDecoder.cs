@@ -17,9 +17,10 @@ namespace Sdcb.SimdCodecs.Tiff;
 /// <see cref="TiffPage.Pixels"/> is already interleaved, row-major, host byte
 /// order — 1/2/4-bit grey arrives from the reader expanded to 8 bits, and 16-bit IEEE-float
 /// (half) widens losslessly to <see cref="SampleFormat.Float32"/>. MinIsWhite grey (what fax and
-/// most bilevel scans use) is inverted to MinIsBlack. Layouts <see cref="IDecodedImage"/> cannot
-/// represent (palette / CMYK / YCbCr photometrics, signed or 32-bit-uint samples) return false
-/// rather than decode wrongly.
+/// most bilevel scans use) is inverted to MinIsBlack. Palette, CMYK and (non-JPEG and JPEG) YCbCr pages
+/// are converted to RGB, associated alpha is un-premultiplied and ExtraSamples choose the alpha channel,
+/// by the arithmetic <see cref="TiffColor"/> defines. Layouts <see cref="IDecodedImage"/> cannot
+/// represent (CIELab, signed or 32-bit-uint samples) return false rather than decode wrongly.
 /// </para>
 /// <para>
 /// Colour meaning: float pages surface <see cref="TransferFunction.Linear"/> +
@@ -111,12 +112,12 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         try
         {
             var layout = TiffReader.ReadLayout(data, pageIndex);
-            if (!TryMapLayout(layout.Photometric, layout.SamplesPerPixel, layout.BitsPerSample, layout.SampleFormat, out var format))
+            if (!TiffColor.TryCreate(layout, out var plan))
                 return false;
-            info = new ImageInfo(layout.Width, layout.Height, layout.SamplesPerPixel, format)
+            info = new ImageInfo(layout.Width, layout.Height, plan.OutChannels, plan.OutFormat)
             {
                 Format = ImageFormat.Tiff,
-                BitDepth = layout.StoredBitsPerSample,
+                BitDepth = layout.Photometric == TiffPhotometric.Palette ? (layout.StoredBitsPerSample == 16 ? 16 : 8) : layout.StoredBitsPerSample,
                 Orientation = (ImageOrientation)layout.Orientation,
                 ColorEncoding = ColorOf(layout.SampleFormat),
                 Resolution = ResolutionOf(layout),
@@ -177,22 +178,20 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         image = null;
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (options is not null)
+        TiffPageLayout layout;
+        TiffColor plan;
+        try
         {
-            // Check the options against the page before any strip is decoded (outside the try: they throw).
-            TiffPageLayout layout;
-            try
-            {
-                layout = TiffReader.ReadLayout(data, pageIndex);
-            }
-            catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
-            {
-                return false;
-            }
-            if (!TryMapLayout(layout.Photometric, layout.SamplesPerPixel, layout.BitsPerSample, layout.SampleFormat, out _))
-                return false;
-            options.Validate(layout.Width, layout.Height, supportsScale: false);
+            layout = TiffReader.ReadLayout(data, pageIndex);
         }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+        if (!TiffColor.TryCreate(layout, out plan))
+            return false;
+        // Check the options against the page before any strip is decoded (outside the try: they throw).
+        options?.Validate(layout.Width, layout.Height, supportsScale: false);
 
         TiffPage page;
         try
@@ -204,31 +203,24 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
             return false;
         }
 
-        if (!TryMapLayout(page.Photometric, page.SamplesPerPixel, page.BitsPerSample, page.SampleFormat, out var format))
-            return false;
-        var channels = page.SamplesPerPixel;
-
-        if (page.Photometric == TiffPhotometric.MinIsWhite)
+        byte[] pixels;
+        if (plan.IsIdentity)
         {
-            if (page.BitsPerSample == 8)
-            {
-                foreach (ref var b in page.Pixels.AsSpan()) b = (byte)~b;
-            }
-            else if (page.BitsPerSample == 16)
-            {
-                foreach (ref var v in MemoryMarshal.Cast<byte, ushort>(page.Pixels.AsSpan())) v = (ushort)~v;
-            }
+            pixels = page.Pixels;
         }
-
-        var color = ColorOf(page.SampleFormat);
-        // Real precision below the container: 1/2/4-bit grey (expanded to fill 8 bits) and 16-bit half floats.
-        var fullBits = format switch { SampleFormat.UInt8 => 8, SampleFormat.UInt16 => 16, _ => 32 };
-        var bitDepth = page.StoredBitsPerSample > 0 && page.StoredBitsPerSample < fullBits ? page.StoredBitsPerSample : 0;
+        else
+        {
+            pixels = new byte[(long)page.Width * page.Height * plan.OutBytesPerPixel];
+            var inRow = page.Width * plan.InBytesPerPixel;
+            var outRow = page.Width * plan.OutBytesPerPixel;
+            for (var y = 0; y < page.Height; y++)
+                plan.ConvertRow(page.Pixels.AsSpan(y * inRow, inRow), pixels.AsSpan(y * outRow, outRow), page.Width);
+        }
 
         ImageMetadata? metadata;
         try
         {
-            metadata = MetadataOf(data, TiffReader.ReadLayout(data, pageIndex));
+            metadata = MetadataOf(data, layout);
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
         {
@@ -236,24 +228,22 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         }
         if (metadata is { IsEmpty: true })
             metadata = null;
-        RasterImage raster;
-        if (page.BitsPerSample == 16 && page.SampleFormat == TiffSampleFormat.IeeeFloat)
-        {
-            // 16-bit IEEE float (half): widen losslessly to Float32.
-            var halves = MemoryMarshal.Cast<byte, Half>(page.Pixels);
-            var widened = new float[halves.Length];
-            for (var i = 0; i < halves.Length; i++) widened[i] = (float)halves[i];
-            raster = RasterImage.Wrap(page.Width, page.Height, channels, SampleFormat.Float32,
-                MemoryMarshal.AsBytes(widened.AsSpan()).ToArray(), color, bitDepth, metadata);
-        }
-        else
-        {
-            raster = RasterImage.Wrap(page.Width, page.Height, channels, format, page.Pixels, color, bitDepth, metadata);
-        }
+        var raster = RasterImage.Wrap(page.Width, page.Height, plan.OutChannels, plan.OutFormat, pixels,
+            ColorOf(layout.SampleFormat), BitDepthOf(layout, plan), metadata);
         image = DecodeOptions.Apply(raster, options);
         return true;
     }
 
+    /// <summary>
+    /// Real precision below the output container, or 0 for the container's full width: 1/2/4-bit grey (expanded to
+    /// fill 8 bits) and 16-bit half floats. Palette output is the colour map's precision, never the index width.
+    /// </summary>
+    private static int BitDepthOf(TiffPageLayout layout, TiffColor plan)
+    {
+        if (layout.Photometric == TiffPhotometric.Palette) return 0;
+        var fullBits = plan.OutFormat switch { SampleFormat.UInt8 => 8, SampleFormat.UInt16 => 16, _ => 32 };
+        return layout.StoredBitsPerSample > 0 && layout.StoredBitsPerSample < fullBits ? layout.StoredBitsPerSample : 0;
+    }
     /// <summary>The ICC profile, XMP packet and Exif block of the page <paramref name="layout"/> describes.</summary>
     private static ImageMetadata MetadataOf(ReadOnlySpan<byte> data, TiffPageLayout layout) => new()
     {
@@ -280,34 +270,5 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
             _ => ResolutionUnit.PerInch,
         };
         return new Resolution(layout.XResolution, layout.YResolution, unit);
-    }
-
-    /// <summary>
-    /// The sample format <see cref="TryDecode"/> presents a page as, or false for a page it refuses;
-    /// <paramref name="bitsPerSample"/> is the decoded width (8 for an expanded 1/2/4-bit page). Shared by
-    /// <see cref="TryReadInfo"/> and the decode, so the two cannot disagree.
-    /// </summary>
-    private static bool TryMapLayout(TiffPhotometric photometric, int channels, int bitsPerSample,
-        TiffSampleFormat sampleFormat, out SampleFormat format)
-    {
-        format = default;
-        // Only photometrics whose samples IDecodedImage represents directly: gray
-        // (MinIsBlack, or MinIsWhite once inverted) and RGB. Palette would need an
-        // expansion, CMYK/YCbCr/CieLab a colour transform - meaning changes this
-        // adapter refuses to make silently.
-        if (photometric is not (TiffPhotometric.MinIsBlack or TiffPhotometric.MinIsWhite or TiffPhotometric.Rgb))
-            return false;
-        if (channels is < 1 or > 4) return false;
-        // Inversion is only defined here for unsigned grey; anything else under MinIsWhite is refused.
-        if (photometric == TiffPhotometric.MinIsWhite && (channels != 1 || sampleFormat != TiffSampleFormat.Uint))
-            return false;
-
-        switch (bitsPerSample, sampleFormat)
-        {
-            case (8, TiffSampleFormat.Uint): format = SampleFormat.UInt8; return true;
-            case (16, TiffSampleFormat.Uint): format = SampleFormat.UInt16; return true;
-            case (16 or 32, TiffSampleFormat.IeeeFloat): format = SampleFormat.Float32; return true;
-            default: return false; // signed ints, 32-bit uint
-        }
     }
 }

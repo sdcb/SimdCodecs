@@ -68,7 +68,7 @@ public sealed class TiffLocalCorpusTests(ITestOutputHelper output)
             try
             {
                 facade = TiffImageDecoder.TryDecode(data, out var image, cancellationToken: ct)
-                    ? $"facade {image!.Width}x{image.Height}x{image.Channels} {image.SampleFormat}"
+                    ? $"facade {image!.Width}x{image.Height}x{image.Channels} {image.SampleFormat}{AgainstMagick(data, image)}"
                     : "facade false";
                 image?.Dispose();
             }
@@ -85,5 +85,34 @@ public sealed class TiffLocalCorpusTests(ITestOutputHelper output)
 
         File.WriteAllLines(Path.Combine(Path.GetTempPath(), "tiff-corpus-report.txt"), lines);
         failures.ShouldBeEmpty();
+    }
+
+    /// <summary>Informational: the max difference from libtiff's decode (via ImageMagick) for 8-bit colour output.</summary>
+    private static string AgainstMagick(byte[] data, IDecodedImage image)
+    {
+        if (image.SampleFormat != SampleFormat.UInt8 || image.Channels < 3) return "";
+        try
+        {
+            using var magick = new ImageMagick.MagickImage(data);
+            if (magick.ColorSpace is ImageMagick.ColorSpace.CMYK or ImageMagick.ColorSpace.YCbCr)
+                magick.ColorSpace = ImageMagick.ColorSpace.sRGB;
+            using var pixels = magick.GetPixels();
+            var theirs = pixels.ToByteArray(image.Channels == 4 ? ImageMagick.PixelMapping.RGBA : ImageMagick.PixelMapping.RGB)!;
+            var ours = image.Pixels;
+            if (theirs.Length != ours.Length) return " (magick: size differs)";
+            var max = 0;
+            long sum = 0;
+            for (var i = 0; i < ours.Length; i++)
+            {
+                var d = Math.Abs(ours[i] - theirs[i]);
+                max = Math.Max(max, d);
+                sum += d;
+            }
+            return $" (vs magick: max {max}, mean {(double)sum / ours.Length:F3})";
+        }
+        catch (Exception e)
+        {
+            return $" (magick: {e.GetType().Name})";
+        }
     }
 }
