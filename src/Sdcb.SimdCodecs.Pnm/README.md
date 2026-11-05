@@ -1,9 +1,6 @@
 # Sdcb.SimdCodecs.Pnm
 
-Pure-managed Netpbm decoding and encoding for .NET 10, written from the Netpbm format pages and the PFM
-description. It decodes straight into the caller's buffer in any 8-bit pixel layout without allocating, or to the
-file's native 8-bit, 16-bit or float samples. Its row kernels use 256-bit and 128-bit vectors, and each kernel has
-a scalar version that gives the same bytes.
+Pure-managed Netpbm decoding and encoding for .NET 10, written from the Netpbm format pages and the PFM description. It decodes straight into the caller's buffer in any 8-bit pixel layout without allocating, or to the file's native 8-bit, 16-bit or float samples. Its row kernels use 256-bit and 128-bit vectors, and each kernel has a scalar version that gives the same bytes.
 
 ```csharp
 using Sdcb.SimdCodecs.Abstractions;
@@ -27,9 +24,7 @@ The decoder reads these formats:
 | P7 | PAM | 1 to 4 channels (grey, grey + alpha, RGB, RGBA) by `DEPTH`, same maxima |
 | `Pf` / `PF` | PFM | 32-bit float grey / RGB |
 
-Malformed data throws `InvalidDataException`. The `Try` methods and the facade adapters (`PnmImageDecoder`,
-`PfmImageDecoder`) return `false` instead. Images above 2^28 pixels are refused, which bounds what a decode
-allocates.
+Malformed data throws `InvalidDataException`. The `Try` methods and the facade adapters (`PnmImageDecoder`, `PfmImageDecoder`) return `false` instead. Images above 2^28 pixels are refused, which bounds what a decode allocates.
 
 ## Encoding
 
@@ -42,17 +37,14 @@ byte[] deep = PnmEncoder.Encode(samples16, width, height, channels: 3);         
 byte[] pfm = PnmEncoder.EncodePfm(floats, width, height, channels: 3);           // PF
 ```
 
-Every format can be written, plain or raw. The input can be any pixel layout at any stride, 8-bit or 16-bit samples
-with 1 to 4 channels, or float samples for PFM.
+Every format can be written, plain or raw. The input can be any pixel layout at any stride, 8-bit or 16-bit samples with 1 to 4 channels, or float samples for PFM.
 
 How the encoder converts the input to the chosen format:
 - A PBM or PGM takes the input's luma. A PBM pixel is black when the luma is below 128.
 - A PPM drops alpha.
 - A PAM keeps the channels it is given.
 
-Plain output keeps every line within 70 characters and starts each image row on a new line. A PFM is written
-little-endian, which is scale −1, with its rows bottom-up as the format stores them. The layout, 16-bit and PFM
-overloads also have a `Stream` version that writes through one pooled buffer.
+Plain output keeps every line within 70 characters and starts each image row on a new line. A PFM is written little-endian, which is scale −1, with its rows bottom-up as the format stores them. The layout, 16-bit and PFM overloads also have a `Stream` version that writes through one pooled buffer.
 
 ## Decisions
 

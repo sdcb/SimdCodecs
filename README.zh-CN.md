@@ -4,9 +4,7 @@
 
 [English](README.md) | **简体中文**
 
-纯托管的 .NET 10 图像编解码库：JPEG、PNG、TIFF、WebP、GIF、BMP、ICO / CUR、QOI、Netpbm（PBM / PGM / PPM / PAM / PFM）、JPEG 2000、JBIG2，外加 EXIF 和 ICC；HEIF / HEIC 解码是需要自行启用的独立包。
-没有任何原生依赖，兼容 NativeAOT，用 SIMD（AVX2、SSE、AdvSimd）加速，并带标量回退。
-在基准测试语料上，JPEG 解码比 libjpeg-turbo 更快。
+纯托管的 .NET 10 图像编解码库：JPEG、PNG、TIFF、WebP、GIF、BMP、ICO / CUR、QOI、Netpbm（PBM / PGM / PPM / PAM / PFM）、JPEG 2000、JBIG2，外加 EXIF 和 ICC；HEIF / HEIC 解码是需要自行启用的独立包。 没有任何原生依赖，兼容 NativeAOT，用 SIMD（AVX2、SSE、AdvSimd）加速，并带标量回退。 在基准测试语料上，JPEG 解码比 libjpeg-turbo 更快。
 
 ![JPEG、PNG、WebP、TIFF、JPEG 2000 和 JBIG2 图片，全部由 Sdcb.SimdCodecs 解码](https://cv-public.sdcb.ai/simdcodecs/readme/showcase-v1.jpg)
 
@@ -37,31 +35,16 @@ File.WriteAllBytes("photo.jpg", jpeg);
 
 门面的其他入口：
 
-- `SimdCodecs.TryDecodeInto(file, buffer, stride, format)`：按任意行跨度，把任意 `PixelFormat` 直接写进你的缓冲区：
-  BGRA（Windows / Skia）、`Bgra32Premultiplied`（WPF、Direct2D、合成器）、RGB、BGR（OpenCV）、灰度（OCR），以及
-  它们的 16 位版本（`Rgba64`、`Gray16` 等），16 位 PNG、10 位 HEIC 的精度不会丢失。JPEG 和 PNG 原生输出 8 位布局，
-  不经过 RGBA 整帧；彩色 JPEG 的灰度就是它的 Y 平面。
-- `SimdCodecs.TryDecode(file, out image, options, cancellationToken)`：保留原始布局：通道数、8/16 位或浮点采样、
-  真实位深、ICC、Exif / XMP（`image.Metadata`）。`DecodeOptions` 可以只解一个区域、缩放解码（JPEG 在 DCT 域
-  1/2 到 1/8；`TryGetClosestSize` 告诉你 codec 原生能做到什么）或使用池化内存（释放图像即归还）。所有入口都接受
-  `CancellationToken`。
-- `SimdCodecs.TryReadInfo(file, out info)`：只读文件头：格式、存储位深、颜色编码（是不是 PQ / HLG HDR）、分辨率
-  （DPI）、EXIF 方向（只报告，不旋转像素）、帧数或页数、有没有缩略图。
-- `SimdCodecs.TryReadMetadata(file, out metadata)` / `TryDecodeThumbnail(file, out thumb)`：取出 Exif、XMP、ICC
-  原始块供转码透传，以及内嵌的预览图（Exif IFD1、HEIF `thmb`）。
-- `ImageDecoder.Open(stream | path | memory)`：WIC 式的会话：`Format`、`FrameCount`，再 `GetFrame(i).Decode(options)`
-  或 `.CopyPixels(region, format, buffer, stride)`；不可寻址的流用 `OpenAsync`。
-- `SimdCodecs.Encode(image, ImageFormat.Png, stream)` / `CreateEncoder(format, writer)`：编码器抽象：每个编码器都接收
-  任意 `PixelFormat`（包括 UI 框架的预乘 BGRA），按任意跨度逐行推送，并写入图像的元数据；只能存 8 位的格式会在哪里
-  降精度，用 `GetClosestInputFormat` 可以先看到。
+- `SimdCodecs.TryDecodeInto(file, buffer, stride, format)`：按任意行跨度，把任意 `PixelFormat` 直接写进你的缓冲区： BGRA（Windows / Skia）、`Bgra32Premultiplied`（WPF、Direct2D、合成器）、RGB、BGR（OpenCV）、灰度（OCR），以及 它们的 16 位版本（`Rgba64`、`Gray16` 等），16 位 PNG、10 位 HEIC 的精度不会丢失。JPEG 和 PNG 原生输出 8 位布局， 不经过 RGBA 整帧；彩色 JPEG 的灰度就是它的 Y 平面。
+- `SimdCodecs.TryDecode(file, out image, options, cancellationToken)`：保留原始布局：通道数、8/16 位或浮点采样、 真实位深、ICC、Exif / XMP（`image.Metadata`）。`DecodeOptions` 可以只解一个区域、缩放解码（JPEG 在 DCT 域 1/2 到 1/8；`TryGetClosestSize` 告诉你 codec 原生能做到什么）或使用池化内存（释放图像即归还）。所有入口都接受 `CancellationToken`。
+- `SimdCodecs.TryReadInfo(file, out info)`：只读文件头：格式、存储位深、颜色编码（是不是 PQ / HLG HDR）、分辨率 （DPI）、EXIF 方向（只报告，不旋转像素）、帧数或页数、有没有缩略图。
+- `SimdCodecs.TryReadMetadata(file, out metadata)` / `TryDecodeThumbnail(file, out thumb)`：取出 Exif、XMP、ICC 原始块供转码透传，以及内嵌的预览图（Exif IFD1、HEIF `thmb`）。
+- `ImageDecoder.Open(stream | path | memory)`：WIC 式的会话：`Format`、`FrameCount`，再 `GetFrame(i).Decode(options)` 或 `.CopyPixels(region, format, buffer, stride)`；不可寻址的流用 `OpenAsync`。
+- `SimdCodecs.Encode(image, ImageFormat.Png, stream)` / `CreateEncoder(format, writer)`：编码器抽象：每个编码器都接收 任意 `PixelFormat`（包括 UI 框架的预乘 BGRA），按任意跨度逐行推送，并写入图像的元数据；只能存 8 位的格式会在哪里 降精度，用 `GetClosestInputFormat` 可以先看到。
 - `SimdCodecs.TryReadPlanarInfo` / `TryDecodePlanes`：按编码原样输出 YCbCr 平面（HEIF），供视频管线和 GPU 上传使用。
-- `SimdCodecs.DetectFormat(file)`：还能认出不支持解码的格式（AVIF、JPEG XL 等）；
-  `SimdCodecs.IsDecodable(format)` 判断某个格式能否解码。HEIF 在注册它的包之后即可解码。
-- `SimdCodecs.Register(HeifImageDecoder.Registration)`：让上面所有入口都能处理 HEIF / HEIC。HEVC 有专利负担，
-  `Sdcb.SimdCodecs.Heif` 不在门面包里，需要显式安装并注册（本包不授予任何专利许可）。
-- `SimdCodecs.TryOpenFrames(file, out reader)`：按索引、以任意布局逐帧解码：动画 WebP / GIF 是合成好的帧
-  及其时长，多页 TIFF 是各页，图标是其中的每张图（其他图片就是一帧）；`reader.EnumerateFramesInto(buffer, stride, format)`
-  用同一块缓冲区按顺序播放。
+- `SimdCodecs.DetectFormat(file)`：还能认出不支持解码的格式（AVIF、JPEG XL 等）； `SimdCodecs.IsDecodable(format)` 判断某个格式能否解码。HEIF 在注册它的包之后即可解码。
+- `SimdCodecs.Register(HeifImageDecoder.Registration)`：让上面所有入口都能处理 HEIF / HEIC。HEVC 有专利负担， `Sdcb.SimdCodecs.Heif` 不在门面包里，需要显式安装并注册（本包不授予任何专利许可）。
+- `SimdCodecs.TryOpenFrames(file, out reader)`：按索引、以任意布局逐帧解码：动画 WebP / GIF 是合成好的帧 及其时长，多页 TIFF 是各页，图标是其中的每张图（其他图片就是一帧）；`reader.EnumerateFramesInto(buffer, stride, format)` 用同一块缓冲区按顺序播放。
 
 从 1.x 升级：见 [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md)。
 
@@ -121,8 +104,7 @@ File.WriteAllBytes("photo.jpg", jpeg);
 | **Sdcb.SimdCodecs** | **0.20×** | 从 RGBA **0.08×**，从 BGR(A) **0.05×** |
 | ImageSharp 3.1.12 | 1.62× | 0.06× |
 
-BMP 解码直接写进调用方缓冲区、任意布局、零分配，与 WIC 逐像素一致（文档列出的几项决定除外）；所有 RLE、
-调色板和掩码布局的解码都快于 WIC 和 ImageSharp，5-6-5 和调色板编码比 ImageSharp 快 2–6 倍。
+BMP 解码直接写进调用方缓冲区、任意布局、零分配，与 WIC 逐像素一致（文档列出的几项决定除外）；所有 RLE、 调色板和掩码布局的解码都快于 WIC 和 ImageSharp，5-6-5 和调色板编码比 ImageSharp 快 2–6 倍。
 
 | 1920×1080，相对 ImageSharp 3.1.12 的几何平均 | 解码 | 编码到流 |
 |---|---:|---:|
@@ -131,19 +113,7 @@ BMP 解码直接写进调用方缓冲区、任意布局、零分配，与 WIC �
 
 QOI 和 Netpbm 都零分配地解码进调用方缓冲区；两者在解码和编码两个方向上都与 ImageMagick 结果完全一致。
 
-JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插值时，相对精确参考值的 RGB PSNR 高约
-1 dB），并且在 AVX2、SSE、AdvSimd、标量和 NativeAOT 下输出逐位一致。WebP 输出与 libwebp 逐字节一致。
-JPEG 2000 无损解码与 libopenjp2 逐位一致，有损解码 PSNR 超过 84 dB。
-HEIF 的 HEVC 平面与 ffmpeg 逐字节一致；HEIF 是这里唯一用满所有核的表（网格的 tile、单张图的 WPP 行都并行解码），
-第一列是单核。
-完整数据、语料和测量方法见
-[JPEG](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md)、
-[WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md) 和
-[JPEG 2000](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md)、
-[BMP / ICO](benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/m1-tuned-2026-10-30-amd-ryzen-7-5800x.md)、
-[QOI / Netpbm](benchmarks/Sdcb.SimdCodecs.QoiPnm.Benchmarks/results/tuned-2026-10-30-amd-ryzen-7-5800x.md)、
-[HEIF](benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md)
-（在接近照片内容、不带 alpha 的有损文件上，WebP 与 libwebp 持平：0.87–1.13×；JPEG 2000 目前单核纯托管解码耗时约为 libopenjp2 的 2× 左右）。
+JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插值时，相对精确参考值的 RGB PSNR 高约 1 dB），并且在 AVX2、SSE、AdvSimd、标量和 NativeAOT 下输出逐位一致。WebP 输出与 libwebp 逐字节一致。 JPEG 2000 无损解码与 libopenjp2 逐位一致，有损解码 PSNR 超过 84 dB。 HEIF 的 HEVC 平面与 ffmpeg 逐字节一致；HEIF 是这里唯一用满所有核的表（网格的 tile、单张图的 WPP 行都并行解码）， 第一列是单核。 完整数据、语料和测量方法见 [JPEG](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md)、 [WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md) 和 [JPEG 2000](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md)、 [BMP / ICO](benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/m1-tuned-2026-10-30-amd-ryzen-7-5800x.md)、 [QOI / Netpbm](benchmarks/Sdcb.SimdCodecs.QoiPnm.Benchmarks/results/tuned-2026-10-30-amd-ryzen-7-5800x.md)、 [HEIF](benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md) （在接近照片内容、不带 alpha 的有损文件上，WebP 与 libwebp 持平：0.87–1.13×；JPEG 2000 目前单核纯托管解码耗时约为 libopenjp2 的 2× 左右）。
 
 ## 包列表
 
@@ -173,39 +143,17 @@ HEIF 的 HEVC 平面与 ffmpeg 逐字节一致；HEIF 是这里唯一用满所�
 <details>
 <summary>各包的详细特性</summary>
 
-- **Jpeg**：T.81 解码器，支持 baseline、progressive、restart interval、任意采样方式，灰度 / YCbCr /
-  RGB / CMYK / YCCK，1/2–1/8 缩放解码，无损（SOF3）。SIMD 编码器支持 baseline、优化 Huffman 或
-  progressive；4:4:4 / 4:2:0 / 灰度；可写入 EXIF（APP1）、XMP 和 ICC 配置文件（APP2）。
-- **Png**：所有标准位深（包括 1/2/4 位灰度和调色板），tEXt / zTXt / iTXt 文本块，PNG-3 的 cICP /
-  mDCV / cLLI HDR 标记。
-- **Tiff**：多页；8/16/32 位整数和浮点；Deflate / LZW（另可读 PackBits）；条带或分块；chunky 或
-  planar；按需读取单个条带或分块；读取 1/2/4 位页面（扩展为 8 位）、CCITT 传真（Group 3 1D/2D、
-  Group 4、Modified Huffman）和浮点预测器。
-- **Webp**：RFC 6386 / RFC 9649：VP8 有损、VP8L 无损、ALPH、带跳转的动画、ICC / EXIF / XMP。门面的
-  `TryDecode` 返回静态图或动画的第 0 帧，`TryOpenFrames` 返回所有帧；`WebpAnimationDecoder` 另外提供
-  按时间戳定位和每帧的矩形。`WebpEncoder.EncodeLossless` 编码 VP8L 静态图（含 alpha），压缩力度 0–9；
-  `WebpEncoder.EncodeLossy` 编码 VP8 静态图，质量 0–100、力度 0–6，透明度写进 ALPH 平面（默认无损，`AlphaQuality`
-  低于 100 时减少 alpha 级数）；两者都输出到数组或流，并可写入 ICC / Exif / XMP。`WebpAnimationEncoder`（逐帧添加）和
-  `WebpEncoder.EncodeAnimation` 编码动画：有损（默认）、无损，或每帧取两者中较小的；输入可以是整帧画布（编码器只写变化的
-  矩形，选择 blend 或直接覆盖，合并不变的帧），也可以是调用方给定的 ANMF 帧；`MaxKeyframeDistance` 限制跳转时要解码的帧数。
-- **Gif**：GIF89a：全局 / 局部调色板、隔行、透明、全部 dispose 方式、NETSCAPE2.0 循环次数；合成好的帧，
-  可跳转。规范没有定死的行为，按浏览器的做法处理，列在包的 README 里。编码器：静态图和动画，精确调色板或
-  Wu 量化（可选 Floyd–Steinberg 抖动），不透明动画只写变化的矩形。
-- **Bmp**：Windows DIB 和 OS/2 位图：core、OS/2 2.x、40 字节、V2–V5 各版头部；1/2/4/8 位调色板和 16/24/32 位；
-  `BI_BITFIELDS` / `BI_ALPHABITFIELDS`；带 delta 的 RLE4 / RLE8、OS/2 RLE24 和 Huffman 1D；`BI_PNG`；自顶向下的行；
-  V5 ICC；packed DIB（剪贴板、图标图像）。可直接解码成任意 `PixelFormat` 且不分配内存；与 WIC 逐像素比对过。
-  文档没有定死的行为列在包的 README 里。
-- **Ico**：基于 Bmp 和 Png 的图标和光标：读出每张图，默认取最大、位深最高的一张，带热点坐标；编码多尺寸图标和光标，
-  每张图可选 PNG 或 1/4/8/24/32 位 DIB。
-- **Qoi**：按 QOI 规范实现：3 通道和 4 通道图像；会报告色彩空间（线性色彩空间报告为线性传递函数）；可直接解码成任意
-  `PixelFormat` 且不分配内存；编码输入可以是 RGBA、BGRA、RGB、BGR 或灰度。
-- **Pnm**：Netpbm：P1–P6 的 ASCII 和二进制格式，maxval 最高 65535（大于 255 时为 16 位样本）；1–4 通道的 PAM（P7）；
-  PFM（`Pf` / `PF`）读出浮点样本；文件里只读第一张图。所有格式都能编码，ASCII 输出每行不超过 70 个字符。
-  格式说明没有定死的行为列在包的 README 里。
+- **Jpeg**：T.81 解码器，支持 baseline、progressive、restart interval、任意采样方式，灰度 / YCbCr / RGB / CMYK / YCCK，1/2–1/8 缩放解码，无损（SOF3）。SIMD 编码器支持 baseline、优化 Huffman 或 progressive；4:4:4 / 4:2:0 / 灰度；可写入 EXIF（APP1）、XMP 和 ICC 配置文件（APP2）。
+- **Png**：所有标准位深（包括 1/2/4 位灰度和调色板），tEXt / zTXt / iTXt 文本块，PNG-3 的 cICP / mDCV / cLLI HDR 标记。
+- **Tiff**：多页；8/16/32 位整数和浮点；Deflate / LZW（另可读 PackBits）；条带或分块；chunky 或 planar；按需读取单个条带或分块；读取 1/2/4 位页面（扩展为 8 位）、CCITT 传真（Group 3 1D/2D、 Group 4、Modified Huffman）和浮点预测器。
+- **Webp**：RFC 6386 / RFC 9649：VP8 有损、VP8L 无损、ALPH、带跳转的动画、ICC / EXIF / XMP。门面的 `TryDecode` 返回静态图或动画的第 0 帧，`TryOpenFrames` 返回所有帧；`WebpAnimationDecoder` 另外提供 按时间戳定位和每帧的矩形。`WebpEncoder.EncodeLossless` 编码 VP8L 静态图（含 alpha），压缩力度 0–9； `WebpEncoder.EncodeLossy` 编码 VP8 静态图，质量 0–100、力度 0–6，透明度写进 ALPH 平面（默认无损，`AlphaQuality` 低于 100 时减少 alpha 级数）；两者都输出到数组或流，并可写入 ICC / Exif / XMP。`WebpAnimationEncoder`（逐帧添加）和 `WebpEncoder.EncodeAnimation` 编码动画：有损（默认）、无损，或每帧取两者中较小的；输入可以是整帧画布（编码器只写变化的 矩形，选择 blend 或直接覆盖，合并不变的帧），也可以是调用方给定的 ANMF 帧；`MaxKeyframeDistance` 限制跳转时要解码的帧数。
+- **Gif**：GIF89a：全局 / 局部调色板、隔行、透明、全部 dispose 方式、NETSCAPE2.0 循环次数；合成好的帧， 可跳转。规范没有定死的行为，按浏览器的做法处理，列在包的 README 里。编码器：静态图和动画，精确调色板或 Wu 量化（可选 Floyd–Steinberg 抖动），不透明动画只写变化的矩形。
+- **Bmp**：Windows DIB 和 OS/2 位图：core、OS/2 2.x、40 字节、V2–V5 各版头部；1/2/4/8 位调色板和 16/24/32 位； `BI_BITFIELDS` / `BI_ALPHABITFIELDS`；带 delta 的 RLE4 / RLE8、OS/2 RLE24 和 Huffman 1D；`BI_PNG`；自顶向下的行； V5 ICC；packed DIB（剪贴板、图标图像）。可直接解码成任意 `PixelFormat` 且不分配内存；与 WIC 逐像素比对过。 文档没有定死的行为列在包的 README 里。
+- **Ico**：基于 Bmp 和 Png 的图标和光标：读出每张图，默认取最大、位深最高的一张，带热点坐标；编码多尺寸图标和光标， 每张图可选 PNG 或 1/4/8/24/32 位 DIB。
+- **Qoi**：按 QOI 规范实现：3 通道和 4 通道图像；会报告色彩空间（线性色彩空间报告为线性传递函数）；可直接解码成任意 `PixelFormat` 且不分配内存；编码输入可以是 RGBA、BGRA、RGB、BGR 或灰度。
+- **Pnm**：Netpbm：P1–P6 的 ASCII 和二进制格式，maxval 最高 65535（大于 255 时为 16 位样本）；1–4 通道的 PAM（P7）； PFM（`Pf` / `PF`）读出浮点样本；文件里只读第一张图。所有格式都能编码，ASCII 输出每行不超过 70 个字符。 格式说明没有定死的行为列在包的 README 里。
 - **Exif**：读取 JPEG、TIFF、PNG 和 WebP；`ExifWriter` 生成可赋给 `JpegEncodeOptions.Exif` 的数据块。
-- **Heif**：基于 ISOBMFF item 模型的 ISO/IEC 23008-12 静态图：HEVC 帧内解码（H.265 Main、Main 10、
-  Main Still Picture，4:2:0），`grid` 分块并行解码，应用 `clap` / `irot` / `imir`，ICC 原样传出，报告 nclx / VUI
-  色彩；PQ / HLG 不给 8 位投影。1.x 输出 8 位样本；不解码 alpha、增益图、图像序列和范围扩展 profile。详见包的 README。
+- **Heif**：基于 ISOBMFF item 模型的 ISO/IEC 23008-12 静态图：HEVC 帧内解码（H.265 Main、Main 10、 Main Still Picture，4:2:0），`grid` 分块并行解码，应用 `clap` / `irot` / `imir`，ICC 原样传出，报告 nclx / VUI 色彩；PQ / HLG 不给 8 位投影。1.x 输出 8 位样本；不解码 alpha、增益图、图像序列和范围扩展 profile。详见包的 README。
 
 </details>
 
@@ -239,15 +187,13 @@ Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
 Heif ─ Abstractions   (not referenced by the facade: registered by the application)
 ```
 
-MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BMP）、Wu 调色板量化器（GIF、BMP）、流和数组写入器（QOI、Netpbm）和 EXIF 方向读取
-（JPEG、PNG、WebP）以源码形式共享（`src/Shared`），编译进每个用到它们的包：没有哪个包使用另一个包的内部成员。
+MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BMP）、Wu 调色板量化器（GIF、BMP）、流和数组写入器（QOI、Netpbm）和 EXIF 方向读取 （JPEG、PNG、WebP）以源码形式共享（`src/Shared`），编译进每个用到它们的包：没有哪个包使用另一个包的内部成员。
 
 </details>
 
 ## LINQPad 样例
 
-每个包都在 `linqpad-samples/` 里附带可运行的样例，LINQPad 的 NuGet 浏览器会直接列出它们
-（源码位于 `src/<包名>/linqpad-samples/`）：
+每个包都在 `linqpad-samples/` 里附带可运行的样例，LINQPad 的 NuGet 浏览器会直接列出它们 （源码位于 `src/<包名>/linqpad-samples/`）：
 
 | 包 | 样例 |
 |---|---|
@@ -265,8 +211,7 @@ MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BM
 | `Sdcb.SimdCodecs.Pnm` | `netpbm`（P1–P7 的 ASCII 和二进制、手写 PPM、16 位 PGM、PFM） |
 | `Sdcb.SimdCodecs.Heif` | `decode`（手机拍照的网格图、Main 10、`clap` 裁剪；`ReadInfo` / `Decode` / `DecodeTo`）、`facade`（向门面注册；带行填充的 BGRA、Gray8） |
 
-样例图片从 `https://cv-public.sdcb.ai/simdcodecs/samples/v1/` 下载，它们的生成方式和来源见
-[tools/sample-assets](tools/sample-assets/README.md)。HEIF 样例使用 HEIF 测试图片（`…/test-images/heif/`，CC0，见 `tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh`）。
+样例图片从 `https://cv-public.sdcb.ai/simdcodecs/samples/v1/` 下载，它们的生成方式和来源见 [tools/sample-assets](tools/sample-assets/README.md)。HEIF 样例使用 HEIF 测试图片（`…/test-images/heif/`，CC0，见 `tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh`）。
 
 ## 构建和测试
 
@@ -275,9 +220,7 @@ dotnet build SimdCodecs.slnx -c Release
 dotnet test  SimdCodecs.slnx -c Release
 ```
 
-依赖外部参考工具（oracle）的测试在工具缺失时会跳过；设置 `REQUIRE_ORACLES=1` 可让缺失的 oracle 直接
-报错（CI 就是这样运行的）。各 oracle 的获取方式，以及所有贡献都要遵守的 clean-room 规则，见
-[`AGENTS.md`](AGENTS.md)。基准测试需要按路径单独构建，见 [`benchmarks/README.md`](benchmarks/README.md)。
+依赖外部参考工具（oracle）的测试在工具缺失时会跳过；设置 `REQUIRE_ORACLES=1` 可让缺失的 oracle 直接 报错（CI 就是这样运行的）。各 oracle 的获取方式，以及所有贡献都要遵守的 clean-room 规则，见 [`AGENTS.md`](AGENTS.md)。基准测试需要按路径单独构建，见 [`benchmarks/README.md`](benchmarks/README.md)。
 
 ## 交流
 

@@ -1,9 +1,6 @@
 # Sdcb.SimdCodecs.Jpeg
 
-Pure-managed JPEG (ITU-T T.81) decoder and encoder for .NET 10. Baseline
-sequential and progressive DCT, restart intervals, all chroma subsampling
-layouts, grayscale, YCbCr, RGB-marked, and Adobe CMYK / YCCK streams. Output
-is 8-bit RGBA by default, or BGRA / RGB at any row stride.
+Pure-managed JPEG (ITU-T T.81) decoder and encoder for .NET 10. Baseline sequential and progressive DCT, restart intervals, all chroma subsampling layouts, grayscale, YCbCr, RGB-marked, and Adobe CMYK / YCCK streams. Output is 8-bit RGBA by default, or BGRA / RGB at any row stride.
 
 ```csharp
 using Sdcb.SimdCodecs.Jpeg;
@@ -13,8 +10,7 @@ JpegImage image = JpegDecoder.Decode(data);
 Console.WriteLine($"{image.Width} × {image.Height}");
 ```
 
-Decode into a caller-supplied buffer — no heap allocation in the decoder
-itself when combined with a pooled destination:
+Decode into a caller-supplied buffer — no heap allocation in the decoder itself when combined with a pooled destination:
 
 ```csharp
 JpegInfo info = JpegDecoder.ReadInfo(data);
@@ -22,9 +18,7 @@ byte[] rgba = new byte[info.Width * info.Height * 4];
 JpegDecoder.DecodeTo(data, rgba);
 ```
 
-Scaled decode (`JpegScale.Half` and below) runs a reduced inverse DCT so
-neither the full-resolution sample planes nor the full-resolution output ever
-exist — useful for decoding large scans straight to thumbnail size:
+Scaled decode (`JpegScale.Half` and below) runs a reduced inverse DCT so neither the full-resolution sample planes nor the full-resolution output ever exist — useful for decoding large scans straight to thumbnail size:
 
 ```csharp
 JpegDecoder.DecodeTo(data, rgba, JpegScale.Quarter);
@@ -36,18 +30,11 @@ Encode to a baseline JPEG:
 byte[] jpeg = JpegEncoder.Encode(rgba, width, height, quality: 85);
 ```
 
-`JpegEncodeOptions` selects chroma subsampling, optimised Huffman tables,
-progressive mode, and an optional Exif blob.
+`JpegEncodeOptions` selects chroma subsampling, optimised Huffman tables, progressive mode, and an optional Exif blob.
 
 ## Allocation contract
 
-`JpegDecoder.DecodeTo` into a caller-supplied buffer allocates nothing on the
-managed heap (`JpegAllocationTests` enforces this). All intermediate state is
-kept in a per-thread `DecoderState` cache that is rented at the start and
-returned at the end of every decode call. The cache is fully reset on every
-rent — any new field added to `DecoderState`, `JpegHuffman`, or `Component`
-must be initialised in the corresponding `Reset()` method, not in a
-constructor, or the cache will carry stale state across calls.
+`JpegDecoder.DecodeTo` into a caller-supplied buffer allocates nothing on the managed heap (`JpegAllocationTests` enforces this). All intermediate state is kept in a per-thread `DecoderState` cache that is rented at the start and returned at the end of every decode call. The cache is fully reset on every rent — any new field added to `DecoderState`, `JpegHuffman`, or `Component` must be initialised in the corresponding `Reset()` method, not in a constructor, or the cache will carry stale state across calls.
 
 ## Arithmetic contracts
 
@@ -57,12 +44,6 @@ The decoder's arithmetic is frozen:
 - **`JpegResample`** — 16×-scale unrounded linear chroma interpolation.
 - **`JpegColor`** — T.871 YCbCr → RGB / RGBA conversion.
 
-Every ISA tier (Vector256 / Vector128 / scalar) and every fast path reproduces
-the same operation sequence bit for bit. A change to any of these three classes
-requires passing `accuracy --gate` first and lands as its own commit with the
-gate table in the message.
+Every ISA tier (Vector256 / Vector128 / scalar) and every fast path reproduces the same operation sequence bit for bit. A change to any of these three classes requires passing `accuracy --gate` first and lands as its own commit with the gate table in the message.
 
-The encoder's contract is quality, not bytes: `encode --gate` must pass, and
-optimised / progressive streams decode to exactly the baseline's pixels.
-Encoder kernels (`JpegEncoderKernels`) are `NoInlining | AggressiveOptimization`
-and produce identical output on every ISA tier (`JpegEncoderEquivalenceTests`).
+The encoder's contract is quality, not bytes: `encode --gate` must pass, and optimised / progressive streams decode to exactly the baseline's pixels. Encoder kernels (`JpegEncoderKernels`) are `NoInlining | AggressiveOptimization` and produce identical output on every ISA tier (`JpegEncoderEquivalenceTests`).

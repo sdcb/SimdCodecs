@@ -1,17 +1,10 @@
 # Sdcb.SimdCodecs.Heif
 
-Pure-managed HEIF / HEIC decoder for .NET 10. Reads ISOBMFF containers
-(ISO/IEC 14496-12), the HEIF item model (ISO/IEC 23008-12 / MIAF 23000-22),
-and decodes HEVC intra frames (ITU-T H.265 Main and Main 10 profiles) — the
-encoding used by every modern Android and iPhone camera.
+Pure-managed HEIF / HEIC decoder for .NET 10. Reads ISOBMFF containers (ISO/IEC 14496-12), the HEIF item model (ISO/IEC 23008-12 / MIAF 23000-22), and decodes HEVC intra frames (ITU-T H.265 Main and Main 10 profiles) — the encoding used by every modern Android and iPhone camera.
 
-> **Patent notice.** HEVC (H.265) is patent-encumbered. This package is MIT
-> and conveys **no patent licence**. Users are responsible for evaluating HEVC
-> patent obligations in their jurisdiction before deploying this package.
+> **Patent notice.** HEVC (H.265) is patent-encumbered. This package is MIT and conveys **no patent licence**. Users are responsible for evaluating HEVC patent obligations in their jurisdiction before deploying this package.
 
-This package is **not** included in the `Sdcb.SimdCodecs` meta-package, and the facade does not reference it:
-an MIT package cannot convey HEVC's patent licensing, so using HEVC is a decision each application makes for
-itself. Install it explicitly and register it with the facade once, at start-up:
+This package is **not** included in the `Sdcb.SimdCodecs` meta-package, and the facade does not reference it: an MIT package cannot convey HEVC's patent licensing, so using HEVC is a decision each application makes for itself. Install it explicitly and register it with the facade once, at start-up:
 
 ```csharp
 using Sdcb.SimdCodecs;
@@ -28,13 +21,9 @@ if (SimdCodecs.TryReadInfo(data, out var info))
 }
 ```
 
-Registering is idempotent and thread-safe, and cannot be undone. A registered codec is sniffed after the
-built-in ones. Before registration, `SimdCodecs.DetectFormat` still reports `ImageFormat.Heif` (so an
-application can tell the user what it cannot open) while `IsDecodable(ImageFormat.Heif)`, `CanDecode` and the
-`Try*` methods return false.
+Registering is idempotent and thread-safe, and cannot be undone. A registered codec is sniffed after the built-in ones. Before registration, `SimdCodecs.DetectFormat` still reports `ImageFormat.Heif` (so an application can tell the user what it cannot open) while `IsDecodable(ImageFormat.Heif)`, `CanDecode` and the `Try*` methods return false.
 
-`HeifImageDecoder` is the `IImageDecoder` adapter behind the registration; it can also be called directly
-without the facade. So can the codec's own API:
+`HeifImageDecoder` is the `IImageDecoder` adapter behind the registration; it can also be called directly without the facade. So can the codec's own API:
 
 ```csharp
 using HeifImage image = HeifDecoder.Decode(data);  // RGBA8, display-oriented
@@ -43,82 +32,46 @@ HeifInfo header = HeifDecoder.ReadInfo(data);       // size, coded bit depth, ti
 
 ## What the facade returns
 
-- `TryReadInfo`: the **displayed** size (`clap`, `irot` and `imir` are already applied, so `Orientation` is
-  always `Normal`), 3 channels, one frame, `Format = Heif`; `UInt8` / `BitDepth` 8 for a Main image, `UInt16` /
-  `BitDepth` 10 for a Main 10 one; `ColorEncoding`; `HasThumbnail` when a `thmb` item exists.
-- `TryDecode`: an RGB `RasterImage` (8-bit, or 16-bit holding the 10 bits of a Main 10 image) with the container's
-  ICC profile and its Exif / XMP items (`Metadata`) passed through. `ColorEncoding`
-  comes from the `colr` nclx box (primaries, transfer); with only an ICC profile it is the assumed-sRGB
-  default (it is never derived from a profile); with no `colr` box it comes from the HEVC VUI. It is always
-  full range: limited-range Y′CbCr is expanded by the conversion.
-- `TryDecodeInto`: every `PixelFormat`, any stride, written a tile at a time straight from the coded samples:
-  8-bit formats by the frozen 8-bit conversion, 16-bit ones (`Rgba64`, …) by the 16-bit one. For an 8-bit image
-  the pixels equal the decoded image converted by `PixelConverter`; for a Main 10 image the 8-bit formats round once
-  from 10 bits, so they can differ by one code value from narrowing the 16-bit image. `Gray8` is the stored luma (Y)
-  range-mapped to 8 bits — the formula is frozen in `HeifColor` — rather than the luma of the RGB; an
-  identity-matrix (GBR) image takes the luma of the RGB. A PQ or HLG transfer function returns false (its code values are encoded
-  for an HDR display), as PNG does for cICP PQ / HLG; `TryDecode` still decodes it and reports the transfer.
+- `TryReadInfo`: the **displayed** size (`clap`, `irot` and `imir` are already applied, so `Orientation` is always `Normal`), 3 channels, one frame, `Format = Heif`; `UInt8` / `BitDepth` 8 for a Main image, `UInt16` / `BitDepth` 10 for a Main 10 one; `ColorEncoding`; `HasThumbnail` when a `thmb` item exists.
+- `TryDecode`: an RGB `RasterImage` (8-bit, or 16-bit holding the 10 bits of a Main 10 image) with the container's ICC profile and its Exif / XMP items (`Metadata`) passed through. `ColorEncoding` comes from the `colr` nclx box (primaries, transfer); with only an ICC profile it is the assumed-sRGB default (it is never derived from a profile); with no `colr` box it comes from the HEVC VUI. It is always full range: limited-range Y′CbCr is expanded by the conversion.
+- `TryDecodeInto`: every `PixelFormat`, any stride, written a tile at a time straight from the coded samples: 8-bit formats by the frozen 8-bit conversion, 16-bit ones (`Rgba64`, …) by the 16-bit one. For an 8-bit image the pixels equal the decoded image converted by `PixelConverter`; for a Main 10 image the 8-bit formats round once from 10 bits, so they can differ by one code value from narrowing the 16-bit image. `Gray8` is the stored luma (Y) range-mapped to 8 bits — the formula is frozen in `HeifColor` — rather than the luma of the RGB; an identity-matrix (GBR) image takes the luma of the RGB. A PQ or HLG transfer function returns false (its code values are encoded for an HDR display), as PNG does for cICP PQ / HLG; `TryDecode` still decodes it and reports the transfer.
 - `TryOpenFrames`: a one-frame reader over the still image.
-- `TryReadMetadata`: the `Exif` item (from its TIFF header) and the XMP `mime` item linked to the primary image by
-  `cdsc`, and the ICC profile. The Exif orientation tag is passed through as is, although the pixels are already
-  turned by `irot` / `imir`: a transcoder should rewrite it to 1.
+- `TryReadMetadata`: the `Exif` item (from its TIFF header) and the XMP `mime` item linked to the primary image by `cdsc`, and the ICC profile. The Exif orientation tag is passed through as is, although the pixels are already turned by `irot` / `imir`: a transcoder should rewrite it to 1.
 - `TryDecodeThumbnail`: the primary image's `thmb` item.
-- `TryReadPlanarInfo` / `TryDecodePlanes` (`IPlanarImageDecoder`): the Y, Cb, Cr planes of the canvas as coded
-  (4:2:0, coded bit depth, low-bit aligned), for an image without `clap` / `irot` / `imir`.
+- `TryReadPlanarInfo` / `TryDecodePlanes` (`IPlanarImageDecoder`): the Y, Cb, Cr planes of the canvas as coded (4:2:0, coded bit depth, low-bit aligned), for an image without `clap` / `irot` / `imir`.
 - `DecodeOptions`: a region (decoded whole, then cropped) and a pool; no native scaling.
 
 ## Limitations
 
-- **Not decoded:** alpha auxiliary images (the colour image decodes, opaque), HDR gain maps, depth maps and
-  other auxiliary items.
-- **Not supported:** image sequences (`.heics`, `msf1`) and the HEVC range-extension profiles (Main 10 Intra,
-  Main 12, 4:4:4, …) — `InvalidDataException`, or false from the `Try*` methods.
+- **Not decoded:** alpha auxiliary images (the colour image decodes, opaque), HDR gain maps, depth maps and other auxiliary items.
+- **Not supported:** image sequences (`.heics`, `msf1`) and the HEVC range-extension profiles (Main 10 Intra, Main 12, 4:4:4, …) — `InvalidDataException`, or false from the `Try*` methods.
 
 ## Performance
 
-AVX2 / Vector128 (SSE, AdvSimd) / scalar kernels for the inverse transform, intra prediction, SAO and the colour
-conversion, a CABAC engine with a 64-bit look-ahead window, grid tiles decoded in parallel and, for an image
-without tiles, a WPP wavefront (CTB rows in parallel) with parallel deblocking, SAO and colour passes. Measured on
-a Ryzen 7 5800X against libde265 1.1.1 and libheif 1.23.1 in the same process
-([M3 record](https://github.com/sdcb/SimdCodecs/blob/main/benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md)):
+AVX2 / Vector128 (SSE, AdvSimd) / scalar kernels for the inverse transform, intra prediction, SAO and the colour conversion, a CABAC engine with a 64-bit look-ahead window, grid tiles decoded in parallel and, for an image without tiles, a WPP wavefront (CTB rows in parallel) with parallel deblocking, SAO and colour passes. Measured on a Ryzen 7 5800X against libde265 1.1.1 and libheif 1.23.1 in the same process ([M3 record](https://github.com/sdcb/SimdCodecs/blob/main/benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md)):
 
 - one core, HEVC decoding alone: 0.68–0.87× libde265's time;
-- 8 cores, to RGBA: 0.20–0.32× libheif's time (tiled phone photos and single-item images alike), 0.09–0.14×
-  Magick.NET's;
-- memory: each tile is converted straight into the output as soon as it is decoded, in every pixel layout and
-  stride, so the only image-sized buffer is the output. Peak working-set rise for a 12.6 MP phone photo (48 MB
-  of RGBA): 75 MB, libheif 80 MB; for 50 MP (192 MB): 230 MB, libheif 373 MB.
+- 8 cores, to RGBA: 0.20–0.32× libheif's time (tiled phone photos and single-item images alike), 0.09–0.14× Magick.NET's;
+- memory: each tile is converted straight into the output as soon as it is decoded, in every pixel layout and stride, so the only image-sized buffer is the output. Peak working-set rise for a 12.6 MP phone photo (48 MB of RGBA): 75 MB, libheif 80 MB; for 50 MP (192 MB): 230 MB, libheif 373 MB.
 
 ## LINQPad samples
 
 The package ships two runnable samples in `linqpad-samples/`:
 
-- `decode`: the codec's own API on real phone photos (a 12.6 MP 48-tile grid, the same in Main 10) and a
-  single item with a `clap` crop — `ReadInfo`, `Decode`, `DecodeTo` into a reused buffer, timing and thumbnails.
-- `facade`: what `SimdCodecs.Register(HeifImageDecoder.Registration)` changes, then `TryDecodeInto` as BGRA with a
-  padded stride and as Gray8, and `TryDecode`'s ICC and colour encoding.
+- `decode`: the codec's own API on real phone photos (a 12.6 MP 48-tile grid, the same in Main 10) and a single item with a `clap` crop — `ReadInfo`, `Decode`, `DecodeTo` into a reused buffer, timing and thumbnails.
+- `facade`: what `SimdCodecs.Register(HeifImageDecoder.Registration)` changes, then `TryDecodeInto` as BGRA with a padded stride and as Gray8, and `TryDecode`'s ICC and colour encoding.
 
 ## What is supported
 
 - HEIC still images (`ftyp` major brand `heic` / `heix`, compatible brand `mif1`)
 - Tiled images (`grid` item type) — the layout used by all phone cameras
 - HEVC Main (8-bit), Main 10 (10-bit) and Main Still Picture profiles, 4:2:0
-- Arbitrary HEVC intra syntax: WPP, sign data hiding, strong intra smoothing, AMP,
-  transform skip, deblocking and SAO
+- Arbitrary HEVC intra syntax: WPP, sign data hiding, strong intra smoothing, AMP, transform skip, deblocking and SAO
 - `hvcC` (decoder configuration), `ispe`, `pixi`
-- `colr` box: `nclx` colour signalling (matrix from H.273) and ICC profile passthrough
-  (`prof` / `rICC`, returned on `HeifImage.IccProfile`, not applied)
-- `clap` clean aperture, `irot` rotation and `imir` mirroring, applied in association order
-  so the pixels come out as the file intends them to be displayed
-- Output is 8-bit for Main images and 16-bit (10 bits of precision) for Main 10, converted with the correct
-  matrix and range
+- `colr` box: `nclx` colour signalling (matrix from H.273) and ICC profile passthrough (`prof` / `rICC`, returned on `HeifImage.IccProfile`, not applied)
+- `clap` clean aperture, `irot` rotation and `imir` mirroring, applied in association order so the pixels come out as the file intends them to be displayed
+- Output is 8-bit for Main images and 16-bit (10 bits of precision) for Main 10, converted with the correct matrix and range
 
 ## Output contract
 
-HEVC decoding is integer-arithmetic and deterministic: the Y / Cb / Cr planes of
-every coded image equal a pinned reference decoder's samples bit-for-bit
-(ffmpeg 8.1.2; see `tests/Sdcb.SimdCodecs.Tests/Oracle/heif/README.md`). The
-YCbCr → RGB conversion (`HeifColor`) is defined in-repo from the `colr` / `nclx`
-parameters and frozen like `JpegColor`, and so is the grey projection (`HeifColor.ToGrayRow`). Every vector
-kernel has a scalar twin and every tier (Vector256, Vector128, scalar; x64 and arm64) produces identical output;
-CI runs the HEIF tests on each.
+HEVC decoding is integer-arithmetic and deterministic: the Y / Cb / Cr planes of every coded image equal a pinned reference decoder's samples bit-for-bit (ffmpeg 8.1.2; see `tests/Sdcb.SimdCodecs.Tests/Oracle/heif/README.md`). The YCbCr → RGB conversion (`HeifColor`) is defined in-repo from the `colr` / `nclx` parameters and frozen like `JpegColor`, and so is the grey projection (`HeifColor.ToGrayRow`). Every vector kernel has a scalar twin and every tier (Vector256, Vector128, scalar; x64 and arm64) produces identical output; CI runs the HEIF tests on each.

@@ -4,9 +4,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, GIF, BMP, ICO / CUR, QOI, Netpbm (PBM / PGM / PPM / PAM / PFM), JPEG 2000 and JBIG2, plus EXIF and ICC — and HEIF / HEIC decoding as an opt-in package.
-No native dependencies, NativeAOT-compatible, and SIMD-accelerated (AVX2, SSE, AdvSimd) with a scalar
-fallback. The JPEG decoder is faster than libjpeg-turbo on the benchmark corpus.
+Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, GIF, BMP, ICO / CUR, QOI, Netpbm (PBM / PGM / PPM / PAM / PFM), JPEG 2000 and JBIG2, plus EXIF and ICC — and HEIF / HEIC decoding as an opt-in package. No native dependencies, NativeAOT-compatible, and SIMD-accelerated (AVX2, SSE, AdvSimd) with a scalar fallback. The JPEG decoder is faster than libjpeg-turbo on the benchmark corpus.
 
 ![JPEG, PNG, WebP, TIFF, JPEG 2000 and JBIG2 images, all decoded by Sdcb.SimdCodecs](https://cv-public.sdcb.ai/simdcodecs/readme/showcase-v1.jpg)
 
@@ -38,38 +36,20 @@ File.WriteAllBytes("photo.jpg", jpeg);
 
 The rest of the facade:
 
-- `SimdCodecs.TryDecodeInto(file, buffer, stride, format)` — any `PixelFormat` straight into your buffer, at any
-  row stride: BGRA (Windows / Skia), `Bgra32Premultiplied` (WPF, Direct2D, compositors), RGB, BGR (OpenCV), grey
-  (OCR), and their 16-bit twins (`Rgba64`, `Gray16`, …) without losing a 16-bit PNG's or a 10-bit HEIC's precision.
-  JPEG and PNG write the 8-bit layouts natively, with no RGBA frame in between; a colour JPEG's grey is its Y plane.
-- `SimdCodecs.TryDecode(file, out image, options, cancellationToken)` — the native layout: channel count, 8/16-bit or
-  float samples, real bit depth, ICC, Exif / XMP (`image.Metadata`). `DecodeOptions` asks for a region, a scaled
-  decode (JPEG 1/2–1/8 in the DCT domain; `TryGetClosestSize` says what a codec does natively) or pooled memory
-  (dispose the image to return it). Every entry point takes a `CancellationToken`.
-- `SimdCodecs.TryReadInfo(file, out info)` — from the headers alone: format, stored bit depth, colour encoding (is
-  it PQ / HLG HDR?), resolution (DPI), EXIF orientation (reported, never applied), frame or page count, thumbnail.
-- `SimdCodecs.TryReadMetadata(file, out metadata)` / `TryDecodeThumbnail(file, out thumb)` — the Exif, XMP and ICC
-  blocks for a transcoder to pass on, and the embedded preview (Exif IFD1, HEIF `thmb`).
-- `ImageDecoder.Open(stream | path | memory)` — a WIC-style session: `Format`, `FrameCount`, then
-  `GetFrame(i).Decode(options)` or `.CopyPixels(region, format, buffer, stride)`; `OpenAsync` for a non-seekable stream.
-- `SimdCodecs.Encode(image, ImageFormat.Png, stream)` / `CreateEncoder(format, writer)` — the encoder abstraction:
-  every encoder takes every `PixelFormat` (premultiplied BGRA from a UI framework included), rows pushed in any
-  stride, and writes the image's metadata; `GetClosestInputFormat` shows where an 8-bit-only format narrows.
-- `SimdCodecs.TryReadPlanarInfo` / `TryDecodePlanes` — the YCbCr planes as coded (HEIF), for video pipelines and
-  GPU upload.
-- `SimdCodecs.DetectFormat(file)` — also names formats it recognises but does not decode (AVIF, JPEG XL,
-  …); `SimdCodecs.IsDecodable(format)` tells the two apart. HEIF is decodable once its package is registered.
-- `SimdCodecs.Register(HeifImageDecoder.Registration)` — enables HEIF / HEIC in every entry point above. HEVC is
-  patent-encumbered, so `Sdcb.SimdCodecs.Heif` is not part of the facade package: install and register it
-  explicitly (it conveys no patent licence).
-- `SimdCodecs.TryOpenFrames(file, out reader)` — every frame, by index, in any layout: animated WebP / GIF
-  frames with durations, multi-page TIFF pages, the images of an icon (any other image is one frame).
-  `reader.EnumerateFramesInto(buffer, stride, format)` plays them in order through one buffer.
+- `SimdCodecs.TryDecodeInto(file, buffer, stride, format)` — any `PixelFormat` straight into your buffer, at any row stride: BGRA (Windows / Skia), `Bgra32Premultiplied` (WPF, Direct2D, compositors), RGB, BGR (OpenCV), grey (OCR), and their 16-bit twins (`Rgba64`, `Gray16`, …) without losing a 16-bit PNG's or a 10-bit HEIC's precision. JPEG and PNG write the 8-bit layouts natively, with no RGBA frame in between; a colour JPEG's grey is its Y plane.
+- `SimdCodecs.TryDecode(file, out image, options, cancellationToken)` — the native layout: channel count, 8/16-bit or float samples, real bit depth, ICC, Exif / XMP (`image.Metadata`). `DecodeOptions` asks for a region, a scaled decode (JPEG 1/2–1/8 in the DCT domain; `TryGetClosestSize` says what a codec does natively) or pooled memory (dispose the image to return it). Every entry point takes a `CancellationToken`.
+- `SimdCodecs.TryReadInfo(file, out info)` — from the headers alone: format, stored bit depth, colour encoding (is it PQ / HLG HDR?), resolution (DPI), EXIF orientation (reported, never applied), frame or page count, thumbnail.
+- `SimdCodecs.TryReadMetadata(file, out metadata)` / `TryDecodeThumbnail(file, out thumb)` — the Exif, XMP and ICC blocks for a transcoder to pass on, and the embedded preview (Exif IFD1, HEIF `thmb`).
+- `ImageDecoder.Open(stream | path | memory)` — a WIC-style session: `Format`, `FrameCount`, then `GetFrame(i).Decode(options)` or `.CopyPixels(region, format, buffer, stride)`; `OpenAsync` for a non-seekable stream.
+- `SimdCodecs.Encode(image, ImageFormat.Png, stream)` / `CreateEncoder(format, writer)` — the encoder abstraction: every encoder takes every `PixelFormat` (premultiplied BGRA from a UI framework included), rows pushed in any stride, and writes the image's metadata; `GetClosestInputFormat` shows where an 8-bit-only format narrows.
+- `SimdCodecs.TryReadPlanarInfo` / `TryDecodePlanes` — the YCbCr planes as coded (HEIF), for video pipelines and GPU upload.
+- `SimdCodecs.DetectFormat(file)` — also names formats it recognises but does not decode (AVIF, JPEG XL, …); `SimdCodecs.IsDecodable(format)` tells the two apart. HEIF is decodable once its package is registered.
+- `SimdCodecs.Register(HeifImageDecoder.Registration)` — enables HEIF / HEIC in every entry point above. HEVC is patent-encumbered, so `Sdcb.SimdCodecs.Heif` is not part of the facade package: install and register it explicitly (it conveys no patent licence).
+- `SimdCodecs.TryOpenFrames(file, out reader)` — every frame, by index, in any layout: animated WebP / GIF frames with durations, multi-page TIFF pages, the images of an icon (any other image is one frame). `reader.EnumerateFramesInto(buffer, stride, format)` plays them in order through one buffer.
 
 Upgrading from 1.x: see [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md).
 
-Each format is also its own package with a richer API: scaled JPEG decoding, TIFF segment reads, WebP
-animation seeking by timestamp, Ultra HDR, and more.
+Each format is also its own package with a richer API: scaled JPEG decoding, TIFF segment reads, WebP animation seeking by timestamp, Ultra HDR, and more.
 
 ## Formats
 
@@ -125,9 +105,7 @@ Single-threaded, AMD Ryzen 7 5800X, .NET 10. Time relative to the native library
 | **Sdcb.SimdCodecs** | **0.20×** | **0.08×** from RGBA, **0.05×** from BGR(A) |
 | ImageSharp 3.1.12 | 1.62× | 0.06× |
 
-BMP decoding writes into your buffer in any layout with no allocation and is pixel-for-pixel identical to WIC
-(apart from the documented decisions); every RLE, palette and mask layout decodes faster than both WIC and
-ImageSharp, and 5-6-5 and palette encoding are 2–6× faster than ImageSharp.
+BMP decoding writes into your buffer in any layout with no allocation and is pixel-for-pixel identical to WIC (apart from the documented decisions); every RLE, palette and mask layout decodes faster than both WIC and ImageSharp, and 5-6-5 and palette encoding are 2–6× faster than ImageSharp.
 
 | 1920×1080, geometric mean vs. ImageSharp 3.1.12 | decode | encode to a stream |
 |---|---:|---:|
@@ -136,20 +114,7 @@ ImageSharp, and 5-6-5 and palette encoding are 2–6× faster than ImageSharp.
 
 QOI and Netpbm decode into your buffer with no allocation; both match ImageMagick exactly, both ways.
 
-The JPEG decoder is also at least as accurate as libjpeg-turbo's default (about 1 dB higher RGB PSNR
-against an exact reference where chroma is upsampled), and its output is bit-identical on AVX2, SSE,
-AdvSimd, scalar and NativeAOT. WebP output is byte-identical to libwebp.
-JPEG 2000 lossless decode is bit-identical to libopenjp2, and lossy decode achieves >84 dB PSNR.
-HEIF's HEVC planes are byte-identical to ffmpeg's; the HEIF row is the one table here that uses all cores (grid
-tiles, and WPP rows of a single image, decode in parallel); its first column is one core.
-Full tables, corpora and methodology:
-[JPEG](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md),
-[WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md), and
-[JPEG 2000](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md),
-[BMP / ICO](benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/m1-tuned-2026-10-30-amd-ryzen-7-5800x.md),
-[QOI / Netpbm](benchmarks/Sdcb.SimdCodecs.QoiPnm.Benchmarks/results/tuned-2026-10-30-amd-ryzen-7-5800x.md),
-[HEIF](benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md)
-(on photo-like opaque lossy files WebP is on par: 0.87–1.13×; JPEG 2000 pure managed single-threaded decode is currently about 2× of libopenjp2).
+The JPEG decoder is also at least as accurate as libjpeg-turbo's default (about 1 dB higher RGB PSNR against an exact reference where chroma is upsampled), and its output is bit-identical on AVX2, SSE, AdvSimd, scalar and NativeAOT. WebP output is byte-identical to libwebp. JPEG 2000 lossless decode is bit-identical to libopenjp2, and lossy decode achieves >84 dB PSNR. HEIF's HEVC planes are byte-identical to ffmpeg's; the HEIF row is the one table here that uses all cores (grid tiles, and WPP rows of a single image, decode in parallel); its first column is one core. Full tables, corpora and methodology: [JPEG](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md), [WebP](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md), and [JPEG 2000](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md), [BMP / ICO](benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/m1-tuned-2026-10-30-amd-ryzen-7-5800x.md), [QOI / Netpbm](benchmarks/Sdcb.SimdCodecs.QoiPnm.Benchmarks/results/tuned-2026-10-30-amd-ryzen-7-5800x.md), [HEIF](benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md) (on photo-like opaque lossy files WebP is on par: 0.87–1.13×; JPEG 2000 pure managed single-threaded decode is currently about 2× of libopenjp2).
 
 ## Packages
 
@@ -179,44 +144,17 @@ All packages ship in lockstep under one version.
 <details>
 <summary>Feature details per package</summary>
 
-- **Jpeg** — T.81 decoder: baseline, progressive, restart intervals, any subsampling,
-  grey / YCbCr / RGB / CMYK / YCCK, scaled 1/2–1/8 decode, lossless (SOF3). SIMD encoder: baseline,
-  optimised Huffman or progressive; 4:4:4 / 4:2:0 / grey; embeds EXIF (APP1), XMP and an ICC profile (APP2).
-- **Png** — every standard bit depth (including 1/2/4-bit grey and indexed), tEXt / zTXt / iTXt text
-  chunks, PNG-3 cICP / mDCV / cLLI HDR signalling.
-- **Tiff** — multi-page; 8/16/32-bit integer and float; Deflate / LZW (+ PackBits read); strips or
-  tiles; chunky or planar; on-demand single strip or tile reads; reads 1/2/4-bit pages (expanded to
-  8-bit), CCITT fax (Group 3 1D/2D, Group 4, Modified Huffman) and the floating-point predictor.
-- **Webp** — RFC 6386 / RFC 9649: VP8 lossy, VP8L lossless, ALPH, animation with seek, ICC / EXIF / XMP.
-  The facade's `TryDecode` returns a still or frame 0 of an animation, `TryOpenFrames` every frame;
-  `WebpAnimationDecoder` adds seeking by timestamp and the frame rectangles. `WebpEncoder.EncodeLossless`
-  writes VP8L stills with alpha, effort 0–9; `WebpEncoder.EncodeLossy` writes VP8 stills, quality 0–100 and
-  effort 0–6, with transparency in an ALPH plane (lossless by default, `AlphaQuality` below 100 reduces its levels);
-  both write to an array or a stream and can embed ICC / Exif / XMP. `WebpAnimationEncoder` (frame by frame) and
-  `WebpEncoder.EncodeAnimation` write animations, lossy (default), lossless or the smaller per frame, from whole
-  canvases (reduced to the changed rectangle, blended or drawn over, unchanged frames merged) or from ANMF frames
-  as given; `MaxKeyframeDistance` bounds seeking.
-- **Gif** — GIF89a: global / local colour tables, interlacing, transparency, all disposal methods, NETSCAPE2.0 loop
-  count; composited frames with seek. The decisions the spec leaves open are listed in the package README. Encoder:
-  stills and animations, exact palettes or Wu quantization with optional Floyd–Steinberg dithering, changed-rectangle
-  frames for opaque animations.
-- **Bmp** — the Windows DIB and OS/2 bitmap: core, OS/2 2.x, 40-byte, V2–V5 headers; 1/2/4/8-bit palettes and
-  16/24/32-bit; `BI_BITFIELDS` / `BI_ALPHABITFIELDS`; RLE4 / RLE8 with deltas, OS/2 RLE24 and Huffman 1D; `BI_PNG`;
-  top-down rows; V5 ICC; packed DIBs (clipboard, icon images). Decodes into any `PixelFormat` without
-  allocating; checked pixel for pixel against WIC. The decisions the documentation leaves open are listed in the
-  package README.
-- **Ico** — icons and cursors over Bmp and Png: every image, the largest and deepest by default, hotspots; encodes
-  multi-size icons and cursors, each image PNG or a 1/4/8/24/32-bit DIB.
-- **Qoi** — the QOI specification: 3- and 4-channel images, the colour space reported (a linear one as a linear
-  transfer); decodes into any `PixelFormat` without allocating; encodes from RGBA, BGRA, RGB, BGR or grey.
-- **Pnm** — Netpbm: P1–P6 plain and raw at any maximum up to 65535 (16-bit samples above 255), PAM (P7) with 1–4
-  channels, PFM (`Pf` / `PF`) as float samples; only a file's first image. Encodes every format; plain output keeps
-  lines within 70 characters. The decisions the format pages leave open are listed in the package README.
+- **Jpeg** — T.81 decoder: baseline, progressive, restart intervals, any subsampling, grey / YCbCr / RGB / CMYK / YCCK, scaled 1/2–1/8 decode, lossless (SOF3). SIMD encoder: baseline, optimised Huffman or progressive; 4:4:4 / 4:2:0 / grey; embeds EXIF (APP1), XMP and an ICC profile (APP2).
+- **Png** — every standard bit depth (including 1/2/4-bit grey and indexed), tEXt / zTXt / iTXt text chunks, PNG-3 cICP / mDCV / cLLI HDR signalling.
+- **Tiff** — multi-page; 8/16/32-bit integer and float; Deflate / LZW (+ PackBits read); strips or tiles; chunky or planar; on-demand single strip or tile reads; reads 1/2/4-bit pages (expanded to 8-bit), CCITT fax (Group 3 1D/2D, Group 4, Modified Huffman) and the floating-point predictor.
+- **Webp** — RFC 6386 / RFC 9649: VP8 lossy, VP8L lossless, ALPH, animation with seek, ICC / EXIF / XMP. The facade's `TryDecode` returns a still or frame 0 of an animation, `TryOpenFrames` every frame; `WebpAnimationDecoder` adds seeking by timestamp and the frame rectangles. `WebpEncoder.EncodeLossless` writes VP8L stills with alpha, effort 0–9; `WebpEncoder.EncodeLossy` writes VP8 stills, quality 0–100 and effort 0–6, with transparency in an ALPH plane (lossless by default, `AlphaQuality` below 100 reduces its levels); both write to an array or a stream and can embed ICC / Exif / XMP. `WebpAnimationEncoder` (frame by frame) and `WebpEncoder.EncodeAnimation` write animations, lossy (default), lossless or the smaller per frame, from whole canvases (reduced to the changed rectangle, blended or drawn over, unchanged frames merged) or from ANMF frames as given; `MaxKeyframeDistance` bounds seeking.
+- **Gif** — GIF89a: global / local colour tables, interlacing, transparency, all disposal methods, NETSCAPE2.0 loop count; composited frames with seek. The decisions the spec leaves open are listed in the package README. Encoder: stills and animations, exact palettes or Wu quantization with optional Floyd–Steinberg dithering, changed-rectangle frames for opaque animations.
+- **Bmp** — the Windows DIB and OS/2 bitmap: core, OS/2 2.x, 40-byte, V2–V5 headers; 1/2/4/8-bit palettes and 16/24/32-bit; `BI_BITFIELDS` / `BI_ALPHABITFIELDS`; RLE4 / RLE8 with deltas, OS/2 RLE24 and Huffman 1D; `BI_PNG`; top-down rows; V5 ICC; packed DIBs (clipboard, icon images). Decodes into any `PixelFormat` without allocating; checked pixel for pixel against WIC. The decisions the documentation leaves open are listed in the package README.
+- **Ico** — icons and cursors over Bmp and Png: every image, the largest and deepest by default, hotspots; encodes multi-size icons and cursors, each image PNG or a 1/4/8/24/32-bit DIB.
+- **Qoi** — the QOI specification: 3- and 4-channel images, the colour space reported (a linear one as a linear transfer); decodes into any `PixelFormat` without allocating; encodes from RGBA, BGRA, RGB, BGR or grey.
+- **Pnm** — Netpbm: P1–P6 plain and raw at any maximum up to 65535 (16-bit samples above 255), PAM (P7) with 1–4 channels, PFM (`Pf` / `PF`) as float samples; only a file's first image. Encodes every format; plain output keeps lines within 70 characters. The decisions the format pages leave open are listed in the package README.
 - **Exif** — reads JPEG, TIFF, PNG and WebP; `ExifWriter` builds a blob for `JpegEncodeOptions.Exif`.
-- **Heif** — ISO/IEC 23008-12 still images over the ISOBMFF item model: HEVC intra decoding (H.265 Main, Main 10,
-  Main Still Picture, 4:2:0), `grid` tiles decoded in parallel, `clap` / `irot` / `imir` applied, ICC passed
-  through, nclx / VUI colour reported; PQ / HLG refuse the 8-bit projection. 1.x outputs 8-bit samples; alpha,
-  gain maps, sequences and range-extension profiles are not decoded. See the package README.
+- **Heif** — ISO/IEC 23008-12 still images over the ISOBMFF item model: HEVC intra decoding (H.265 Main, Main 10, Main Still Picture, 4:2:0), `grid` tiles decoded in parallel, `clap` / `irot` / `imir` applied, ICC passed through, nclx / VUI colour reported; PQ / HLG refuse the 8-bit projection. 1.x outputs 8-bit samples; alpha, gain maps, sequences and range-extension profiles are not decoded. See the package README.
 
 </details>
 
@@ -250,16 +188,13 @@ Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
 Heif ─ Abstractions   (not referenced by the facade: registered by the application)
 ```
 
-The MQ arithmetic decoder (JBIG2, JPEG 2000), the T.4 fax code tables (JBIG2, TIFF, BMP), Wu's palette
-quantizer (GIF, BMP), the stream and array writers (QOI, Netpbm) and the EXIF orientation reader (JPEG, PNG, WebP) are shared as source (`src/Shared`),
-compiled into each package that uses them: no package uses another's internals.
+The MQ arithmetic decoder (JBIG2, JPEG 2000), the T.4 fax code tables (JBIG2, TIFF, BMP), Wu's palette quantizer (GIF, BMP), the stream and array writers (QOI, Netpbm) and the EXIF orientation reader (JPEG, PNG, WebP) are shared as source (`src/Shared`), compiled into each package that uses them: no package uses another's internals.
 
 </details>
 
 ## LINQPad samples
 
-Each package ships runnable samples in `linqpad-samples/`, which LINQPad lists in its NuGet browser
-(source: `src/<package>/linqpad-samples/`):
+Each package ships runnable samples in `linqpad-samples/`, which LINQPad lists in its NuGet browser (source: `src/<package>/linqpad-samples/`):
 
 | Package | Samples |
 |---|---|
@@ -277,9 +212,7 @@ Each package ships runnable samples in `linqpad-samples/`, which LINQPad lists i
 | `Sdcb.SimdCodecs.Pnm` | `netpbm` (P1–P7 plain and raw, a hand-written PPM, 16-bit PGM, PFM) |
 | `Sdcb.SimdCodecs.Heif` | `decode` (phone-camera grids, Main 10, a `clap` crop; `ReadInfo` / `Decode` / `DecodeTo`), `facade` (registering with the facade; BGRA with a padded stride, Gray8) |
 
-They download their images from `https://cv-public.sdcb.ai/simdcodecs/samples/v1/`; how those were
-made and where they come from is in [tools/sample-assets](tools/sample-assets/README.md). The HEIF samples use
-the HEIF test images (`…/test-images/heif/`, CC0; see `tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh`).
+They download their images from `https://cv-public.sdcb.ai/simdcodecs/samples/v1/`; how those were made and where they come from is in [tools/sample-assets](tools/sample-assets/README.md). The HEIF samples use the HEIF test images (`…/test-images/heif/`, CC0; see `tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh`).
 
 ## Build and test
 
@@ -288,10 +221,7 @@ dotnet build SimdCodecs.slnx -c Release
 dotnet test  SimdCodecs.slnx -c Release
 ```
 
-Oracle-backed tests skip when their reference tool is missing; set `REQUIRE_ORACLES=1` to make a
-missing oracle fail instead (CI does). How to get each oracle is in [`AGENTS.md`](AGENTS.md), which
-also holds the clean-room rules every contribution follows. Benchmarks are built on their own, by
-path: see [`benchmarks/README.md`](benchmarks/README.md).
+Oracle-backed tests skip when their reference tool is missing; set `REQUIRE_ORACLES=1` to make a missing oracle fail instead (CI does). How to get each oracle is in [`AGENTS.md`](AGENTS.md), which also holds the clean-room rules every contribution follows. Benchmarks are built on their own, by path: see [`benchmarks/README.md`](benchmarks/README.md).
 
 ## Contact
 

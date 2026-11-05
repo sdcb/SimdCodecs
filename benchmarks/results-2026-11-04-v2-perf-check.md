@@ -1,18 +1,15 @@
 # 2.0 performance check — 2026-11-04, AMD Ryzen 7 5800X
 
-The Abstractions 2.0 port must not slow the tuned codecs down (AGENTS.md). Each benchmark ran current `v2`
-against `main` (f0b6850, the last 1.x commit) as the in-process baseline, in the same run.
+The Abstractions 2.0 port must not slow the tuned codecs down (AGENTS.md). Each benchmark ran current `v2` against `main` (f0b6850, the last 1.x commit) as the in-process baseline, in the same run.
 
-Machine: AMD Ryzen 7 5800X 8-core (16 logical), Windows 10.0.26200 x64, .NET 10.0.11, AVX2 (no AVX-512),
-workstation non-concurrent GC.
+Machine: AMD Ryzen 7 5800X 8-core (16 logical), Windows 10.0.26200 x64, .NET 10.0.11, AVX2 (no AVX-512), workstation non-concurrent GC.
 
 ## Output
 
 - JPEG decode: `ab` reports `current/baseline identical` for all 13 quick-subset files.
 - JPEG decode `accuracy --gate`: **PASS**.
 - JPEG encode `encode --gate --baseline`: **passed**.
-- All five 1.x golden files hash-identical to `main`; the full test suite fails exactly the 177 tests `main` fails on
-  this machine (WebP oracle tests: dwebp cannot write `%TEMP%` here), no more.
+- All five 1.x golden files hash-identical to `main`; the full test suite fails exactly the 177 tests `main` fails on this machine (WebP oracle tests: dwebp cannot write `%TEMP%` here), no more.
 
 ## Speed (current ÷ baseline; < 1 is faster)
 

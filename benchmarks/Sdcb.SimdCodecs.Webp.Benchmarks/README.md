@@ -1,8 +1,6 @@
 # WebP benchmark (`Sdcb.SimdCodecs.Webp.Benchmarks`)
 
-Whole-image WebP decode to RGBA with BenchmarkDotNet (`[MemoryDiagnoser]`), against libwebp as a
-black box, and encode speed / size / accuracy / memory (see [Encoder](#encoder-encode)). Run it by
-path from the repository root. Recorded results are in [`optimization/`](optimization/).
+Whole-image WebP decode to RGBA with BenchmarkDotNet (`[MemoryDiagnoser]`), against libwebp as a black box, and encode speed / size / accuracy / memory (see [Encoder](#encoder-encode)). Run it by path from the repository root. Recorded results are in [`optimization/`](optimization/).
 
 | Benchmark | Inputs | How it is called |
 |---|---|---|
@@ -10,18 +8,13 @@ path from the repository root. Recorded results are in [`optimization/`](optimiz
 | `WebpDecodeBenchmarks` — Sdcb.SimdCodecs.Webp | same | `WebpDecoder.DecodeTo(data, rgba)` into a reused buffer |
 | `WebpAnimationDecodeBenchmarks` | 10-frame 640×360 animation | `WebpDecoder.DecodeAnimation(data)`; no libwebp counterpart |
 
-The still-image ratio column is relative to libwebp, because it carries `Baseline = true`. Before timing,
-the setup checks that libwebp and this decoder agree on the image dimensions; pixel-exactness against
-libwebp is covered by the test suite's golden digests and live `dwebp` / `anim_dump` oracles, not here.
+The still-image ratio column is relative to libwebp, because it carries `Baseline = true`. Before timing, the setup checks that libwebp and this decoder agree on the image dimensions; pixel-exactness against libwebp is covered by the test suite's golden digests and live `dwebp` / `anim_dump` oracles, not here.
 
-**Clean-room:** libwebp is a black box. Only its released binary and documented C API are used; its
-sources are never read (see [`AGENTS.md`](../../AGENTS.md)).
+**Clean-room:** libwebp is a black box. Only its released binary and documented C API are used; its sources are never read (see [`AGENTS.md`](../../AGENTS.md)).
 
 ## Inputs
 
-The four files in [`webp-inputs/`](webp-inputs/) are committed (about 400 KB). They are synthetic —
-ffmpeg `testsrc2` frames encoded with `cwebp` / `img2webp` — so there is no third-party image
-involved. To regenerate them (needs `ffmpeg`, `cwebp` and `img2webp` on `PATH`):
+The four files in [`webp-inputs/`](webp-inputs/) are committed (about 400 KB). They are synthetic — ffmpeg `testsrc2` frames encoded with `cwebp` / `img2webp` — so there is no third-party image involved. To regenerate them (needs `ffmpeg`, `cwebp` and `img2webp` on `PATH`):
 
 ```bash
 bash benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/generate-webp-inputs.sh
@@ -36,9 +29,7 @@ dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- --
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- --profile-webp-lossy
 ```
 
-The second command is a 12-second single-threaded loop over the lossy 1080p input, meant for attaching
-a profiler; it does not use BenchmarkDotNet. See the benchmarking lessons in
-[`AGENTS.md`](../../AGENTS.md) before drawing conclusions from a profile.
+The second command is a 12-second single-threaded loop over the lossy 1080p input, meant for attaching a profiler; it does not use BenchmarkDotNet. See the benchmarking lessons in [`AGENTS.md`](../../AGENTS.md) before drawing conclusions from a profile.
 
 ### Same-process A/B and stage costs
 
@@ -48,33 +39,17 @@ dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- ab
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- quick [--ablate] [--inputs RE|--files PATTERN] [--rounds N] [--mt]
 ```
 
-`baseline` builds a commit's decoder into `.cache/baseline/` (through a temporary git worktree) and loads
-it into its own `AssemblyLoadContext`, so `ab` times baseline, current and libwebp in one BenchmarkDotNet
-run, interleaved per input — never against a number from an earlier session. Both `ab` and `quick` first
-check that the current decoder's output is byte-identical to libwebp and refuse to time it otherwise.
-`--ablate` adds runs with one stage switched off (internal `WebpAblation` flags via `WebpDiagnostics`):
-a stage's cost is the time that disappears (the set of ablations is chosen from the file's content:
-VP8 stages, ALPH, or VP8L transforms and the predictor transform alone). `quick` is an in-process
-interleaved loop that answers in seconds; use it while iterating and `ab` for the numbers that go into a
-commit. It warms every contestant for at least 300 ms first, so small files are not timed as tier-0 code.
-`--files PATTERN` times files of the verification corpus (below) instead of the three inputs — the inputs
-are flat `testsrc2` frames, and the corpus' noisy content is where entropy decoding dominates. `--mt` adds
-the opt-in multithreaded decode (`WebpDecodeOptions.Multithreaded`) as a separate table; it is never
-part of the single-thread comparison.
+`baseline` builds a commit's decoder into `.cache/baseline/` (through a temporary git worktree) and loads it into its own `AssemblyLoadContext`, so `ab` times baseline, current and libwebp in one BenchmarkDotNet run, interleaved per input — never against a number from an earlier session. Both `ab` and `quick` first check that the current decoder's output is byte-identical to libwebp and refuse to time it otherwise. `--ablate` adds runs with one stage switched off (internal `WebpAblation` flags via `WebpDiagnostics`): a stage's cost is the time that disappears (the set of ablations is chosen from the file's content: VP8 stages, ALPH, or VP8L transforms and the predictor transform alone). `quick` is an in-process interleaved loop that answers in seconds; use it while iterating and `ab` for the numbers that go into a commit. It warms every contestant for at least 300 ms first, so small files are not timed as tier-0 code. `--files PATTERN` times files of the verification corpus (below) instead of the three inputs — the inputs are flat `testsrc2` frames, and the corpus' noisy content is where entropy decoding dominates. `--mt` adds the opt-in multithreaded decode (`WebpDecodeOptions.Multithreaded`) as a separate table; it is never part of the single-thread comparison.
 
 ### Memory
 
-`ab` runs with BenchmarkDotNet's `MemoryDiagnoser` and reports managed bytes allocated per decode.
-libwebp allocates natively, which that cannot see, so
+`ab` runs with BenchmarkDotNet's `MemoryDiagnoser` and reports managed bytes allocated per decode. libwebp allocates natively, which that cannot see, so
 
 ```bash
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- peakmem [--inputs RE]
 ```
 
-measures the peak working set of each decode in a fresh process (current, baseline, libwebp): after a
-warm-up decode of a tiny file of the same kind (JIT excluded) and with the RGBA destination already
-touched, the rise during the first full-size decode is the decoder's working memory; a second decode
-shows the steady state with pooled buffers resident.
+measures the peak working set of each decode in a fresh process (current, baseline, libwebp): after a warm-up decode of a tiny file of the same kind (JIT excluded) and with the RGBA destination already touched, the rise during the first full-size decode is the decoder's working memory; a second decode shows the steady state with pooled buffers resident.
 
 ### Verification corpus
 
@@ -83,9 +58,7 @@ dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- co
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- verify
 ```
 
-`corpus` encodes deterministic synthetic images (1920×1080 down to 33×17, opaque and with alpha) with
-the official `cwebp` across 20 option sets into `.cache/corpus/`; `verify` decodes every file there plus
-the benchmark inputs with this decoder and with libwebp and compares the bytes.
+`corpus` encodes deterministic synthetic images (1920×1080 down to 33×17, opaque and with alpha) with the official `cwebp` across 20 option sets into `.cache/corpus/`; `verify` decodes every file there plus the benchmark inputs with this decoder and with libwebp and compares the bytes.
 
 ## Encoder (`encode`)
 
@@ -98,19 +71,9 @@ dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- tu
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- encode-peakmem [--mode lossless|lossy] [--max-dim 1024] [--images TEXT]
 ```
 
-`ours` (lossy) is `WebpEncoder.EncodeLossy` at the default effort. For tuning runs, `VP8CFG` overrides fields
-of the internal `Vp8EncoderConfig` (`VP8CFG=Effort=6,LambdaI4=12 … encode --mode lossy`); the gate is run without
-it. `calibrate` bisects, for every fifth libwebp quality, the base quantizer index at which our encoder writes the
-same total bytes on the photos (only sizes are observed) and prints the table `Vp8EncoderConfig.For` maps quality
-through, so our quality numbers mean about the sizes libwebp's do. `tune` takes several override sets (`-` for
-the default) and prints, for each, the mean BD-rate against libwebp over the whole sweep, over q ≤ 60 and over
-q ≥ 70, and the q90 byte ratio and PSNR-Y difference; libwebp's curves are computed once and images are encoded
-in parallel, so one set takes seconds. Confirm a choice with the gate afterwards. With `--alpha` (after the
-override sets) it lists instead, for the inputs with alpha at q50 / 75 / 90, the ALPH and VP8 chunk sizes and the
-encode time of libwebp and of ours under each set, and the visible PSNR-RGB.
+`ours` (lossy) is `WebpEncoder.EncodeLossy` at the default effort. For tuning runs, `VP8CFG` overrides fields of the internal `Vp8EncoderConfig` (`VP8CFG=Effort=6,LambdaI4=12 … encode --mode lossy`); the gate is run without it. `calibrate` bisects, for every fifth libwebp quality, the base quantizer index at which our encoder writes the same total bytes on the photos (only sizes are observed) and prints the table `Vp8EncoderConfig.For` maps quality through, so our quality numbers mean about the sizes libwebp's do. `tune` takes several override sets (`-` for the default) and prints, for each, the mean BD-rate against libwebp over the whole sweep, over q ≤ 60 and over q ≥ 70, and the q90 byte ratio and PSNR-Y difference; libwebp's curves are computed once and images are encoded in parallel, so one set takes seconds. Confirm a choice with the gate afterwards. With `--alpha` (after the override sets) it lists instead, for the inputs with alpha at q50 / 75 / 90, the ALPH and VP8 chunk sizes and the encode time of libwebp and of ours under each set, and the visible PSNR-RGB.
 
-The commit gate is `encode --mode all --efforts 0,1,2,3,4,5,6,7,8,9 --gate` with `cwebp` (and the
-other release tools) found; it exits 1 when any check below fails:
+The commit gate is `encode --mode all --efforts 0,1,2,3,4,5,6,7,8,9 --gate` with `cwebp` (and the other release tools) found; it exits 1 when any check below fails:
 
 | mode | the gate holds ours to |
 |---|---|
@@ -121,12 +84,7 @@ other release tools) found; it exits 1 when any check below fails:
 
 A mode whose "ours" does not exist yet prints only the competitors and holds nothing.
 
-**Inputs.** The ten JPEG benchmark corpus masters (CC0 / Public Domain photographs; fetch them with
-that project's `scripts/fetch-corpus.sh` and `prepare`), box-downscaled to `--max-dim` on the long
-side, plus synthetic, deterministic content: `photo-alpha` (the first master with a soft vignette into
-full transparency and a hard cut-out), `screen` / `screen-alpha` (flat UI panels, glyph-like text, one
-gradient) and `palette` (a 12-colour chart). Without the masters only the synthetic three run.
-`--images` keeps the inputs whose name contains the text.
+**Inputs.** The ten JPEG benchmark corpus masters (CC0 / Public Domain photographs; fetch them with that project's `scripts/fetch-corpus.sh` and `prepare`), box-downscaled to `--max-dim` on the long side, plus synthetic, deterministic content: `photo-alpha` (the first master with a soft vignette into full transparency and a hard cut-out), `screen` / `screen-alpha` (flat UI panels, glyph-like text, one gradient) and `palette` (a 12-colour chart). Without the masters only the synthetic three run. `--images` keeps the inputs whose name contains the text.
 
 **Contestants**, single-threaded, interleaved image by image:
 
@@ -136,109 +94,30 @@ gradient) and `palette` (a 12-colour chart). Without the masters only the synthe
 | `cwebp -z N` (0, 3, 6, 9) / `cwebp -q Q -m M` (0, 4, 6) | the official 1.6.0 release binary, for the effort levels the simple API cannot select | cwebp's own `-v` "Time to encode picture" (millisecond resolution; excludes process start and reading the input) |
 | `ImageSharp` | the managed competitor (`WebpEncoder`, defaults) | in process |
 
-The simple API's documented counterpart for choosing effort is the advanced API (`WebPConfig`,
-`WebPPicture`), whose full layout the published documentation does not give, so it is not used:
-interop comes from the documentation only (see [`AGENTS.md`](../../AGENTS.md)).
+The simple API's documented counterpart for choosing effort is the advanced API (`WebPConfig`, `WebPPicture`), whose full layout the published documentation does not give, so it is not used: interop comes from the documentation only (see [`AGENTS.md`](../../AGENTS.md)).
 
-**Correctness before timing.** Every output is decoded by libwebp (not by our decoder) first.
-Lossless output must reproduce every alpha value and the RGB of every visible pixel; the `lossless`
-column says `exact` when the RGB of fully transparent pixels is kept too and `visible` when it was
-rewritten (libwebp's default, "exact" off). A contestant that gets a pixel wrong is reported as
-`WRONG` and not timed, and `--gate` then exits 1. Lossy output is scored on the opaque inputs against
-the source: PSNR on luma and RGB, and SSIM on luma (8×8 windows, stride 4).
+**Correctness before timing.** Every output is decoded by libwebp (not by our decoder) first. Lossless output must reproduce every alpha value and the RGB of every visible pixel; the `lossless` column says `exact` when the RGB of fully transparent pixels is kept too and `visible` when it was rewritten (libwebp's default, "exact" off). A contestant that gets a pixel wrong is reported as `WRONG` and not timed, and `--gate` then exits 1. Lossy output is scored on the opaque inputs against the source: PSNR on luma and RGB, and SSIM on luma (8×8 windows, stride 4).
 
-Timing is the median of `--reps` encodes per image, after the in-process contestants have warmed up
-for 1.5 s. Each mode prints a summary (MB, bpp, size and time relative to `libwebp`, MP/s, accuracy)
-and the bytes of every input. Before the modes, a **SIMD check** encodes the first input with the
-in-process library, `cwebp` and `cwebp -noasm` at the same settings: the library must land near
-`cwebp`, not near `-noasm`; for lossy q75 the two also produce the same bytes. The report is written
-to `.cache/work/encode-<mode>.md`.
+Timing is the median of `--reps` encodes per image, after the in-process contestants have warmed up for 1.5 s. Each mode prints a summary (MB, bpp, size and time relative to `libwebp`, MP/s, accuracy) and the bytes of every input. Before the modes, a **SIMD check** encodes the first input with the in-process library, `cwebp` and `cwebp -noasm` at the same settings: the library must land near `cwebp`, not near `-noasm`; for lossy q75 the two also produce the same bytes. The report is written to `.cache/work/encode-<mode>.md`.
 
-**Rate-distortion (`lossy`, `lossy-alpha`).** A fixed quality number means different things to
-different encoders, so the lossy verdict is not taken at q75. After the fixed-q tables, every lossy
-contestant is swept over q = 20, 25, …, 95; each output is decoded by libwebp and scored, and each
-contestant's curve is compared with libwebp's by the **Bjøntegaard delta rate** (VCEG-M33): the mean
-difference in log bytes at equal quality over the quality range both curves cover, interpolated with
-a monotone piecewise cubic (Fritsch–Carlson). −3% means 3% fewer bytes for the same quality. Opaque
-inputs are scored on PSNR-Y and on SSIM-Y in dB (−10·log10(1 − SSIM)); the summary is the mean of
-the per-image BD-rates, followed by a per-image table. `lossy-alpha` runs the inputs with alpha plus
-`sticker` (an anti-aliased disc filled from the first photo, a flat tab and a soft shadow on
-transparency) and scores the PSNR of the RGB of visible pixels; the `alpha exact` column says whether
-every alpha value came back.
+**Rate-distortion (`lossy`, `lossy-alpha`).** A fixed quality number means different things to different encoders, so the lossy verdict is not taken at q75. After the fixed-q tables, every lossy contestant is swept over q = 20, 25, …, 95; each output is decoded by libwebp and scored, and each contestant's curve is compared with libwebp's by the **Bjøntegaard delta rate** (VCEG-M33): the mean difference in log bytes at equal quality over the quality range both curves cover, interpolated with a monotone piecewise cubic (Fritsch–Carlson). −3% means 3% fewer bytes for the same quality. Opaque inputs are scored on PSNR-Y and on SSIM-Y in dB (−10·log10(1 − SSIM)); the summary is the mean of the per-image BD-rates, followed by a per-image table. `lossy-alpha` runs the inputs with alpha plus `sticker` (an anti-aliased disc filled from the first photo, a flat tab and a soft shadow on transparency) and scores the PSNR of the RGB of visible pixels; the `alpha exact` column says whether every alpha value came back.
 
-**Animation (`anim`).** Five synthetic 480×320, 24-frame sequences, each built for one decision an
-animation encoder makes: `scroll` (everything moves), `sprite` (a small object over a still photo: the
-changed rectangle), `fade` (every pixel changes a little), `alpha-sprite` (an anti-aliased object and
-a fixed translucent bar on transparency: blending and disposal) and `slides` (held frames, which an
-encoder may merge). The reference is libwebp's animation encoder as the release ships it,
-`img2webp` (`-lossless`, `-mixed`, and `-lossy -q Q` swept over 30, 50, 70, 80, 90), fed PAM frames;
-its time is the process wall clock and so includes reading the frames. Every output is decoded by
-`anim_dump` into composited canvases, matched to the source on the timeline (merged frames carry the
-sum of the durations, read from the ANMF chunks), and must reproduce every alpha and visible pixel
-when lossless; lossy output is scored by visible PSNR-RGB over all frames, for a BD-rate. `img2webp`
-and `anim_dump` are found next to `cwebp` or on `PATH`; without them the mode is skipped. Our contestants are
-`ours` (`WebpAnimationEncoder`, lossless; gated), `ours mixed` (reference only) and `ours lossy` (the quality
-sweep; gated). A sequence whose curves do not overlap in quality has no BD-rate (`NaN`) and is left out of the
-mean. `ANIMCFG` (`LossyEffort=6,Search=2,…`, the option fields and the internal `Search` / `BlendThreshold`)
-overrides our options for tuning runs. `tune --anim [sets…]` prints, per sequence, img2webp's and our lossless
-bytes and time and lossy bytes / PSNR at each quality, for each override set.
+**Animation (`anim`).** Five synthetic 480×320, 24-frame sequences, each built for one decision an animation encoder makes: `scroll` (everything moves), `sprite` (a small object over a still photo: the changed rectangle), `fade` (every pixel changes a little), `alpha-sprite` (an anti-aliased object and a fixed translucent bar on transparency: blending and disposal) and `slides` (held frames, which an encoder may merge). The reference is libwebp's animation encoder as the release ships it, `img2webp` (`-lossless`, `-mixed`, and `-lossy -q Q` swept over 30, 50, 70, 80, 90), fed PAM frames; its time is the process wall clock and so includes reading the frames. Every output is decoded by `anim_dump` into composited canvases, matched to the source on the timeline (merged frames carry the sum of the durations, read from the ANMF chunks), and must reproduce every alpha and visible pixel when lossless; lossy output is scored by visible PSNR-RGB over all frames, for a BD-rate. `img2webp` and `anim_dump` are found next to `cwebp` or on `PATH`; without them the mode is skipped. Our contestants are `ours` (`WebpAnimationEncoder`, lossless; gated), `ours mixed` (reference only) and `ours lossy` (the quality sweep; gated). A sequence whose curves do not overlap in quality has no BD-rate (`NaN`) and is left out of the mean. `ANIMCFG` (`LossyEffort=6,Search=2,…`, the option fields and the internal `Search` / `BlendThreshold`) overrides our options for tuning runs. `tune --anim [sets…]` prints, per sequence, img2webp's and our lossless bytes and time and lossy bytes / PSNR at each quality, for each override set.
 
-**A/B and ablation.** `encode-ab` runs the current encoder beside the baseline built by
-`baseline [git-ref]` (the last commit's `WebpEncoder`, loaded side by side and found by reflection; a
-baseline without the entry point is left out) and `libwebp`, interleaved, and prints size and speed
-against both; it is the number that decides an encoder change. `ablate` encodes at the default effort
-with one VP8L stage switched off at a time (palette, subtract green, predictor, cross colour, colour
-cache, backward references, entropy-image clustering; the internal `Vp8LAblation` flags, never set by
-the public API) and prints the size and time change and the bytes of every input, to attribute where
-the bits go before changing anything.
+**A/B and ablation.** `encode-ab` runs the current encoder beside the baseline built by `baseline [git-ref]` (the last commit's `WebpEncoder`, loaded side by side and found by reflection; a baseline without the entry point is left out) and `libwebp`, interleaved, and prints size and speed against both; it is the number that decides an encoder change. `ablate` encodes at the default effort with one VP8L stage switched off at a time (palette, subtract green, predictor, cross colour, colour cache, backward references, entropy-image clustering; the internal `Vp8LAblation` flags, never set by the public API) and prints the size and time change and the bytes of every input, to attribute where the bits go before changing anything.
 
-`encode-peakmem` measures, in one fresh process per encode, the peak working-set rise of the first
-and of a second (steady) full encode after a warm-up on a 64×64 crop, plus the managed bytes allocated
-by the first one, for the in-process contestants; the input is resident before the baseline.
+`encode-peakmem` measures, in one fresh process per encode, the peak working-set rise of the first and of a second (steady) full encode after a warm-up on a 64×64 crop, plus the managed bytes allocated by the first one, for the in-process contestants; the input is resident before the baseline.
 
-`cwebp` is found through `--cwebp`, `CWEBP`, the official release archive unpacked under
-`.cache/release/` (`libwebp-1.6.0-windows-x64.zip` from the WebP downloads page), or `PATH`. The
-Windows release reads everything but WebP through WIC, so its input is written as an RGBA PNG.
+`cwebp` is found through `--cwebp`, `CWEBP`, the official release archive unpacked under `.cache/release/` (`libwebp-1.6.0-windows-x64.zip` from the WebP downloads page), or `PATH`. The Windows release reads everything but WebP through WIC, so its input is written as an RGBA PNG.
 
 ## libwebp
 
-The comparison needs a libwebp shared library. It is looked up as `libwebp.dll` / `webp.dll` on
-Windows, `libwebp.dylib` (including the Homebrew locations) on macOS and `libwebp.so.7` / `libwebp.so`
-on Linux. The official Windows release archive ships only a static library, so on Windows set
-`LIBWEBP_PATH` to the full path of a webp DLL (for example vcpkg's `libwebp.dll`). `LIBWEBP_PATH`
-wins over the default names on every platform.
+The comparison needs a libwebp shared library. It is looked up as `libwebp.dll` / `webp.dll` on Windows, `libwebp.dylib` (including the Homebrew locations) on macOS and `libwebp.so.7` / `libwebp.so` on Linux. The official Windows release archive ships only a static library, so on Windows set `LIBWEBP_PATH` to the full path of a webp DLL (for example vcpkg's `libwebp.dll`). `LIBWEBP_PATH` wins over the default names on every platform.
 
-**Use a SIMD-enabled libwebp, and check it.** libwebp picks SSE2 / SSE4.1 (or NEON) at run time, and a
-build without them is about 2× slower, which makes any comparison meaningless. The `libwebp.dll` in the
-`Imazen.WebP.NativeRuntime.win-x64` 1.6.1 NuGet package is such a build: it decodes at the speed of the
-official `dwebp -noasm`. To check a candidate, decode one of the inputs with the official `dwebp` with
-and without `-noasm` (`dwebp in.webp -pam -v -o out.pam` prints the decode time) and make sure the
-library you benchmark lands near the first number, not the second. A build that targets the host CPU
-(`zig cc` does by default) can also come out faster than the generic x86-64 library a distribution ships,
-so build the reference the way a distribution would.
+**Use a SIMD-enabled libwebp, and check it.** libwebp picks SSE2 / SSE4.1 (or NEON) at run time, and a build without them is about 2× slower, which makes any comparison meaningless. The `libwebp.dll` in the `Imazen.WebP.NativeRuntime.win-x64` 1.6.1 NuGet package is such a build: it decodes at the speed of the official `dwebp -noasm`. To check a candidate, decode one of the inputs with the official `dwebp` with and without `-noasm` (`dwebp in.webp -pam -v -o out.pam` prints the decode time) and make sure the library you benchmark lands near the first number, not the second. A build that targets the host CPU (`zig cc` does by default) can also come out faster than the generic x86-64 library a distribution ships, so build the reference the way a distribution would.
 
-[`optimization/build-libwebp.sh`](optimization/build-libwebp.sh) does that (the library includes the
-encoder): it downloads the official 1.6.0
-tarball (SHA-256 pinned), compiles it with `zig cc` (or `CC=clang` / `gcc`) as generic x86-64 with
-SSE2/SSE4.1 dispatch, and writes `.cache/libwebp.{dll,so,dylib}`; set `LIBWEBP_PATH` to the path it prints.
+[`optimization/build-libwebp.sh`](optimization/build-libwebp.sh) does that (the library includes the encoder): it downloads the official 1.6.0 tarball (SHA-256 pinned), compiles it with `zig cc` (or `CC=clang` / `gcc`) as generic x86-64 with SSE2/SSE4.1 dispatch, and writes `.cache/libwebp.{dll,so,dylib}`; set `LIBWEBP_PATH` to the path it prints.
 
 ## Optimization
 
-[`optimization/`](optimization/) holds the recorded baseline
-([`baseline-2026-10-25-amd-ryzen-7-5800x.md`](optimization/baseline-2026-10-25-amd-ryzen-7-5800x.md)),
-the libwebp build script, and one file per optimisation milestone: tooling (m0), lossy (m1), ALPH and
-more lossy (m2), lossless (m3) and the final state with the opt-in multithreaded decode
-([`m4-final-2026-10-25-amd-ryzen-7-5800x.md`](optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md)).
-Encoding starts from [`encode-baseline-2026-11-01-amd-ryzen-7-5800x.md`](optimization/encode-baseline-2026-11-01-amd-ryzen-7-5800x.md):
-libwebp, cwebp's effort levels and ImageSharp, before this repository had an encoder.
-The lossy encoder's first recording is
-[`encode-m3-lossy-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m3-lossy-2026-11-02-amd-ryzen-7-5800x.md).
-The high-rate tuning that followed is
-[`encode-m3b-lossy-tuning-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m3b-lossy-tuning-2026-11-02-amd-ryzen-7-5800x.md).
-Lossy with alpha starts at
-[`encode-m4-lossy-alpha-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m4-lossy-alpha-2026-11-02-amd-ryzen-7-5800x.md).
-Its speed-up is
-[`encode-m4b-lossy-alpha-speed-2026-11-03-amd-ryzen-7-5800x.md`](optimization/encode-m4b-lossy-alpha-speed-2026-11-03-amd-ryzen-7-5800x.md).
-Animation starts at
-[`encode-m5-anim-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m5-anim-2026-11-02-amd-ryzen-7-5800x.md).
-Put each new recording there too.
+[`optimization/`](optimization/) holds the recorded baseline ([`baseline-2026-10-25-amd-ryzen-7-5800x.md`](optimization/baseline-2026-10-25-amd-ryzen-7-5800x.md)), the libwebp build script, and one file per optimisation milestone: tooling (m0), lossy (m1), ALPH and more lossy (m2), lossless (m3) and the final state with the opt-in multithreaded decode ([`m4-final-2026-10-25-amd-ryzen-7-5800x.md`](optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md)). Encoding starts from [`encode-baseline-2026-11-01-amd-ryzen-7-5800x.md`](optimization/encode-baseline-2026-11-01-amd-ryzen-7-5800x.md): libwebp, cwebp's effort levels and ImageSharp, before this repository had an encoder. The lossy encoder's first recording is [`encode-m3-lossy-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m3-lossy-2026-11-02-amd-ryzen-7-5800x.md). The high-rate tuning that followed is [`encode-m3b-lossy-tuning-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m3b-lossy-tuning-2026-11-02-amd-ryzen-7-5800x.md). Lossy with alpha starts at [`encode-m4-lossy-alpha-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m4-lossy-alpha-2026-11-02-amd-ryzen-7-5800x.md). Its speed-up is [`encode-m4b-lossy-alpha-speed-2026-11-03-amd-ryzen-7-5800x.md`](optimization/encode-m4b-lossy-alpha-speed-2026-11-03-amd-ryzen-7-5800x.md). Animation starts at [`encode-m5-anim-2026-11-02-amd-ryzen-7-5800x.md`](optimization/encode-m5-anim-2026-11-02-amd-ryzen-7-5800x.md). Put each new recording there too.

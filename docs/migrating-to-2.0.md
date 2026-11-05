@@ -1,8 +1,6 @@
 # Migrating to 2.0
 
-2.0 makes its breaking changes to `Sdcb.SimdCodecs.Abstractions` and the facade at once, and shapes the API so that
-the usual additions in 2.x need no further break. Most code needs a rename and nothing else. Every 8-bit decode output is byte-for-byte what
-1.x produced; the decoded pixels change only where 2.0 keeps precision 1.x threw away (HEIF Main 10, see below).
+2.0 makes its breaking changes to `Sdcb.SimdCodecs.Abstractions` and the facade at once, and shapes the API so that the usual additions in 2.x need no further break. Most code needs a rename and nothing else. Every 8-bit decode output is byte-for-byte what 1.x produced; the decoded pixels change only where 2.0 keeps precision 1.x threw away (HEIF Main 10, see below).
 
 ## Renames
 
@@ -16,27 +14,15 @@ the usual additions in 2.x need no further break. Most code needs a rename and n
 | `PixelConverter.ConvertRow(src, channels, sample, dst, ImagePixelFormat, n)` | the same call with a `PixelFormat`; or the new `ConvertRow(src, srcFormat, dst, dstFormat, n)` from any format to any format |
 | `new ImageDecoderRegistration(format, canDecode, readInfo, decode, decodeInto[, openFrames])` | use the codec's `XxxImageDecoder.Registration` property; one built by hand is an object initializer: `new ImageDecoderRegistration { Format = …, CanDecode = …, … }` with the eight required 2.0 members |
 
-Code that `switch`ed over `ImagePixelFormat` switches over `format.Layout` (`ChannelLayout.Rgba`, …) or compares with
-`==`. A method that took `ImagePixelFormat format = ImagePixelFormat.Rgba32` takes `PixelFormat? format = null`.
-`[InlineData(ImagePixelFormat.X)]` in tests becomes a name or an index: a struct is not an attribute constant.
+Code that `switch`ed over `ImagePixelFormat` switches over `format.Layout` (`ChannelLayout.Rgba`, …) or compares with `==`. A method that took `ImagePixelFormat format = ImagePixelFormat.Rgba32` takes `PixelFormat? format = null`. `[InlineData(ImagePixelFormat.X)]` in tests becomes a name or an index: a struct is not an attribute constant.
 
 ## Behaviour that changed
 
-- **`IDecodedImage` is `IDisposable`.** Dispose a decoded image when done; it matters only for pooled memory
-  (`DecodeOptions.Pool`), but `using var image = …` is the habit to adopt. Reading `Pixels` after `Dispose` throws
-  `ObjectDisposedException`.
-- **HEIF Main 10 decodes to 16-bit samples** (`SampleFormat.UInt16`, `BitDepth` 10) instead of 8-bit. `TryDecodeInto`
-  to an 8-bit format is unchanged (the frozen 8-bit conversion from the coded samples), so it can differ by one code
-  value from narrowing the 16-bit image; `TryDecodeInto` to `Rgba64` gives the full precision.
-- **New members on interfaces.** A third-party `IImageDecoder` implements `TryGetClosestSize`, `TryReadMetadata`,
-  `TryDecodeThumbnail` (`ImageDecoderFallback` has one-line implementations for a codec without native support) and
-  the `DecodeOptions?` / `CancellationToken` parameters of `TryDecode` / `TryDecodeInto`. The helpers for codec
-  authors (`ImageDecoderFallback`, `BufferedEncoderSession`, `DecodeOptions.Validate` / `Apply`) are in
-  `Sdcb.SimdCodecs.Abstractions.CodecSupport`.
-- **Cancellation.** Every decode and encode entry point takes a `CancellationToken`; a cancelled token throws
-  `OperationCanceledException` (it never makes a `Try` method return false).
-- **`ImageInfo` reports more**: `ColorEncoding`, `Resolution`, `HasThumbnail`. Code comparing whole `ImageInfo` values
-  (`info.ShouldBe(new ImageInfo(...))`) sees the resolution a file declares (a TIFF's 96 dpi, a JPEG's JFIF density).
+- **`IDecodedImage` is `IDisposable`.** Dispose a decoded image when done; it matters only for pooled memory (`DecodeOptions.Pool`), but `using var image = …` is the habit to adopt. Reading `Pixels` after `Dispose` throws `ObjectDisposedException`.
+- **HEIF Main 10 decodes to 16-bit samples** (`SampleFormat.UInt16`, `BitDepth` 10) instead of 8-bit. `TryDecodeInto` to an 8-bit format is unchanged (the frozen 8-bit conversion from the coded samples), so it can differ by one code value from narrowing the 16-bit image; `TryDecodeInto` to `Rgba64` gives the full precision.
+- **New members on interfaces.** A third-party `IImageDecoder` implements `TryGetClosestSize`, `TryReadMetadata`, `TryDecodeThumbnail` (`ImageDecoderFallback` has one-line implementations for a codec without native support) and the `DecodeOptions?` / `CancellationToken` parameters of `TryDecode` / `TryDecodeInto`. The helpers for codec authors (`ImageDecoderFallback`, `BufferedEncoderSession`, `DecodeOptions.Validate` / `Apply`) are in `Sdcb.SimdCodecs.Abstractions.CodecSupport`.
+- **Cancellation.** Every decode and encode entry point takes a `CancellationToken`; a cancelled token throws `OperationCanceledException` (it never makes a `Try` method return false).
+- **`ImageInfo` reports more**: `ColorEncoding`, `Resolution`, `HasThumbnail`. Code comparing whole `ImageInfo` values (`info.ShouldBe(new ImageInfo(...))`) sees the resolution a file declares (a TIFF's 96 dpi, a JPEG's JFIF density).
 
 ## New in 2.0
 

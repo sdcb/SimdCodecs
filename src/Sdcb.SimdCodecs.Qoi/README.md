@@ -1,8 +1,6 @@
 # Sdcb.SimdCodecs.Qoi
 
-Pure-managed QOI ("Quite OK Image") decoding and encoding for .NET 10, written from the specification at
-[qoiformat.org](https://qoiformat.org/qoi-specification.pdf). It decodes straight into the caller's buffer in any
-8-bit pixel layout without allocating, and it encodes to an array or a stream.
+Pure-managed QOI ("Quite OK Image") decoding and encoding for .NET 10, written from the specification at [qoiformat.org](https://qoiformat.org/qoi-specification.pdf). It decodes straight into the caller's buffer in any 8-bit pixel layout without allocating, and it encodes to an array or a stream.
 
 ```csharp
 using Sdcb.SimdCodecs.Abstractions;
@@ -16,8 +14,7 @@ var bgra = new byte[info.Width * info.Height * 4];
 QoiDecoder.DecodeTo(data, bgra, PixelFormat.Bgra32);
 ```
 
-Malformed data throws `InvalidDataException`, and the `Try` methods and the `QoiImageDecoder` adapter return
-`false` instead. Images above 2^28 pixels are refused, which bounds what a decode allocates.
+Malformed data throws `InvalidDataException`, and the `Try` methods and the `QoiImageDecoder` adapter return `false` instead. Images above 2^28 pixels are refused, which bounds what a decode allocates.
 
 ## Encoding
 
@@ -28,9 +25,7 @@ using var file = File.Create("image.qoi");
 QoiEncoder.Encode(bgr, width, height, PixelFormat.Bgr24, file, QoiColorSpace.Linear);
 ```
 
-The encoder takes RGBA, BGRA, RGB, BGR or grey input at any row stride. RGBA and BGRA input is written with 4
-channels; the others are written with 3. For each pixel the encoder uses the first chunk that fits, trying them
-in this order: run, index, diff, luma, RGB, RGBA.
+The encoder takes RGBA, BGRA, RGB, BGR or grey input at any row stride. RGBA and BGRA input is written with 4 channels; the others are written with 3. For each pixel the encoder uses the first chunk that fits, trying them in this order: run, index, diff, luma, RGB, RGBA.
 
 ## Decisions
 

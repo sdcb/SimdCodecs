@@ -1,8 +1,6 @@
 # Sdcb.SimdCodecs.Bmp
 
-Pure-managed BMP / DIB decoding and encoding for .NET 10, derived from Microsoft's documentation of the Windows
-DIB and IBM's of the OS/2 bitmap. Rows are converted with AVX2 / SSSE3 / AdvSimd kernels, each with a scalar twin
-that gives the same bytes, and decoded straight into the caller's buffer in any pixel layout without allocating.
+Pure-managed BMP / DIB decoding and encoding for .NET 10, derived from Microsoft's documentation of the Windows DIB and IBM's of the OS/2 bitmap. Rows are converted with AVX2 / SSSE3 / AdvSimd kernels, each with a scalar twin that gives the same bytes, and decoded straight into the caller's buffer in any pixel layout without allocating.
 
 ```csharp
 using Sdcb.SimdCodecs.Abstractions;
@@ -27,9 +25,7 @@ What it reads:
 | Metadata | A V5 header's embedded ICC profile (`BmpImage.IccProfile`) |
 | Packed DIBs | `BmpDecoder.ReadDibInfo` / `DecodeDib` / `DecodeDibTo`: the same without the file header, as the clipboard (`CF_DIB`, `CF_DIBV5`) holds it; `iconImage: true` reads an icon or cursor image, its AND mask as alpha |
 
-`BI_JPEG` and 64-bit bitmaps are refused, as is anything malformed (`InvalidDataException`, or `false` from the
-`Try` methods and the `BmpImageDecoder` adapter). Images above 2^28 pixels are refused, to bound what a decode
-allocates.
+`BI_JPEG` and 64-bit bitmaps are refused, as is anything malformed (`InvalidDataException`, or `false` from the `Try` methods and the `BmpImageDecoder` adapter). Images above 2^28 pixels are refused, to bound what a decode allocates.
 
 ## Encoding
 
@@ -48,14 +44,11 @@ byte[] rle = BmpEncoder.Encode(rgba, width, height, PixelFormat.Rgba32,
 | `TopDown` | A negative height, top row first |
 | `IccProfile` | Embedded in a V5 header |
 
-Input is any `PixelFormat` (B, G, R input written as 24- or 32-bit is copied as it is), or 1 / 3 / 4
-channels. `BmpEncoder.EncodeDib` writes a packed DIB; with `iconImage: true`, an icon or cursor image: a 40-byte
-header with the doubled height, then the AND mask (alpha below 128 is transparent).
+Input is any `PixelFormat` (B, G, R input written as 24- or 32-bit is copied as it is), or 1 / 3 / 4 channels. `BmpEncoder.EncodeDib` writes a packed DIB; with `iconImage: true`, an icon or cursor image: a 40-byte header with the doubled height, then the AND mask (alpha below 128 is transparent).
 
 ## Decisions
 
-Where the documentation leaves a choice to the decoder, it is made as WIC (Windows' own decoder) makes it, with the
-exceptions marked; the test suite holds every one of them against WIC, ImageMagick or a hand-built stream.
+Where the documentation leaves a choice to the decoder, it is made as WIC (Windows' own decoder) makes it, with the exceptions marked; the test suite holds every one of them against WIC, ImageMagick or a hand-built stream.
 
 | Case | Decoded as |
 |---|---|

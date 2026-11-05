@@ -1,14 +1,10 @@
 # Oracles, goldens and quality gates
 
-The rules are in [`AGENTS.md`](../../../AGENTS.md) ("Output contracts", "Validation"); this is how they
-are implemented and how to get the tools.
+The rules are in [`AGENTS.md`](../../../AGENTS.md) ("Output contracts", "Validation"); this is how they are implemented and how to get the tools.
 
 ## Oracles
 
-Every oracle test **skips** when its tool is missing, so a clean clone stays green. A skipped oracle is
-not a passing one: read the skip messages, and run with `REQUIRE_ORACLES=1` (CI does), which turns a
-missing oracle into a failure. All of them are black boxes — released binaries and documented
-interfaces only.
+Every oracle test **skips** when its tool is missing, so a clean clone stays green. A skipped oracle is not a passing one: read the skip messages, and run with `REQUIRE_ORACLES=1` (CI does), which turns a missing oracle into a failure. All of them are black boxes — released binaries and documented interfaces only.
 
 | Oracle | Used for | Get it (Linux / Windows Git Bash) |
 |---|---|---|
@@ -28,43 +24,19 @@ Per-codec details: [`jbig2/`](jbig2/README.md), [`jpeg2000/`](jpeg2000/README.md
 
 ## Goldens
 
-- **`Fixtures/jpeg-oracle-golden.tsv`** pins the JPEG decoder's RGBA output: the arithmetic defined in
-  `JpegIdct` (single-precision T.81 IDCT), `JpegResample` (16×-scale linear chroma interpolation) and
-  `JpegColor` (T.871), frozen once the accuracy tables showed it at least as close to a
-  double-precision reference as libjpeg-turbo. Every ISA tier and fast path reproduces that operation
-  sequence bit for bit; `JpegIdctEquivalenceTests` compares the pre-rounding floats, because a
-  reordered sum rarely moves a rounded byte.
-- **`Fixtures/webp/webp-oracle-golden.tsv`** and **`webp-animation-oracle-golden.tsv`** pin the WebP
-  decoder's RGBA output against libwebp 1.6.0; the vector paths (VP8L predictors, fancy upsampling)
-  are asserted equal to their scalar twins by the `*EquivalenceTests`.
-- **PNG** has no golden: decoding is lossless, so the tests compare against libpng (Magick.NET) live,
-  exactly, for every colour type, depth and a spread of widths (`PngRgba8ExpansionTests`), and the
-  unfilter against the specification's formulas (`PngPredictorTests`).
-- **BMP and ICO** have no golden either: lossless, compared live and exactly against ImageMagick and WIC, and
-  against the test's own model of every layout in streams `TestBmpWriter` assembles. Where WIC, ImageMagick
-  and ImageSharp disagree with each other (alpha in a 32-bit `BI_RGB` pixel, channels narrower than 4 bits,
-  ImageMagick's own RLE8), the tests say which one the decoder follows and compare the rest; the decisions are
-  in the BMP package README.
-- A golden moves only for an intentional, reviewed change (`REGEN_JPEG_ORACLE=1` and friends), with the
-  diff in the review.
+- **`Fixtures/jpeg-oracle-golden.tsv`** pins the JPEG decoder's RGBA output: the arithmetic defined in `JpegIdct` (single-precision T.81 IDCT), `JpegResample` (16×-scale linear chroma interpolation) and `JpegColor` (T.871), frozen once the accuracy tables showed it at least as close to a double-precision reference as libjpeg-turbo. Every ISA tier and fast path reproduces that operation sequence bit for bit; `JpegIdctEquivalenceTests` compares the pre-rounding floats, because a reordered sum rarely moves a rounded byte.
+- **`Fixtures/webp/webp-oracle-golden.tsv`** and **`webp-animation-oracle-golden.tsv`** pin the WebP decoder's RGBA output against libwebp 1.6.0; the vector paths (VP8L predictors, fancy upsampling) are asserted equal to their scalar twins by the `*EquivalenceTests`.
+- **PNG** has no golden: decoding is lossless, so the tests compare against libpng (Magick.NET) live, exactly, for every colour type, depth and a spread of widths (`PngRgba8ExpansionTests`), and the unfilter against the specification's formulas (`PngPredictorTests`).
+- **BMP and ICO** have no golden either: lossless, compared live and exactly against ImageMagick and WIC, and against the test's own model of every layout in streams `TestBmpWriter` assembles. Where WIC, ImageMagick and ImageSharp disagree with each other (alpha in a 32-bit `BI_RGB` pixel, channels narrower than 4 bits, ImageMagick's own RLE8), the tests say which one the decoder follows and compare the rest; the decisions are in the BMP package README.
+- A golden moves only for an intentional, reviewed change (`REGEN_JPEG_ORACLE=1` and friends), with the diff in the review.
 
 ## Quality gates (JPEG, in `benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks`)
 
-- **Decoder arithmetic change:** `dotnet run -c Release -- accuracy --gate` against a `baseline` of the
-  parent commit, on the matrix: per group RGB PSNR within 0.2 dB of the baseline, ≥ 0.5 dB above
-  libjpeg-turbo where chroma is interpolated (4:4:4: not below it), peak error ≤ 2, IEEE 1180 limits
-  met. The change lands as its own commit with the gate table in the message.
-- **Encoder:** `encode --gate`, per configuration on the corpus: PSNR-Y ≥ libjpeg-turbo and size ≤ +1%,
-  in baseline, optimised-Huffman and progressive mode. Optimised / progressive streams decode to
-  exactly the baseline's pixels, and the kernels stay identical across ISA tiers
-  (`JpegEncoderEquivalenceTests`), so output does not depend on the machine.
+- **Decoder arithmetic change:** `dotnet run -c Release -- accuracy --gate` against a `baseline` of the parent commit, on the matrix: per group RGB PSNR within 0.2 dB of the baseline, ≥ 0.5 dB above libjpeg-turbo where chroma is interpolated (4:4:4: not below it), peak error ≤ 2, IEEE 1180 limits met. The change lands as its own commit with the gate table in the message.
+- **Encoder:** `encode --gate`, per configuration on the corpus: PSNR-Y ≥ libjpeg-turbo and size ≤ +1%, in baseline, optimised-Huffman and progressive mode. Optimised / progressive streams decode to exactly the baseline's pixels, and the kernels stay identical across ISA tiers (`JpegEncoderEquivalenceTests`), so output does not depend on the machine.
 
 ## Independent test writers
 
-`TestJpegWriter` (tests) is a baseline JPEG writer for streams stock encoders never produce — any
-sampling, non-interleaved scans, colour restarts, YCCK/RGB, cut streams. It shares no code with the
-codec, and its output is checked against libjpeg before anything is pinned with it.
+`TestJpegWriter` (tests) is a baseline JPEG writer for streams stock encoders never produce — any sampling, non-interleaved scans, colour restarts, YCCK/RGB, cut streams. It shares no code with the codec, and its output is checked against libjpeg before anything is pinned with it.
 
-`TestBmpWriter` (tests) does the same for bitmaps: every header size, any masks, short palettes, RLE4 /
-RLE8 / RLE24 streams built op by op (each op paints the test's expected image as it is written), OS/2
-Huffman 1D from the T.4 tables. Its streams are also decoded by WIC wherever WIC reads the variant.
+`TestBmpWriter` (tests) does the same for bitmaps: every header size, any masks, short palettes, RLE4 / RLE8 / RLE24 streams built op by op (each op paints the test's expected image as it is written), OS/2 Huffman 1D from the T.4 tables. Its streams are also decoded by WIC wherever WIC reads the variant.

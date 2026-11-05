@@ -1,9 +1,6 @@
 # Sdcb.SimdCodecs.Ico
 
-Pure-managed Windows icon (`.ico`) and cursor (`.cur`) decoding and encoding for .NET 10, from Microsoft's
-documentation of the icon file. An icon is a directory of images, each a PNG stream (read and written by
-`Sdcb.SimdCodecs.Png`) or a packed DIB with an AND mask (by `Sdcb.SimdCodecs.Bmp`, so every DIB depth and its
-SIMD row kernels come along). Every image decodes to 8-bit RGBA.
+Pure-managed Windows icon (`.ico`) and cursor (`.cur`) decoding and encoding for .NET 10, from Microsoft's documentation of the icon file. An icon is a directory of images, each a PNG stream (read and written by `Sdcb.SimdCodecs.Png`) or a packed DIB with an AND mask (by `Sdcb.SimdCodecs.Bmp`, so every DIB depth and its SIMD row kernels come along). Every image decodes to 8-bit RGBA.
 
 ```csharp
 using Sdcb.SimdCodecs.Ico;
@@ -14,8 +11,7 @@ IcoImage best = IcoDecoder.Decode(data);        // the largest, deepest image (i
 IcoImage small = IcoDecoder.Decode(data, 0);    // any image, by directory index
 ```
 
-Through the `Sdcb.SimdCodecs` facade an icon is `ImageFormat.Ico` and a cursor `ImageFormat.Cur`; `TryDecode`
-gives the largest, deepest image, and `TryOpenFrames` every image as a page of its own size.
+Through the `Sdcb.SimdCodecs` facade an icon is `ImageFormat.Ico` and a cursor `ImageFormat.Cur`; `TryDecode` gives the largest, deepest image, and `TryOpenFrames` every image as a page of its own size.
 
 ## Encoding
 
@@ -31,11 +27,7 @@ byte[] ico = IcoEncoder.Encode(
 byte[] cur = IcoEncoder.EncodeCursor([new IcoFrame(rgba32, 32, 32, HotspotX: 4, HotspotY: 2)]);
 ```
 
-Each image is 1 to 256 pixels a side, in any `PixelFormat`, stored as `Png`, `Bmp32` (alpha, plus an AND mask
-from it), or `Bmp24` / `Bmp8` / `Bmp4` / `Bmp1` (transparency in the AND mask only; a palette is exact when the
-colours fit, otherwise Wu-quantized). `Auto` is PNG at 256 pixels and 32-bit BMP below: compact where icons get large, and readable everywhere else.
-Alpha below 128 is transparent in an AND mask, and a transparent pixel of a DIB without alpha is written black, as
-the mask needs to draw it.
+Each image is 1 to 256 pixels a side, in any `PixelFormat`, stored as `Png`, `Bmp32` (alpha, plus an AND mask from it), or `Bmp24` / `Bmp8` / `Bmp4` / `Bmp1` (transparency in the AND mask only; a palette is exact when the colours fit, otherwise Wu-quantized). `Auto` is PNG at 256 pixels and 32-bit BMP below: compact where icons get large, and readable everywhere else. Alpha below 128 is transparent in an AND mask, and a transparent pixel of a DIB without alpha is written black, as the mask needs to draw it.
 
 ## Decisions
 
@@ -49,5 +41,4 @@ the mask needs to draw it.
 | A PNG image | Whatever PNG holds, converted to 8-bit RGBA; it may be larger than 256 |
 | The colour of a transparent pixel | As stored (WIC agrees; ImageMagick may differ, and only alpha is compared there) |
 
-Images above 2^28 pixels are refused. Every image of a corpus of hand-built DIB icons, PNG images and every encoder
-layout decodes to WIC's pixels, frame for frame, and ImageMagick reads the encoder's output back exactly.
+Images above 2^28 pixels are refused. Every image of a corpus of hand-built DIB icons, PNG images and every encoder layout decodes to WIC's pixels, frame for frame, and ImageMagick reads the encoder's output back exactly.

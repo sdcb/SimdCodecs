@@ -1,8 +1,6 @@
 # Sdcb.SimdCodecs.Gif
 
-Pure-managed GIF (87a / 89a) decoding and encoding for .NET 10, derived from the GIF89a specification: global and local
-colour tables, interlacing, transparency, every disposal method and the NETSCAPE2.0 loop count. A frame is
-the whole canvas as a viewer shows it, every earlier frame composited in.
+Pure-managed GIF (87a / 89a) decoding and encoding for .NET 10, derived from the GIF89a specification: global and local colour tables, interlacing, transparency, every disposal method and the NETSCAPE2.0 loop count. A frame is the whole canvas as a viewer shows it, every earlier frame composited in.
 
 ```csharp
 using Sdcb.SimdCodecs.Gif;
@@ -40,15 +38,11 @@ byte[] animation = GifEncoder.EncodeAnimation(
 GIF holds at most 256 colours and 1-bit transparency, so the encoder:
 
 - treats alpha below 128 as transparent, the rest as opaque;
-- uses one global palette for every frame: exact (lossless) when the opaque colours of all frames fit in 256,
-  or 255 beside a transparent index; otherwise built by Wu's variance-minimising quantizer, with optional
-  Floyd–Steinberg dithering (`Dither`);
-- writes an opaque animation's frames as the rectangle that changed, unchanged pixels as the transparent
-  index; an animation with transparency writes whole frames, each cleared before the next;
+- uses one global palette for every frame: exact (lossless) when the opaque colours of all frames fit in 256, or 255 beside a transparent index; otherwise built by Wu's variance-minimising quantizer, with optional Floyd–Steinberg dithering (`Dither`);
+- writes an opaque animation's frames as the rectangle that changed, unchanged pixels as the transparent index; an animation with transparency writes whole frames, each cleared before the next;
 - takes `LoopCount` as plays (0 forever, 1 writes no loop extension), the same meaning the frame reader reports.
 
-Input is 1 (grey), 3 (RGB) or 4 (RGBA) channels of 8 bits. The quantizer's quality and the encoder's speed
-are not tuned yet: a benchmark and quality gate come separately.
+Input is 1 (grey), 3 (RGB) or 4 (RGBA) channels of 8 bits. The quantizer's quality and the encoder's speed are not tuned yet: a benchmark and quality gate come separately.
 
 ## Decisions
 
@@ -73,7 +67,5 @@ Canvases and images above 2^26 pixels are refused, to bound what a decode alloca
 
 The package ships two runnable samples in `linqpad-samples/`:
 
-- `decode`: reads a real animated GIF, displays its metadata and first frame, then composites frames
-  one at a time into a reused RGBA buffer.
-- `encode`: creates a small RGBA animation, compares palette quantization with and without dithering,
-  and decodes the result back for display.
+- `decode`: reads a real animated GIF, displays its metadata and first frame, then composites frames one at a time into a reused RGBA buffer.
+- `encode`: creates a small RGBA animation, compares palette quantization with and without dithering, and decodes the result back for display.
