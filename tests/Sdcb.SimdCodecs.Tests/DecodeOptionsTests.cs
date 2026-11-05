@@ -160,7 +160,7 @@ public sealed class DecodeOptionsTests
     public void AnUnscalingCodecRefusesAScaleAndReportsItsStoredSize()
     {
         var png = Stills["png"];
-        foreach (var d in new[] { 2, 4, 8 })
+        foreach (var d in new[] { 2, 4, 8, 16 })
         {
             var options = new DecodeOptions { ScaleDenominator = d };
             Should.Throw<NotSupportedException>(() => SimdCodecs.TryDecode(png, out _, options, TestContext.Current.CancellationToken));
@@ -388,9 +388,29 @@ public sealed class DecodeOptionsTests
     [InlineData(5)]
     [InlineData(6)]
     [InlineData(7)]
-    [InlineData(16)]
-    public void AScaleThatIsNotAPowerOfTwoUpToEightIsRefused(int denominator) =>
+    [InlineData(12)]
+    [InlineData(int.MinValue)]
+    [InlineData(int.MaxValue)]
+    public void AScaleThatIsNotAPowerOfTwoIsRefused(int denominator) =>
         Should.Throw<ArgumentOutOfRangeException>(() => new DecodeOptions { ScaleDenominator = denominator });
+
+    [Theory]
+    [InlineData(16)]
+    [InlineData(1 << 30)]
+    public void AnyPowerOfTwoIsAnOptionAndEachCodecSaysWhichItProduces(int denominator)
+    {
+        // The options carry any power of two (JPEG 2000 resolution levels, say, go past 8); a codec refuses what it
+        // cannot produce natively. JPEG's DCT scaling stops at 1/8.
+        var options = new DecodeOptions { ScaleDenominator = denominator };
+        options.ScaleDenominator.ShouldBe(denominator);
+        options.GetScaledSize(W, H).ShouldBe(((W + denominator - 1) / denominator, (H + denominator - 1) / denominator));
+        var jpeg = ColourJpeg();
+        Should.Throw<NotSupportedException>(() => SimdCodecs.TryDecode(jpeg, out _, options, TestContext.Current.CancellationToken))
+            .Message.ShouldContain("1/8");
+        Should.Throw<NotSupportedException>(() =>
+            SimdCodecs.TryDecodeInto(jpeg, new byte[W * H * 4], 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken));
+        Should.Throw<NotSupportedException>(() => SimdCodecs.TryDecode(Stills["png"], out _, options, TestContext.Current.CancellationToken));
+    }
 
     [Fact]
     public void TheDefaultsAreTheFullImage()

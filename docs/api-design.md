@@ -45,7 +45,7 @@ Premultiplied，只对 Rgba / Bgra 有意义）。构造函数拒绝无意义的
 - **`TryDecodeInto` 的契约**：结果等于 `TryDecode` 的图像（同样的选项）的 `Pixels` 经 `PixelConverter` 转换。原生
   快速路径必须逐字节一致。例外两种，都需在 codec 文档里写明：存储亮度的 codec 输出灰度时给存储的亮度（YCbCr JPEG 的
   Y 平面）；从比 8 位更深的编码样本直接转换到 8 位格式的 codec（HEIF Main 10），只舍入一次，与收窄 16 位图像最多差 1。
-- **`DecodeOptions`**：`ScaleDenominator`（1/2/4/8，只有原生能做到的 codec 接受，其他抛 `NotSupportedException`）、
+- **`DecodeOptions`**：`ScaleDenominator`（任意 2 的幂，1 到 2^30；每个 codec 只接受自己能原生做到的分母，例如 JPEG 最多 8，其他抛 `NotSupportedException`）、
   `Region`（存储坐标；做不到原生区域解码的 codec 整幅解码再裁剪）、`Pool`（像素从池中租用，释放图像即归还）。
   调用方先用 `TryGetClosestSize` 问 codec 原生能做到的最接近尺寸（WIC 的协商方式）。
 - **取消**：检查点放在粗粒度位置（JPEG 每个 MCU 行、HEIF 每个 tile 和每 64 行输出、PNG / QOI 等每 64 行、WebP 每个

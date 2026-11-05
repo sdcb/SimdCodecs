@@ -86,7 +86,7 @@ public sealed class JpegImageDecoder : IImageDecoder
         image = null;
         if (!JpegDecoder.TryReadInfo(data, out var info))
             return false;
-        options?.Validate(info.Width, info.Height, supportsScale: true);
+        options?.Validate(info.Width, info.Height, maxScaleDenominator: 8);
         var scale = (JpegScale)(options?.ScaleDenominator ?? 1);
         var (width, height) = info.ScaledSize(scale);
 
@@ -132,7 +132,7 @@ public sealed class JpegImageDecoder : IImageDecoder
             return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
         if (!JpegDecoder.TryReadInfo(data, out var info))
             return false;
-        options?.Validate(info.Width, info.Height, supportsScale: true);
+        options?.Validate(info.Width, info.Height, maxScaleDenominator: 8);
         var scale = (JpegScale)(options?.ScaleDenominator ?? 1);
         var (width, height) = info.ScaledSize(scale);
         if (options?.Region is { } region)

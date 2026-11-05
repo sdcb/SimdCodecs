@@ -13,16 +13,29 @@ public static class DecodeOptionsChecks
     {
         /// <summary>
         /// Checks the options against a stored <paramref name="width"/> × <paramref name="height"/> image, for a
-        /// decoder that scales natively by <paramref name="supportsScale"/> (or only at 1).
+        /// decoder that scales natively by 2, 4 and 8 (<paramref name="supportsScale"/>) or only at 1.
         /// </summary>
         /// <exception cref="NotSupportedException">The decoder cannot produce <see cref="DecodeOptions.ScaleDenominator"/>.</exception>
         /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the scaled image.</exception>
-        public void Validate(int width, int height, bool supportsScale)
+        public void Validate(int width, int height, bool supportsScale) =>
+            options.Validate(width, height, supportsScale ? 8 : 1);
+
+        /// <summary>
+        /// Checks the options against a stored <paramref name="width"/> × <paramref name="height"/> image, for a
+        /// decoder that scales natively by every power of two up to <paramref name="maxScaleDenominator"/> (1: it
+        /// does not scale).
+        /// </summary>
+        /// <exception cref="NotSupportedException">The decoder cannot produce <see cref="DecodeOptions.ScaleDenominator"/>.</exception>
+        /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the scaled image.</exception>
+        public void Validate(int width, int height, int maxScaleDenominator)
         {
             var scale = options.ScaleDenominator;
-            if (scale != 1 && !supportsScale)
-                throw new NotSupportedException(
-                    $"This decoder does not scale natively; it cannot decode at 1/{scale}. Ask TryGetClosestSize, then scale the result.");
+            if (scale > maxScaleDenominator)
+            {
+                throw new NotSupportedException(maxScaleDenominator <= 1
+                    ? $"This decoder does not scale natively; it cannot decode at 1/{scale}. Ask TryGetClosestSize, then scale the result."
+                    : $"This decoder scales natively by up to 1/{maxScaleDenominator}; it cannot decode at 1/{scale}. Ask TryGetClosestSize, then scale the result.");
+            }
             if (options.Region is { } r)
             {
                 var (w, h) = options.GetScaledSize(width, height);

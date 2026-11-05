@@ -33,18 +33,19 @@ public sealed record DecodeOptions
     public static DecodeOptions Default { get; } = new();
 
     /// <summary>
-    /// Decode at 1 / <c>ScaleDenominator</c> of the stored size in each direction: 1, 2, 4 or 8. The scaled size is
-    /// <c>⌈width / d⌉ × ⌈height / d⌉</c>. Only a codec that scales natively (JPEG, in the DCT domain) accepts a value
-    /// other than 1; see <see cref="IImageDecoder.TryGetClosestSize"/>.
+    /// Decode at 1 / <c>ScaleDenominator</c> of the stored size in each direction: a power of two, 1 to 2^30. The
+    /// scaled size is <c>⌈width / d⌉ × ⌈height / d⌉</c>. Each codec accepts the denominators it produces natively and
+    /// throws <see cref="NotSupportedException"/> for the others (JPEG: up to 8, in the DCT domain; codecs that do
+    /// not scale: 1 only); ask <see cref="IImageDecoder.TryGetClosestSize"/> which one to use.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">Set to a value other than 1, 2, 4 or 8.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Set to a value that is not a power of two from 1 to 2^30.</exception>
     public int ScaleDenominator
     {
         get => _scale;
         init
         {
-            if (value is not (1 or 2 or 4 or 8))
-                throw new ArgumentOutOfRangeException(nameof(value), value, "The scale denominator is 1, 2, 4 or 8.");
+            if (value <= 0 || value > 1 << 30 || (value & (value - 1)) != 0)
+                throw new ArgumentOutOfRangeException(nameof(value), value, "The scale denominator is a power of two from 1 to 2^30.");
             _scale = value;
         }
     }

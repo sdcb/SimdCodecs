@@ -1,1 +1,3 @@
 #nullable enable
+Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.extension(Sdcb.SimdCodecs.Abstractions.DecodeOptions!).Validate(int width, int height, int maxScaleDenominator) -> void
+static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.Validate(this Sdcb.SimdCodecs.Abstractions.DecodeOptions! options, int width, int height, int maxScaleDenominator) -> void
