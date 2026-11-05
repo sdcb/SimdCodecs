@@ -28,7 +28,7 @@ namespace Sdcb.SimdCodecs.Png;
 ///   <item>Both interlace methods: none, and Adam7, whose passes are put back into place as they are
 ///   decoded, so the result is the same as for a non-interlaced file of the same image.</item>
 /// </list>
-/// <para>APNG will layer on top of this decoder.</para>
+/// <para>APNG (animated PNG) layers on top of this decoder: see <see cref="PngAnimationDecoder"/>.</para>
 /// </remarks>
 public static class PngReader
 {
@@ -378,7 +378,7 @@ public static class PngReader
     /// copy that again into a stream, inflate into a growing stream, copy that out, and unfilter the copy
     /// into a new array: the image's bytes three or four times over before the samples existed.</para>
     /// </summary>
-    private static unsafe byte[] InflateAndUnfilter(ReadOnlySpan<byte> data, List<(int Offset, int Length)> idat,
+    internal static unsafe byte[] InflateAndUnfilter(ReadOnlySpan<byte> data, List<(int Offset, int Length)> idat,
         int width, int height, int bitDepth, int colorType, CancellationToken cancellationToken)
     {
         if (bitDepth < 8)
@@ -625,7 +625,7 @@ public static class PngReader
     /// (a sub-byte row is unpacked first). The samples come out exactly as a non-interlaced file of
     /// the same image would give them.
     /// </summary>
-    private static unsafe byte[] InflateAdam7(ReadOnlySpan<byte> data, List<(int Offset, int Length)> idat,
+    internal static unsafe byte[] InflateAdam7(ReadOnlySpan<byte> data, List<(int Offset, int Length)> idat,
         int width, int height, int bitDepth, int colorType, CancellationToken cancellationToken)
     {
         var samplesPerPixel = SamplesPerPixel(colorType);
