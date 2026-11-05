@@ -9,7 +9,7 @@ namespace Sdcb.SimdCodecs.Jpeg;
 ///
 /// Supported markers: SOI, DHT, SOF3, DRI, SOS (+ entropy data + RSTn), EOI.
 /// APPn/COM/DQT are skipped on the parse path; SOF0/1/2 → throws (use
-/// <see cref="JpegDecoder.Decode"/> for baseline / progressive).
+/// <see cref="JpegDecoder.Decode(ReadOnlySpan{byte}, JpegScale)"/> for baseline / progressive).
 ///
 /// Precision: 2..16 bits (T.81 Annex H.1 allows up to 16). Components: any
 /// number; interleaved and non-interleaved scans both supported. Restart

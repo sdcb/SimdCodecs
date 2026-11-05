@@ -70,6 +70,16 @@ public sealed class TiffRobustnessTests
         for (var y = 0; y < H; y += 6)
             unitStrips.Add(rgb.AsSpan(0, ((W + 1) / 2) * ((Math.Min(6, H - y) + 1) / 2) * 6).ToArray());
         seeds.Add(("ycbcr 2x2", new B().AddPage(ycc, [.. unitStrips]).Build()));
+        foreach (var (name, tiled, cs) in new[] { ("jpeg rgb strips", false, ColorSpace.sRGB), ("jpeg ycbcr tiled", true, ColorSpace.YCbCr), ("jpeg gray", false, ColorSpace.Gray) })
+        {
+            using var jpeg = new MagickImage();
+            jpeg.ReadPixels(rgb, new PixelReadSettings(W, H, StorageType.Char, "RGB"));
+            if (cs != ColorSpace.sRGB) jpeg.ColorSpace = cs;
+            jpeg.Settings.Compression = CompressionMethod.JPEG;
+            if (tiled) jpeg.Settings.SetDefine(MagickFormat.Tiff, "tile-geometry", "16x16");
+            else jpeg.Settings.SetDefine(MagickFormat.Tiff, "rows-per-strip", "8");
+            seeds.Add((name, jpeg.ToByteArray(MagickFormat.Tiff)));
+        }
         seeds.Add(("BigTIFF lzw tiled", Magick(rgb, "RGB", 8, CompressionMethod.LZW, true, false, predictor: 2, bigTiff: true)));
         seeds.Add(("BigTIFF zip planar MM", Magick(rgb, "RGB", 8, CompressionMethod.Zip, false, true, predictor: 2, endian: "msb", bigTiff: true)));
 

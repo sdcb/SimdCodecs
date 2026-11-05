@@ -34,6 +34,9 @@
     <!-- IImageDecoder / IDecodedImage contract for the Sdcb.SimdCodecs facade
          (TiffImageDecoder). -->
     <ProjectReference Include="..\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
+    <!-- JPEG-compressed strips and tiles (Compression 7, TIFF Technical Note 2), through JpegDecoder's
+         public API only (JpegDecodeOptions: JPEGTables and the photometric's colour interpretation). -->
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Jpeg\Sdcb.SimdCodecs.Jpeg.csproj" />
   </ItemGroup>
 
   <ItemGroup>

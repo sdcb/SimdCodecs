@@ -1,1 +1,14 @@
 #nullable enable
+Sdcb.SimdCodecs.Jpeg.JpegColorTransform
+Sdcb.SimdCodecs.Jpeg.JpegColorTransform.Auto = 0 -> Sdcb.SimdCodecs.Jpeg.JpegColorTransform
+Sdcb.SimdCodecs.Jpeg.JpegColorTransform.None = 1 -> Sdcb.SimdCodecs.Jpeg.JpegColorTransform
+Sdcb.SimdCodecs.Jpeg.JpegColorTransform.YCbCr = 2 -> Sdcb.SimdCodecs.Jpeg.JpegColorTransform
+Sdcb.SimdCodecs.Jpeg.JpegDecodeOptions
+Sdcb.SimdCodecs.Jpeg.JpegDecodeOptions.ColorTransform.get -> Sdcb.SimdCodecs.Jpeg.JpegColorTransform
+Sdcb.SimdCodecs.Jpeg.JpegDecodeOptions.ColorTransform.init -> void
+Sdcb.SimdCodecs.Jpeg.JpegDecodeOptions.JpegDecodeOptions() -> void
+Sdcb.SimdCodecs.Jpeg.JpegDecodeOptions.Tables.get -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Jpeg.JpegDecodeOptions.Tables.init -> void
+static Sdcb.SimdCodecs.Jpeg.JpegDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Jpeg.JpegDecodeOptions? options, Sdcb.SimdCodecs.Jpeg.JpegScale scale) -> Sdcb.SimdCodecs.Jpeg.JpegImage!
+static Sdcb.SimdCodecs.Jpeg.JpegDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Jpeg.JpegPixelFormat format, Sdcb.SimdCodecs.Jpeg.JpegDecodeOptions? options, Sdcb.SimdCodecs.Jpeg.JpegScale scale, System.Threading.CancellationToken cancellationToken) -> (int Width, int Height)
+static Sdcb.SimdCodecs.Jpeg.JpegDecoder.ReadInfo(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Jpeg.JpegDecodeOptions? options) -> Sdcb.SimdCodecs.Jpeg.JpegInfo!

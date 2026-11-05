@@ -85,7 +85,7 @@ internal sealed record ParsedIfd(
     float? SMin, float? SMax, byte[]? Icc, long? ExifIfdOffset, long? GpsInfoIfdOffset,
     long NextIfdOffset, bool LsbFirst = false, uint FaxOptions = 0, int Orientation = 1,
     byte[]? Xmp = null, double XResolution = 0, double YResolution = 0, int ResolutionUnit = 2,
-    TiffColorTags? ColorTags = null)
+    TiffColorTags? ColorTags = null, Jpeg.JpegColorTransform JpegTransform = Jpeg.JpegColorTransform.Auto)
 {
     /// <summary>The tags that say what the samples mean beyond <see cref="Photometric"/>.</summary>
     public TiffColorTags Color => ColorTags ?? TiffColorTags.Defaults;
@@ -423,6 +423,35 @@ internal static class TiffIfdParser
             (subH, subV) = (subsampling[0], subsampling[1]);
         }
         var isJpeg = compression is TiffCompression.Jpeg or TiffCompression.OldJpeg;
+        if (compression == TiffCompression.OldJpeg)
+            throw new NotSupportedException(
+                "Old-style JPEG (Compression=6, TIFF 6.0 section 22) is not supported; it was superseded by Compression=7 (TIFF Technical Note 2)");
+
+        // New-style JPEG (TIFF Technical Note 2): every strip or tile is a JPEG stream, its tables possibly in
+        // JPEGTables, coding the page's photometric: RGB with no colour transform, YCbCr converted to RGB by the
+        // JPEG decoder (with its own upsampling), grey, or CMYK inks as they are. Pages are 8-bit only.
+        var jpegTransform = Jpeg.JpegColorTransform.Auto;
+        var reportedPhotometric = photometric;
+        if (compression == TiffCompression.Jpeg)
+        {
+            if (bitsPerSample != 8 || sampleFormat != TiffSampleFormat.Uint)
+                throw new NotSupportedException($"JPEG-compressed pages are read with 8-bit samples, not {bitsPerSample}-bit {sampleFormat}");
+            if (samplesPerPixel is not (1 or 3 or 4) && planarConfig != TiffPlanarConfig.Separate)
+                throw new NotSupportedException($"JPEG-compressed pages are read with 1, 3 or 4 samples per pixel, not {samplesPerPixel}");
+            switch (photometric)
+            {
+                case TiffPhotometric.Rgb or TiffPhotometric.Cmyk:
+                    jpegTransform = Jpeg.JpegColorTransform.None;
+                    break;
+                case TiffPhotometric.YCbCr:
+                    if (geometry.IsPlanar)
+                        throw new NotSupportedException("JPEG-compressed YCbCr in separate planes is not supported");
+                    // The decoder delivers RGB, so that is what the samples mean from here on.
+                    jpegTransform = Jpeg.JpegColorTransform.YCbCr;
+                    reportedPhotometric = TiffPhotometric.Rgb;
+                    break;
+            }
+        }
         if (photometric == TiffPhotometric.YCbCr && !isJpeg)
         {
             if (subH is not (1 or 2 or 4) || subV is not (1 or 2 or 4))
@@ -458,7 +487,7 @@ internal static class TiffIfdParser
             throw new InvalidDataException(
                 $"A {(isTiled ? "tile" : "strip")} of this {width}x{height} page decodes to more than {Array.MaxLength} bytes");
 
-        return new ParsedIfd(width, height, samplesPerPixel, bitsPerSample, compression, photometric,
+        return new ParsedIfd(width, height, samplesPerPixel, bitsPerSample, compression, reportedPhotometric,
             sampleFormat, planarConfig, predictor, rowsPerStrip, isTiled, tileWidth, tileHeight,
             segmentOffsets, segmentByteCounts, geometry, sMin, sMax, icc, exifIfdOffset, gpsIfdOffset,
             nextIfdOffset, LsbFirst: fillOrder == 2,
@@ -468,7 +497,8 @@ internal static class TiffIfdParser
                 coefficients is { Length: 3 } && coefficients.All(double.IsFinite) && coefficients[1] != 0
                     ? coefficients : TiffColorTags.Defaults.Coefficients,
                 referenceBlackWhite is { Length: 6 } && referenceBlackWhite.All(double.IsFinite) ? referenceBlackWhite : null,
-                jpegTables));
+                jpegTables),
+            JpegTransform: jpegTransform);
     }
 
     public static ushort U16(ReadOnlySpan<byte> b, bool le) =>

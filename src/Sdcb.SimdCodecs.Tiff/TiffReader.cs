@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
+using Sdcb.SimdCodecs.Jpeg;
 
 namespace Sdcb.SimdCodecs.Tiff;
 
@@ -503,6 +504,9 @@ public static partial class TiffReader
             segment = reversed;
         }
 
+        if (format.Compression == TiffCompression.Jpeg)
+            return scratch.AsSpan(0, DecodeJpegSegment(segment, format, scratch.AsSpan(0, capacity)));
+
         if (format.IsYCbCrUnits)
         {
             // Subsampled YCbCr (TIFF 6.0 section 21): the segment codes data units -- SubsampleV rows of
@@ -525,6 +529,71 @@ public static partial class TiffReader
         var decoded = Decompress(segment, format, packed, inflateSource, scratchStream);
         return scratch.AsSpan(0, ExpandSubByteRows(packed[..decoded], scratch!, format.StoredWidth, format.StoredBits,
             format.RawIndices));
+    }
+
+    /// <summary>
+    /// One JPEG-compressed strip or tile (TIFF Technical Note 2): a JPEG stream, decoded with the page's JPEGTables
+    /// and colour interpretation into <paramref name="target"/> at the stored width, one, three or four bytes per
+    /// pixel. The stream's frame may be taller than the rows wanted -- a last strip coded at full RowsPerStrip, a tile
+    /// below the image -- and those rows are clipped; it may not be wider than the segment or taller than its stored
+    /// height. Returns the bytes of whole rows written (fewer rows than wanted leave the rest to the caller's zero
+    /// fill, as a short segment of any compression does).
+    /// </summary>
+    private static int DecodeJpegSegment(ReadOnlySpan<byte> segment, SegmentFormat format, Span<byte> target)
+    {
+        var samples = format.SegmentSamples;
+        var pixelFormat = samples switch
+        {
+            1 => JpegPixelFormat.Gray8,
+            3 => JpegPixelFormat.Rgb24,
+            4 => JpegPixelFormat.Rgba32,
+            _ => throw new NotSupportedException($"A JPEG segment of {samples} samples per pixel is not supported"),
+        };
+        var options = format.Jpeg!;
+        var info = JpegDecoder.ReadInfo(segment, options);
+        if (info.Components != samples)
+            throw new InvalidDataException($"The JPEG segment has {info.Components} components, the page {samples} samples per pixel");
+        if (info.Width > format.StoredWidth || info.Height > format.StoredHeight)
+            throw new InvalidDataException(
+                $"The JPEG segment is {info.Width}x{info.Height}, larger than the page's {format.StoredWidth}x{format.StoredHeight} segments");
+
+        var stride = format.StoredWidth * samples;
+        var rows = target.Length / stride;
+        if (info.Height <= rows)
+        {
+            JpegDecoder.DecodeTo(segment, target, stride, pixelFormat, options, JpegScale.Full, default);
+            if (info.Width < format.StoredWidth)
+            {
+                for (var y = 0; y < info.Height; y++)
+                    target.Slice((y * stride) + (info.Width * samples), (format.StoredWidth - info.Width) * samples).Clear();
+            }
+            return info.Height * stride;
+        }
+
+        // Taller than wanted: decode the frame whole, keep its first rows. Bounded by the stored segment size above.
+        // The frame's header is a few bytes of the file, so the scratch it asks for is capped by what is wanted: a
+        // generous multiple of it (a 256-row tile over a 10-row image is 26x), never an unbounded allocation.
+        var frameBytes = (long)info.Width * info.Height * samples;
+        if (frameBytes > Math.Max(64L * target.Length, 1L << 24) || frameBytes > Array.MaxLength)
+            throw new InvalidDataException(
+                $"The JPEG segment's {info.Width}x{info.Height} frame is far larger than the {rows} rows it supplies");
+        var frame = ArrayPool<byte>.Shared.Rent((int)frameBytes);
+        try
+        {
+            var frameStride = info.Width * samples;
+            JpegDecoder.DecodeTo(segment, frame, frameStride, pixelFormat, options, JpegScale.Full, default);
+            for (var y = 0; y < rows; y++)
+            {
+                var row = target.Slice(y * stride, stride);
+                frame.AsSpan(y * frameStride, frameStride).CopyTo(row);
+                row[frameStride..].Clear();
+            }
+            return rows * stride;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(frame);
+        }
     }
 
     /// <summary>
@@ -649,13 +718,22 @@ public static partial class TiffReader
     /// <param name="RawIndices">Sub-byte samples are palette indices: expanded, not scaled to the full 8-bit range.</param>
     /// <param name="SubsampleH">YCbCr chroma subsampling across (1 when the page is not subsampled YCbCr).</param>
     /// <param name="SubsampleV">YCbCr chroma subsampling down.</param>
+    /// <param name="SegmentSamples">Samples per pixel inside one segment (1 for a plane of a planar page).</param>
+    /// <param name="StoredHeight">Rows a segment is stored with: the tile height, or the strip's RowsPerStrip.</param>
+    /// <param name="Jpeg">For a JPEG page: its JPEGTables and colour interpretation.</param>
     private readonly record struct SegmentFormat(TiffCompression Compression, int StoredBits, int StoredWidth,
-        bool LsbFirst, uint FaxOptions, bool RawIndices = false, int SubsampleH = 1, int SubsampleV = 1)
+        bool LsbFirst, uint FaxOptions, bool RawIndices = false, int SubsampleH = 1, int SubsampleV = 1,
+        int SegmentSamples = 1, int StoredHeight = 0, JpegDecodeOptions? Jpeg = null)
     {
         public static SegmentFormat For(ParsedIfd ifd) => new(ifd.Compression, ifd.BitsPerSample,
             ifd.IsTiled ? ifd.TileWidth : ifd.Width, ifd.LsbFirst, ifd.FaxOptions,
             RawIndices: ifd.Photometric == TiffPhotometric.Palette,
-            SubsampleH: ifd.Color.SubsampleH, SubsampleV: ifd.Color.SubsampleV);
+            SubsampleH: ifd.Color.SubsampleH, SubsampleV: ifd.Color.SubsampleV,
+            SegmentSamples: ifd.Geometry.SegmentSamplesPerPixel,
+            StoredHeight: ifd.IsTiled ? ifd.TileHeight : ifd.Geometry.SegmentHeight,
+            Jpeg: ifd.Compression == TiffCompression.Jpeg
+                ? new JpegDecodeOptions { Tables = ifd.Color.JpegTables, ColorTransform = ifd.JpegTransform }
+                : null);
 
         public bool IsPacked => StoredBits < 8;
 

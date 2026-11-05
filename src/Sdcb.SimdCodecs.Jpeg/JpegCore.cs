@@ -49,8 +49,18 @@ namespace Sdcb.SimdCodecs.Jpeg;
 /// </summary>
 internal ref struct JpegCore
 {
-    private readonly ReadOnlySpan<byte> _data;
+    // Not readonly: an abbreviated table-specification stream (Tables) is parsed through the same reader first.
+    private ReadOnlySpan<byte> _data;
     private int _pos;
+
+    /// <summary>
+    /// An abbreviated table-specification stream (T.81 B.5: SOI, tables, EOI) applied before the image stream, as
+    /// TIFF's JPEGTables tag carries them (TIFF Technical Note 2). Empty for none.
+    /// </summary>
+    internal ReadOnlySpan<byte> Tables;
+
+    /// <summary>The caller's interpretation of the components, overriding the JFIF / Adobe / component-ID guess.</summary>
+    internal JpegColorTransform ColorTransform;
 
     // --- entropy decoding: marker hit inside entropy data (see the bit reader) ---
     private byte _marker = 0xff;
@@ -247,6 +257,25 @@ internal ref struct JpegCore
     private bool _isRgb;
     private bool _chroma16;
 
+    /// <summary>How a four-component frame is converted: the Adobe transform code (0 CMYK, 2 YCCK), or <see cref="RawFour"/>.</summary>
+    private int _fourTransform;
+
+    /// <summary><see cref="_fourTransform"/> for <see cref="JpegColorTransform.None"/>: components copied, not converted.</summary>
+    private const int RawFour = -2;
+
+    /// <summary>Four components copied to R, G, B, A (or B, G, R, A): no arithmetic at all.</summary>
+    private static void RawFourRow(Span<byte> outRow, ReadOnlySpan<byte> c0, ReadOnlySpan<byte> c1, ReadOnlySpan<byte> c2,
+        ReadOnlySpan<byte> c3, int width, bool bgr)
+    {
+        for (var x = 0; x < width; x++)
+        {
+            outRow[(x * 4) + (bgr ? 2 : 0)] = c0[x];
+            outRow[(x * 4) + 1] = c1[x];
+            outRow[(x * 4) + (bgr ? 0 : 2)] = c2[x];
+            outRow[(x * 4) + 3] = c3[x];
+        }
+    }
+
     /// <summary>Diagnostics: also keep full component planes for <see cref="ExportPlanes"/>.</summary>
     internal bool CapturePlanes;
 
@@ -394,7 +423,21 @@ internal ref struct JpegCore
     /// <summary>Sets up upsampling state and line buffers before the first scan.</summary>
     private void PrepareOutput()
     {
-        _isRgb = ImgN == 3 && (_rgbCount == 3 || (_app14ColorTransform == 0 && !_jfif));
+        // Which colour transform the components carry: the caller's word when it gives one, else the stream's
+        // signals (component IDs "RGB", an Adobe transform-0 marker without JFIF). Only the selection changes; every
+        // path below is the frozen arithmetic it always was.
+        _isRgb = ImgN == 3 && ColorTransform switch
+        {
+            JpegColorTransform.None => true,
+            JpegColorTransform.YCbCr => false,
+            _ => _rgbCount == 3 || (_app14ColorTransform == 0 && !_jfif),
+        };
+        _fourTransform = ColorTransform switch
+        {
+            JpegColorTransform.None => RawFour,
+            JpegColorTransform.YCbCr => 2,
+            _ => _app14ColorTransform,
+        };
 
         for (var k = 0; k < ImgN; ++k)
         {
@@ -420,7 +463,7 @@ internal ref struct JpegCore
         // Components 1 and 2 are YCbCr chroma for 3-component YCbCr and for every
         // 4-component stream except plain Adobe CMYK. When either is subsampled, both
         // are upsampled at 16× scale and fed to the converter unrounded.
-        var ycc = (ImgN == 3 && !_isRgb) || (ImgN == 4 && _app14ColorTransform != 0);
+        var ycc = (ImgN == 3 && !_isRgb) || (ImgN == 4 && _fourTransform != 0 && _fourTransform != RawFour);
         _chroma16 = ycc &&
                     (_comp[1].ResampleKind != JpegResample.OneToOne || _comp[2].ResampleKind != JpegResample.OneToOne);
     }
@@ -564,12 +607,17 @@ internal ref struct JpegCore
         }
         else if (ImgN == 4)
         {
-            if (_app14ColorTransform == 0)
+            if (_fourTransform == RawFour)
+            {
+                // No colour transform: the four components as they are, into R, G, B, A.
+                RawFourRow(outRow, y, Row(1), Row(2), Row(3), OutX, bgr);
+            }
+            else if (_fourTransform == 0)
             {
                 // Plain Adobe CMYK: fold K into each ink channel.
                 JpegColor.CmykRow(outRow, y, Row(1), Row(2), Row(3), OutX, bgr);
             }
-            else if (_app14ColorTransform == 2)
+            else if (_fourTransform == 2)
             {
                 // YCCK: YCbCr → RGB, invert to CMY, then fold K.
                 if (_chroma16)
@@ -2148,6 +2196,8 @@ internal ref struct JpegCore
     {
         _jfif = false;
         _app14ColorTransform = -1;
+        if (!Tables.IsEmpty)
+            LoadTables();
         _marker = 0xff;
         int m = GetMarker();
         if (m != 0xd8)
@@ -2169,6 +2219,38 @@ internal ref struct JpegCore
 
         _progressive = m == 0xc2;
         ProcessFrameHeader(scan);
+    }
+
+    /// <summary>
+    /// Parses <see cref="Tables"/> (SOI, then DQT / DHT / DRI / APPn / COM, then EOI) through the marker reader, then
+    /// returns it to the image stream. A missing EOI at the end of the tables is tolerated; any other marker is not.
+    /// </summary>
+    private void LoadTables()
+    {
+        var image = _data;
+        var imagePos = _pos;
+        _data = Tables;
+        _pos = 0;
+        _marker = 0xff;
+        try
+        {
+            if (GetMarker() != 0xd8)
+                throw Err("JPEG tables: no SOI");
+            while (true)
+            {
+                int m = GetMarker();
+                if (m == 0xd9 || (m == 0xff && AtEof))
+                    break;
+                if (!ProcessMarker(m))
+                    throw Err($"JPEG tables: bad or unsupported marker 0x{m:X2}");
+            }
+        }
+        finally
+        {
+            _data = image;
+            _pos = imagePos;
+            _marker = 0xff;
+        }
     }
 
     /// <summary>
