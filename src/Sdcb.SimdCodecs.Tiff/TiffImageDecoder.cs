@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -34,7 +35,7 @@ namespace Sdcb.SimdCodecs.Tiff;
 /// 1/2/4-bit grey is expanded to fill 8 bits (the maximum code becomes 255) and reports
 /// <see cref="IDecodedImage.BitDepth"/> 1/2/4; 16-bit float reports 16. Scaling is not supported (a
 /// <see cref="DecodeOptions.ScaleDenominator"/> other than 1 throws <see cref="NotSupportedException"/>); a
-/// <see cref="DecodeOptions.Region"/> decodes the whole page and crops it. Cancellation is checked per strip,
+/// <see cref="DecodeOptions.Region"/> reads only the strips or tiles it intersects. Cancellation is checked per strip,
 /// per row of tiles and per page.
 /// </para>
 /// </summary>
@@ -131,13 +132,135 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
     }
 
     /// <inheritdoc />
-    /// <remarks>TIFF has no scaling. The result of the generic decode-then-convert path
-    /// (<see cref="ImageDecoderFallback.TryDecodeInto"/>); a float page is converted by
-    /// <see cref="PixelConverter"/> like any other. A <see cref="DecodeOptions.Region"/> decodes the whole page
-    /// and crops it.</remarks>
+    /// <remarks>TIFF has no scaling. Integer pages are decoded strip by strip (or by row of tiles) straight into
+    /// <paramref name="destination"/>: only the segments a <see cref="DecodeOptions.Region"/> intersects are read, and
+    /// no raster of the page exists, only one band of segments. The pixels are exactly those of
+    /// <see cref="ImageDecoderFallback.TryDecodeInto"/> (decode, then <see cref="PixelConverter"/>), which float pages
+    /// still take.</remarks>
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
         DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
-        ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
+        TryDecodePageInto(data, 0, destination, stride, format, options, cancellationToken);
+
+    /// <summary>Page <paramref name="pageIndex"/> as <see cref="TryDecodeInto"/> writes the first.</summary>
+    internal static bool TryDecodePageInto(ReadOnlySpan<byte> data, int pageIndex, Span<byte> destination, int stride,
+        PixelFormat format, DecodeOptions? options, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        TiffPageLayout layout;
+        try
+        {
+            layout = TiffReader.ReadLayout(data, pageIndex);
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+        if (!TiffColor.TryCreate(layout, out var plan))
+            return false;
+        options?.Validate(layout.Width, layout.Height, supportsScale: false);
+        if (plan.OutFormat == SampleFormat.Float32)
+        {
+            // PixelConverter defines float output through the decoded image; keep exactly that.
+            if (!TryDecodePage(data, pageIndex, options is null ? null : options with { Pool = null }, cancellationToken, out var image))
+                return false;
+            using (image)
+                return PixelConverter.TryConvert(image, destination, stride, format);
+        }
+
+        var rect = options?.Region ?? new PixelRect(0, 0, layout.Width, layout.Height);
+        if (!PixelConverter.TryGetLayout(rect.Width, rect.Height, format, stride, destination.Length, out var rowStride))
+            return false;
+        var bandRows = Math.Min(layout.Geometry.SegmentHeight, rect.Height);
+        var bandStride = rect.Width * plan.OutBytesPerPixel;
+        var band = ArrayPool<byte>.Shared.Rent(bandRows * bandStride);
+        try
+        {
+            var first = layout.Geometry.DownIndexForRow(rect.Y);
+            var last = layout.Geometry.DownIndexForRow(rect.Y + rect.Height - 1);
+            for (var down = first; down <= last; down++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var (y0, rows) = BandRows(layout, rect, down);
+                DecodeBand(data, layout, plan, rect, down, band.AsSpan(0, rows * bandStride), bandStride);
+                for (var r = 0; r < rows; r++)
+                {
+                    PixelConverter.ConvertRow(band.AsSpan(r * bandStride, bandStride), plan.OutChannels, plan.OutFormat,
+                        destination.Slice((y0 - rect.Y + r) * rowStride), format, rect.Width);
+                }
+            }
+            return true;
+        }
+        catch (Exception e) when (e is InvalidDataException or NotSupportedException)
+        {
+            return false;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(band);
+        }
+    }
+
+    /// <summary>The first image row of segment row <paramref name="down"/> inside <paramref name="rect"/>, and how many there are.</summary>
+    private static (int Y0, int Rows) BandRows(TiffPageLayout layout, PixelRect rect, int down)
+    {
+        var g = layout.Geometry;
+        var y0 = Math.Max(rect.Y, g.FirstRow(down));
+        var y1 = Math.Min(rect.Y + rect.Height, g.FirstRow(down) + g.RowCount(down));
+        return (y0, y1 - y0);
+    }
+
+    /// <summary>
+    /// Decodes the strips or tiles of segment row <paramref name="down"/> that intersect <paramref name="rect"/> and
+    /// converts their pixels inside it into <paramref name="band"/>: the band's rows are the image rows
+    /// <see cref="BandRows"/> gives, at the rectangle's width. Segments are read exactly as
+    /// <see cref="TiffReader.ReadSegment(ReadOnlySpan{byte}, TiffPageLayout, int, Span{byte})"/> reads them, which
+    /// equals the same rectangle of the whole page; a chunky strip the file does not list (a short strip list, which
+    /// the whole-page read tolerates) is left as zeros, as the whole-page read leaves it.
+    /// </summary>
+    private static void DecodeBand(ReadOnlySpan<byte> data, TiffPageLayout layout, TiffColor plan, PixelRect rect,
+        int down, Span<byte> band, int bandStride)
+    {
+        var g = layout.Geometry;
+        var (y0, rows) = BandRows(layout, rect, down);
+        var firstAcross = g.AcrossIndexForColumn(rect.X);
+        var lastAcross = g.AcrossIndexForColumn(rect.X + rect.Width - 1);
+        var outBpp = plan.OutBytesPerPixel;
+        var inBpp = plan.InBytesPerPixel;
+        byte[]? segment = null;
+        try
+        {
+            for (var across = firstAcross; across <= lastAcross; across++)
+            {
+                var index = (down * g.SegmentsAcross) + across;
+                var seg = layout.SegmentRectangle(index);
+                var x0 = Math.Max(rect.X, seg.X);
+                var x1 = Math.Min(rect.X + rect.Width, seg.X + seg.Width);
+                if (!layout.IsTiled && !layout.IsPlanar && index >= layout.Offsets.Length)
+                {
+                    for (var r = 0; r < rows; r++)
+                        band.Slice((r * bandStride) + ((x0 - rect.X) * outBpp), (x1 - x0) * outBpp).Clear();
+                    continue;
+                }
+                var need = layout.SegmentBytes(index);
+                if (segment is null || segment.Length < need)
+                {
+                    if (segment is not null) ArrayPool<byte>.Shared.Return(segment);
+                    segment = ArrayPool<byte>.Shared.Rent(need);
+                }
+                TiffReader.ReadSegment(data, layout, index, segment);
+                var segStride = seg.Width * inBpp;
+                for (var r = 0; r < rows; r++)
+                {
+                    var source = segment.AsSpan(((y0 - seg.Y + r) * segStride) + ((x0 - seg.X) * inBpp), (x1 - x0) * inBpp);
+                    plan.ConvertRow(source, band.Slice((r * bandStride) + ((x0 - rect.X) * outBpp), (x1 - x0) * outBpp), x1 - x0);
+                }
+            }
+        }
+        finally
+        {
+            if (segment is not null) ArrayPool<byte>.Shared.Return(segment);
+        }
+    }
 
     /// <inheritdoc />
     /// <remarks>The ICC profile (tag 34675), the XMP packet (tag 700, raw bytes) and the Exif block of the first page.
@@ -193,6 +316,52 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         // Check the options against the page before any strip is decoded (outside the try: they throw).
         options?.Validate(layout.Width, layout.Height, supportsScale: false);
 
+        ImageMetadata? metadata;
+        try
+        {
+            metadata = MetadataOf(data, layout);
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            metadata = null; // metadata never fails a decode
+        }
+        if (metadata is { IsEmpty: true })
+            metadata = null;
+
+        if (options?.Region is { } region)
+        {
+            // Only the strips or tiles the region intersects are read, decoded and converted, straight into the
+            // result: the same pixels as decoding the page whole and cropping it.
+            var result = RasterImage.Create(region.Width, region.Height, plan.OutChannels, plan.OutFormat, options.Pool,
+                ColorOf(layout.SampleFormat), BitDepthOf(layout, plan), metadata);
+            try
+            {
+                var target = result.WritablePixels;
+                var bandStride = region.Width * plan.OutBytesPerPixel;
+                var first = layout.Geometry.DownIndexForRow(region.Y);
+                var last = layout.Geometry.DownIndexForRow(region.Y + region.Height - 1);
+                for (var down = first; down <= last; down++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var (y0, rows) = BandRows(layout, region, down);
+                    DecodeBand(data, layout, plan, region, down,
+                        target.Slice((y0 - region.Y) * bandStride, rows * bandStride), bandStride);
+                }
+            }
+            catch (Exception e) when (e is InvalidDataException or NotSupportedException)
+            {
+                result.Dispose();
+                return false;
+            }
+            catch
+            {
+                result.Dispose();
+                throw;
+            }
+            image = result;
+            return true;
+        }
+
         TiffPage page;
         try
         {
@@ -217,17 +386,6 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
                 plan.ConvertRow(page.Pixels.AsSpan(y * inRow, inRow), pixels.AsSpan(y * outRow, outRow), page.Width);
         }
 
-        ImageMetadata? metadata;
-        try
-        {
-            metadata = MetadataOf(data, layout);
-        }
-        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
-        {
-            metadata = null; // the page decoded, so this cannot happen; metadata never fails a decode
-        }
-        if (metadata is { IsEmpty: true })
-            metadata = null;
         var raster = RasterImage.Wrap(page.Width, page.Height, plan.OutChannels, plan.OutFormat, pixels,
             ColorOf(layout.SampleFormat), BitDepthOf(layout, plan), metadata);
         image = DecodeOptions.Apply(raster, options);
