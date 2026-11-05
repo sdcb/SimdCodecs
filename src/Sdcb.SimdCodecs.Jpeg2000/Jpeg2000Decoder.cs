@@ -67,6 +67,14 @@ public sealed record Jpeg2000Image(int Width, int Height, int BitDepth, ushort[]
     /// this is reported rather than applied.
     /// </summary>
     public Jp2Colour? Colour { get; init; }
+
+    /// <summary>
+    /// What each channel is, when the JP2 file has a channel definition box, in the order
+    /// <see cref="Samples"/> holds them: the colour channels in the colour space's order (red, green,
+    /// blue for sRGB, whatever the codestream's order), then opacity, then channels with no stated use.
+    /// Null for a raw codestream and for a JP2 file without the box, whose channels are as stored.
+    /// </summary>
+    public IReadOnlyList<Jp2Channel>? Channels { get; init; }
 }
 
 /// <summary>
@@ -83,6 +91,12 @@ public sealed record Jpeg2000Info(
 {
     /// <summary>The image region on the reference grid, whose origin decides how a halving rounds.</summary>
     internal Rect Region { get; init; }
+
+    /// <summary>
+    /// What each channel of the decoded image is, in decoded order, when the JP2 file has a channel
+    /// definition box; see <see cref="Jpeg2000Image.Channels"/>. <see cref="Components"/> counts them.
+    /// </summary>
+    public IReadOnlyList<Jp2Channel>? Channels { get; init; }
 
     /// <summary>
     /// The size <see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, int, CancellationToken)"/> produces at this
@@ -104,7 +118,7 @@ public sealed record Jpeg2000Info(
 /// 15444-1, Part 1).
 /// <para>
 /// <b>What this decodes today.</b> A raw J2K codestream, or one in a JP2 file
-/// (with or without a palette and component mapping, but no channel definition),
+/// (with or without a palette, component mapping and channel definition),
 /// holding any number of 1-to-16-bit unsigned components of one precision, in any
 /// number of tiles and tile-parts, coded in any number of quality layers, with any
 /// precinct sizes, in any of the five progression orders, with or without SOP and
@@ -191,6 +205,7 @@ public static class Jpeg2000Decoder
         var layout = Jp2Reader.Read(data);
         var image = DecodeCodestream(data.Slice(layout.CodestreamStart, layout.CodestreamLength), reduce, cancellationToken);
         if (layout.Channels is { } channels) image = ApplyChannels(image, channels);
+        if (layout.Definition is { } definition) image = ApplyDefinition(image, definition);
         return image with { Colour = layout.Colour };
     }
 
@@ -206,12 +221,14 @@ public static class Jpeg2000Decoder
         var codestream = data;
         Jp2Colour? colour = null;
         Jp2ChannelMapping? channels = null;
+        Jp2ChannelDefinition? definition = null;
         if (Jp2Reader.LooksLikeJp2(data))
         {
             var layout = Jp2Reader.Read(data);
             codestream = data.Slice(layout.CodestreamStart, layout.CodestreamLength);
             colour = layout.Colour;
             channels = layout.Channels;
+            definition = layout.Definition;
         }
 
         var header = CodestreamReader.Read(codestream);
@@ -230,6 +247,7 @@ public static class Jpeg2000Decoder
         return new Jpeg2000Info(siz.Width, siz.Height, components, depth, levels, colour)
         {
             Region = new Rect(siz.X0, siz.Y0, siz.X1, siz.Y1),
+            Channels = definition?.Resolve(components).Channels,
         };
     }
 
@@ -289,6 +307,32 @@ public static class Jpeg2000Decoder
         }
 
         return new Jpeg2000Image(image.Width, image.Height, depth, output, map.Length);
+    }
+
+    /// <summary>
+    /// The channel definition (T.800 I.5.3.6) applied: the channels reordered so the colour channels
+    /// come first in the colour space's order, then opacity, then the rest, and described as they now
+    /// stand. Its channel numbers are those after the palette and component mapping, which is what
+    /// <paramref name="image"/> holds.
+    /// </summary>
+    private static Jpeg2000Image ApplyDefinition(Jpeg2000Image image, Jp2ChannelDefinition definition)
+    {
+        var (order, channels) = definition.Resolve(image.Components);
+        var identity = true;
+        for (var i = 0; i < order.Length; i++) identity &= order[i] == i;
+        if (identity) return image with { Channels = channels };
+
+        var count = image.Components;
+        var pixels = (long)image.Width * image.Height;
+        var output = new ushort[image.Samples.Length];
+        for (var i = 0; i < count; i++)
+        {
+            var source = order[i];
+            for (long p = 0, o = i, s = source; p < pixels; p++, o += count, s += count)
+                output[o] = image.Samples[s];
+        }
+
+        return image with { Samples = output, Channels = channels };
     }
 
     private static Jpeg2000Image DecodeCodestream(ReadOnlySpan<byte> data, int reduce, CancellationToken cancellationToken = default)

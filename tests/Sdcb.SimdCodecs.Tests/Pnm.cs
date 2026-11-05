@@ -29,6 +29,7 @@ internal static class Pnm
     {
         var offset = 0;
         var magic = NextToken(bytes, ref offset);
+        if (magic == "P7") return ParsePam(bytes, offset);
         var width = int.Parse(NextToken(bytes, ref offset));
         var height = int.Parse(NextToken(bytes, ref offset));
         var maxValue = int.Parse(NextToken(bytes, ref offset));
@@ -63,6 +64,48 @@ internal static class Pnm
         }
 
         return new Image(width, height, components, maxValue, samples);
+    }
+
+    /// <summary>
+    /// A PAM (<c>P7</c>): <c>WIDTH</c>, <c>HEIGHT</c>, <c>DEPTH</c> and <c>MAXVAL</c> lines (any order, <c>#</c>
+    /// comments and <c>TUPLTYPE</c> ignored) up to <c>ENDHDR</c>, then <c>DEPTH</c> samples per pixel. This is
+    /// what <c>opj_decompress</c> writes for an image with an alpha channel.
+    /// </summary>
+    private static Image ParsePam(ReadOnlySpan<byte> bytes, int offset)
+    {
+        int width = 0, height = 0, depth = 0, maxValue = 0;
+        while (true)
+        {
+            var key = NextToken(bytes, ref offset);
+            if (key == "ENDHDR")
+            {
+                offset++; // the one newline after ENDHDR
+                break;
+            }
+
+            switch (key)
+            {
+                case "WIDTH": width = int.Parse(NextToken(bytes, ref offset)); break;
+                case "HEIGHT": height = int.Parse(NextToken(bytes, ref offset)); break;
+                case "DEPTH": depth = int.Parse(NextToken(bytes, ref offset)); break;
+                case "MAXVAL": maxValue = int.Parse(NextToken(bytes, ref offset)); break;
+                case "TUPLTYPE": NextToken(bytes, ref offset); break;
+                default: throw new InvalidDataException($"Unknown PAM header field '{key}'.");
+            }
+        }
+
+        if (width <= 0 || height <= 0 || depth <= 0 || maxValue <= 0)
+            throw new InvalidDataException("Incomplete PAM header.");
+
+        var count = checked(width * height * depth);
+        var samples = new ushort[count];
+        var wide = maxValue > 255;
+        if (bytes.Length - offset < (wide ? count * 2 : count))
+            throw new InvalidDataException("PAM raster is short.");
+        for (var i = 0; i < count; i++)
+            samples[i] = wide ? (ushort)((bytes[offset + i * 2] << 8) | bytes[offset + i * 2 + 1]) : bytes[offset + i];
+
+        return new Image(width, height, depth, maxValue, samples);
     }
 
     private static string NextToken(ReadOnlySpan<byte> bytes, ref int offset)

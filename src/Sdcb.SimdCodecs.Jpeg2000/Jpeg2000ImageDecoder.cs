@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Numerics;
@@ -19,14 +20,27 @@ namespace Sdcb.SimdCodecs.Jpeg2000;
 /// which. So one component decodes as grey and three as RGB, which is what a raw codestream's
 /// components conventionally are once its RCT or ICT is undone, and what a JP2 file's sRGB or
 /// greyscale <c>colr</c> box says; a restricted ICC profile is passed through as the image's
-/// profile. Refused, so that <see cref="TryDecode"/> answers false rather than a picture in the
-/// wrong colours: two or four components, whose extra channel could be alpha or black and which
-/// nothing here can tell apart without the channel-definition box this decoder does not read; and
-/// sYCC, whose samples are still YCbCr. A caller that needs those has
-/// <see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, CancellationToken)"/>, which hands back every component and
-/// reports the colour box without applying it.
+/// profile.
 /// </para>
-/// /// <para>
+/// <para>
+/// <b>Alpha.</b> A JP2 file's channel definition box (<c>cdef</c>) is what says a channel is opacity,
+/// so with one the facade presents grey + alpha (2 channels) and RGB + alpha (4): colour in the colour
+/// space's order whatever the codestream's, alpha last, straight. Opacity the box marks as premultiplied
+/// is divided out: <c>c' = min(max, (c * max + a / 2) / a)</c> in integers at the codestream's precision
+/// (<c>max</c> the largest sample, <c>a</c> the opacity), and 0 where <c>a</c> is 0. Two or four
+/// components without the box stay refused, because nothing says whether the extra channel is alpha,
+/// black (CMYK) or data.
+/// </para>
+/// <para>
+/// Refused, so that <see cref="TryDecode"/> answers false rather than a picture in the wrong colours:
+/// those; sYCC, whose samples are still YCbCr; any other enumerated colour space than sRGB and
+/// greyscale (CMYK, CIELab, ...); an opacity channel that applies to a single colour rather than the
+/// whole image; more than one opacity channel; a channel the box leaves unspecified; and a colour
+/// space that does not match the number of colour channels. A caller that needs those has
+/// <see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, CancellationToken)"/>, which hands back every
+/// component (reordered as the box says) and reports the colour box without applying it.
+/// </para>
+/// <para>
 /// <b>Scaled decode.</b> <see cref="DecodeOptions.ScaleDenominator"/> is a resolution reduction: any
 /// power of two up to 2 to the codestream's decomposition levels, decoded by leaving the finer levels
 /// out (they are never entropy-decoded), with the same samples as <c>opj_decompress -r</c>. A
@@ -78,7 +92,7 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
             // ReadInfo, not SIZ alone: a JP2 palette changes how many channels, and of what depth,
             // the decoded image has.
             var read = Jpeg2000Decoder.ReadInfo(data);
-            if (!Presentable(read.Components, read.Colour)) return false;
+            if (!Presentable(read.Components, read.Colour, read.Channels)) return false;
 
             var depth = read.BitDepth;
             info = new ImageInfo(read.Width, read.Height, read.Components, FormatFor(depth))
@@ -217,11 +231,17 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
     /// </summary>
     internal static RasterImage? ToRaster(Jpeg2000Image image, ArrayPool<byte>? pool = null)
     {
-        if (!Presentable(image.Components, image.Colour)) return null;
+        if (!Presentable(image.Components, image.Colour, image.Channels)) return null;
 
         var depth = image.BitDepth;
         var format = FormatFor(depth);
         var samples = image.Samples;
+        if (image.Channels is [.., { Type: Jp2ChannelType.PremultipliedOpacity }])
+        {
+            // The image is the decoder's own, so its samples can be rewritten in place.
+            Unpremultiply(samples, image.Components, (1 << depth) - 1);
+        }
+
         var icc = image.Colour is { Method: 2, IccProfile: { } profile } ? profile : null;
         var bitDepth = (depth is 8 or 16) ? 0 : depth;
 
@@ -252,9 +272,61 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
         return raster;
     }
 
-    /// <summary>One component or three, and not sYCC: the images whose samples are already grey or RGB.</summary>
-    private static bool Presentable(int components, Jp2Colour? colour) =>
-        components is 1 or 3 && colour is not { EnumeratedColourSpace: Jp2EnumeratedColourSpace.Sycc };
+    /// <summary>
+    /// Divides the last channel's opacity out of the others, in integers: <c>min(max, (c * max + a / 2) / a)</c>,
+    /// and 0 where the opacity is 0 (the colour of a transparent pixel is nothing to recover).
+    /// </summary>
+    private static void Unpremultiply(ushort[] samples, int channels, int maximum)
+    {
+        for (var p = 0; p + channels <= samples.Length; p += channels)
+        {
+            long alpha = samples[p + channels - 1];
+            for (var c = 0; c < channels - 1; c++)
+            {
+                samples[p + c] = alpha == 0
+                    ? (ushort)0
+                    : (ushort)Math.Min(maximum, (samples[p + c] * (long)maximum + alpha / 2) / alpha);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The images whose samples are already grey or RGB, with at most one whole-image opacity channel
+    /// after the colour: one component or three, not sYCC, when there is no channel definition; with
+    /// one, exactly the colour channels (1 or 3, matching an enumerated colour space) plus at most
+    /// one opacity channel that applies to the whole image.
+    /// </summary>
+    private static bool Presentable(int components, Jp2Colour? colour, IReadOnlyList<Jp2Channel>? channels)
+    {
+        if (colour is { EnumeratedColourSpace: { } space } && space is not (Jp2EnumeratedColourSpace.Srgb or Jp2EnumeratedColourSpace.Greyscale))
+            return false;
+        if (channels is null) return components is 1 or 3;
+
+        var colours = 0;
+        var opacities = 0;
+        foreach (var channel in channels)
+        {
+            switch (channel.Type)
+            {
+                case Jp2ChannelType.Colour:
+                    colours++;
+                    break;
+                case Jp2ChannelType.Opacity or Jp2ChannelType.PremultipliedOpacity when channel.Association == 0:
+                    opacities++;
+                    break;
+                default:
+                    return false;
+            }
+        }
+
+        if (colours is not (1 or 3) || opacities > 1 || components != colours + opacities) return false;
+        return colour switch
+        {
+            { EnumeratedColourSpace: Jp2EnumeratedColourSpace.Srgb } => colours == 3,
+            { EnumeratedColourSpace: Jp2EnumeratedColourSpace.Greyscale } => colours == 1,
+            _ => true,
+        };
+    }
 
     private static SampleFormat FormatFor(int bitDepth) => bitDepth <= 8 ? SampleFormat.UInt8 : SampleFormat.UInt16;
 

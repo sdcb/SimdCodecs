@@ -136,9 +136,59 @@ def write_planar4(path, w, h):
         fh.write(b"".join(planes))
 
 
+def alpha_pixels(w, h, channels):
+    """Straight (not premultiplied) colour plus a diagonal alpha ramp with a fully transparent corner, so
+    alpha 0 is exercised next to every other value. Closed-form like the other patterns."""
+    out = bytearray()
+    for y in range(h):
+        for x in range(w):
+            v = structure(x, y)
+            colour = [v] if channels == 2 else [v, (v + 64) % 256, clamp(255 - v // 2 - y)]
+            a = ((x + y) * 255) // (w + h - 2)
+            if x < 6 and y < 6:
+                a = 0
+            out += bytes(colour + [a])
+    return out
+
+
+def write_png(path, w, h, channels, pixels):
+    """An 8-bit PNG (grey+alpha when channels is 2, RGBA when 4): the input opj_compress needs to
+    write a channel definition box. Scratch only; the expected raster is the PAM beside the codestream."""
+    import struct
+    import zlib
+
+    color_type = {2: 4, 4: 6}[channels]
+    raw = b"".join(b"\x00" + bytes(pixels[y * w * channels:(y + 1) * w * channels]) for y in range(h))
+
+    def chunk(kind, data):
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+    with open(path, "wb") as fh:
+        fh.write(b"\x89PNG\r\n\x1a\n")
+        fh.write(chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, color_type, 0, 0, 0)))
+        fh.write(chunk(b"IDAT", zlib.compress(raw, 9)))
+        fh.write(chunk(b"IEND", b""))
+
+
+def write_pam(path, w, h, channels, pixels):
+    """The same raster as a Netpbm P7 (PAM) file, which is what opj_decompress writes for an image with
+    alpha, so the committed expected output and the oracle's output have one format."""
+    tuple_type = {2: "GRAYSCALE_ALPHA", 4: "RGB_ALPHA"}[channels]
+    with open(path, "wb") as fh:
+        fh.write(("P7\nWIDTH %d\nHEIGHT %d\nDEPTH %d\nMAXVAL 255\nTUPLTYPE %s\nENDHDR\n" % (w, h, channels, tuple_type)).encode("ascii"))
+        fh.write(bytes(pixels))
+
+
 if __name__ == "__main__":
     out, pattern, w, h = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
-    if pattern in RGB_PATTERNS:
+    if pattern in ("rgbalpha", "grayalpha"):
+        # `out` is the .png; the .pam expected raster is written beside it.
+        channels = 4 if pattern == "rgbalpha" else 2
+        pixels = alpha_pixels(w, h, channels)
+        write_png(out, w, h, channels, pixels)
+        write_pam(os.path.splitext(out)[0] + ".pam", w, h, channels, pixels)
+    elif pattern in RGB_PATTERNS:
         write_ppm(out, pattern, w, h)
     elif pattern == "ramp12":
         write_pgm12(out, w, h)
