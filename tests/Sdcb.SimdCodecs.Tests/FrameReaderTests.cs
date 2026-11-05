@@ -235,10 +235,10 @@ public sealed class FrameReaderTests
     }
 
     [Fact]
-    public void AnApngIsItsStillImageUntilApngDecodes()
+    public void AnApngFileWhoseAnimationChunksAreIncompleteIsRefusedAsFrames()
     {
-        // The file says 3 frames (ImageInfo.FrameCount); the reader decodes the one PNG defines as the
-        // fallback.
+        // The file says 3 frames (ImageInfo.FrameCount, read from acTL alone), but has no fcTL chunk: as an animation it is
+        // malformed, so no frame reader opens; the default image still decodes as the still PNG it is.
         var png = Png.PngWriter.EncodeGray8(new byte[4 * 3], 4, 3);
         var acTL = new byte[8];
         System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(acTL, 3);
@@ -249,13 +249,9 @@ public sealed class FrameReaderTests
 
         SimdCodecs.TryReadInfo(apng.ToArray(), out var info).ShouldBeTrue();
         info.FrameCount.ShouldBe(3);
-        SimdCodecs.TryOpenFrames(apng.ToArray(), out var reader).ShouldBeTrue();
-        using (reader)
-        {
-            reader.FrameCount.ShouldBe(1);
-            reader.TryGetFrameInfo(0, out var frame).ShouldBeTrue();
-            frame.Info.FrameCount.ShouldBe(1);
-        }
+        SimdCodecs.TryOpenFrames(apng.ToArray(), out _).ShouldBeFalse();
+        SimdCodecs.TryDecode(apng.ToArray(), out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        still.Width.ShouldBe(4);
     }
 
     [Theory]

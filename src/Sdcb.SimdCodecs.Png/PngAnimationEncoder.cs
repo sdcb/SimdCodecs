@@ -125,11 +125,11 @@ public sealed class PngAnimationEncoder
     /// <exception cref="InvalidOperationException">No frame was added.</exception>
     public byte[] Encode()
     {
-        if (_pending is null)
+        if (_pending is null && _done.Count == 0)
             throw new InvalidOperationException("An animation needs at least one frame.");
         if (!_encoded)
         {
-            _done.Add(_pending);
+            _done.Add(_pending!);
             _pending = null;
             _encoded = true;
         }
