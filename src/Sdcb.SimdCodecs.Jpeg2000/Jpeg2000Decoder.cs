@@ -2,7 +2,9 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.ExceptionServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Sdcb.SimdCodecs.Jpeg2000;
 
@@ -119,6 +121,12 @@ public sealed record Jpeg2000Info(
 /// Issue #1's JPEG 2000 files are the real-world check on all of that; see
 /// <c>Issue1Jpeg2000CorpusTests</c> in the test project for how to run them after
 /// changing this decoder.
+/// </para>
+/// <para>
+/// <b>Threads.</b> A decode uses every logical processor: within a tile the code-blocks, the wavelet's
+/// rows and column strips, the component transform and the level shift are shared out, and the output
+/// is bit-identical to a one-thread decode. Tiles are decoded one after the other, so memory stays at
+/// the output plus one tile's working set. Cancellation is honoured between tiles and between blocks.
 /// </para>
 /// <para>
 /// <b>Why there is no partial-credit mode.</b> JPEG 2000 has no early pipeline
@@ -312,7 +320,6 @@ public static class Jpeg2000Decoder
         // working set at a time. A codestream must carry at least one tile-part per tile (checked
         // above), so the tile count, and with it this loop, is bounded by the data itself.
         var output = new ushort[total];
-        var blockState = new BlockState();
         var tilesWide = (int)siz.TilesWide;
 
         for (var t = 0; t < tiles.Length; t++)
@@ -328,7 +335,7 @@ public static class Jpeg2000Decoder
                 (int)Math.Min(siz.TileX0 + (long)(p + 1) * siz.TileWidth, siz.X1),
                 (int)Math.Min(siz.TileY0 + (long)(q + 1) * siz.TileHeight, siz.Y1));
 
-            DecodeTile(header, data, tiles[t], tile, reduce, region, output, blockState, cancellationToken);
+            DecodeTile(header, data, tiles[t], tile, reduce, region, output, cancellationToken);
         }
 
         return new Jpeg2000Image(region.Width, region.Height, siz.Components[0].BitDepth, output, componentCount);
@@ -369,7 +376,7 @@ public static class Jpeg2000Decoder
     /// <summary>One tile, from its packets to its samples in <paramref name="output"/>.</summary>
     private static void DecodeTile(
         CodestreamHeader header, ReadOnlySpan<byte> data, List<TilePart> parts, Rect tile, int reduce, Rect region,
-        ushort[] output, BlockState blockState, CancellationToken cancellationToken)
+        ushort[] output, CancellationToken cancellationToken)
     {
         var siz = header.Siz;
 
@@ -387,18 +394,13 @@ public static class Jpeg2000Decoder
         }
 
         // The packets run on from one tile-part into the next, so a tile split into parts is read
-        // as their bytes put back together.
-        byte[]? rented = null;
-        ReadOnlySpan<byte> tileData;
-        if (parts.Count == 1)
+        // as their bytes put back together. Always an array (never the caller's span): the code-block
+        // workers below read it from other threads.
+        var length = 0;
+        foreach (var part in parts) length += part.Length;
+        var rented = ArrayPool<byte>.Shared.Rent(length);
+        try
         {
-            tileData = data.Slice(parts[0].Start, parts[0].Length);
-        }
-        else
-        {
-            var length = 0;
-            foreach (var part in parts) length += part.Length;
-            rented = ArrayPool<byte>.Shared.Rent(length);
             var offset = 0;
             foreach (var part in parts)
             {
@@ -406,42 +408,37 @@ public static class Jpeg2000Decoder
                 offset += part.Length;
             }
 
-            tileData = rented.AsSpan(0, length);
-        }
+            var tileData = rented.AsMemory(0, length);
 
-        try
-        {
             // Tier-2 first, over the whole tile: it discovers which code-blocks carry data and
             // where, without decoding any of it. The components' packets are interleaved, so it
             // reads them all at once.
-            Tier2.ReadPackets(header, components, tileData, tile);
+            Tier2.ReadPackets(header, components, tileData.Span, tile);
 
-            // Then tier-1, block by block, and the inverse wavelet, component by component: in
-            // integers for a 5/3 component, in floats for a 9/7 one.
+            // Then tier-1. Code-blocks are independent (each reads its own coded bytes and writes its
+            // own rectangle of its band), so they are decoded by as many threads as the machine has;
+            // the result is bit-identical to the serial order, which the tests compare.
+            DecodeBlocks(components, tileData, cancellationToken);
+
+            // The inverse wavelet, component by component: in integers for a 5/3 component, in floats
+            // for a 9/7 one. The budget is charged serially before any of them allocates; the
+            // components then reconstruct in parallel (each owns its buffers).
             var integers = new int[components.Length][];
             var reals = new float[components.Length][];
-            for (var c = 0; c < components.Length; c++)
+            foreach (var tileComponent in components)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var tileComponent = components[c];
-                for (var r = 0; r < tileComponent.DecodedResolutions; r++)
-                {
-                    foreach (var band in tileComponent.Resolutions[r].Bands)
-                    {
-                        foreach (var block in band.Blocks)
-                        {
-                            BlockDecoder.Decode(band, block, tileData, blockState);
-                        }
-                    }
-                }
-
                 var decodedBounds = tileComponent.Resolutions[tileComponent.DecodedResolutions - 1].Bounds;
                 budget.Charge(decodedBounds.Width, decodedBounds.Height);
+            }
+
+            RunParallel(components.Length, cancellationToken, c =>
+            {
+                var tileComponent = components[c];
                 if (tileComponent.Irreversible)
                     reals[c] = InverseWavelet.ReconstructIrreversible(tileComponent, tileComponent.DecodedResolutions);
                 else
                     integers[c] = InverseWavelet.Reconstruct(tileComponent, tileComponent.DecodedResolutions);
-            }
+            });
 
             // G.1.2: the component transform comes between the wavelet and the level shift. The
             // reader has already checked that components 0 to 2 share one wavelet, which picks RCT
@@ -458,7 +455,85 @@ public static class Jpeg2000Decoder
         }
         finally
         {
-            if (rented is not null) ArrayPool<byte>.Shared.Return(rented);
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    /// <summary>
+    /// Tier-1 over every code-block of the tile. The blocks are flattened into one list, and each
+    /// worker thread owns a <see cref="BlockState"/> (its scratch), created on its first block.
+    /// </summary>
+    private static void DecodeBlocks(TileComponent[] components, ReadOnlyMemory<byte> tileData, CancellationToken cancellationToken)
+    {
+        var work = new List<(Subband Band, CodeBlock Block)>();
+        foreach (var tileComponent in components)
+        {
+            for (var r = 0; r < tileComponent.DecodedResolutions; r++)
+            {
+                foreach (var band in tileComponent.Resolutions[r].Bands)
+                {
+                    foreach (var block in band.Blocks)
+                    {
+                        if (block.PassCount > 0) work.Add((band, block));
+                    }
+                }
+            }
+        }
+
+        var degree = Jpeg2000Ablation.EffectiveDegree;
+        if (degree == 1 || work.Count < 2)
+        {
+            var state = new BlockState();
+            for (var i = 0; i < work.Count; i++)
+            {
+                if ((i & 15) == 0) cancellationToken.ThrowIfCancellationRequested();
+                BlockDecoder.Decode(work[i].Band, work[i].Block, tileData.Span, state);
+            }
+
+            return;
+        }
+
+        try
+        {
+            Parallel.For(0, work.Count,
+                new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = cancellationToken },
+                static () => new BlockState(),
+                (i, _, state) =>
+                {
+                    BlockDecoder.Decode(work[i].Band, work[i].Block, tileData.Span, state);
+                    return state;
+                },
+                static _ => { });
+        }
+        catch (AggregateException e) when (e.InnerExceptions.Count > 0)
+        {
+            ExceptionDispatchInfo.Capture(e.InnerExceptions[0]).Throw();
+        }
+    }
+
+    /// <summary>Runs <paramref name="body"/> for 0..count-1, in parallel when the machine and the switch allow.</summary>
+    private static void RunParallel(int count, CancellationToken cancellationToken, Action<int> body)
+    {
+        var degree = Jpeg2000Ablation.EffectiveDegree;
+        if (degree == 1 || count < 2)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                body(i);
+            }
+
+            return;
+        }
+
+        try
+        {
+            Parallel.For(0, count,
+                new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = cancellationToken }, body);
+        }
+        catch (AggregateException e) when (e.InnerExceptions.Count > 0)
+        {
+            ExceptionDispatchInfo.Capture(e.InnerExceptions[0]).Throw();
         }
     }
 
@@ -493,27 +568,31 @@ public static class Jpeg2000Decoder
         var count = integers.Length;
         var width = bounds.Width;
 
-        for (var c = 0; c < count; c++)
+        // Rows of the tile land on disjoint rows of the output, so threads take bands of them.
+        Jpeg2000Parallel.ForRanges(bounds.Height, 16, (long)width * count, (yStart, yEnd) =>
         {
-            for (var y = 0; y < bounds.Height; y++)
+            for (var c = 0; c < count; c++)
             {
-                var o = (((long)(bounds.Y0 - region.Y0 + y) * region.Width) + (bounds.X0 - region.X0)) * count + c;
-                var i = y * width;
-                if (integers[c] is { } plane)
+                for (var y = yStart; y < yEnd; y++)
                 {
-                    for (var x = 0; x < width; x++, i++, o += count)
-                        output[o] = (ushort)Math.Clamp(plane[i] + shift, 0, maximum);
-                }
-                else
-                {
-                    var real = reals[c]!;
-                    for (var x = 0; x < width; x++, i++, o += count)
+                    var o = (((long)(bounds.Y0 - region.Y0 + y) * region.Width) + (bounds.X0 - region.X0)) * count + c;
+                    var i = y * width;
+                    if (integers[c] is { } plane)
                     {
-                        // Clamped as a float, so a value no int can hold still lands on a rail.
-                        output[o] = (ushort)Math.Clamp(MathF.Round(real[i]) + shift, 0f, maximum);
+                        for (var x = 0; x < width; x++, i++, o += count)
+                            output[o] = (ushort)Math.Clamp(plane[i] + shift, 0, maximum);
+                    }
+                    else
+                    {
+                        var real = reals[c]!;
+                        for (var x = 0; x < width; x++, i++, o += count)
+                        {
+                            // Clamped as a float, so a value no int can hold still lands on a rail.
+                            output[o] = (ushort)Math.Clamp(MathF.Round(real[i]) + shift, 0f, maximum);
+                        }
                     }
                 }
             }
-        }
+        });
     }
 }

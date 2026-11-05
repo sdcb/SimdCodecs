@@ -142,11 +142,29 @@ internal static class InverseWavelet
         // F.3.4 HOR_SR then F.3.5 VER_SR. The order is fixed by the spec and is
         // not a free choice: the 5/3 lifting steps do not commute across
         // dimensions.
-        for (var y = 0; y < height; y++)
-            Filter(samples.Slice(y * width, width), bounds.X0, bounds.X1, extended, lifted);
+        // Rows are independent of each other, and so are columns: each is cut into chunks (a few rows;
+        // a strip of columns) that threads take, when the level is big enough to share. A chunk of rows
+        // other than the whole level needs scratch of its own.
+        var scratchLength = extended.Length;
+        Jpeg2000Parallel.ForRanges(height, RowChunk, width, (start, end) =>
+        {
+            var whole = start == 0 && end == height;
+            var rowExtended = whole ? extended : new int[scratchLength];
+            var rowLifted = whole ? lifted : new int[scratchLength];
+            var all = destination.AsSpan(0, width * height);
+            for (var y = start; y < end; y++)
+                Filter(all.Slice(y * width, width), bounds.X0, bounds.X1, rowExtended, rowLifted);
+        });
 
-        FilterColumns(samples, width, bounds.Y0, bounds.Y1);
+        Jpeg2000Parallel.ForRanges(width, ColumnStrip, height, (start, end) =>
+            FilterColumns(destination.AsSpan(0, width * height), width, start, end - start, bounds.Y0, bounds.Y1));
     }
+
+    /// <summary>Rows per unit of parallel work in the row filter.</summary>
+    private const int RowChunk = 32;
+
+    /// <summary>Columns per unit of parallel work in the column filter: 128 ints or floats, 512 bytes a row.</summary>
+    private const int ColumnStrip = 128;
 
     /// <summary>
     /// <see cref="Lift"/> for the 9/7 filter: the same interleave and the same row-then-column
@@ -163,10 +181,17 @@ internal static class InverseWavelet
         var samples = destination.AsSpan(0, width * height);
         Interleave(samples, bounds, lowPass, lowPassBounds, resolution, band => band.Values);
 
-        for (var y = 0; y < height; y++)
-            Filter97(samples.Slice(y * width, width), bounds.X0, bounds.X1, extended);
+        var scratchLength = extended.Length;
+        Jpeg2000Parallel.ForRanges(height, RowChunk, width, (start, end) =>
+        {
+            var rowExtended = start == 0 && end == height ? extended : new float[scratchLength];
+            var all = destination.AsSpan(0, width * height);
+            for (var y = start; y < end; y++)
+                Filter97(all.Slice(y * width, width), bounds.X0, bounds.X1, rowExtended);
+        });
 
-        FilterColumns97(samples, width, bounds.Y0, bounds.Y1);
+        Jpeg2000Parallel.ForRanges(width, ColumnStrip, height, (start, end) =>
+            FilterColumns97(destination.AsSpan(0, width * height), width, start, end - start, bounds.Y0, bounds.Y1));
     }
 
     /// <summary>
@@ -297,12 +322,12 @@ internal static class InverseWavelet
     /// <see cref="Filter"/> down every column at once: F.3.8.2's two steps, each a whole row
     /// of one parity updated from the rows either side of it, mirrored at the edges.
     /// </summary>
-    private static void FilterColumns(Span<int> samples, int width, int y0, int y1)
+    private static void FilterColumns(Span<int> samples, int stride, int x0, int width, int y0, int y1)
     {
         var height = y1 - y0;
         if (height <= 1)
         {
-            if (height == 1 && (y0 & 1) != 0) HalveRow(samples[..width]);
+            if (height == 1 && (y0 & 1) != 0) HalveRow(samples.Slice(x0, width));
             return;
         }
 
@@ -313,9 +338,9 @@ internal static class InverseWavelet
         // Step 1: every even row, less a quarter of the two odd rows beside it, rounded down.
         for (var j = firstEven; j < height; j += 2)
         {
-            var row = samples.Slice(j * width, width);
-            var above = samples.Slice(MirrorRow(j - 1, height) * width, width);
-            var below = samples.Slice(MirrorRow(j + 1, height) * width, width);
+            var row = samples.Slice(j * stride + x0, width);
+            var above = samples.Slice(MirrorRow(j - 1, height) * stride + x0, width);
+            var below = samples.Slice(MirrorRow(j + 1, height) * stride + x0, width);
 
             var x = 0;
             for (; x <= width - Vector<int>.Count; x += Vector<int>.Count)
@@ -330,9 +355,9 @@ internal static class InverseWavelet
         // Step 2: every odd row, plus half of the two even rows beside it, now recovered.
         for (var j = firstOdd; j < height; j += 2)
         {
-            var row = samples.Slice(j * width, width);
-            var above = samples.Slice(MirrorRow(j - 1, height) * width, width);
-            var below = samples.Slice(MirrorRow(j + 1, height) * width, width);
+            var row = samples.Slice(j * stride + x0, width);
+            var above = samples.Slice(MirrorRow(j - 1, height) * stride + x0, width);
+            var below = samples.Slice(MirrorRow(j + 1, height) * stride + x0, width);
 
             var x = 0;
             for (; x <= width - Vector<int>.Count; x += Vector<int>.Count)
@@ -414,12 +439,12 @@ internal static class InverseWavelet
     /// arithmetic per sample is the same, in the same order, as the line filter's, so the two give
     /// the same floats.
     /// </summary>
-    private static void FilterColumns97(Span<float> samples, int width, int y0, int y1)
+    private static void FilterColumns97(Span<float> samples, int stride, int x0, int width, int y0, int y1)
     {
         var height = y1 - y0;
         if (height <= 1)
         {
-            if (height == 1 && (y0 & 1) != 0) HalveRow(samples[..width]);
+            if (height == 1 && (y0 & 1) != 0) HalveRow(samples.Slice(x0, width));
             return;
         }
 
@@ -428,7 +453,7 @@ internal static class InverseWavelet
 
         for (var j = 0; j < height; j++)
         {
-            var row = samples.Slice(j * width, width);
+            var row = samples.Slice(j * stride + x0, width);
             var scale = ((j - firstEven) & 1) == 0 ? K : InverseK;
             var x = 0;
             var factor = new Vector<float>(scale);
@@ -437,21 +462,21 @@ internal static class InverseWavelet
             for (; x < width; x++) row[x] *= scale;
         }
 
-        LiftRows97(samples, width, height, firstEven, Delta);
-        LiftRows97(samples, width, height, firstOdd, Gamma);
-        LiftRows97(samples, width, height, firstEven, Beta);
-        LiftRows97(samples, width, height, firstOdd, Alpha);
+        LiftRows97(samples, stride, x0, width, height, firstEven, Delta);
+        LiftRows97(samples, stride, x0, width, height, firstOdd, Gamma);
+        LiftRows97(samples, stride, x0, width, height, firstEven, Beta);
+        LiftRows97(samples, stride, x0, width, height, firstOdd, Alpha);
     }
 
     /// <summary>One lifting step over whole rows: every row of one parity less <paramref name="c"/> times the sum of the rows beside it.</summary>
-    private static void LiftRows97(Span<float> samples, int width, int height, int first, float c)
+    private static void LiftRows97(Span<float> samples, int stride, int x0, int width, int height, int first, float c)
     {
         var factor = new Vector<float>(c);
         for (var j = first; j < height; j += 2)
         {
-            var row = samples.Slice(j * width, width);
-            var above = samples.Slice(MirrorRow(j - 1, height) * width, width);
-            var below = samples.Slice(MirrorRow(j + 1, height) * width, width);
+            var row = samples.Slice(j * stride + x0, width);
+            var above = samples.Slice(MirrorRow(j - 1, height) * stride + x0, width);
+            var below = samples.Slice(MirrorRow(j + 1, height) * stride + x0, width);
 
             var x = 0;
             for (; x <= width - Vector<float>.Count; x += Vector<float>.Count)

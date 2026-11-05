@@ -48,6 +48,12 @@ internal static class Cases
             () => EnsureGenerated(1600, 1200, true)),
         new("fuji-1600-lossy", "1600x1200 RGB 9/7 Lossy (q=40)", 1600, 1200, 3, false,
             () => EnsureGenerated(1600, 1200, false, 40)),
+
+        // ~6 MP: where threads have something to share
+        new("fuji-3000-lossless", "3000x2000 RGB 5/3 Lossless", 3000, 2000, 3, true,
+            () => EnsureGenerated(3000, 2000, true)),
+        new("fuji-3000-lossy", "3000x2000 RGB 9/7 Lossy (q=40)", 3000, 2000, 3, false,
+            () => EnsureGenerated(3000, 2000, false, 40)),
     ];
 
     private static byte[] EnsureGenerated(int width, int height, bool lossless, int quality = 40)
@@ -81,7 +87,7 @@ internal static class Cases
     private static void CreateSourcePng(string destPath, int width, int height)
     {
         // Try master image first
-        var masterFuji = Path.Combine(BenchPaths.RepoRoot, "benchmarks", "Sdcb.SimdCodecs.Jpeg.Benchmarks",
+        var masterFuji = Path.Combine(BenchPaths.Root, "..", "Sdcb.SimdCodecs.Jpeg.Benchmarks",
             ".cache", "corpus", "masters", "sunrise-fuji.png");
 
         if (File.Exists(masterFuji))

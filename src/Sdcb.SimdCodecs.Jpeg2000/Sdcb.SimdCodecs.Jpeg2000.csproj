@@ -49,6 +49,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Jpeg2000.Benchmarks" />
   </ItemGroup>
 
 </Project>
