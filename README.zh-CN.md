@@ -278,7 +278,6 @@ dotnet test  SimdCodecs.slnx -c Release
 依赖外部参考工具（oracle）的测试在工具缺失时会跳过；设置 `REQUIRE_ORACLES=1` 可让缺失的 oracle 直接
 报错（CI 就是这样运行的）。各 oracle 的获取方式，以及所有贡献都要遵守的 clean-room 规则，见
 [`AGENTS.md`](AGENTS.md)。基准测试需要按路径单独构建，见 [`benchmarks/README.md`](benchmarks/README.md)。
-发版流程见 [`RELEASING.md`](RELEASING.md)。
 
 ## 交流
 

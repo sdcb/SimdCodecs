@@ -101,6 +101,14 @@ bash tests/Sdcb.SimdCodecs.WasmSmoke/run.sh                         # Mono AOT (
   the HEIF fuzzer: `HEIF_FUZZ_ITERATIONS=300000 … --filter "FullyQualifiedName~HeifFuzz"` (needs the
   fixtures from `Oracle/heif/fetch.sh`).
 
+## Releasing
+
+Pushing a tag `vMAJOR.MINOR.PATCH[-prerelease]` publishes every package at that version to NuGet.org
+(Trusted Publishing, `.github/workflows/dotnet.yml`), only after every CI job passes. Before tagging:
+
+1. Move each package's `PublicAPI.Unshipped.txt` entries into `PublicAPI.Shipped.txt`.
+2. Write the release notes, naming every API break.
+
 ## Output contracts
 
 - **Never regenerate a golden to make a test pass.** A golden (`Fixtures/*-golden.tsv`) moves only for

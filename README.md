@@ -291,7 +291,7 @@ dotnet test  SimdCodecs.slnx -c Release
 Oracle-backed tests skip when their reference tool is missing; set `REQUIRE_ORACLES=1` to make a
 missing oracle fail instead (CI does). How to get each oracle is in [`AGENTS.md`](AGENTS.md), which
 also holds the clean-room rules every contribution follows. Benchmarks are built on their own, by
-path: see [`benchmarks/README.md`](benchmarks/README.md). Releasing: [`RELEASING.md`](RELEASING.md).
+path: see [`benchmarks/README.md`](benchmarks/README.md).
 
 ## Contact
 
