@@ -37,9 +37,40 @@ public enum Jp2EnumeratedColourSpace
 /// <param name="IccProfile">The profile bytes when <paramref name="Method"/> is 2.</param>
 public sealed record Jp2Colour(int Method, Jp2EnumeratedColourSpace? EnumeratedColourSpace, byte[]? IccProfile);
 
+/// <summary>What a channel of a decoded image is (T.800 Table I.16, the channel definition box's Typ).</summary>
+public enum Jp2ChannelType
+{
+    /// <summary>A colour channel of the colour space; <see cref="Jp2Channel.Association"/> says which one (1 is the first).</summary>
+    Colour = 0,
+
+    /// <summary>Opacity (alpha): 0 is transparent, the maximum sample is opaque. Straight, not multiplied into the colour.</summary>
+    Opacity = 1,
+
+    /// <summary>Opacity whose value has already been multiplied into the colour channels it applies to.</summary>
+    PremultipliedOpacity = 2,
+
+    /// <summary>A channel whose use is not specified (Typ 65535, or a channel the box does not describe).</summary>
+    Unspecified = 65535,
+}
+
+/// <summary>
+/// One channel of an image whose JP2 file has a channel definition box (T.800 I.5.3.6): what it is,
+/// and what it belongs to.
+/// </summary>
+/// <param name="Type">What the channel is.</param>
+/// <param name="Association">
+/// For a colour channel, which colour of the colour space it is (1 to the number of colour
+/// channels; for sRGB 1 is red, 2 green, 3 blue). For an opacity channel, 0 when it applies to the
+/// whole image or 1 and up for the one colour it applies to. -1 for an unspecified channel.
+/// </param>
+public sealed record Jp2Channel(Jp2ChannelType Type, int Association);
+
 /// <summary>Where a JP2 file's codestream is, and what its header said about colour.</summary>
 internal readonly record struct Jp2Layout(int CodestreamStart, int CodestreamLength, Jp2Colour? Colour)
 {
+    /// <summary>The channel definition box, or null when the header has none.</summary>
+    public Jp2ChannelDefinition? Definition { get; init; }
+
     /// <summary>
     /// The palette and component mapping boxes, or null when the header has neither and the
     /// codestream's components are the image's channels as they stand.
@@ -89,15 +120,98 @@ internal sealed record Jp2ChannelMapping(
 }
 
 /// <summary>
+/// A JP2 channel definition (<c>cdef</c>, T.800 I.5.3.6) as read: one entry per described channel,
+/// indexed by channel number, where a channel is what is left after the palette and component
+/// mapping, or a codestream component when there are none.
+/// </summary>
+/// <param name="Entries">Each entry's channel number (Cn), type (Typ) and association (Asoc).</param>
+internal sealed record Jp2ChannelDefinition((int Channel, int Type, int Association)[] Entries)
+{
+    /// <summary>
+    /// Settles the definition against an image of <paramref name="channelCount"/> channels. Returns
+    /// the order the decoded image presents them in, and what each is there: the colour channels
+    /// first, in the order of the colour space (Asoc 1, 2, ...), then the opacity channels in channel
+    /// order, then channels with no stated use (including any the box does not mention) in channel
+    /// order.
+    /// </summary>
+    /// <returns><c>Order[i]</c> is the source channel of output channel i.</returns>
+    /// <exception cref="InvalidDataException">A channel is out of range, a colour is not associated exactly once, or an opacity names a colour that is not there.</exception>
+    public (int[] Order, Jp2Channel[] Channels) Resolve(int channelCount)
+    {
+        var colour = new List<(int Channel, int Association)>();
+        var opacity = new List<(int Channel, Jp2Channel Description)>();
+        var placed = new bool[channelCount];
+
+        foreach (var (channel, type, association) in Entries)
+        {
+            if (channel >= channelCount)
+                throw new InvalidDataException(
+                    $"JPEG 2000: the channel definition box describes channel {channel}, but the image has {channelCount}.");
+
+            switch (type)
+            {
+                case (int)Jp2ChannelType.Colour:
+                    colour.Add((channel, association));
+                    break;
+                case (int)Jp2ChannelType.Opacity or (int)Jp2ChannelType.PremultipliedOpacity:
+                    opacity.Add((channel, new Jp2Channel((Jp2ChannelType)type, association == 0xFFFF ? -1 : association)));
+                    break;
+            }
+        }
+
+        // The colour channels are exactly the colours 1..k of the colour space, each once.
+        colour.Sort(static (a, b) => a.Association.CompareTo(b.Association));
+        for (var i = 0; i < colour.Count; i++)
+        {
+            if (colour[i].Association != i + 1)
+                throw new InvalidDataException(
+                    $"JPEG 2000: the channel definition box's {colour.Count} colour channels are not associated with " +
+                    "colours 1 to " + colour.Count + " once each.");
+        }
+
+        var order = new List<int>(channelCount);
+        var channels = new List<Jp2Channel>(channelCount);
+        foreach (var (channel, association) in colour)
+        {
+            order.Add(channel);
+            placed[channel] = true;
+            channels.Add(new Jp2Channel(Jp2ChannelType.Colour, association));
+        }
+
+        opacity.Sort(static (a, b) => a.Channel.CompareTo(b.Channel));
+        foreach (var (channel, description) in opacity)
+        {
+            if (description.Association > colour.Count)
+                throw new InvalidDataException(
+                    $"JPEG 2000: the channel definition box's opacity channel {channel} applies to colour " +
+                    $"{description.Association}, but there are {colour.Count} colour channels.");
+
+            order.Add(channel);
+            placed[channel] = true;
+            channels.Add(description);
+        }
+
+        for (var channel = 0; channel < channelCount; channel++)
+        {
+            if (placed[channel]) continue;
+            order.Add(channel);
+            channels.Add(new Jp2Channel(Jp2ChannelType.Unspecified, -1));
+        }
+
+        return ([.. order], [.. channels]);
+    }
+}
+
+/// <summary>
 /// Reads the JP2 file format of T.800 Annex I far enough to find the codestream and its colour
 /// specification: the signature and file type boxes, the header superbox with its image header and
 /// colour boxes, and the contiguous codestream box.
 /// <para>
 /// The palette (<c>pclr</c>) and component mapping (<c>cmap</c>) boxes are read here and applied by
 /// the decoder: a palette turns one component of indices into channels of colour. The channel
-/// definition box (<c>cdef</c>) is refused, because it can say a component is alpha or reorder the
-/// colour channels, and a reader that skipped it would hand back samples whose meaning it had
-/// silently got wrong.
+/// definition box (<c>cdef</c>) is read here too and applied after them: it can say a channel is
+/// opacity or reorder the colour channels, and the decoder puts the colour channels in the colour
+/// space's order with opacity after them.
 /// </para>
 /// <para>
 /// The image header's own width, height and component count are not checked against the
@@ -137,6 +251,7 @@ internal static class Jp2Reader
         var sawHeader = false;
         Jp2Colour? colour = null;
         Jp2ChannelMapping? channels = null;
+        Jp2ChannelDefinition? definition = null;
 
         while (offset < data.Length)
         {
@@ -158,7 +273,7 @@ internal static class Jp2Reader
                 case Header:
                     if (!sawFileType)
                         throw new InvalidDataException("JPEG 2000: the JP2 header box comes before the file type box.");
-                    (colour, channels) = ReadHeader(body);
+                    (colour, channels, definition) = ReadHeader(body);
                     sawHeader = true;
                     break;
 
@@ -167,7 +282,7 @@ internal static class Jp2Reader
                         throw new InvalidDataException("JPEG 2000: the codestream box comes before the JP2 header box.");
 
                     // The first codestream is the image (I.5.4); anything after it is not read.
-                    return new Jp2Layout(bodyStart, bodyLength, colour) { Channels = channels };
+                    return new Jp2Layout(bodyStart, bodyLength, colour) { Channels = channels, Definition = definition };
             }
 
             // Every other top-level box (resolution, XML, UUID, IPR) is metadata about the image,
@@ -182,11 +297,12 @@ internal static class Jp2Reader
     /// The header superbox: the image header first (I.5.3.1), then at least one colour
     /// specification, of which only the first counts (I.5.3.3).
     /// </summary>
-    private static (Jp2Colour? Colour, Jp2ChannelMapping? Channels) ReadHeader(ReadOnlySpan<byte> header)
+    private static (Jp2Colour? Colour, Jp2ChannelMapping? Channels, Jp2ChannelDefinition? Definition) ReadHeader(ReadOnlySpan<byte> header)
     {
         Jp2Colour? colour = null;
         Jp2ChannelMapping? palette = null;
         (int Component, int Column)[]? map = null;
+        Jp2ChannelDefinition? definition = null;
         var offset = 0;
         var first = true;
 
@@ -225,16 +341,15 @@ internal static class Jp2Reader
                     break;
 
                 case ChannelDefinition:
-                    throw new NotSupportedException(
-                        "JPEG 2000: the JP2 file has a channel definition box (cdef), which can say a " +
-                        "component is alpha or reorder the colour channels. It is not implemented.");
+                    definition ??= ReadChannelDefinition(body);
+                    break;
             }
 
             offset = bodyStart + bodyLength;
         }
 
         if (first) throw new InvalidDataException("JPEG 2000: the JP2 header box is empty.");
-        return (colour, Combine(palette, map));
+        return (colour, Combine(palette, map), definition);
     }
 
     /// <summary>
@@ -258,6 +373,41 @@ internal static class Jp2Reader
         }
 
         return palette with { Map = map };
+    }
+
+    /// <summary>
+    /// The channel definition box (I.5.3.6): N(2), then N entries of Cn(2) Typ(2) Asoc(2). A channel
+    /// is described at most once, and Typ is one of the four values Part 1 defines.
+    /// </summary>
+    private static Jp2ChannelDefinition ReadChannelDefinition(ReadOnlySpan<byte> body)
+    {
+        if (body.Length < 2)
+            throw new InvalidDataException("JPEG 2000: the channel definition box is too short.");
+
+        int count = BinaryPrimitives.ReadUInt16BigEndian(body);
+        if (count == 0 || body.Length - 2 < count * 6)
+            throw new InvalidDataException(
+                $"JPEG 2000: the channel definition box declares {count} channels, which its {body.Length} bytes do not hold.");
+
+        var entries = new (int Channel, int Type, int Association)[count];
+        var seen = new HashSet<int>();
+        for (var i = 0; i < count; i++)
+        {
+            var entry = body.Slice(2 + i * 6, 6);
+            var channel = BinaryPrimitives.ReadUInt16BigEndian(entry);
+            var type = BinaryPrimitives.ReadUInt16BigEndian(entry[2..]);
+            var association = BinaryPrimitives.ReadUInt16BigEndian(entry[4..]);
+
+            if (!seen.Add(channel))
+                throw new InvalidDataException($"JPEG 2000: the channel definition box describes channel {channel} twice.");
+            if (type is not (0 or 1 or 2 or 0xFFFF))
+                throw new InvalidDataException(
+                    $"JPEG 2000: the channel definition box gives channel {channel} type {type}, which T.800 does not define.");
+
+            entries[i] = (channel, type, association);
+        }
+
+        return new Jp2ChannelDefinition(entries);
     }
 
     /// <summary>

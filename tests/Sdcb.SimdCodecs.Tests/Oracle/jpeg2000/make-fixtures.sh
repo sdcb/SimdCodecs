@@ -213,3 +213,30 @@ echo "[jpeg2000 fixtures] writing raw-sourced codestreams to $RAW_OUT"
 "$DECOMPRESS" -i "$RAW_OUT/cmyk16.j2k" -o "$SCRATCH/rt.raw" > /dev/null 2>&1
 cmp -s "$RAW_OUT/cmyk16.raw" "$SCRATCH/rt.raw" || { echo "    cmyk16 NOT LOSSLESS -- refusing to commit it" >&2; exit 1; }
 printf '  %-24s %6s bytes  %s\n' "cmyk16.j2k" "$(wc -c < "$RAW_OUT/cmyk16.j2k")" "-F 16,16,4,8,u -mct 0 -n 3"
+
+# Alpha: RGBA and grey+alpha, which opj_compress writes with a channel definition box (cdef: the
+# colours as channels 1..k, then an opacity associated with the whole image). The input is a PNG;
+# the committed expected output is the lossless source raster as a PAM, which is also what
+# opj_decompress writes for an image with alpha, verified here the same way as the PNM fixtures.
+ALPHA_OUT="$HERE/../../Fixtures/jpeg2000-alpha"
+mkdir -p "$ALPHA_OUT"
+echo "[jpeg2000 fixtures] writing channel-definition fixtures to $ALPHA_OUT"
+for spec in "rgba-struct37x29|rgbalpha|37|29|-n 3" "graya-struct37x29|grayalpha|37|29|-n 3"; do
+    IFS='|' read -r name pattern w h extra <<< "$spec"
+    "$PY" "$HERE/gen-sources.py" "$SCRATCH/$name.png" "$pattern" "$w" "$h" > /dev/null
+    mv "$SCRATCH/$name.pam" "$ALPHA_OUT/$name.pam"
+    # shellcheck disable=SC2086 -- $extra is a deliberate argument list.
+    "$COMPRESS" -i "$SCRATCH/$name.png" -o "$ALPHA_OUT/$name.jp2" $extra > /dev/null 2>&1
+    "$DECOMPRESS" -i "$ALPHA_OUT/$name.jp2" -o "$SCRATCH/rt-$name.pnm" > /dev/null 2>&1
+    "$PY" - "$ALPHA_OUT/$name.pam" "$SCRATCH/rt-$name.pnm" <<'PYEOF'
+import sys
+
+def payload(path):
+    b = open(path, 'rb').read()
+    return b[b.index(b'ENDHDR\n') + 7:]
+
+if payload(sys.argv[1]) != payload(sys.argv[2]):
+    sys.exit("    NOT LOSSLESS -- refusing to commit this fixture")
+PYEOF
+    printf '  %-24s %6s bytes  %s\n' "$name.jp2" "$(wc -c < "$ALPHA_OUT/$name.jp2")" "$extra"
+done

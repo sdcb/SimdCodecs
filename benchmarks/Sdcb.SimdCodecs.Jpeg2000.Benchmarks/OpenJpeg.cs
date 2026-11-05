@@ -105,7 +105,7 @@ internal static unsafe class OpenJpeg
 
     public sealed record NativeDecodeResult(int Width, int Height, int Components, ushort[] Samples, double ElapsedMs);
 
-    public static NativeDecodeResult DecodeDirect(byte[] codestream)
+    public static NativeDecodeResult DecodeDirect(byte[] codestream, int threads = 1)
     {
         var hLib = _libHandle.Value;
 
@@ -124,6 +124,8 @@ internal static unsafe class OpenJpeg
         var opj_decode = (delegate* unmanaged[Cdecl]<void*, void*, OpjImage*, int>)NativeLibrary.GetExport(hLib, "opj_decode");
         var opj_end_decompress = (delegate* unmanaged[Cdecl]<void*, void*, int>)NativeLibrary.GetExport(hLib, "opj_end_decompress");
         var opj_image_destroy = (delegate* unmanaged[Cdecl]<OpjImage*, void>)NativeLibrary.GetExport(hLib, "opj_image_destroy");
+        // OPJ_BOOL opj_codec_set_threads(opj_codec_t*, int num_threads), documented in the public API.
+        var opj_codec_set_threads = (delegate* unmanaged[Cdecl]<void*, int, int>)NativeLibrary.GetExport(hLib, "opj_codec_set_threads");
 
         // Detect format: J2K (0) or JP2 (2)
         var isJp2 = codestream.Length >= 12 &&
@@ -137,6 +139,8 @@ internal static unsafe class OpenJpeg
         var paramBuf = stackalloc byte[16384];
         opj_set_default_decoder_parameters(paramBuf);
         opj_setup_decoder(codec, paramBuf);
+        if (threads > 1 && opj_codec_set_threads(codec, threads) == 0)
+            throw new InvalidOperationException($"opj_codec_set_threads({threads}) failed");
 
         fixed (byte* pData = codestream)
         {

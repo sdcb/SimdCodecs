@@ -24,6 +24,9 @@ internal static class Program
             Console.ResetColor();
         }
 
+        // `--threads N` sets the thread count of the threaded rows (default: every logical processor).
+        var threadsIndex = Array.IndexOf(args, "--threads");
+        var threads = threadsIndex >= 0 && threadsIndex + 1 < args.Length ? int.Parse(args[threadsIndex + 1]) : Environment.ProcessorCount;
         var filter = args.Length > 0 && !args[0].StartsWith('-') ? args[0] : null;
         var cases = Cases.All.Where(c => filter is null || c.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
 
@@ -57,39 +60,34 @@ internal static class Program
             var sizeKb = data.Length / 1024.0;
             var bpp = (data.Length * 8.0) / (c.Width * c.Height);
 
-            // 1. SimdCodecs Decode
-            var simdWarmup = Contestants.DecodeSimdCodecs(data);
-            const int rounds = 5;
-            var simdTimes = new List<double>();
-            for (var r = 0; r < rounds; r++)
-            {
-                var run = Contestants.DecodeSimdCodecs(data);
-                simdTimes.Add(run.ElapsedMs);
-            }
-            simdTimes.Sort();
-            var simdMedianMs = simdTimes[rounds / 2];
+            // Correctness before timing: the threaded decode must be the serial decode, sample for sample.
+            var simdWarmup = Contestants.DecodeSimdCodecs(data, threads: 1);
+            var threaded = Contestants.DecodeSimdCodecs(data, threads);
+            if (!threaded.Samples.AsSpan().SequenceEqual(simdWarmup.Samples))
+                throw new InvalidOperationException($"{c.Name}: the threaded decode differs from the serial one");
 
-            // 2. libopenjp2 in-process Decode
+            // 1. SimdCodecs, serial (the in-run baseline) and threaded
+            const int rounds = 5;
+            var simdMedianMs = Median(rounds, () => Contestants.DecodeSimdCodecs(data, threads: 1).ElapsedMs);
+            var simdParMs = Median(rounds, () => Contestants.DecodeSimdCodecs(data, threads).ElapsedMs);
+
+            // 2. libopenjp2 in-process Decode, one thread and `threads`
             DecodedResult? opjDecoded = null;
-            var opjTimes = new List<double>();
+            var opjMedianMs = 0.0;
+            var opjParMs = 0.0;
             if (OpenJpeg.IsAvailable)
             {
                 try
                 {
                     opjDecoded = Contestants.DecodeLibOpenJp2(data, c.Components);
-                    for (var r = 0; r < rounds; r++)
-                    {
-                        var run = Contestants.DecodeLibOpenJp2(data, c.Components);
-                        opjTimes.Add(run.ElapsedMs);
-                    }
-                    opjTimes.Sort();
+                    opjMedianMs = Median(rounds, () => Contestants.DecodeLibOpenJp2(data, c.Components).ElapsedMs);
+                    opjParMs = Median(rounds, () => Contestants.DecodeLibOpenJp2(data, c.Components, threads).ElapsedMs);
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"  libopenjp2 decode error: {ex.Message}");
                 }
             }
-            var opjMedianMs = opjTimes.Count > 0 ? opjTimes[rounds / 2] : 0.0;
 
             // 3. Accuracy Comparison (SimdCodecs vs libopenjp2)
             AccuracyMetrics? acc = null;
@@ -106,7 +104,9 @@ internal static class Program
                 FileBytes: data.Length,
                 Bpp: bpp,
                 SimdMs: simdMedianMs,
+                SimdParMs: simdParMs,
                 OpjMs: opjMedianMs,
+                OpjParMs: opjParMs,
                 RatioVsOpj: opjMedianMs > 0 ? simdMedianMs / opjMedianMs : 0.0,
                 Accuracy: acc,
                 AllocatedBytes: mem.ManagedAllocated,
@@ -119,14 +119,24 @@ internal static class Program
                 : "N/A";
 
             Console.WriteLine($"  Size: {sizeKb:F1} KB ({bpp:F2} bpp)");
-            Console.WriteLine($"  SimdCodecs: {simdMedianMs,7:F2} ms  ({GetThroughput(c, simdMedianMs):F1} MP/s)");
-            Console.WriteLine($"  libopenjp2: {opjMedianMs,7:F2} ms  ({GetThroughput(c, opjMedianMs):F1} MP/s) -> SimdCodecs is {simdMedianMs / opjMedianMs,4:F2}x of libopenjp2");
+            Console.WriteLine($"  SimdCodecs 1 thread:  {simdMedianMs,7:F2} ms  ({GetThroughput(c, simdMedianMs):F1} MP/s)");
+            Console.WriteLine($"  SimdCodecs {threads} threads: {simdParMs,7:F2} ms  ({GetThroughput(c, simdParMs):F1} MP/s) -> {simdMedianMs / simdParMs:F2}x faster than serial");
+            Console.WriteLine($"  libopenjp2 {threads} threads: {opjParMs,7:F2} ms  ({GetThroughput(c, opjParMs):F1} MP/s) -> SimdCodecs {threads} threads is {simdParMs / opjParMs:F2}x of it");
+            Console.WriteLine($"  libopenjp2 1 thread:  {opjMedianMs,7:F2} ms  ({GetThroughput(c, opjMedianMs):F1} MP/s) -> SimdCodecs is {simdMedianMs / opjMedianMs,4:F2}x of libopenjp2");
             Console.WriteLine($"  PSNR vs libopenjp2: {psnrText}");
             Console.WriteLine($"  Memory: {mem.ManagedAllocated / 1024.0,6:F1} KB managed alloc per decode\n");
         }
 
-        PrintMarkdownTable(results);
+        PrintMarkdownTable(results, threads);
         return 0;
+    }
+
+    private static double Median(int rounds, Func<double> run)
+    {
+        var times = new List<double>();
+        for (var r = 0; r < rounds; r++) times.Add(run());
+        times.Sort();
+        return times[rounds / 2];
     }
 
     private static double GetThroughput(BenchCase c, double ms)
@@ -150,11 +160,11 @@ internal static class Program
         Console.WriteLine("================================================================================\n");
     }
 
-    private static void PrintMarkdownTable(List<BenchmarkRow> rows)
+    private static void PrintMarkdownTable(List<BenchmarkRow> rows, int threads)
     {
-        Console.WriteLine("\n### Benchmark Results Summary: SimdCodecs vs libopenjp2\n");
-        Console.WriteLine("| Case | Dimensions | Filter | File Size | SimdCodecs | libopenjp2 | Ratio (Simd/libopenjp2) | PSNR vs libopenjp2 | Managed Alloc |");
-        Console.WriteLine("|---|---|---|---:|---:|---:|---:|---:|---:|");
+        Console.WriteLine($"\n### Benchmark Results Summary: SimdCodecs vs libopenjp2 (1 thread, and {threads} threads)\n");
+        Console.WriteLine($"| Case | Dimensions | Filter | File Size | Simd 1T | Simd {threads}T | Simd speed-up | opj 1T | opj {threads}T | opj speed-up | Simd 1T / opj 1T | Simd {threads}T / opj {threads}T | PSNR vs libopenjp2 | Managed Alloc (1T) |");
+        Console.WriteLine("|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
 
         foreach (var r in rows)
         {
@@ -162,14 +172,11 @@ internal static class Program
             var psnr = r.Accuracy is not null
                 ? (double.IsPositiveInfinity(r.Accuracy.Psnr) ? "Exact (inf)" : $"{r.Accuracy.Psnr:F2} dB (peak={r.Accuracy.PeakError})")
                 : "N/A";
-
-            var opjStr = $"{r.OpjMs:F2} ms";
-            var ratioStr = $"{r.RatioVsOpj:F2}x";
             var allocStr = r.AllocatedBytes >= 1048576
                 ? $"{r.AllocatedBytes / 1048576.0:F2} MB"
                 : $"{r.AllocatedBytes / 1024.0:F1} KB";
 
-            Console.WriteLine($"| `{r.Case.Name}` | {r.Case.Width}x{r.Case.Height} ({r.Case.Components}c) | {filter} | {r.FileBytes / 1024.0:F1} KB | **{r.SimdMs:F2} ms** | {opjStr} | **{ratioStr}** | {psnr} | {allocStr} |");
+            Console.WriteLine($"| `{r.Case.Name}` | {r.Case.Width}x{r.Case.Height} ({r.Case.Components}c) | {filter} | {r.FileBytes / 1024.0:F1} KB | {r.SimdMs:F2} ms | **{r.SimdParMs:F2} ms** | {r.SimdMs / r.SimdParMs:F2}x | {r.OpjMs:F2} ms | {r.OpjParMs:F2} ms | {(r.OpjParMs > 0 ? r.OpjMs / r.OpjParMs : 0):F2}x | {r.RatioVsOpj:F2}x | **{(r.OpjParMs > 0 ? r.SimdParMs / r.OpjParMs : 0):F2}x** | {psnr} | {allocStr} |");
         }
         Console.WriteLine();
     }
@@ -179,7 +186,9 @@ internal static class Program
         long FileBytes,
         double Bpp,
         double SimdMs,
+        double SimdParMs,
         double OpjMs,
+        double OpjParMs,
         double RatioVsOpj,
         AccuracyMetrics? Accuracy,
         long AllocatedBytes,

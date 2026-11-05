@@ -40,6 +40,9 @@ internal static class PeakMemory
 
     public static long MeasureAllocatedBytes(byte[] data)
     {
+        // One thread: the allocation counter is per thread, so a threaded decode's workers would not be counted.
+        Jpeg2000Ablation.MaxDegreeOfParallelism = 1;
+
         // Warmup
         _ = Jpeg2000Decoder.Decode(data);
 
@@ -51,6 +54,7 @@ internal static class PeakMemory
         var img = Jpeg2000Decoder.Decode(data);
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         GC.KeepAlive(img);
+        Jpeg2000Ablation.MaxDegreeOfParallelism = -1;
         return allocated;
     }
 

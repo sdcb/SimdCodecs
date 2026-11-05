@@ -149,6 +149,121 @@ public class Jpeg2000FacadeTests
     }
 
     /// <summary>
+    /// A scale denominator is a reduction: the facade decodes at 1/d by leaving out log2(d) levels, which is
+    /// <c>opj_decompress -r</c>, exactly on the reversible path.
+    /// </summary>
+    [Theory]
+    [InlineData("dwt5-struct64.j2k", ".pgm", 2)]
+    [InlineData("dwt5-struct64.j2k", ".pgm", 8)]
+    [InlineData("rgb-struct64.j2k", ".ppm", 4)]
+    [InlineData("rgb-layers2-struct64.j2k", ".ppm", 8)]
+    [InlineData("odd37x23.j2k", ".pgm", 2)]
+    [InlineData("odd37x23.j2k", ".pgm", 4)]
+    public void AScaledDecode_IsExactlyOpenJpegsReduction(string file, string extension, int denominator)
+    {
+        OpenJpegOracle.RequireOrSkip();
+        var bytes = File(file);
+        var expected = OpenJpegOracle.Decode(bytes, extension, "-r", int.Log2(denominator).ToString());
+
+        SimdCodecs.TryDecode(bytes, out var image, new DecodeOptions { ScaleDenominator = denominator },
+            TestContext.Current.CancellationToken).ShouldBeTrue();
+
+        image.Width.ShouldBe(expected.Width);
+        image.Height.ShouldBe(expected.Height);
+        image.Pixels.ToArray().ShouldBe(expected.Samples.Select(s => (byte)s).ToArray());
+        SimdCodecs.TryReadInfo(bytes, out var info).ShouldBeTrue();
+        new DecodeOptions { ScaleDenominator = denominator }.GetScaledSize(info.Width, info.Height)
+            .ShouldBe((image.Width, image.Height));
+    }
+
+    /// <summary>The 9/7 path under the tolerance policy of the reduced-resolution tests: within 1, at most 1% differing.</summary>
+    [Fact]
+    public void AScaledLossyDecode_IsWithinToleranceOfOpenJpegs()
+    {
+        OpenJpegOracle.RequireOrSkip();
+        var bytes = System.IO.File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "jpeg2000-lossy", "lossy97-rgb-struct64.j2k"));
+        var expected = OpenJpegOracle.Decode(bytes, ".ppm", "-r", "2");
+
+        SimdCodecs.TryDecode(bytes, out var image, new DecodeOptions { ScaleDenominator = 4 },
+            TestContext.Current.CancellationToken).ShouldBeTrue();
+
+        image.Width.ShouldBe(expected.Width);
+        var pixels = image.Pixels.ToArray();
+        var differing = 0;
+        for (var i = 0; i < pixels.Length; i++)
+        {
+            var difference = Math.Abs(pixels[i] - expected.Samples[i]);
+            difference.ShouldBeLessThanOrEqualTo(1);
+            if (difference != 0) differing++;
+        }
+
+        ((double)differing / pixels.Length).ShouldBeLessThanOrEqualTo(0.01);
+    }
+
+    /// <summary>TryGetClosestSize picks the largest reduction that still covers the request, and TryDecode honours it.</summary>
+    [Theory]
+    [InlineData(64, 64, 64, 1)]
+    [InlineData(33, 33, 64, 1)]
+    [InlineData(32, 32, 32, 2)]
+    [InlineData(9, 9, 16, 4)]
+    [InlineData(1, 1, 2, 32)]
+    [InlineData(0, 0, 2, 32)]
+    [InlineData(1000, 1000, 64, 1)]
+    [InlineData(32, 33, 64, 1)]
+    public void TryGetClosestSize_PicksTheLargestReductionThatCoversTheRequest(
+        int requestedWidth, int requestedHeight, int expectedSize, int expectedDenominator)
+    {
+        var bytes = File("dwt5-struct64.j2k");
+
+        SimdCodecs.TryGetClosestSize(bytes, requestedWidth, requestedHeight, out var width, out var height, out var denominator)
+            .ShouldBeTrue();
+
+        (width, height, denominator).ShouldBe((expectedSize, expectedSize, expectedDenominator));
+        SimdCodecs.TryDecode(bytes, out var image, new DecodeOptions { ScaleDenominator = denominator },
+            TestContext.Current.CancellationToken).ShouldBeTrue();
+        (image.Width, image.Height).ShouldBe((width, height));
+    }
+
+    /// <summary>Odd sizes round up (⌈w / d⌉), and a codestream is never scaled past its levels.</summary>
+    [Fact]
+    public void ClosestSize_RoundsUpAndNeverExceedsTheLevels()
+    {
+        SimdCodecs.TryGetClosestSize(File("odd37x23.j2k"), 1, 1, out var w, out var h, out var d).ShouldBeTrue();
+        (w, h, d).ShouldBe((10, 6, 4)); // two levels: 37x23 -> 19x12 -> 10x6
+
+        SimdCodecs.TryGetClosestSize(File("nodwt-struct32.j2k"), 1, 1, out w, out h, out d).ShouldBeTrue();
+        (w, h, d).ShouldBe((32, 32, 1));
+
+        Should.Throw<NotSupportedException>(() => SimdCodecs.TryDecode(File("odd37x23.j2k"), out _,
+            new DecodeOptions { ScaleDenominator = 8 }, TestContext.Current.CancellationToken));
+        Should.Throw<NotSupportedException>(() => SimdCodecs.TryDecode(File("nodwt-struct32.j2k"), out _,
+            new DecodeOptions { ScaleDenominator = 2 }, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>A region is in the scaled image's coordinates and is exactly that crop of the scaled decode.</summary>
+    [Fact]
+    public void ARegionOfAScaledDecode_IsACropOfTheScaledImage()
+    {
+        var bytes = File("rgb-layers2-struct64.j2k");
+        var scaled = new DecodeOptions { ScaleDenominator = 4 };
+        SimdCodecs.TryDecode(bytes, out var whole, scaled, TestContext.Current.CancellationToken).ShouldBeTrue();
+        whole.Width.ShouldBe(16);
+
+        var region = new PixelRect(3, 2, 9, 5);
+        SimdCodecs.TryDecode(bytes, out var part, scaled with { Region = region }, TestContext.Current.CancellationToken).ShouldBeTrue();
+
+        (part.Width, part.Height).ShouldBe((9, 5));
+        var expected = new List<byte>();
+        for (var y = region.Y; y < region.Y + region.Height; y++)
+            expected.AddRange(whole.Pixels.Slice((y * 16 + region.X) * 3, region.Width * 3).ToArray());
+        part.Pixels.ToArray().ShouldBe(expected.ToArray());
+
+        // Outside the scaled image (but inside the stored one): refused.
+        Should.Throw<ArgumentException>(() => SimdCodecs.TryDecode(bytes, out _,
+            scaled with { Region = new PixelRect(10, 10, 20, 20) }, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
     /// The JP2 file with its colour specification box's body replaced. The fixture's header box
     /// holds the image header then the colour box, so both box lengths change with the body.
     /// </summary>

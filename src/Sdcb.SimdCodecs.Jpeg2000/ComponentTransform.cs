@@ -28,9 +28,12 @@ internal static class ComponentTransform
     /// The floor in G.2.2's first equation is an arithmetic shift, not a division: a division rounds
     /// toward zero, which is wrong for the negative sums half of all samples produce.
     /// </remarks>
-    public static void InverseRct(int[] y0, int[] y1, int[] y2)
+    public static void InverseRct(int[] y0, int[] y1, int[] y2) =>
+        Jpeg2000Parallel.ForRanges(y0.Length, 1 << 14, 1, (start, end) => InverseRct(y0, y1, y2, start, end));
+
+    private static void InverseRct(int[] y0, int[] y1, int[] y2, int start, int end)
     {
-        for (var i = 0; i < y0.Length; i++)
+        for (var i = start; i < end; i++)
         {
             var g = y0[i] - ((y1[i] + y2[i]) >> 2);
             var r = y2[i] + g;
@@ -50,9 +53,12 @@ internal static class ComponentTransform
     /// <param name="y0">Component 0 (Y), rewritten in place as the first output component.</param>
     /// <param name="y1">Component 1 (Cb), rewritten in place as the second.</param>
     /// <param name="y2">Component 2 (Cr), rewritten in place as the third.</param>
-    public static void InverseIct(float[] y0, float[] y1, float[] y2)
+    public static void InverseIct(float[] y0, float[] y1, float[] y2) =>
+        Jpeg2000Parallel.ForRanges(y0.Length, 1 << 14, 1, (start, end) => InverseIct(y0, y1, y2, start, end));
+
+    private static void InverseIct(float[] y0, float[] y1, float[] y2, int start, int end)
     {
-        for (var i = 0; i < y0.Length; i++)
+        for (var i = start; i < end; i++)
         {
             var y = y0[i];
             var cb = y1[i];

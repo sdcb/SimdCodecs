@@ -57,7 +57,11 @@ Everything in `Fixtures/jpeg2000/` is lossless — 8-bit unsigned components, on
 | `jp2-rgb-struct64.jp2`, `jp2-gray-struct64.jp2` | `.jp2` output | The JP2 file format around a lossless codestream, with an enumerated `colr` box: sRGB, greyscale. |
 | `deep12-ramp64` | a PGM with maxval 4095 | Twelve bits, which the facade has to scale into its 16-bit format. |
 
-`Fixtures/jpeg2000-raw/cmyk16.j2k` has four components, which no PNM carries, so its source is the planar `cmyk16.raw` opj_compress read (`-F 16,16,4,8,u -mct 0`), verified lossless the same way. It is what the facade refuses (an extra channel that could be alpha or black) and the decoder reads exactly.
+`Fixtures/jpeg2000-raw/cmyk16.j2k` has four components, which no PNM carries, so its source is the planar `cmyk16.raw` opj_compress read (`-F 16,16,4,8,u -mct 0`), verified lossless the same way. It is what the facade refuses (four components with no channel definition: the extra channel could be alpha or black) and the decoder reads exactly.
+
+`Fixtures/jpeg2000-alpha/` holds the two files `opj_compress` writes a channel definition box (`cdef`) for: `rgba-struct37x29.jp2` (RGBA: colours 1 to 3, then an opacity for the whole image) and `graya-struct37x29.jp2` (grey + alpha). The input is a synthetic PNG built by `gen-sources.py` (closed-form pixels, a straight alpha ramp with a fully transparent corner; `opj_compress` reads PNG, not PAM), the lossless codestream decodes to it exactly, and the expected output is committed beside each as a PAM (`P7`, `TUPLTYPE RGB_ALPHA` / `GRAYSCALE_ALPHA`), which is also what `opj_decompress` writes for an image with alpha (a `.pnm` output name), so `Pnm` reads both with one parser. `make-fixtures.sh` checks each pair before it is committed, as for the PNM fixtures. Everything `opj_compress` does not write (a reordered box, premultiplied opacity, a box that contradicts itself) is built in `Jpeg2000ChannelDefinitionTests` around a committed codestream.
+
+`LocalJpeg2000ChannelDefinitionCorpusTests` is the real-file check for the box and is skipped unless `SIMDCODECS_TESTIMAGES_DIR` names a directory of JP2 / JPF files (their licences are unknown, so none is in the repository): every file with a `cdef` that the facade presents and that is 8-bit is compared with `opj_decompress` (within 1, exact on 5/3), and the per-file outcome goes to the test output.
 
 `Fixtures/jpeg2000-lossy/` holds codestreams with no committed expected output, because their expected output is not their source. Their tests decode them with `opj_decompress` at run time.
 

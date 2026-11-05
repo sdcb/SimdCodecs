@@ -7,7 +7,7 @@ namespace Sdcb.SimdCodecs.Tests;
 
 /// <summary>
 /// The JP2 file format (T.800 Annex I): enough of it to find the codestream and report the colour
-/// specification, and to refuse the boxes that would change what the components mean.
+/// specification, and to read the boxes that change what the components mean.
 /// <para>
 /// Two fixtures come from opj_compress and decode exactly, like every lossless fixture. Everything
 /// opj_compress does not write — an ICC profile, a palette, a channel definition, a box with a
@@ -94,18 +94,21 @@ public class Jpeg2000Jp2Tests
     }
 
     /// <summary>
-    /// The channel definition box is refused by name: skipped, it would hand back an alpha channel
-    /// drawn as colour, or channels out of order. (The palette and component mapping boxes are
-    /// decoded; <see cref="Jpeg2000TilingAndProgressionTests.PalettedJp2_DecodesAsOpenJpegDoes"/>.)
+    /// The channel definition box is read, not refused: its tests (reordering, alpha, bad boxes) are in
+    /// <see cref="Jpeg2000ChannelDefinitionTests"/>. Here only that a box naming the channels in their own
+    /// order leaves the samples alone.
     /// </summary>
     [Fact]
-    public void ChannelDefinition_IsRefused()
+    public void ChannelDefinition_InCodestreamOrder_LeavesTheSamplesAlone()
     {
         var wrapped = Jp2(
-            Header(ImageHeader(), EnumeratedColour(16), Box("cdef", [0, 0, 0, 0])),
+            Header(ImageHeader(), EnumeratedColour(16), Box("cdef", [0, 3, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 2, 0, 2, 0, 0, 0, 3])),
             Box("jp2c", Codestream("rgb-struct64")));
 
-        Should.Throw<NotSupportedException>(() => Jpeg2000Decoder.Decode(wrapped)).Message.ShouldContain("channel definition");
+        var decoded = Jpeg2000Decoder.Decode(wrapped, cancellationToken: TestContext.Current.CancellationToken);
+
+        decoded.Samples.ShouldBe(Jpeg2000Decoder.Decode(Codestream("rgb-struct64"), cancellationToken: TestContext.Current.CancellationToken).Samples);
+        decoded.Channels!.Select(c => c.Type).ShouldBe([Jp2ChannelType.Colour, Jp2ChannelType.Colour, Jp2ChannelType.Colour]);
     }
 
     /// <summary>

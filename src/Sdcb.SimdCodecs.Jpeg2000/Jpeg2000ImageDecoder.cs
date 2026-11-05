@@ -1,7 +1,9 @@
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Sdcb.SimdCodecs.Abstractions;
@@ -18,12 +20,34 @@ namespace Sdcb.SimdCodecs.Jpeg2000;
 /// which. So one component decodes as grey and three as RGB, which is what a raw codestream's
 /// components conventionally are once its RCT or ICT is undone, and what a JP2 file's sRGB or
 /// greyscale <c>colr</c> box says; a restricted ICC profile is passed through as the image's
-/// profile. Refused, so that <see cref="TryDecode"/> answers false rather than a picture in the
-/// wrong colours: two or four components, whose extra channel could be alpha or black and which
-/// nothing here can tell apart without the channel-definition box this decoder does not read; and
-/// sYCC, whose samples are still YCbCr. A caller that needs those has
-/// <see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, CancellationToken)"/>, which hands back every component and
-/// reports the colour box without applying it.
+/// profile.
+/// </para>
+/// <para>
+/// <b>Alpha.</b> A JP2 file's channel definition box (<c>cdef</c>) is what says a channel is opacity,
+/// so with one the facade presents grey + alpha (2 channels) and RGB + alpha (4): colour in the colour
+/// space's order whatever the codestream's, alpha last, straight. Opacity the box marks as premultiplied
+/// is divided out: <c>c' = min(max, (c * max + a / 2) / a)</c> in integers at the codestream's precision
+/// (<c>max</c> the largest sample, <c>a</c> the opacity), and 0 where <c>a</c> is 0. Two or four
+/// components without the box stay refused, because nothing says whether the extra channel is alpha,
+/// black (CMYK) or data.
+/// </para>
+/// <para>
+/// Refused, so that <see cref="TryDecode"/> answers false rather than a picture in the wrong colours:
+/// those; sYCC, whose samples are still YCbCr; any other enumerated colour space than sRGB and
+/// greyscale (CMYK, CIELab, ...); an opacity channel that applies to a single colour rather than the
+/// whole image; more than one opacity channel; a channel the box leaves unspecified; and a colour
+/// space that does not match the number of colour channels. A caller that needs those has
+/// <see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, CancellationToken)"/>, which hands back every
+/// component (reordered as the box says) and reports the colour box without applying it.
+/// </para>
+/// <para>
+/// <b>Scaled decode.</b> <see cref="DecodeOptions.ScaleDenominator"/> is a resolution reduction: any
+/// power of two up to 2 to the codestream's decomposition levels, decoded by leaving the finer levels
+/// out (they are never entropy-decoded), with the same samples as <c>opj_decompress -r</c>. A
+/// <see cref="DecodeOptions.Region"/> is in the scaled image's coordinates and is cropped from it. An
+/// image whose SIZ image offset is not zero is decoded at scale 1 only: on the reference grid a
+/// halving rounds relative to the origin, which can differ by a pixel from the facade's
+/// <c>⌈w / d⌉</c> (the decoder's own <see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, int, CancellationToken)"/> still reduces it).
 /// </para>
 /// <para>
 /// Samples up to 8 bits come back as <see cref="SampleFormat.UInt8"/>, deeper ones as
@@ -54,24 +78,29 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
         Jpeg2000Decoder.IsCodestream(header) || Jpeg2000Decoder.IsJp2(header);
 
     /// <inheritdoc />
-    public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
+    public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info) =>
+        TryReadInfo(data, out info, out _);
+
+    private static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info, [NotNullWhen(true)] out Jpeg2000Info? j2k)
     {
         info = default;
+        j2k = null;
         if (!CanDecode(data)) return false;
 
         try
         {
             // ReadInfo, not SIZ alone: a JP2 palette changes how many channels, and of what depth,
             // the decoded image has.
-            var j2k = Jpeg2000Decoder.ReadInfo(data);
-            if (!Presentable(j2k.Components, j2k.Colour)) return false;
+            var read = Jpeg2000Decoder.ReadInfo(data);
+            if (!Presentable(read.Components, read.Colour, read.Channels)) return false;
 
-            var depth = j2k.BitDepth;
-            info = new ImageInfo(j2k.Width, j2k.Height, j2k.Components, FormatFor(depth))
+            var depth = read.BitDepth;
+            info = new ImageInfo(read.Width, read.Height, read.Components, FormatFor(depth))
             {
                 Format = ImageFormat.Jpeg2000,
                 BitDepth = depth,
             };
+            j2k = read;
             return true;
         }
         catch (Exception e) when (IsUndecodable(e))
@@ -80,10 +109,41 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
         }
     }
 
+    /// <summary>
+    /// The largest scale denominator this image decodes at natively: 2 to the number of resolution
+    /// levels that can be left out. A reduction halves each side on the reference grid (T.800 B-14),
+    /// which is the facade's <c>⌈w / d⌉</c> only when the image region starts at the origin; an image
+    /// whose SIZ offset is not zero can differ by a pixel at some scales, so it is decoded at 1 only
+    /// (<see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, int, CancellationToken)"/> still reduces it).
+    /// </summary>
+    private static int MaxScaleDenominator(Jpeg2000Info j2k) =>
+        j2k.Region.X0 == 0 && j2k.Region.Y0 == 0 ? 1 << Math.Min(j2k.DecompositionLevels, 30) : 1;
+
     /// <inheritdoc />
+    /// <remarks>The smallest image, a power-of-two reduction of the stored one, that is at least the requested
+    /// size in both directions (the stored size when the request is larger). A reduction costs only the
+    /// levels it keeps: the finer ones are never entropy-decoded.</remarks>
     public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
-        out int width, out int height, out int scaleDenominator) =>
-        ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
+        out int width, out int height, out int scaleDenominator)
+    {
+        width = height = 0;
+        scaleDenominator = 1;
+        if (!TryReadInfo(data, out var info, out var j2k)) return false;
+
+        (width, height) = (info.Width, info.Height);
+        var largest = MaxScaleDenominator(j2k);
+        for (var d = largest; d >= 2; d >>= 1)
+        {
+            var (w, h) = new DecodeOptions { ScaleDenominator = d }.GetScaledSize(info.Width, info.Height);
+            if (w >= requestedWidth && h >= requestedHeight)
+            {
+                (width, height, scaleDenominator) = (w, h, d);
+                break;
+            }
+        }
+
+        return true;
+    }
 
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
@@ -91,14 +151,15 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
     {
         image = null;
         if (!CanDecode(data)) return false;
-        if (!TryReadInfo(data, out var info)) return false;
+        if (!TryReadInfo(data, out var info, out var read)) return false;
 
-        options?.Validate(info.Width, info.Height, supportsScale: false);
+        options?.Validate(info.Width, info.Height, MaxScaleDenominator(read));
+        var reduce = options is null ? 0 : BitOperations.Log2((uint)options.ScaleDenominator);
 
         RasterImage? raster;
         try
         {
-            var j2k = Jpeg2000Decoder.Decode(data, cancellationToken);
+            var j2k = Jpeg2000Decoder.Decode(data, reduce, cancellationToken);
             raster = ToRaster(j2k, options?.Pool);
             if (raster is null) return false;
         }
@@ -109,7 +170,8 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
 
         try
         {
-            image = DecodeOptions.Apply(raster, options);
+            // The region is in the scaled image's coordinates, and the raster already is that image.
+            image = DecodeOptions.Apply(raster, options is { ScaleDenominator: > 1 } ? options with { ScaleDenominator = 1 } : options);
             return true;
         }
         catch
@@ -169,11 +231,17 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
     /// </summary>
     internal static RasterImage? ToRaster(Jpeg2000Image image, ArrayPool<byte>? pool = null)
     {
-        if (!Presentable(image.Components, image.Colour)) return null;
+        if (!Presentable(image.Components, image.Colour, image.Channels)) return null;
 
         var depth = image.BitDepth;
         var format = FormatFor(depth);
         var samples = image.Samples;
+        if (image.Channels is [.., { Type: Jp2ChannelType.PremultipliedOpacity }])
+        {
+            // The image is the decoder's own, so its samples can be rewritten in place.
+            Unpremultiply(samples, image.Components, (1 << depth) - 1);
+        }
+
         var icc = image.Colour is { Method: 2, IccProfile: { } profile } ? profile : null;
         var bitDepth = (depth is 8 or 16) ? 0 : depth;
 
@@ -204,9 +272,61 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
         return raster;
     }
 
-    /// <summary>One component or three, and not sYCC: the images whose samples are already grey or RGB.</summary>
-    private static bool Presentable(int components, Jp2Colour? colour) =>
-        components is 1 or 3 && colour is not { EnumeratedColourSpace: Jp2EnumeratedColourSpace.Sycc };
+    /// <summary>
+    /// Divides the last channel's opacity out of the others, in integers: <c>min(max, (c * max + a / 2) / a)</c>,
+    /// and 0 where the opacity is 0 (the colour of a transparent pixel is nothing to recover).
+    /// </summary>
+    private static void Unpremultiply(ushort[] samples, int channels, int maximum)
+    {
+        for (var p = 0; p + channels <= samples.Length; p += channels)
+        {
+            long alpha = samples[p + channels - 1];
+            for (var c = 0; c < channels - 1; c++)
+            {
+                samples[p + c] = alpha == 0
+                    ? (ushort)0
+                    : (ushort)Math.Min(maximum, (samples[p + c] * (long)maximum + alpha / 2) / alpha);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The images whose samples are already grey or RGB, with at most one whole-image opacity channel
+    /// after the colour: one component or three, not sYCC, when there is no channel definition; with
+    /// one, exactly the colour channels (1 or 3, matching an enumerated colour space) plus at most
+    /// one opacity channel that applies to the whole image.
+    /// </summary>
+    private static bool Presentable(int components, Jp2Colour? colour, IReadOnlyList<Jp2Channel>? channels)
+    {
+        if (colour is { EnumeratedColourSpace: { } space } && space is not (Jp2EnumeratedColourSpace.Srgb or Jp2EnumeratedColourSpace.Greyscale))
+            return false;
+        if (channels is null) return components is 1 or 3;
+
+        var colours = 0;
+        var opacities = 0;
+        foreach (var channel in channels)
+        {
+            switch (channel.Type)
+            {
+                case Jp2ChannelType.Colour:
+                    colours++;
+                    break;
+                case Jp2ChannelType.Opacity or Jp2ChannelType.PremultipliedOpacity when channel.Association == 0:
+                    opacities++;
+                    break;
+                default:
+                    return false;
+            }
+        }
+
+        if (colours is not (1 or 3) || opacities > 1 || components != colours + opacities) return false;
+        return colour switch
+        {
+            { EnumeratedColourSpace: Jp2EnumeratedColourSpace.Srgb } => colours == 3,
+            { EnumeratedColourSpace: Jp2EnumeratedColourSpace.Greyscale } => colours == 1,
+            _ => true,
+        };
+    }
 
     private static SampleFormat FormatFor(int bitDepth) => bitDepth <= 8 ? SampleFormat.UInt8 : SampleFormat.UInt16;
 
