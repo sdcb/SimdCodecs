@@ -58,14 +58,31 @@ internal sealed class StreamBytes : ITiffBytes
     }
 }
 
+/// <summary>
+/// The two things the header fixes for the whole file: byte order, and classic TIFF (TIFF 6.0 §2: 2-byte entry
+/// counts, 12-byte entries, 4-byte offsets) or BigTIFF (version 43: 8-byte entry counts, 20-byte entries, 8-byte
+/// offsets and value slot).
+/// </summary>
+internal readonly record struct TiffFormat(bool LittleEndian, bool BigTiff)
+{
+    /// <summary>Bytes of the entry count that starts a directory.</summary>
+    public int CountSize => BigTiff ? 8 : 2;
+
+    /// <summary>Bytes of one directory entry.</summary>
+    public int EntrySize => BigTiff ? 20 : 12;
+
+    /// <summary>Bytes of an offset: the next-IFD pointer, and an entry's value slot.</summary>
+    public int OffsetSize => BigTiff ? 8 : 4;
+}
+
 /// <summary>One IFD, parsed and validated, before any pixel is touched.</summary>
 internal sealed record ParsedIfd(
     int Width, int Height, int SamplesPerPixel, int BitsPerSample,
     TiffCompression Compression, TiffPhotometric Photometric, TiffSampleFormat SampleFormat,
     TiffPlanarConfig PlanarConfig, TiffPredictor Predictor, int RowsPerStrip,
     bool IsTiled, int TileWidth, int TileHeight,
-    uint[] SegmentOffsets, uint[] SegmentByteCounts, TiffSegmentGeometry Geometry,
-    float? SMin, float? SMax, byte[]? Icc, int? ExifIfdOffset, int? GpsInfoIfdOffset,
+    long[] SegmentOffsets, long[] SegmentByteCounts, TiffSegmentGeometry Geometry,
+    float? SMin, float? SMax, byte[]? Icc, long? ExifIfdOffset, long? GpsInfoIfdOffset,
     long NextIfdOffset, bool LsbFirst = false, uint FaxOptions = 0, int Orientation = 1,
     byte[]? Xmp = null, double XResolution = 0, double YResolution = 0, int ResolutionUnit = 2)
 {
@@ -75,54 +92,79 @@ internal sealed record ParsedIfd(
 
 internal static class TiffIfdParser
 {
-    private const int EntrySize = 12;
-
     /// <summary>
     /// Samples per pixel a page may declare. Far above any real layout (RGB plus a few extra channels, or a
     /// multispectral stack), and low enough that a pixel's bytes are a small number.
     /// </summary>
     internal const int MaxSamplesPerPixel = 256;
 
-    /// <summary>Parses the 8-byte header at the start of <paramref name="src"/>; returns byte order and the first IFD's offset.</summary>
-    public static (bool FileIsLE, long FirstIfd) ReadHeader<T>(ref T src) where T : ITiffBytes, allows ref struct
+    /// <summary>Entries a BigTIFF directory may declare (its count is 64-bit); a classic one holds at most 65535.</summary>
+    private const long MaxEntries = 1 << 20;
+
+    /// <summary>
+    /// Parses the header at the start of <paramref name="src"/>: classic TIFF (TIFF 6.0 §2, 8 bytes) or BigTIFF (the
+    /// BigTIFF specification: version 43, then the offset size, which must be 8, a reserved 0, and an 8-byte first-IFD
+    /// offset). Returns the file's format and the first IFD's offset.
+    /// </summary>
+    public static (TiffFormat Format, long FirstIfd) ReadHeader<T>(ref T src) where T : ITiffBytes, allows ref struct
     {
         if (src.Length < 8) throw new InvalidDataException("TIFF too small for header");
-        Span<byte> h = stackalloc byte[8];
-        src.Read(0, h);
+        Span<byte> h = stackalloc byte[16];
+        src.Read(0, h[..8]);
 
-        bool fileIsLE;
-        if (h[0] == (byte)'I' && h[1] == (byte)'I') fileIsLE = true;
-        else if (h[0] == (byte)'M' && h[1] == (byte)'M') fileIsLE = false;
+        bool le;
+        if (h[0] == (byte)'I' && h[1] == (byte)'I') le = true;
+        else if (h[0] == (byte)'M' && h[1] == (byte)'M') le = false;
         else throw new InvalidDataException($"Unknown TIFF byte order tag {h[0]:X2}{h[1]:X2}");
 
-        if (U16(h.Slice(2, 2), fileIsLE) != 42) throw new InvalidDataException("TIFF magic mismatch");
-        return (fileIsLE, U32(h.Slice(4, 4), fileIsLE));
+        switch (U16(h.Slice(2, 2), le))
+        {
+            case 42:
+                return (new TiffFormat(le, BigTiff: false), U32(h.Slice(4, 4), le));
+            case 43:
+                if (U16(h.Slice(4, 2), le) != 8 || U16(h.Slice(6, 2), le) != 0)
+                    throw new InvalidDataException("BigTIFF header: the offset size must be 8 and the reserved field 0");
+                if (src.Length < 16) throw new InvalidDataException("BigTIFF too small for header");
+                src.Read(8, h[8..]);
+                var format = new TiffFormat(le, BigTiff: true);
+                return (format, Offset(h.Slice(8, 8), format));
+            default:
+                throw new InvalidDataException("TIFF magic mismatch");
+        }
+    }
+
+    /// <summary>The entry count of the directory at <paramref name="ifdOffset"/>, checked to lie inside the file with its next-IFD pointer.</summary>
+    private static long EntryCount<T>(ref T src, long ifdOffset, TiffFormat f) where T : ITiffBytes, allows ref struct
+    {
+        if (ifdOffset <= 0 || ifdOffset > src.Length - f.CountSize) throw new InvalidDataException("IFD offset out of bounds");
+        Span<byte> countBytes = stackalloc byte[8];
+        countBytes = countBytes[..f.CountSize];
+        src.Read(ifdOffset, countBytes);
+        var count = f.BigTiff ? U64(countBytes, f.LittleEndian) : U16(countBytes, f.LittleEndian);
+        // count <= MaxEntries, so the directory's extent cannot overflow a long.
+        if (count > MaxEntries
+            || ifdOffset + f.CountSize + ((long)count * f.EntrySize) + f.OffsetSize > src.Length)
+            throw new InvalidDataException("IFD truncated");
+        return (long)count;
     }
 
     /// <summary>The next-IFD offset of the directory at <paramref name="ifdOffset"/>, without interpreting a single tag.</summary>
-    public static long ReadNextIfdOffset<T>(ref T src, long ifdOffset, bool fileIsLE) where T : ITiffBytes, allows ref struct
+    public static long ReadNextIfdOffset<T>(ref T src, long ifdOffset, TiffFormat f) where T : ITiffBytes, allows ref struct
     {
-        Span<byte> countBytes = stackalloc byte[2];
-        if (ifdOffset <= 0 || ifdOffset + 2 > src.Length) throw new InvalidDataException("IFD offset out of bounds");
-        src.Read(ifdOffset, countBytes);
-        var end = ifdOffset + 2 + (U16(countBytes, fileIsLE) * (long)EntrySize);
-        if (end + 4 > src.Length) throw new InvalidDataException("IFD truncated");
-        Span<byte> next = stackalloc byte[4];
-        src.Read(end, next);
-        return U32(next, fileIsLE);
+        var count = EntryCount(ref src, ifdOffset, f);
+        Span<byte> next = stackalloc byte[8];
+        next = next[..f.OffsetSize];
+        src.Read(ifdOffset + f.CountSize + (count * f.EntrySize), next);
+        return Offset(next, f);
     }
 
-    public static ParsedIfd Parse<T>(ref T src, long ifdOffset, bool fileIsLE) where T : ITiffBytes, allows ref struct
+    public static ParsedIfd Parse<T>(ref T src, long ifdOffset, TiffFormat f) where T : ITiffBytes, allows ref struct
     {
-        if (ifdOffset <= 0 || ifdOffset + 2 > src.Length) throw new InvalidDataException("IFD offset out of bounds");
-        Span<byte> countBytes = stackalloc byte[2];
-        src.Read(ifdOffset, countBytes);
-        var entryCount = U16(countBytes, fileIsLE);
-
-        var directoryEnd = ifdOffset + 2 + (entryCount * (long)EntrySize);
-        if (directoryEnd + 4 > src.Length) throw new InvalidDataException("IFD truncated");
-        var directory = new byte[(entryCount * EntrySize) + 4];
-        src.Read(ifdOffset + 2, directory);
+        var entryCount = (int)EntryCount(ref src, ifdOffset, f);
+        var entrySize = f.EntrySize;
+        var fileIsLE = f.LittleEndian;
+        var directory = new byte[(entryCount * entrySize) + f.OffsetSize];
+        src.Read(ifdOffset + f.CountSize, directory);
 
         var width = 0;
         var height = 0;
@@ -134,17 +176,17 @@ internal static class TiffIfdParser
         var planarConfig = TiffPlanarConfig.Contig;
         var predictor = TiffPredictor.None;
         var rowsPerStrip = 0;
-        uint[]? stripOffsets = null;
-        uint[]? stripByteCounts = null;
+        long[]? stripOffsets = null;
+        long[]? stripByteCounts = null;
         var tileWidth = 0;
         var tileHeight = 0;
-        uint[]? tileOffsets = null;
-        uint[]? tileByteCounts = null;
+        long[]? tileOffsets = null;
+        long[]? tileByteCounts = null;
         float? sMin = null;
         float? sMax = null;
         byte[]? icc = null;
-        int? exifIfdOffset = null;
-        int? gpsIfdOffset = null;
+        long? exifIfdOffset = null;
+        long? gpsIfdOffset = null;
         var fillOrder = 1;
         uint t4Options = 0;
         uint t6Options = 0;
@@ -155,46 +197,47 @@ internal static class TiffIfdParser
 
         for (var i = 0; i < entryCount; i++)
         {
-            var entry = directory.AsSpan(i * EntrySize, EntrySize);
+            // Classic: tag, type, 4-byte count, 4-byte value slot. BigTIFF: tag, type, 8-byte count, 8-byte slot.
+            var entry = directory.AsSpan(i * entrySize, entrySize);
             var tag = U16(entry[..2], fileIsLE);
             var type = (TiffFieldType)U16(entry.Slice(2, 2), fileIsLE);
-            var count = U32(entry.Slice(4, 4), fileIsLE);
-            var valueSpan = entry.Slice(8, 4);
+            var count = f.BigTiff ? U64(entry.Slice(4, 8), fileIsLE) : U32(entry.Slice(4, 4), fileIsLE);
+            var valueSpan = entry.Slice(f.BigTiff ? 12 : 8, f.OffsetSize);
 
             switch (tag)
             {
-                case TiffTag.ImageWidth: width = (int)Scalar(type, valueSpan, fileIsLE); break;
-                case TiffTag.ImageLength: height = (int)Scalar(type, valueSpan, fileIsLE); break;
-                case TiffTag.SamplesPerPixel: samplesPerPixel = (int)Scalar(type, valueSpan, fileIsLE); break;
+                case TiffTag.ImageWidth: width = (int)Scalar(type, valueSpan, f); break;
+                case TiffTag.ImageLength: height = (int)Scalar(type, valueSpan, f); break;
+                case TiffTag.SamplesPerPixel: samplesPerPixel = (int)Scalar(type, valueSpan, f); break;
                 case TiffTag.BitsPerSample:
-                    bitsPerSample = (int)ShortArray(ref src, type, count, valueSpan, fileIsLE)[0];
+                    bitsPerSample = (int)ShortArray(ref src, type, count, valueSpan, f)[0];
                     break;
-                case TiffTag.Compression: compression = (TiffCompression)Scalar(type, valueSpan, fileIsLE); break;
-                case TiffTag.PhotometricInterp: photometric = (TiffPhotometric)Scalar(type, valueSpan, fileIsLE); break;
-                case TiffTag.Predictor: predictor = (TiffPredictor)Scalar(type, valueSpan, fileIsLE); break;
-                case TiffTag.PlanarConfig: planarConfig = (TiffPlanarConfig)Scalar(type, valueSpan, fileIsLE); break;
-                case TiffTag.RowsPerStrip: rowsPerStrip = (int)Scalar(type, valueSpan, fileIsLE); break;
-                case TiffTag.StripOffsets: stripOffsets = LongOrShortArray(ref src, type, count, valueSpan, fileIsLE); break;
-                case TiffTag.StripByteCounts: stripByteCounts = LongOrShortArray(ref src, type, count, valueSpan, fileIsLE); break;
-                case TiffTag.TileWidth: tileWidth = (int)Scalar(type, valueSpan, fileIsLE); break;
-                case TiffTag.TileLength: tileHeight = (int)Scalar(type, valueSpan, fileIsLE); break;
-                case TiffTag.TileOffsets: tileOffsets = LongOrShortArray(ref src, type, count, valueSpan, fileIsLE); break;
-                case TiffTag.TileByteCounts: tileByteCounts = LongOrShortArray(ref src, type, count, valueSpan, fileIsLE); break;
+                case TiffTag.Compression: compression = (TiffCompression)Scalar(type, valueSpan, f); break;
+                case TiffTag.PhotometricInterp: photometric = (TiffPhotometric)Scalar(type, valueSpan, f); break;
+                case TiffTag.Predictor: predictor = (TiffPredictor)Scalar(type, valueSpan, f); break;
+                case TiffTag.PlanarConfig: planarConfig = (TiffPlanarConfig)Scalar(type, valueSpan, f); break;
+                case TiffTag.RowsPerStrip: rowsPerStrip = (int)Scalar(type, valueSpan, f); break;
+                case TiffTag.StripOffsets: stripOffsets = LongOrShortArray(ref src, type, count, valueSpan, f); break;
+                case TiffTag.StripByteCounts: stripByteCounts = LongOrShortArray(ref src, type, count, valueSpan, f); break;
+                case TiffTag.TileWidth: tileWidth = (int)Scalar(type, valueSpan, f); break;
+                case TiffTag.TileLength: tileHeight = (int)Scalar(type, valueSpan, f); break;
+                case TiffTag.TileOffsets: tileOffsets = LongOrShortArray(ref src, type, count, valueSpan, f); break;
+                case TiffTag.TileByteCounts: tileByteCounts = LongOrShortArray(ref src, type, count, valueSpan, f); break;
                 case TiffTag.SampleFormat:
-                    sampleFormat = (TiffSampleFormat)ShortArray(ref src, type, count, valueSpan, fileIsLE)[0];
+                    sampleFormat = (TiffSampleFormat)ShortArray(ref src, type, count, valueSpan, f)[0];
                     break;
-                case TiffTag.SMinSampleValue: sMin = FloatArray(ref src, type, count, valueSpan, fileIsLE)[0]; break;
-                case TiffTag.SMaxSampleValue: sMax = FloatArray(ref src, type, count, valueSpan, fileIsLE)[0]; break;
-                case TiffTag.IccProfile: icc = ByteArray(ref src, type, count, valueSpan, fileIsLE); break;
+                case TiffTag.SMinSampleValue: sMin = FloatArray(ref src, type, count, valueSpan, f)[0]; break;
+                case TiffTag.SMaxSampleValue: sMax = FloatArray(ref src, type, count, valueSpan, f)[0]; break;
+                case TiffTag.IccProfile: icc = ByteArray(ref src, type, count, valueSpan, f); break;
                 case TiffTag.ExifIfd:
                     // Sub-IFD pointer: capture the offset so a caller can pass it to
                     // Sdcb.SimdCodecs.Exif.ExifReader.FromIfd without re-walking.
-                    exifIfdOffset = (int)Scalar(type, valueSpan, fileIsLE);
+                    exifIfdOffset = PointerValue(type, count, valueSpan, f);
                     break;
-                case TiffTag.GpsInfoIfd: gpsIfdOffset = (int)Scalar(type, valueSpan, fileIsLE); break;
-                case TiffTag.FillOrder: fillOrder = (int)Scalar(type, valueSpan, fileIsLE); break;
-                case TiffTag.T4Options: t4Options = Scalar(type, valueSpan, fileIsLE); break;
-                case TiffTag.T6Options: t6Options = Scalar(type, valueSpan, fileIsLE); break;
+                case TiffTag.GpsInfoIfd: gpsIfdOffset = PointerValue(type, count, valueSpan, f); break;
+                case TiffTag.FillOrder: fillOrder = (int)Scalar(type, valueSpan, f); break;
+                case TiffTag.T4Options: t4Options = Scalar(type, valueSpan, f); break;
+                case TiffTag.T6Options: t6Options = Scalar(type, valueSpan, f); break;
                 case TiffTag.Orientation:
                     // Metadata, never a reason to refuse a page: anything but one SHORT in 1..8 means the default.
                     var o = type == TiffFieldType.Short && count == 1 ? U16(valueSpan[..2], fileIsLE) : 0;
@@ -202,14 +245,14 @@ internal static class TiffIfdParser
                     break;
                 case TiffTag.XmpPacket:
                     // Metadata, never a reason to refuse a page: an unreadable packet is simply absent.
-                    try { xmp = ByteArray(ref src, type, count, valueSpan, fileIsLE); }
+                    try { xmp = ByteArray(ref src, type, count, valueSpan, f); }
                     catch (Exception e) when (e is InvalidDataException or NotSupportedException) { xmp = null; }
                     break;
                 case TiffTag.XResolution:
-                    xRes = LenientRational(ref src, type, count, valueSpan, fileIsLE);
+                    xRes = LenientRational(ref src, type, count, valueSpan, f);
                     break;
                 case TiffTag.YResolution:
-                    yRes = LenientRational(ref src, type, count, valueSpan, fileIsLE);
+                    yRes = LenientRational(ref src, type, count, valueSpan, f);
                     break;
                 case TiffTag.ResolutionUnit:
                     // Anything but one SHORT in 1..3 means the default (inch).
@@ -222,7 +265,7 @@ internal static class TiffIfdParser
             }
         }
 
-        var nextIfdOffset = U32(directory.AsSpan(entryCount * EntrySize, 4), fileIsLE);
+        var nextIfdOffset = Offset(directory.AsSpan(entryCount * entrySize, f.OffsetSize), f);
 
         // ---- Validate the layout we're willing to handle ------------------
         if (width <= 0 || height <= 0)
@@ -333,16 +376,40 @@ internal static class TiffIfdParser
     public static uint U32(ReadOnlySpan<byte> b, bool le) =>
         le ? BinaryPrimitives.ReadUInt32LittleEndian(b) : BinaryPrimitives.ReadUInt32BigEndian(b);
 
+    public static ulong U64(ReadOnlySpan<byte> b, bool le) =>
+        le ? BinaryPrimitives.ReadUInt64LittleEndian(b) : BinaryPrimitives.ReadUInt64BigEndian(b);
+
+    /// <summary>A file offset (4 bytes, or 8 in BigTIFF), refused when it cannot address a byte of any file.</summary>
+    public static long Offset(ReadOnlySpan<byte> b, TiffFormat f)
+    {
+        var value = f.BigTiff ? U64(b, f.LittleEndian) : U32(b, f.LittleEndian);
+        if (value > long.MaxValue) throw new InvalidDataException("Offset out of range");
+        return (long)value;
+    }
+
+    /// <summary>An IFD pointer (tag 34665, 34853): one LONG / IFD, or in BigTIFF also LONG8 / IFD8. Null when it is not one.</summary>
+    private static long? PointerValue(TiffFieldType type, ulong count, ReadOnlySpan<byte> v, TiffFormat f)
+    {
+        if (count != 1) return null;
+        return type switch
+        {
+            TiffFieldType.Long or TiffFieldType.Ifd => U32(v[..4], f.LittleEndian),
+            TiffFieldType.Long8 or TiffFieldType.Ifd8 when f.BigTiff && U64(v[..8], f.LittleEndian) <= long.MaxValue
+                => (long)U64(v[..8], f.LittleEndian),
+            _ => null,
+        };
+    }
+
     /// <summary>One RATIONAL as a non-negative double, or 0 when the tag is not a usable RATIONAL (resolution is metadata: never a reason to refuse a page).</summary>
-    private static double LenientRational<T>(ref T src, TiffFieldType type, uint count, ReadOnlySpan<byte> valueSpan, bool le)
+    private static double LenientRational<T>(ref T src, TiffFieldType type, ulong count, ReadOnlySpan<byte> valueSpan, TiffFormat f)
         where T : ITiffBytes, allows ref struct
     {
         if (type != TiffFieldType.Rational || count < 1) return 0;
         try
         {
-            var data = Value(ref src, 1, 8, valueSpan, le);
-            var num = U32(data.AsSpan(0, 4), le);
-            var den = U32(data.AsSpan(4, 4), le);
+            var data = Value(ref src, 1, 8, valueSpan, f);
+            var num = U32(data.AsSpan(0, 4), f.LittleEndian);
+            var den = U32(data.AsSpan(4, 4), f.LittleEndian);
             return den == 0 ? 0 : (double)num / den;
         }
         catch (InvalidDataException)
@@ -351,76 +418,95 @@ internal static class TiffIfdParser
         }
     }
 
-    private static uint Scalar(TiffFieldType type, ReadOnlySpan<byte> v, bool le) => type switch
+    /// <summary>The first value of a SHORT / LONG (or BigTIFF LONG8) tag, refused past <see cref="uint.MaxValue"/>.</summary>
+    private static uint Scalar(TiffFieldType type, ReadOnlySpan<byte> v, TiffFormat f) => type switch
     {
         TiffFieldType.Byte => v[0],
-        TiffFieldType.Short => U16(v[..2], le),
-        TiffFieldType.Long => U32(v[..4], le),
+        TiffFieldType.Short => U16(v[..2], f.LittleEndian),
+        TiffFieldType.Long => U32(v[..4], f.LittleEndian),
+        TiffFieldType.Long8 when f.BigTiff => U64(v[..8], f.LittleEndian) <= uint.MaxValue
+            ? (uint)U64(v[..8], f.LittleEndian)
+            : throw new InvalidDataException("A LONG8 value is out of range for its tag"),
         _ => throw new NotSupportedException($"Scalar tag has unexpected type {type}"),
     };
 
     /// <summary>
-    /// The raw bytes of a tag's value: inline when it fits the entry's 4 bytes, else fetched from the
-    /// offset it holds. The declared size is attacker-chosen, so it is checked against what the file
+    /// The raw bytes of a tag's value: inline when it fits the entry's value slot (4 bytes, 8 in BigTIFF), else
+    /// fetched from the offset it holds. The declared size is attacker-chosen, so it is checked against what the file
     /// can actually hold BEFORE anything is allocated.
     /// </summary>
-    private static byte[] Value<T>(ref T src, uint count, int elemSize, ReadOnlySpan<byte> valueSpan, bool le)
+    private static byte[] Value<T>(ref T src, ulong count, int elemSize, ReadOnlySpan<byte> valueSpan, TiffFormat f)
         where T : ITiffBytes, allows ref struct
     {
-        var total = count * (long)elemSize;
-        if (total <= 4) return valueSpan[..(int)total].ToArray();
-        var offset = U32(valueSpan, le);
-        if (total > src.Length || offset + total > src.Length)
+        // count <= Length (or the slot size) once this passes, so the product below cannot overflow.
+        if (count > (ulong)Math.Max(src.Length, f.OffsetSize))
+            throw new InvalidDataException("Tag value extends past the end of the file");
+        var total = (long)count * elemSize;
+        if (total <= f.OffsetSize) return valueSpan[..(int)total].ToArray();
+        var offset = Offset(valueSpan, f);
+        if (total > src.Length || offset > src.Length - total)
             throw new InvalidDataException("Tag value extends past the end of the file");
         var buffer = new byte[total];
         src.Read(offset, buffer);
         return buffer;
     }
 
-    private static ushort[] ShortArray<T>(ref T src, TiffFieldType type, uint count, ReadOnlySpan<byte> valueSpan, bool le)
+    private static ushort[] ShortArray<T>(ref T src, TiffFieldType type, ulong count, ReadOnlySpan<byte> valueSpan, TiffFormat f)
         where T : ITiffBytes, allows ref struct
     {
         if (type != TiffFieldType.Short) throw new NotSupportedException($"Expected SHORT, got {type}");
         if (count == 0) throw new InvalidDataException("Empty SHORT array");
-        var data = Value(ref src, count, 2, valueSpan, le);
-        var result = new ushort[count];
-        for (var i = 0; i < result.Length; i++) result[i] = U16(data.AsSpan(i * 2, 2), le);
+        var data = Value(ref src, count, 2, valueSpan, f);
+        var result = new ushort[data.Length / 2];
+        for (var i = 0; i < result.Length; i++) result[i] = U16(data.AsSpan(i * 2, 2), f.LittleEndian);
         return result;
     }
 
-    private static uint[] LongOrShortArray<T>(ref T src, TiffFieldType type, uint count, ReadOnlySpan<byte> valueSpan, bool le)
+    /// <summary>A SHORT / LONG array (StripOffsets and the like), or in BigTIFF also LONG8, as longs.</summary>
+    private static long[] LongOrShortArray<T>(ref T src, TiffFieldType type, ulong count, ReadOnlySpan<byte> valueSpan, TiffFormat f)
         where T : ITiffBytes, allows ref struct
     {
         var elemSize = type switch
         {
             TiffFieldType.Short => 2,
             TiffFieldType.Long => 4,
-            _ => throw new NotSupportedException($"Expected SHORT/LONG, got {type}"),
+            TiffFieldType.Long8 when f.BigTiff => 8,
+            _ => throw new NotSupportedException($"Expected SHORT/LONG{(f.BigTiff ? "/LONG8" : "")}, got {type}"),
         };
-        var data = Value(ref src, count, elemSize, valueSpan, le);
-        var result = new uint[count];
+        var data = Value(ref src, count, elemSize, valueSpan, f);
+        var le = f.LittleEndian;
+        var result = new long[data.Length / elemSize];
         for (var i = 0; i < result.Length; i++)
-            result[i] = elemSize == 2 ? U16(data.AsSpan(i * 2, 2), le) : U32(data.AsSpan(i * 4, 4), le);
+        {
+            result[i] = elemSize switch
+            {
+                2 => U16(data.AsSpan(i * 2, 2), le),
+                4 => U32(data.AsSpan(i * 4, 4), le),
+                _ => U64(data.AsSpan(i * 8, 8), le) <= long.MaxValue
+                    ? (long)U64(data.AsSpan(i * 8, 8), le)
+                    : throw new InvalidDataException("A LONG8 offset or count is out of range"),
+            };
+        }
         return result;
     }
 
-    private static float[] FloatArray<T>(ref T src, TiffFieldType type, uint count, ReadOnlySpan<byte> valueSpan, bool le)
+    private static float[] FloatArray<T>(ref T src, TiffFieldType type, ulong count, ReadOnlySpan<byte> valueSpan, TiffFormat f)
         where T : ITiffBytes, allows ref struct
     {
         if (type != TiffFieldType.Float) throw new NotSupportedException($"Expected FLOAT, got {type}");
         if (count == 0) throw new InvalidDataException("Empty FLOAT array");
-        var data = Value(ref src, count, 4, valueSpan, le);
-        var result = new float[count];
+        var data = Value(ref src, count, 4, valueSpan, f);
+        var result = new float[data.Length / 4];
         for (var i = 0; i < result.Length; i++)
-            result[i] = BitConverter.Int32BitsToSingle((int)U32(data.AsSpan(i * 4, 4), le));
+            result[i] = BitConverter.Int32BitsToSingle((int)U32(data.AsSpan(i * 4, 4), f.LittleEndian));
         return result;
     }
 
-    private static byte[] ByteArray<T>(ref T src, TiffFieldType type, uint count, ReadOnlySpan<byte> valueSpan, bool le)
+    private static byte[] ByteArray<T>(ref T src, TiffFieldType type, ulong count, ReadOnlySpan<byte> valueSpan, TiffFormat f)
         where T : ITiffBytes, allows ref struct
     {
         if (type != TiffFieldType.Undefined && type != TiffFieldType.Byte)
             throw new NotSupportedException($"Expected UNDEFINED/BYTE, got {type}");
-        return Value(ref src, count, 1, valueSpan, le);
+        return Value(ref src, count, 1, valueSpan, f);
     }
 }

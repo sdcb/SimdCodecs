@@ -57,9 +57,11 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
     public static int SignatureLength => 4;
 
     /// <inheritdoc />
+    /// <remarks>Classic TIFF (<c>II*\0</c>, <c>MM\0*</c>) and BigTIFF (<c>II+\0</c>, <c>MM\0+</c>: version 43).</remarks>
     public static bool CanDecode(ReadOnlySpan<byte> header) =>
         header.Length >= 4 &&
-        (header[..4].SequenceEqual("II*\0"u8) || header[..4].SequenceEqual("MM\0*"u8));
+        (header[..4].SequenceEqual("II*\0"u8) || header[..4].SequenceEqual("MM\0*"u8)
+            || header[..4].SequenceEqual("II+\0"u8) || header[..4].SequenceEqual("MM\0+"u8));
 
     /// <inheritdoc />
     /// <remarks>TIFF geometry lives in the IFD chain, not at a fixed header offset, so this parses the
@@ -257,7 +259,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
     {
         Icc = layout.IccProfile,
         Xmp = layout.Xmp,
-        Exif = TiffExif.Extract(data, layout.FileIsLittleEndian, layout.IfdOffset),
+        Exif = TiffExif.Extract(data, layout.Format, layout.IfdOffset),
     };
 
     private static ColorEncoding ColorOf(TiffSampleFormat sampleFormat) =>

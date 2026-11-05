@@ -59,76 +59,86 @@ internal static class TiffExif
         else return null;
         if (U16(block[2..], le) != 42)
             return null;
-        return Parse(block, le, U32(block[4..], le));
+        return Parse(block, new TiffFormat(le, BigTiff: false), U32(block[4..], le));
     }
 
     /// <summary>
     /// The Exif block of the TIFF page whose IFD is at <paramref name="ifdOffset"/>: its descriptive tags as IFD0 plus its
-    /// Exif and GPS IFDs. Null when the page has neither an Exif nor a GPS IFD.
+    /// Exif and GPS IFDs. Null when the page has neither an Exif nor a GPS IFD. The file may be a BigTIFF, whose
+    /// directories (20-byte entries, 64-bit counts and offsets) are read the same way; the block built is always a
+    /// classic one.
     /// </summary>
-    public static byte[]? Extract(ReadOnlySpan<byte> tiff, bool fileIsLE, long ifdOffset)
+    public static byte[]? Extract(ReadOnlySpan<byte> tiff, TiffFormat format, long ifdOffset)
     {
-        var dirs = Parse(tiff, fileIsLE, ifdOffset);
+        var dirs = Parse(tiff, format, ifdOffset);
         return dirs is { } d && (d.HasExifIfd || d.HasGpsIfd) ? Build(d) : null;
     }
 
-    private static TiffExifDirectories? Parse(ReadOnlySpan<byte> tiff, bool le, long ifd0)
+    private static TiffExifDirectories? Parse(ReadOnlySpan<byte> tiff, TiffFormat format, long ifd0)
     {
         var dirs = new TiffExifDirectories();
         long budget = tiff.Length;
-        if (!ReadIfd(tiff, le, ifd0, dirs.Ifd0, ref budget, out var exifAt, out var gpsAt, out _, ifd0: true))
+        if (!ReadIfd(tiff, format, ifd0, dirs.Ifd0, ref budget, out var exifAt, out var gpsAt, out _, ifd0: true))
             return null;
-        if (exifAt is { } e && ReadIfd(tiff, le, e, dirs.Exif, ref budget, out _, out _, out var interopAt, ifd0: false))
+        if (exifAt is { } e && ReadIfd(tiff, format, e, dirs.Exif, ref budget, out _, out _, out var interopAt, ifd0: false))
         {
             dirs.HasExifIfd = true;
             if (interopAt is { } i)
-                ReadIfd(tiff, le, i, dirs.Interop, ref budget, out _, out _, out _, ifd0: false);
+                ReadIfd(tiff, format, i, dirs.Interop, ref budget, out _, out _, out _, ifd0: false);
         }
-        if (gpsAt is { } g && ReadIfd(tiff, le, g, dirs.Gps, ref budget, out _, out _, out _, ifd0: false))
+        if (gpsAt is { } g && ReadIfd(tiff, format, g, dirs.Gps, ref budget, out _, out _, out _, ifd0: false))
             dirs.HasGpsIfd = true;
         return dirs;
     }
 
-    private static bool ReadIfd(ReadOnlySpan<byte> tiff, bool le, long offset, List<TiffExifEntry> into, ref long budget,
+    private static bool ReadIfd(ReadOnlySpan<byte> tiff, TiffFormat format, long offset, List<TiffExifEntry> into, ref long budget,
         out long? exifAt, out long? gpsAt, out long? interopAt, bool ifd0)
     {
         exifAt = gpsAt = interopAt = null;
-        if (offset < 8 || offset > tiff.Length - 2)
+        var le = format.LittleEndian;
+        // Classic: 2-byte count, 12-byte entries, 4-byte value slot. BigTIFF: 8-byte count, 20-byte entries, 8-byte slot.
+        var entrySize = format.EntrySize;
+        var slot = format.OffsetSize;
+        if (offset < 8 || offset > tiff.Length - format.CountSize)
             return false;
-        var count = U16(tiff[(int)offset..], le);
-        // offset <= Length - 2, so this cannot overflow a long; the directory must lie inside the input.
-        if (offset + 2 + ((long)count * EntrySize) > tiff.Length)
+        var declared = format.BigTiff ? U64(tiff[(int)offset..], le) : U16(tiff[(int)offset..], le);
+        // offset <= Length - CountSize and the count is bounded by the input, so this cannot overflow a long; the
+        // directory must lie inside the input.
+        if (declared > (ulong)tiff.Length || offset + format.CountSize + ((long)declared * entrySize) > tiff.Length)
             return false;
+        var count = (int)declared;
         for (var n = 0; n < count && into.Count < MaxEntries; n++)
         {
-            var entry = tiff.Slice((int)offset + 2 + (n * EntrySize), EntrySize);
+            var entry = tiff.Slice((int)offset + format.CountSize + (n * entrySize), entrySize);
             var tag = U16(entry, le);
             var type = U16(entry[2..], le);
-            var valueCount = U32(entry[4..], le);
+            var wideCount = format.BigTiff ? U64(entry[4..], le) : U32(entry[4..], le);
+            var slotBytes = entry[(entrySize - slot)..];
             switch (tag)
             {
-                case TiffTag.ExifIfd when ifd0: exifAt = Pointer(type, valueCount, entry[8..], le); continue;
-                case TiffTag.GpsInfoIfd when ifd0: gpsAt = Pointer(type, valueCount, entry[8..], le); continue;
-                case InteropIfd when !ifd0: interopAt = Pointer(type, valueCount, entry[8..], le); continue;
+                case TiffTag.ExifIfd when ifd0: exifAt = Pointer(type, wideCount, slotBytes, format); continue;
+                case TiffTag.GpsInfoIfd when ifd0: gpsAt = Pointer(type, wideCount, slotBytes, format); continue;
+                case InteropIfd when !ifd0: interopAt = Pointer(type, wideCount, slotBytes, format); continue;
             }
-            if (Skipped(tag) || type is < 1 or > 12)
+            if (Skipped(tag) || type is < 1 or > 12 || wideCount > uint.MaxValue)
                 continue;
+            var valueCount = (uint)wideCount;
             var unit = UnitSize((TiffFieldType)type);
             var parts = type is 5 or 10 ? 2L : 1L; // a RATIONAL is two LONGs
             var length = valueCount * unit * parts;
             if (valueCount == 0 || length > budget)
                 continue;
             ReadOnlySpan<byte> source;
-            if (length <= 4)
+            if (length <= slot)
             {
-                source = entry.Slice(8, (int)length);
+                source = slotBytes[..(int)length];
             }
             else
             {
-                long at = U32(entry[8..], le);
-                if (at + length > tiff.Length)
+                var wideAt = format.BigTiff ? U64(slotBytes, le) : U32(slotBytes, le);
+                if (wideAt > (ulong)tiff.Length || (long)wideAt + length > tiff.Length)
                     continue;
-                source = tiff.Slice((int)at, (int)length);
+                source = tiff.Slice((int)wideAt, (int)length);
             }
             budget -= length;
             var value = source.ToArray();
@@ -139,9 +149,18 @@ internal static class TiffExif
         return true;
     }
 
-    /// <summary>The offset an IFD pointer holds (one LONG or IFD, TIFF 6.0 / TIFF Technical Note 1); null when it is not one.</summary>
-    private static long? Pointer(ushort type, uint count, ReadOnlySpan<byte> value, bool le) =>
-        count == 1 && type is 4 or 13 ? U32(value, le) : null;
+    /// <summary>
+    /// The offset an IFD pointer holds (one LONG or IFD, TIFF 6.0 / TIFF Technical Note 1; in BigTIFF also LONG8 or
+    /// IFD8); null when it is not one.
+    /// </summary>
+    private static long? Pointer(ushort type, ulong count, ReadOnlySpan<byte> value, TiffFormat format)
+    {
+        if (count != 1) return null;
+        if (type is 4 or 13) return U32(value, format.LittleEndian);
+        if (format.BigTiff && type is 16 or 18 && U64(value, format.LittleEndian) <= long.MaxValue)
+            return (long)U64(value, format.LittleEndian);
+        return null;
+    }
 
     /// <summary>
     /// Tags never copied between an Exif block and a page: the ones that describe or locate the image data (TIFF 6.0
@@ -275,6 +294,9 @@ internal static class TiffExif
 
     private static uint U32(ReadOnlySpan<byte> b, bool le) =>
         le ? BinaryPrimitives.ReadUInt32LittleEndian(b) : BinaryPrimitives.ReadUInt32BigEndian(b);
+
+    private static ulong U64(ReadOnlySpan<byte> b, bool le) =>
+        le ? BinaryPrimitives.ReadUInt64LittleEndian(b) : BinaryPrimitives.ReadUInt64BigEndian(b);
 
     private static void W16(Span<byte> b, ushort v)
     {

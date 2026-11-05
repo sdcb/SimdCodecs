@@ -44,19 +44,20 @@ namespace Sdcb.SimdCodecs.Tiff;
 ///       from a span, a seekable stream or a file path, reading only that segment's bytes (every
 ///       plane's, for a planar page). It runs the same decode, swap, predictor and interleave as
 ///       <see cref="ReadInto{TSink}"/>, so it equals that rectangle of the whole page.</item>
+/// <item>Classic TIFF and BigTIFF (version 43: 8-byte offsets and entry counts, 20-byte entries, LONG8 / IFD8),
+///       read by the same directory parser; <see cref="TiffPage.IsBigTiff"/> says which a file was. The writer
+///       stays classic.</item>
 /// </list>
-/// JPEG / BigTIFF are out of scope -- when they are needed, add them
-/// here (the existing code loops over segments and dispatches on compression).
 /// </summary>
 public static partial class TiffReader
 {
     /// <summary>Decode every page from a TIFF in-memory.</summary>
     public static TiffDocument Read(ReadOnlySpan<byte> tiff)
     {
-        var fileIsLE = ReadHeader(tiff);
+        var (format, firstIfd) = ReadHeader(tiff);
 
         var sink = new BufferingSink();
-        return ReadCore(tiff, fileIsLE, ref sink, attachPixels: true);
+        return ReadCore(tiff, format, firstIfd, ref sink, attachPixels: true);
     }
 
     /// <summary>
@@ -78,23 +79,23 @@ public static partial class TiffReader
     public static TiffDocument ReadInto<TSink>(ReadOnlySpan<byte> tiff, ref TSink sink)
         where TSink : ITiffStripSink
     {
-        var fileIsLE = ReadHeader(tiff);
-        return ReadCore(tiff, fileIsLE, ref sink, attachPixels: false);
+        var (format, firstIfd) = ReadHeader(tiff);
+        return ReadCore(tiff, format, firstIfd, ref sink, attachPixels: false);
     }
 
-    private static TiffDocument ReadCore<TSink>(ReadOnlySpan<byte> tiff, bool fileIsLE, ref TSink sink,
-        bool attachPixels)
+    private static TiffDocument ReadCore<TSink>(ReadOnlySpan<byte> tiff, TiffFormat format, long firstIfd,
+        ref TSink sink, bool attachPixels)
         where TSink : ITiffStripSink
     {
         var pages = new List<TiffPage>();
-        var ifdOffset = (int)ReadUInt32(tiff.Slice(4, 4), fileIsLE);
+        var ifdOffset = firstIfd;
         var pageIndex = 0;
         // A next-IFD pointer back into the chain would otherwise re-read the same pages forever: the
         // walk ends at the first IFD it has already read, keeping every page reachable before it.
         var visited = new HashSet<long>();
         while (ifdOffset != 0 && visited.Add(ifdOffset))
         {
-            var (page, nextOffset) = ReadPage(tiff, ifdOffset, fileIsLE, pageIndex, ref sink);
+            var (page, nextOffset) = ReadPage(tiff, ifdOffset, format, pageIndex, ref sink);
             // Only the buffering path re-attaches pixels, and it is the sink that holds them: a
             // streaming caller has already consumed them and gets metadata alone.
             pages.Add(attachPixels && sink is BufferingSink buffered
@@ -107,27 +108,14 @@ public static partial class TiffReader
     }
 
     /// <summary>
-    /// Validates the 8-byte header and reports the file's byte order. Split out so
-    /// <see cref="ReadInto{TSink}"/> and <see cref="Read(ReadOnlySpan{byte})"/> cannot come to disagree
-    /// about what a valid TIFF is.
+    /// Validates the header (classic or BigTIFF) and reports the file's format and first IFD. One parser
+    /// (<see cref="TiffIfdParser.ReadHeader{T}"/>) serves every entry point, so none can come to disagree about
+    /// what a valid TIFF is.
     /// </summary>
-    private static bool ReadHeader(ReadOnlySpan<byte> tiff)
+    private static (TiffFormat Format, long FirstIfd) ReadHeader(ReadOnlySpan<byte> tiff)
     {
-        if (tiff.Length < 8) throw new InvalidDataException("TIFF too small for header");
-
-        // Detect byte order from header bytes 0-1. "II" = little-endian,
-        // "MM" = big-endian (TIFF 6.0 §2). All multi-byte values in the file
-        // — including the magic, the IFD offsets, every IFD entry, every
-        // pixel sample of width > 8 bits — follow this same order.
-        bool fileIsLE;
-        if (tiff[0] == (byte)'I' && tiff[1] == (byte)'I') fileIsLE = true;
-        else if (tiff[0] == (byte)'M' && tiff[1] == (byte)'M') fileIsLE = false;
-        else throw new InvalidDataException($"Unknown TIFF byte order tag {tiff[0]:X2}{tiff[1]:X2}");
-
-        if (ReadUInt16(tiff.Slice(2, 2), fileIsLE) != 42)
-            throw new InvalidDataException("TIFF magic mismatch");
-
-        return fileIsLE;
+        var src = new SpanBytes(tiff);
+        return TiffIfdParser.ReadHeader(ref src);
     }
 
     /// <summary>
@@ -182,18 +170,17 @@ public static partial class TiffReader
     public static TiffPage ReadPage(ReadOnlySpan<byte> tiff, int pageIndex = 0, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(pageIndex);
-        var fileIsLE = ReadHeader(tiff);
+        var (format, ifdOffset) = ReadHeader(tiff);
         var src = new SpanBytes(tiff);
-        long ifdOffset = ReadUInt32(tiff.Slice(4, 4), fileIsLE);
         // A looping chain has only the pages before the loop, as Read counts them.
         var visited = new HashSet<long>();
         for (var i = 0; i < pageIndex && ifdOffset != 0 && visited.Add(ifdOffset); i++)
-            ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, fileIsLE);
+            ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, format);
         if (ifdOffset == 0 || visited.Contains(ifdOffset))
             throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
 
         var sink = new BufferingSink();
-        var (page, _) = ReadPage(tiff, (int)ifdOffset, fileIsLE, pageIndex, ref sink, cancellationToken);
+        var (page, _) = ReadPage(tiff, ifdOffset, format, pageIndex, ref sink, cancellationToken);
         return page with { Pixels = sink.TakePixels() };
     }
 
@@ -205,14 +192,14 @@ public static partial class TiffReader
     internal static int CountPages(ReadOnlySpan<byte> tiff)
     {
         var src = new SpanBytes(tiff);
-        var (fileIsLE, ifdOffset) = TiffIfdParser.ReadHeader(ref src);
+        var (format, ifdOffset) = TiffIfdParser.ReadHeader(ref src);
         var visited = new HashSet<long>();
         var pages = 0;
         while (ifdOffset != 0 && visited.Add(ifdOffset))
         {
             try
             {
-                ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, fileIsLE);
+                ifdOffset = TiffIfdParser.ReadNextIfdOffset(ref src, ifdOffset, format);
             }
             catch (InvalidDataException)
             {
@@ -238,14 +225,15 @@ public static partial class TiffReader
         return Read(ms.GetBuffer().AsSpan(0, (int)ms.Length));
     }
 
-    private static (TiffPage Page, int NextIfdOffset) ReadPage<TSink>(ReadOnlySpan<byte> tiff, int ifdOffset,
-        bool fileIsLE, int pageIndex, ref TSink sink, CancellationToken cancellationToken = default)
+    private static (TiffPage Page, long NextIfdOffset) ReadPage<TSink>(ReadOnlySpan<byte> tiff, long ifdOffset,
+        TiffFormat fileFormat, int pageIndex, ref TSink sink, CancellationToken cancellationToken = default)
         where TSink : ITiffStripSink
     {
         cancellationToken.ThrowIfCancellationRequested();
         // ---- Parse and validate the IFD (shared with the on-demand segment read) ----
         var src = new SpanBytes(tiff);
-        var ifd = TiffIfdParser.Parse(ref src, ifdOffset, fileIsLE);
+        var ifd = TiffIfdParser.Parse(ref src, ifdOffset, fileFormat);
+        var fileIsLE = fileFormat.LittleEndian;
         var width = ifd.Width;
         var height = ifd.Height;
         var samplesPerPixel = ifd.SamplesPerPixel;
@@ -266,7 +254,7 @@ public static partial class TiffReader
         var icc = ifd.Icc;
         var exifIfdOffset = ifd.ExifIfdOffset;
         var gpsIfdOffset = ifd.GpsInfoIfdOffset;
-        var nextIfdOffset = (int)ifd.NextIfdOffset;
+        var nextIfdOffset = ifd.NextIfdOffset;
         var planar = geometry.IsPlanar;
         var planes = geometry.PlaneCount;
         var tilesAcross = geometry.SegmentsAcross;
@@ -291,12 +279,15 @@ public static partial class TiffReader
             SMinSampleValue: sMin,
             SMaxSampleValue: sMax,
             IccProfile: icc,
-            ExifIfdOffset: exifIfdOffset,
-            GpsInfoIfdOffset: gpsIfdOffset,
+            ExifIfdOffset: exifIfdOffset <= int.MaxValue ? (int?)exifIfdOffset : null,
+            GpsInfoIfdOffset: gpsIfdOffset <= int.MaxValue ? (int?)gpsIfdOffset : null,
             FileIsLittleEndian: fileIsLE,
             TileWidth: isTiled ? tileWidth : 0,
             TileHeight: isTiled ? tileHeight : 0,
-            StoredBitsPerSample: ifd.BitsPerSample);
+            StoredBitsPerSample: ifd.BitsPerSample)
+        {
+            IsBigTiff = fileFormat.BigTiff,
+        };
 
         if (!sink.BeginPage(pageIndex, page))
         {
@@ -491,12 +482,12 @@ public static partial class TiffReader
     /// <paramref name="staging"/> as packed rows first and then expanded into the scratch at one byte per
     /// sample, so from the caller's side it is an 8-bit page like any other.
     /// </remarks>
-    private static ReadOnlySpan<byte> DecodeSegment(ReadOnlySpan<byte> tiff, uint offset, uint byteCount,
+    private static ReadOnlySpan<byte> DecodeSegment(ReadOnlySpan<byte> tiff, long offset, long byteCount,
         int index, SegmentFormat format, SegmentStaging? staging, bool passFileBytesThrough, byte[]? scratch,
         byte[]? inflateSource, MemoryStream? scratchStream, int capacity)
     {
-        // In long: offset and count are file values, and their int sum wraps.
-        if ((long)offset + byteCount > tiff.Length)
+        // Both are non-negative (the parser refuses offsets past long.MaxValue), so the test cannot wrap.
+        if (offset > tiff.Length || byteCount > tiff.Length - offset)
             throw new InvalidDataException($"Segment {index} extents out of bounds");
         var length = (int)byteCount;
         var segment = tiff.Slice((int)offset, length);
@@ -866,26 +857,6 @@ public static partial class TiffReader
         }
         return written;
     }
-
-    private static ushort ReadUInt16(ReadOnlySpan<byte> bytes, bool fileIsLE) => fileIsLE
-        ? BinaryPrimitives.ReadUInt16LittleEndian(bytes)
-        : BinaryPrimitives.ReadUInt16BigEndian(bytes);
-
-    private static uint ReadUInt32(ReadOnlySpan<byte> bytes, bool fileIsLE) => fileIsLE
-        ? BinaryPrimitives.ReadUInt32LittleEndian(bytes)
-        : BinaryPrimitives.ReadUInt32BigEndian(bytes);
-
-    private static float ReadSingle(ReadOnlySpan<byte> bytes, bool fileIsLE) => fileIsLE
-        ? BinaryPrimitives.ReadSingleLittleEndian(bytes)
-        : BinaryPrimitives.ReadSingleBigEndian(bytes);
-
-    private static uint ReadScalar(TiffFieldType type, ReadOnlySpan<byte> valueOrOffset, bool fileIsLE) => type switch
-    {
-        TiffFieldType.Byte  => valueOrOffset[0],
-        TiffFieldType.Short => ReadUInt16(valueOrOffset.Slice(0, 2), fileIsLE),
-        TiffFieldType.Long  => ReadUInt32(valueOrOffset.Slice(0, 4), fileIsLE),
-        _ => throw new NotSupportedException($"Scalar tag has unexpected type {type}"),
-    };
 }
 
 /// <summary>
@@ -925,4 +896,8 @@ public sealed record TiffPage(
     bool FileIsLittleEndian,
     int TileWidth = 0,
     int TileHeight = 0,
-    int StoredBitsPerSample = 0);
+    int StoredBitsPerSample = 0)
+{
+    /// <summary>True when the file is a BigTIFF (version 43, 64-bit offsets) rather than a classic TIFF.</summary>
+    public bool IsBigTiff { get; init; }
+}

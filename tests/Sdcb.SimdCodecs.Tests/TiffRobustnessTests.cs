@@ -51,6 +51,8 @@ public sealed class TiffRobustnessTests
         foreach (var fax in new[] { CompressionMethod.Group4, CompressionMethod.Fax })
             seeds.Add(($"bilevel {fax}", Bilevel(rgb, fax)));
         seeds.Add(("multi-page", MultiPage(rgb)));
+        seeds.Add(("BigTIFF lzw tiled", Magick(rgb, "RGB", 8, CompressionMethod.LZW, true, false, predictor: 2, bigTiff: true)));
+        seeds.Add(("BigTIFF zip planar MM", Magick(rgb, "RGB", 8, CompressionMethod.Zip, false, true, predictor: 2, endian: "msb", bigTiff: true)));
 
         // Hand-assembled: an uncompressed RGBA page with unassociated alpha, and a big-endian 16-bit grey one.
         var rgba = new byte[W * H * 4];
@@ -75,7 +77,7 @@ public sealed class TiffRobustnessTests
     }
 
     private static byte[] Magick(byte[] pixels, string mapping, int depth, CompressionMethod compression, bool tiled,
-        bool planar, int predictor, string? endian = null, bool floating = false)
+        bool planar, int predictor, string? endian = null, bool floating = false, bool bigTiff = false)
     {
         using var image = new MagickImage();
         image.ReadPixels(pixels, new PixelReadSettings(W, H, StorageType.Char, mapping));
@@ -88,7 +90,7 @@ public sealed class TiffRobustnessTests
         else image.Settings.SetDefine(MagickFormat.Tiff, "rows-per-strip", "5");
         if (endian is not null) image.Settings.SetDefine(MagickFormat.Tiff, "endian", endian);
         if (floating) image.Settings.SetDefine("quantum:format", "floating-point");
-        return image.ToByteArray(MagickFormat.Tiff);
+        return image.ToByteArray(bigTiff ? MagickFormat.Tiff64 : MagickFormat.Tiff);
     }
 
     private static byte[] Bilevel(byte[] noise, CompressionMethod method)
