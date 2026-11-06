@@ -18,7 +18,7 @@ public class Jpeg2000FacadeTests
     private static string FixtureDirectory =>
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "jpeg2000");
 
-    private static byte[] File(string name) =>
+    internal static byte[] File(string name) =>
         System.IO.File.ReadAllBytes(Path.Combine(FixtureDirectory, name));
 
     /// <summary>Both signatures are sniffed: the raw codestream's SOC+SIZ and the JP2 signature box.</summary>
@@ -267,7 +267,7 @@ public class Jpeg2000FacadeTests
     /// The JP2 file with its colour specification box's body replaced. The fixture's header box
     /// holds the image header then the colour box, so both box lengths change with the body.
     /// </summary>
-    private static byte[] WithColour(byte[] jp2, byte[] colourBody)
+    internal static byte[] WithColour(byte[] jp2, byte[] colourBody)
     {
         var colr = jp2.AsSpan().IndexOf("colr"u8) - 4;
         var oldLength = BinaryPrimitives.ReadInt32BigEndian(jp2.AsSpan(colr));

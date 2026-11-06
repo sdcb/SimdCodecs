@@ -952,6 +952,26 @@ public static class PngReader
     }
 
     /// <summary>
+    /// The profile an <c>iCCP</c> chunk's payload carries, or null when the chunk is malformed or the profile
+    /// inflates past <see cref="MaxInflatedIccProfileBytes"/>. For the header read, which never fails on metadata;
+    /// the full decode refuses such a file.
+    /// </summary>
+    internal static byte[]? TryInflateIccp(ReadOnlySpan<byte> chunkData)
+    {
+        var nullIdx = chunkData.IndexOf((byte)0);
+        if (nullIdx <= 0 || nullIdx + 1 >= chunkData.Length || chunkData[nullIdx + 1] != 0)
+            return null;
+        try
+        {
+            return DeflateInflate(chunkData[(nullIdx + 2)..], MaxInflatedIccProfileBytes);
+        }
+        catch (Exception e) when (e is InvalidDataException or System.IO.IOException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Inflate a deflate-compressed byte stream (zlib-wrapped). PNG IDAT
     /// payload is the concatenation of zero or more zlib streams — but the
     /// spec mandates exactly one logical zlib stream across all IDATs, so

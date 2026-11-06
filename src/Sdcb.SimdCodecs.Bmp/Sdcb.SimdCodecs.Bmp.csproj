@@ -40,6 +40,7 @@
 
   <ItemGroup>
     <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
+    <Compile Include="..\Shared\IccPrimaries.cs" Link="Shared\IccPrimaries.cs" />
     <Compile Include="..\Shared\MmrCodes.cs" Link="Shared\MmrCodes.cs" />
     <Compile Include="..\Shared\PaletteQuantizer.cs" Link="Shared\PaletteQuantizer.cs" />
   </ItemGroup>

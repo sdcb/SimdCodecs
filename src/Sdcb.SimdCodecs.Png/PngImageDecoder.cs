@@ -74,7 +74,7 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
             BitDepth = colorType == 3 ? 8 : bitDepth,
             Orientation = chunks.Orientation,
             FrameCount = chunks.FrameCount,
-            ColorEncoding = MapColorEncoding(chunks.Cicp, chunks.Gamma),
+            ColorEncoding = MapColorEncoding(chunks.Cicp, chunks.Gamma, chunks.Icc),
             Resolution = chunks.Resolution,
         };
         return true;
@@ -279,7 +279,7 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
     }
 
     private readonly record struct ChunkFacts(bool TransparentColor, ImageOrientation Orientation, int FrameCount,
-        CicpChunk? Cicp, double? Gamma, Resolution? Resolution);
+        CicpChunk? Cicp, double? Gamma, Resolution? Resolution, byte[]? Icc);
 
     // What TryReadInfo needs beyond IHDR, from chunk headers alone (lengths, no CRCs). Before the first
     // IDAT: whether a greyscale or RGB file carries a tRNS transparent colour, with the length test
@@ -294,6 +294,7 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
         CicpChunk? cicp = null;
         double? gamma = null;
         Resolution? resolution = null;
+        var iccp = default(Range?); // the last iCCP payload; inflated only if nothing outranks it
         var beforeIdat = true;
         var pos = 8;
         while (pos + 8 <= data.Length)
@@ -315,6 +316,8 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
                 cicp = CicpChunk.Read(payload);
             else if (type.SequenceEqual("gAMA"u8) && payload.Length == 4)
                 gamma = BinaryPrimitives.ReadUInt32BigEndian(payload) / 100_000.0;
+            else if (type.SequenceEqual("iCCP"u8))
+                iccp = (pos + 8)..(pos + 8 + (int)length);
             else if (type.SequenceEqual("pHYs"u8) && payload.Length == 9 && payload[8] <= 1)
                 resolution = new Resolution(BinaryPrimitives.ReadUInt32BigEndian(payload),
                     BinaryPrimitives.ReadUInt32BigEndian(payload[4..]),
@@ -326,7 +329,9 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
             }
             pos += 12 + (int)length;
         }
-        return new ChunkFacts(transparent, orientation, frames, cicp, gamma, resolution);
+        // The ICC profile only matters when no cICP and no gAMA 1.0 outrank it (see MapColorEncoding).
+        var icc = iccp is { } r && cicp is null && gamma != 1.0 ? PngReader.TryInflateIccp(data[r]) : null;
+        return new ChunkFacts(transparent, orientation, frames, cicp, gamma, resolution, icc);
     }
 
     // The layout TryDecode produces. Indexed always expands to RGBA8; the rest keep
@@ -361,7 +366,7 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
 
     private static RasterImage ToDecoded(PngImage png)
     {
-        var color = MapColorEncoding(png.Cicp, png.Gamma);
+        var color = MapColorEncoding(png.Cicp, png.Gamma, png.IccProfile);
         var metadata = MetadataOf(png);
         // 1-, 2- and 4-bit greyscale comes out as 8-bit samples; the file's precision is what bitDepth records.
         var depth = png.ColorType == 0 && png.SourceBitDepth < 8 ? png.SourceBitDepth : 0;
@@ -420,8 +425,9 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
     // samples (e.g. astro masters) - H.273 codepoint 8 (Linear) says exactly
     // that. Anything else (sRGB chunk, gAMA ~1/2.2, untagged) lands on the sRGB
     // assumption; the raw gAMA / cHRM values stay available via PngReader for
-    // consumers that need them.
-    internal static ColorEncoding MapColorEncoding(CicpChunk? cicpChunk, double? gamma)
+    // consumers that need them. With neither of those, an iCCP profile whose primaries H.273 names
+    // (BT.709, Display P3, BT.2020) reports them; transfer and range stay as assumed.
+    internal static ColorEncoding MapColorEncoding(CicpChunk? cicpChunk, double? gamma, byte[]? iccProfile = null)
     {
         if (cicpChunk is { } cicp)
             return new ColorEncoding
@@ -434,6 +440,6 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
         if (gamma == 1.0)
             return ColorEncoding.AssumedSrgb with { Transfer = TransferFunction.Linear };
 
-        return ColorEncoding.AssumedSrgb;
+        return IccPrimaries.Encoding(iccProfile) ?? ColorEncoding.AssumedSrgb;
     }
 }

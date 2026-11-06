@@ -120,7 +120,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
                 Format = ImageFormat.Tiff,
                 BitDepth = layout.Photometric == TiffPhotometric.Palette ? (layout.StoredBitsPerSample == 16 ? 16 : 8) : layout.StoredBitsPerSample,
                 Orientation = (ImageOrientation)layout.Orientation,
-                ColorEncoding = ColorOf(layout.SampleFormat),
+                ColorEncoding = ColorOf(layout),
                 Resolution = ResolutionOf(layout),
             };
             return true;
@@ -333,7 +333,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
             // Only the strips or tiles the region intersects are read, decoded and converted, straight into the
             // result: the same pixels as decoding the page whole and cropping it.
             var result = RasterImage.Create(region.Width, region.Height, plan.OutChannels, plan.OutFormat, options.Pool,
-                ColorOf(layout.SampleFormat), BitDepthOf(layout, plan), metadata);
+                ColorOf(layout), BitDepthOf(layout, plan), metadata);
             try
             {
                 var target = result.WritablePixels;
@@ -387,7 +387,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         }
 
         var raster = RasterImage.Wrap(page.Width, page.Height, plan.OutChannels, plan.OutFormat, pixels,
-            ColorOf(layout.SampleFormat), BitDepthOf(layout, plan), metadata);
+            ColorOf(layout), BitDepthOf(layout, plan), metadata);
         image = DecodeOptions.Apply(raster, options);
         return true;
     }
@@ -410,10 +410,12 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         Exif = TiffExif.Extract(data, layout.Format, layout.IfdOffset),
     };
 
-    private static ColorEncoding ColorOf(TiffSampleFormat sampleFormat) =>
-        sampleFormat == TiffSampleFormat.IeeeFloat
+    // A float page is scene-linear, which TIFF itself says; any other page has no signalling of its own, so
+    // its ICC profile's primaries are reported when H.273 names them.
+    private static ColorEncoding ColorOf(TiffPageLayout layout) =>
+        layout.SampleFormat == TiffSampleFormat.IeeeFloat
             ? new ColorEncoding { Transfer = TransferFunction.Linear, Float = FloatSemantics.SceneReferred }
-            : ColorEncoding.AssumedSrgb;
+            : IccPrimaries.Encoding(layout.IccProfile) ?? ColorEncoding.AssumedSrgb;
 
     /// <summary>XResolution / YResolution / ResolutionUnit (tags 282 / 283 / 296); null unless both densities are present and positive.</summary>
     private static Resolution? ResolutionOf(TiffPageLayout layout)

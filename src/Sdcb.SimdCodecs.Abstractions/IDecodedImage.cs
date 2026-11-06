@@ -58,10 +58,10 @@ public interface IDecodedImage : IDisposable
     /// range, and (for float rasters) what the values are referenced to.
     /// Informational like the ICC profile in <see cref="Metadata"/> — never rescales pixels.
     /// Defaults to <see cref="ColorEncoding.AssumedSrgb"/>.
-    /// It is not derived from that profile: an ICC-tagged image
-    /// (a Display P3 photo) still reports the default unless its format signals
-    /// colour some other way (PNG cICP, or gAMA 1.0 for linear). Read the profile for the
-    /// colour space an ICC tag declares.
+    /// A format's own signalling (PNG cICP, or gAMA 1.0 for linear; HEIF nclx) wins. With none, an ICC profile
+    /// whose primaries are BT.709, Display P3 or BT.2020 gives the default encoding with those primaries (a
+    /// Display P3 photo reports <see cref="ColorPrimaries.DisplayP3"/>); transfer and range are not derived from
+    /// the profile, and any other profile leaves the default. Read the profile for everything else it declares.
     /// Note <see cref="ToRgba8"/>'s code-value projection is only colour-correct
     /// for display-referred sRGB-ish content — check here before relying on it
     /// (a PQ/HLG-tagged raster needs a colour-managed conversion instead).

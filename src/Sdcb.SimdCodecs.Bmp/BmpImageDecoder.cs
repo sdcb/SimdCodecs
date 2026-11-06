@@ -33,6 +33,11 @@ public sealed class BmpImageDecoder : IImageDecoder
     /// <inheritdoc />
     public static bool CanDecode(ReadOnlySpan<byte> header) => BmpHeader.HasSignature(header);
 
+    // A V5 header's embedded ICC profile is the only colour signalling a BMP has: its primaries, when H.273 names them.
+    private static ColorEncoding ColorOf(ReadOnlySpan<byte> data, BmpHeader header) =>
+        BmpDecoder.Icc(data, header) is { } icc ? IccPrimaries.Encoding(icc) ?? ColorEncoding.AssumedSrgb
+            : ColorEncoding.AssumedSrgb;
+
     /// <inheritdoc />
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
     {
@@ -43,6 +48,7 @@ public sealed class BmpImageDecoder : IImageDecoder
             info = new ImageInfo(bmp.Width, bmp.Height, bmp.Channels, SampleFormat.UInt8)
             {
                 Format = ImageFormat.Bmp,
+                ColorEncoding = ColorOf(data, header),
                 BitDepth = BmpDecoder.BitDepth(header),
                 Resolution = header.XPelsPerMeter == 0 && header.YPelsPerMeter == 0 ? null
                     : new Resolution(header.XPelsPerMeter, header.YPelsPerMeter, ResolutionUnit.PerMeter),
@@ -80,6 +86,7 @@ public sealed class BmpImageDecoder : IImageDecoder
 
         options?.Validate(bmp.Width, bmp.Height, supportsScale: false);
         var raster = RasterImage.Create(bmp.Width, bmp.Height, bmp.Channels, SampleFormat.UInt8, options?.Pool,
+            colorEncoding: ColorOf(data, header),
             metadata: BmpDecoder.Icc(data, header) is { } icc ? new ImageMetadata { Icc = icc } : null);
         try
         {

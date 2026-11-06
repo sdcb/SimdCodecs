@@ -67,7 +67,7 @@ internal sealed class WebpFrameReader : IImageFrameReader
         var canvas = animation.Canvas;
         int width = _frameInfo.Width, height = _frameInfo.Height, channels = _frameInfo.Channels;
         var raster = RasterImage.Create(width, height, channels, SampleFormat.UInt8, options?.Pool,
-            colorEncoding: ColorEncoding.AssumedSrgb, bitDepth: 8,
+            colorEncoding: _frameInfo.ColorEncoding, bitDepth: 8,
             metadata: _icc is null ? null : new ImageMetadata { Icc = _icc });
         try
         {
