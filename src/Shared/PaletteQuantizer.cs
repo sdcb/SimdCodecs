@@ -1,5 +1,9 @@
 // Compiled into each package that encodes a palette (GIF, BMP's 1/4/8-bit modes, PNG's lossy palette mode), under
 // that package's namespace so the copies are distinct types: shipped packages never share internals.
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+
 #if SIMDCODECS_GIF
 namespace Sdcb.SimdCodecs.Gif;
 #elif SIMDCODECS_BMP
@@ -26,7 +30,8 @@ namespace Sdcb.SimdCodecs.Png;
 /// 1991, applied to the colours themselves rather than to a coarse grid, in the median-cut framework of
 /// P. Heckbert, "Color Image Quantization for Frame Buffer Display", SIGGRAPH 1982). Then Lloyd's k-means
 /// iterations (S. P. Lloyd, "Least squares quantization in PCM", 1982) move each entry to the weighted mean of the
-/// colours nearest it, until the error stops falling.
+/// colours nearest it, until the error stops falling. With many colours, the split and most iterations run on the
+/// colours merged into a few tens of thousands of groups, and only the last iterations on every colour.
 /// </para>
 /// <para>
 /// Pixels map to the nearest entry; with dithering, Floyd–Steinberg error diffusion (R. W. Floyd and L. Steinberg,
@@ -34,7 +39,10 @@ namespace Sdcb.SimdCodecs.Png;
 /// </para>
 /// <para>
 /// Everything is sequential IEEE arithmetic with no transcendental functions on the path from pixels to palette
-/// (the cube root is Newton's iteration, the sRGB curve a table), so the output is the same on every machine.
+/// (the cube root is Halley's iteration, the sRGB curve a table), so the output is the same on every machine. The
+/// vector paths (colour conversion four at a time, nearest-entry search a block of entries at a time) do the same
+/// operations in the same order as their scalar twins, or find the same entry by definition (the nearest, the
+/// lowest index among equals), so they change the speed only.
 /// </para>
 /// </summary>
 internal sealed class PaletteQuantizer
@@ -91,8 +99,7 @@ internal sealed class PaletteQuantizer
 
         var space = new Space(Perceptual);
         var features = new float[n * 4];
-        for (var i = 0; i < n; i++)
-            space.Features(keys[i], features.AsSpan(i * 4, 4));
+        space.Features(keys, features);
 
         int[] palette;
         if (n <= maxColors && !_histogram.Coarsened && targetError == 0)
@@ -109,9 +116,11 @@ internal sealed class PaletteQuantizer
             ReadOnlySpan<double> stops = [1.0, 0.8, 0.6, 0];
             palette = [];
             Exact = false;
+            // The merged colours depend only on the colours, so every try shares them.
+            (float[] Features, long[] Weights, int[] Group)? merged = n > CoarseColours ? Coarse(keys, features, weights) : null;
             foreach (var stop in stops)
             {
-                (palette, MeanSquaredError) = Build(space, keys, features, weights, maxColors, targetError * stop);
+                (palette, MeanSquaredError) = Build(space, keys, features, weights, merged, maxColors, targetError * stop);
                 if (MeanSquaredError <= targetError || palette.Length >= maxColors) break;
             }
         }
@@ -123,53 +132,62 @@ internal sealed class PaletteQuantizer
         return palette;
     }
 
-    private (int[] Palette, double Error) Build(Space space, int[] keys, float[] features, long[] weights, int maxColors, double stopError)
+    private (int[] Palette, double Error) Build(Space space, int[] keys, float[] features, long[] weights,
+        (float[] Features, long[] Weights, int[] Group)? merged, int maxColors, double stopError)
     {
         var n = keys.Length;
-        var centres = Split(features, weights, maxColors, stopError);
-        // Most iterations on the colours merged into at most CoarseColours groups (each at its weighted mean),
-        // the last ones on every colour: nearly the error of iterating on all of them, for a fraction of the time.
+        // With many colours, the box split and most iterations run on the colours merged into at most CoarseColours
+        // groups (each at its weighted mean), the last iterations on every colour, each starting from its group's
+        // entry: nearly the error of doing it all on every colour, for a fraction of the time.
         var fine = Math.Min(Iterations, FineIterations);
-        if (Iterations > fine && n > CoarseColours)
+        int[]? assigned = null;
+        float[] centres;
+        if (merged is { } m)
         {
-            var (coarse, coarseWeights) = Coarse(keys, features, weights);
-            Refine(coarse, coarseWeights, centres, Iterations - fine);
+            var (coarse, coarseWeights, group) = m;
+            centres = Split(coarse, coarseWeights, maxColors, stopError);
+            var coarseAssigned = Refine(coarse, coarseWeights, centres, Iterations - fine, null);
+            assigned = new int[n];
+            for (var i = 0; i < n; i++) assigned[i] = coarseAssigned[group[i]];
         }
         else
         {
+            centres = Split(features, weights, maxColors, stopError);
             fine = Iterations;
         }
-        Refine(features, weights, centres, fine);
-        var palette = new int[centres.Length / 4];
-        for (var k = 0; k < palette.Length; k++)
-            palette[k] = space.Colour(centres.AsSpan(k * 4, 4), _alpha);
-        palette = Dedupe(palette);
+        assigned = Refine(features, weights, centres, fine, assigned);
 
-        // The error of the palette as written (entries rounded to 8 bits).
+        // Distinct entries, first occurrence kept: two centres can round to the same 8-bit colour.
+        var k = centres.Length / 4;
+        var toPalette = new int[k];
+        var seen = new Dictionary<int, int>();
+        var list = new List<int>(k);
+        for (var j = 0; j < k; j++)
+        {
+            var colour = space.Colour(centres.AsSpan(j * 4, 4), _alpha);
+            if (!seen.TryGetValue(colour, out var at))
+            {
+                at = list.Count;
+                seen.Add(colour, at);
+                list.Add(colour);
+            }
+            toPalette[j] = at;
+        }
+        int[] palette = [.. list];
+
+        // The error of the palette as written (entries rounded to 8 bits); each colour's entry is the hint.
         var written = new float[palette.Length * 4];
-        for (var k = 0; k < palette.Length; k++)
-            space.Features(_alpha ? palette[k] : palette[k] | unchecked((int)0xFF000000), written.AsSpan(k * 4, 4));
+        for (var j = 0; j < palette.Length; j++)
+            space.Features(_alpha ? palette[j] : palette[j] | unchecked((int)0xFF000000), written.AsSpan(j * 4, 4));
         var search = new NearestSearch(written);
         double error = 0, total = 0;
         for (var i = 0; i < n; i++)
         {
-            search.Nearest(features.AsSpan(i * 4, 4), out var d);
+            search.Nearest(features.AsSpan(i * 4, 4), out var d, toPalette[assigned[i]]);
             error += d * weights[i];
             total += weights[i];
         }
         return (palette, error / total);
-    }
-
-    // Distinct entries, first occurrence kept: two centres can round to the same 8-bit colour.
-    private static int[] Dedupe(int[] palette)
-    {
-        var seen = new HashSet<int>();
-        var list = new List<int>(palette.Length);
-        foreach (var p in palette)
-        {
-            if (seen.Add(p)) list.Add(p);
-        }
-        return [.. list];
     }
 
     /// <summary>
@@ -317,61 +335,75 @@ internal sealed class PaletteQuantizer
 
     /// <summary>
     /// The colours merged into at most <see cref="CoarseColours"/> groups by dropping low bits of every channel; each
-    /// group is the weighted mean of its colours' coordinates, with their total weight.
+    /// group is the weighted mean of its colours' coordinates, with their total weight. Groups are numbered in the
+    /// order their first colour comes; <c>Group</c> gives each colour's.
     /// </summary>
-    private static (float[] Features, long[] Weights) Coarse(int[] keys, float[] features, long[] weights)
+    private static (float[] Features, long[] Weights, int[] Group) Coarse(int[] keys, float[] features, long[] weights)
     {
         var n = keys.Length;
         var group = new int[n];
-        var order = new int[n];
+        const int Capacity = CoarseColours * 2; // a load factor of at most one half
+        var tableKey = new int[Capacity];
+        var tableGroup = new int[Capacity];
         for (var shift = 1; ; shift++)
         {
             var mask = (0xFF << shift) & 0xFF;
             var keep = mask << 24 | mask << 16 | mask << 8 | mask;
+            Array.Fill(tableGroup, -1);
+            var groups = 0;
+            var full = false;
+            for (var i = 0; i < n && !full; i++)
+            {
+                var g = keys[i] & keep;
+                var slot = (int)((uint)(g * -1640531535) >> 16) & (Capacity - 1);
+                while (tableGroup[slot] >= 0 && tableKey[slot] != g) slot = (slot + 1) & (Capacity - 1);
+                if (tableGroup[slot] < 0)
+                {
+                    // Past CoarseColours groups, try coarser bins; at seven bits dropped there are at most 16.
+                    if (groups == CoarseColours && shift < 7)
+                    {
+                        full = true;
+                        break;
+                    }
+                    tableKey[slot] = g;
+                    tableGroup[slot] = groups++;
+                }
+                group[i] = tableGroup[slot];
+            }
+            if (full) continue;
+
+            var sums = new double[groups * 4];
+            var mergedWeights = new long[groups];
             for (var i = 0; i < n; i++)
             {
-                group[i] = keys[i] & keep;
-                order[i] = i;
+                int g = group[i], f = i * 4;
+                long w = weights[i];
+                mergedWeights[g] += w;
+                for (var c = 0; c < 4; c++) sums[g * 4 + c] += features[f + c] * (double)w;
             }
-            Array.Sort(group, order);
-            var groups = 1;
-            for (var i = 1; i < n; i++)
-            {
-                if (group[i] != group[i - 1]) groups++;
-            }
-            if (groups > CoarseColours && shift < 7) continue;
-
             var merged = new float[groups * 4];
-            var mergedWeights = new long[groups];
-            Span<double> sum = stackalloc double[4];
-            for (int i = 0, g = 0; i < n; g++)
+            for (var g = 0; g < groups; g++)
             {
-                sum.Clear();
-                long w = 0;
-                var j = i;
-                for (; j < n && group[j] == group[i]; j++)
-                {
-                    var f = order[j] * 4;
-                    long wj = weights[order[j]];
-                    w += wj;
-                    for (var c = 0; c < 4; c++) sum[c] += features[f + c] * (double)wj;
-                }
-                for (var c = 0; c < 4; c++) merged[g * 4 + c] = (float)(sum[c] / w);
-                mergedWeights[g] = w;
-                i = j;
+                for (var c = 0; c < 4; c++) merged[g * 4 + c] = (float)(sums[g * 4 + c] / mergedWeights[g]);
             }
-            return (merged, mergedWeights);
+            return (merged, mergedWeights, group);
         }
     }
 
-    private static void Refine(float[] features, long[] weights, float[] centres, int iterations)
+    /// <summary>
+    /// Lloyd's iterations: each centre to the weighted mean of the colours nearest it, while the error falls.
+    /// <paramref name="assigned"/>, each colour's entry from an earlier stage (or null), seeds the first search.
+    /// Returns each colour's entry in the last assignment.
+    /// </summary>
+    private static int[] Refine(float[] features, long[] weights, float[] centres, int iterations, int[]? assigned)
     {
         var k = centres.Length / 4;
         var n = weights.Length;
         var sums = new double[k * 4];
         var mass = new double[k];
         var previous = double.PositiveInfinity;
-        var assigned = new int[n];
+        var seeded = assigned != null;
+        assigned ??= new int[n];
         var separation = new float[k];
         for (var iteration = 0; iteration < iterations; iteration++)
         {
@@ -381,28 +413,34 @@ internal sealed class PaletteQuantizer
             // Each centre's squared distance to its nearest other centre. A colour closer to its centre than half
             // that distance has no nearer centre (the triangle inequality, as in G. Hamerly, "Making k-means even
             // faster", SDM 2010), so it skips the search.
+            Array.Fill(separation, float.PositiveInfinity);
             for (var j = 0; j < k; j++)
             {
-                var nearest = float.PositiveInfinity;
-                for (var m = 0; m < k; m++)
+                float x0 = centres[j * 4], x1 = centres[j * 4 + 1], x2 = centres[j * 4 + 2], x3 = centres[j * 4 + 3];
+                var nearest = separation[j];
+                for (var m = j + 1; m < k; m++)
                 {
-                    if (m != j) nearest = Math.Min(nearest, Distance(centres.AsSpan(j * 4, 4), centres.AsSpan(m * 4, 4)));
+                    float d0 = x0 - centres[m * 4], d1 = x1 - centres[m * 4 + 1], d2 = x2 - centres[m * 4 + 2], d3 = x3 - centres[m * 4 + 3];
+                    var d = d0 * d0 + d1 * d1 + d2 * d2 + d3 * d3;
+                    if (d < nearest) nearest = d;
+                    if (d < separation[m]) separation[m] = d;
                 }
                 separation[j] = nearest;
             }
+            var known = iteration > 0 || seeded;
             double error = 0;
             for (var i = 0; i < n; i++)
             {
                 var f = features.AsSpan(i * 4, 4);
                 int j;
                 float d;
-                if (iteration > 0 && 4 * (d = Distance(f, centres.AsSpan(assigned[i] * 4, 4))) < separation[assigned[i]])
+                if (known && 4 * (d = Distance(f, centres.AsSpan(assigned[i] * 4, 4))) < separation[assigned[i]])
                 {
                     j = assigned[i];
                 }
                 else
                 {
-                    j = search.Nearest(f, out d, iteration == 0 ? -1 : assigned[i]);
+                    j = search.Nearest(f, out d, known ? assigned[i] : -1);
                 }
                 assigned[i] = j;
                 double w = weights[i];
@@ -421,6 +459,7 @@ internal sealed class PaletteQuantizer
             if (error >= previous * (1 - 1e-4)) break;
             previous = error;
         }
+        return assigned;
     }
 
     private static float Distance(ReadOnlySpan<float> x, ReadOnlySpan<float> y)
@@ -433,7 +472,7 @@ internal sealed class PaletteQuantizer
     /// The comparison space: a pixel to its four coordinates and back. OKLab per Ottosson's published matrices; the
     /// sRGB curve both ways through a 256-entry table of linear values.
     /// </summary>
-    private readonly struct Space(bool perceptual)
+    internal readonly struct Space(bool perceptual)
     {
         // sRGB code → linear light (IEC 61966-2-1). Math.Pow in double rounded to float: the same on every machine
         // unless a value sat within 2⁻⁵³ of a float rounding boundary, which none of these does.
@@ -470,6 +509,60 @@ internal sealed class PaletteQuantizer
             f[1] = (1.9779984951f * l - 2.4285922050f * m + 0.4505937099f * s) * a;
             f[2] = (0.0259040371f * l + 0.7827717662f * m - 0.8086757660f * s) * a;
             f[3] = a;
+        }
+
+        /// <summary>
+        /// The coordinates of many colours, four floats each: four colours at a time on the vector path, with the
+        /// same operations in the same order as the scalar <see cref="Features(int, Span{float})"/>, so the same bits.
+        /// </summary>
+        public void Features(ReadOnlySpan<int> argb, Span<float> f, bool vector = true)
+        {
+            var i = 0;
+            if (vector && perceptual && Vector128.IsHardwareAccelerated) i = FeaturesVector(argb, f);
+            for (; i < argb.Length; i++) Features(argb[i], f.Slice(i * 4, 4));
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+        private static int FeaturesVector(ReadOnlySpan<int> argb, Span<float> f)
+        {
+            var linear = Linear;
+            var i = 0;
+            for (; i + 4 <= argb.Length; i += 4)
+            {
+                int p0 = argb[i], p1 = argb[i + 1], p2 = argb[i + 2], p3 = argb[i + 3];
+                var a = Vector128.Create((p0 >> 24) & 255, (p1 >> 24) & 255, (p2 >> 24) & 255, (p3 >> 24) & 255);
+                var alpha = Vector128.ConvertToSingle(a) / Vector128.Create(255f);
+                var lr = Vector128.Create(linear[(p0 >> 16) & 255], linear[(p1 >> 16) & 255], linear[(p2 >> 16) & 255], linear[(p3 >> 16) & 255]);
+                var lg = Vector128.Create(linear[(p0 >> 8) & 255], linear[(p1 >> 8) & 255], linear[(p2 >> 8) & 255], linear[(p3 >> 8) & 255]);
+                var lb = Vector128.Create(linear[p0 & 255], linear[p1 & 255], linear[p2 & 255], linear[p3 & 255]);
+                var l = Cbrt(Vector128.Create(0.4122214708f) * lr + Vector128.Create(0.5363325363f) * lg + Vector128.Create(0.0514459929f) * lb);
+                var m = Cbrt(Vector128.Create(0.2119034982f) * lr + Vector128.Create(0.6806995451f) * lg + Vector128.Create(0.1073969566f) * lb);
+                var s = Cbrt(Vector128.Create(0.0883024619f) * lr + Vector128.Create(0.2817188376f) * lg + Vector128.Create(0.6299787005f) * lb);
+                var f0 = (Vector128.Create(0.2104542553f) * l + Vector128.Create(0.7936177850f) * m - Vector128.Create(0.0040720468f) * s) * alpha;
+                var f1 = (Vector128.Create(1.9779984951f) * l - Vector128.Create(2.4285922050f) * m + Vector128.Create(0.4505937099f) * s) * alpha;
+                var f2 = (Vector128.Create(0.0259040371f) * l + Vector128.Create(0.7827717662f) * m - Vector128.Create(0.8086757660f) * s) * alpha;
+                var o = f.Slice(i * 4, 16);
+                for (var j = 0; j < 4; j++)
+                {
+                    o[j * 4] = f0.GetElement(j);
+                    o[j * 4 + 1] = f1.GetElement(j);
+                    o[j * 4 + 2] = f2.GetElement(j);
+                    o[j * 4 + 3] = alpha.GetElement(j);
+                }
+            }
+            return i;
+        }
+
+        private static Vector128<float> Cbrt(Vector128<float> x)
+        {
+            var guess = Vector128.ConvertToInt32(Vector128.ConvertToSingle(x.AsInt32()) * Vector128.Create(1f / 3)) + Vector128.Create(0x2A514067);
+            var y = guess.AsSingle();
+            for (var i = 0; i < 2; i++)
+            {
+                var y3 = y * y * y;
+                y = y * (y3 + Vector128.Create(2f) * x) / (Vector128.Create(2f) * y3 + x);
+            }
+            return Vector128.ConditionalSelect(Vector128.GreaterThan(x, Vector128<float>.Zero), y, Vector128<float>.Zero);
         }
 
         /// <summary>The 8-bit colour nearest a point: alpha rounded, colour un-premultiplied, each channel to the nearest code.</summary>
@@ -512,12 +605,17 @@ internal sealed class PaletteQuantizer
             return v - Linear[lo] <= Linear[hi] - v ? lo : hi;
         }
 
-        // Cube root of x ≥ 0 by Newton's method from an exponent-thirding first guess: four steps reach float precision.
+        // Cube root of x ≥ 0 by Halley's method (cubic convergence) from an exponent-thirding first guess (the bits over
+        // three, in float so the vector twin can do the same): two steps reach float precision.
         private static float Cbrt(float x)
         {
             if (!(x > 0)) return 0;
-            var y = BitConverter.Int32BitsToSingle(BitConverter.SingleToInt32Bits(x) / 3 + 0x2A514067);
-            for (var i = 0; i < 4; i++) y -= (y * y * y - x) / (3 * y * y);
+            var y = BitConverter.Int32BitsToSingle((int)(BitConverter.SingleToInt32Bits(x) * (1f / 3)) + 0x2A514067);
+            for (var i = 0; i < 2; i++)
+            {
+                var y3 = y * y * y;
+                y = y * (y3 + 2 * x) / (2 * y3 + x);
+            }
             return y;
         }
     }
@@ -525,112 +623,214 @@ internal sealed class PaletteQuantizer
     /// <summary>
     /// Nearest-centre search: centres sorted by the first coordinate (lightness), searched outward from the query's
     /// place in that order; one side stops once its first-coordinate gap alone is no nearer than the best found,
-    /// since the full distance is never smaller. The answer is the nearest, the lowest index among equals.
+    /// since the full distance is never smaller. The answer is the nearest, the lowest index among equals, so every
+    /// way of searching (vector blocks, one centre at a time, every centre) gives the same one.
+    /// <para>
+    /// The centres are stored by coordinate (four arrays) in blocks of <see cref="Lanes"/>; the vector search measures
+    /// a block at a time. Padding at the end of the last block is far from every colour, so it is never nearest.
+    /// </para>
     /// </summary>
     private sealed class NearestSearch
     {
-        private readonly float[] _sorted; // centres in lightness order, four coordinates each
-        private readonly int[] _index;    // their original indices
-        private readonly float[] _first;  // their first coordinates, for the binary search
-        private readonly int[] _position; // original index → place in the sorted order
+        private const int Lanes = 4;
+        private const float Far = 1e15f; // padding: its squared distance (~1e30) exceeds any real one and stays finite
+
+        private readonly float[] _c0, _c1, _c2, _c3; // coordinates in lightness order, padded to whole blocks
+        private readonly int[] _index;               // sorted place → original index (padding: int.MaxValue)
+        private readonly int[] _position;            // original index → sorted place
+        private readonly int _count, _blocks;
+        private readonly int[] _start = new int[Slots + 1]; // per lightness slot, the first place not below the slot (see LowerBound)
 
         public NearestSearch(float[] centres)
         {
             var k = centres.Length / 4;
-            _index = new int[k];
-            _first = new float[k];
-            for (var i = 0; i < k; i++)
-            {
-                _index[i] = i;
-                _first[i] = centres[i * 4];
-            }
+            _count = k;
+            _blocks = (k + Lanes - 1) / Lanes;
+            var padded = _blocks * Lanes;
             // Stable: equal lightness stays in index order.
-            Array.Sort(_first, _index);
-            var stable = _index.Select((original, pos) => (original, pos)).OrderBy(p => _first[p.pos]).ThenBy(p => p.original).Select(p => p.original).ToArray();
-            _index = stable;
-            _sorted = new float[k * 4];
+            var order = new int[k];
+            for (var i = 0; i < k; i++) order[i] = i;
+            Array.Sort(order, (x, y) => centres[x * 4] != centres[y * 4] ? centres[x * 4].CompareTo(centres[y * 4]) : x.CompareTo(y));
+            _c0 = new float[padded];
+            _c1 = new float[padded];
+            _c2 = new float[padded];
+            _c3 = new float[padded];
+            _index = new int[padded];
             _position = new int[k];
-            for (var i = 0; i < k; i++)
+            for (var i = 0; i < padded; i++)
             {
-                _position[_index[i]] = i;
-                _first[i] = centres[_index[i] * 4];
-                centres.AsSpan(_index[i] * 4, 4).CopyTo(_sorted.AsSpan(i * 4, 4));
+                if (i < k)
+                {
+                    var o = order[i] * 4;
+                    (_c0[i], _c1[i], _c2[i], _c3[i]) = (centres[o], centres[o + 1], centres[o + 2], centres[o + 3]);
+                    _index[i] = order[i];
+                    _position[order[i]] = i;
+                }
+                else
+                {
+                    _c0[i] = Far;
+                    _index[i] = int.MaxValue;
+                }
+            }
+            // _start[s]: the first place whose slot is at least s, so every place before it is below any q0 in slot s.
+            for (int slot = 0, place = 0; slot <= Slots; slot++)
+            {
+                while (place < k && Slot(_c0[place]) < slot) place++;
+                _start[slot] = place;
             }
         }
 
-        public int Count => _index.Length;
+        public int Count => _count;
+
+        /// <summary>Whether <see cref="Nearest"/> takes the vector path on this machine.</summary>
+        internal static bool Vectorised => Vector128.IsHardwareAccelerated;
 
         /// <summary>The nearest centre; <paramref name="hint"/>, a centre likely near (or −1), only tightens the bound early.</summary>
-        public int Nearest(ReadOnlySpan<float> q, out float distance, int hint = -1)
+        public int Nearest(ReadOnlySpan<float> q, out float distance, int hint = -1) =>
+            Vectorised ? NearestVector(q, out distance, hint) : NearestScalar(q, out distance, hint);
+
+        // The first sorted place whose lightness is at least q0: a table over [0, 1] gives the first place at least
+        // its slot's start, then a short walk up.
+        private int LowerBound(float q0)
         {
-            var k = _index.Length;
+            var at = _start[Slot(q0)];
+            while (at < _count && _c0[at] < q0) at++;
+            return at;
+        }
+
+        private const int Slots = 1024;
+
+        private static int Slot(float v) => v > 0 ? (int)Math.Min(v * Slots, Slots) : 0;
+
+        private float Distance(int i, float q0, float q1, float q2, float q3)
+        {
+            float d0 = _c0[i] - q0, d1 = _c1[i] - q1, d2 = _c2[i] - q2, d3 = _c3[i] - q3;
+            return d0 * d0 + d1 * d1 + d2 * d2 + d3 * d3;
+        }
+
+        /// <summary>One centre at a time: the scalar twin of <see cref="NearestVector"/>.</summary>
+        internal int NearestScalar(ReadOnlySpan<float> q, out float distance, int hint = -1)
+        {
             float q0 = q[0], q1 = q[1], q2 = q[2], q3 = q[3];
-            int lo = 0, hi = k;
-            while (lo < hi)
-            {
-                var mid = (lo + hi) >> 1;
-                if (_first[mid] < q0) lo = mid + 1; else hi = mid;
-            }
-            int up = lo, down = lo - 1, best = -1;
+            var lo = LowerBound(q0);
+            int up = lo, down = lo - 1, best = int.MaxValue;
             var bestDistance = float.PositiveInfinity;
             if (hint >= 0) Consider(_position[hint]);
-            while (up < k || down >= 0)
+            while (up < _count || down >= 0)
             {
-                if (up < k)
+                if (up < _count)
                 {
-                    var g = _first[up] - q0;
-                    if (g * g > bestDistance) up = k;
-                    else
-                    {
-                        Consider(up);
-                        up++;
-                    }
+                    var g = _c0[up] - q0;
+                    if (g * g > bestDistance) up = _count;
+                    else Consider(up++);
                 }
                 if (down >= 0)
                 {
-                    var g = q0 - _first[down];
+                    var g = q0 - _c0[down];
                     if (g * g > bestDistance) down = -1;
-                    else
-                    {
-                        Consider(down);
-                        down--;
-                    }
+                    else Consider(down--);
                 }
             }
             distance = bestDistance;
-            return _index[best];
+            return best;
 
             void Consider(int i)
             {
-                var o = i * 4;
-                float d0 = _sorted[o] - q0, d1 = _sorted[o + 1] - q1, d2 = _sorted[o + 2] - q2, d3 = _sorted[o + 3] - q3;
-                var d = d0 * d0 + d1 * d1 + d2 * d2 + d3 * d3;
-                if (d < bestDistance || (d == bestDistance && _index[i] < _index[best]))
+                var d = Distance(i, q0, q1, q2, q3);
+                if (d < bestDistance || (d == bestDistance && _index[i] < best))
                 {
                     bestDistance = d;
-                    best = i;
+                    best = _index[i];
                 }
             }
         }
 
-        /// <summary>The same answer by testing every centre: the reference the pruned search is checked against.</summary>
-        public int NearestFull(ReadOnlySpan<float> q, out float distance)
+        /// <summary>
+        /// A block of <see cref="Lanes"/> centres at a time, outward from the block holding the query's place. A block
+        /// above is skipped (with all beyond it) once its first centre's gap is too far, a block below once its last
+        /// centre's is.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+        internal int NearestVector(ReadOnlySpan<float> q, out float distance, int hint = -1)
         {
-            var best = -1;
+            float q0 = q[0], q1 = q[1], q2 = q[2], q3 = q[3];
+            var best = int.MaxValue;
             var bestDistance = float.PositiveInfinity;
-            for (var i = 0; i < _index.Length; i++)
+            if (hint >= 0)
             {
-                var o = i * 4;
-                float d0 = _sorted[o] - q[0], d1 = _sorted[o + 1] - q[1], d2 = _sorted[o + 2] - q[2], d3 = _sorted[o + 3] - q[3];
-                var d = d0 * d0 + d1 * d1 + d2 * d2 + d3 * d3;
-                if (d < bestDistance || (d == bestDistance && _index[i] < _index[best]))
+                bestDistance = Distance(_position[hint], q0, q1, q2, q3);
+                best = hint;
+            }
+            var v0 = Vector128.Create(q0);
+            var v1 = Vector128.Create(q1);
+            var v2 = Vector128.Create(q2);
+            var v3 = Vector128.Create(q3);
+            // Every array holds _blocks · Lanes floats and each block below is in [0, _blocks): the loads stay inside.
+            ref var c0 = ref MemoryMarshal.GetArrayDataReference(_c0);
+            ref var c1 = ref MemoryMarshal.GetArrayDataReference(_c1);
+            ref var c2 = ref MemoryMarshal.GetArrayDataReference(_c2);
+            ref var c3 = ref MemoryMarshal.GetArrayDataReference(_c3);
+            var start = Math.Min(LowerBound(q0), _count - 1) / Lanes;
+            int up = start, down = start - 1;
+            while (up < _blocks || down >= 0)
+            {
+                if (up < _blocks)
                 {
-                    bestDistance = d;
-                    best = i;
+                    // The first block holds the query's place and may reach below it: never skipped.
+                    var g = _c0[up * Lanes] - q0;
+                    if (up > start && g * g > bestDistance) up = _blocks;
+                    else Block(ref c0, ref c1, ref c2, ref c3, up++);
+                }
+                if (down >= 0)
+                {
+                    var g = q0 - _c0[down * Lanes + Lanes - 1];
+                    if (g * g > bestDistance) down = -1;
+                    else Block(ref c0, ref c1, ref c2, ref c3, down--);
                 }
             }
             distance = bestDistance;
-            return _index[best];
+            return best;
+
+            void Block(ref float c0, ref float c1, ref float c2, ref float c3, int block)
+            {
+                var o = (nuint)(block * Lanes);
+                var d0 = Vector128.LoadUnsafe(ref c0, o) - v0;
+                var d1 = Vector128.LoadUnsafe(ref c1, o) - v1;
+                var d2 = Vector128.LoadUnsafe(ref c2, o) - v2;
+                var d3 = Vector128.LoadUnsafe(ref c3, o) - v3;
+                var d = d0 * d0 + d1 * d1 + d2 * d2 + d3 * d3;
+                var mask = Vector128.LessThanOrEqual(d, Vector128.Create(bestDistance)).ExtractMostSignificantBits();
+                while (mask != 0)
+                {
+                    var lane = System.Numerics.BitOperations.TrailingZeroCount(mask);
+                    mask &= mask - 1;
+                    var dl = d.GetElement(lane);
+                    var index = _index[(int)o + lane];
+                    if (dl < bestDistance || (dl == bestDistance && index < best))
+                    {
+                        bestDistance = dl;
+                        best = index;
+                    }
+                }
+            }
+        }
+
+        /// <summary>The same answer by testing every centre: the reference the pruned searches are checked against.</summary>
+        public int NearestFull(ReadOnlySpan<float> q, out float distance)
+        {
+            var best = int.MaxValue;
+            var bestDistance = float.PositiveInfinity;
+            for (var i = 0; i < _count; i++)
+            {
+                var d = Distance(i, q[0], q[1], q[2], q[3]);
+                if (d < bestDistance || (d == bestDistance && _index[i] < best))
+                {
+                    bestDistance = d;
+                    best = _index[i];
+                }
+            }
+            distance = bestDistance;
+            return best;
         }
     }
 
@@ -641,9 +841,18 @@ internal sealed class PaletteQuantizer
     /// </summary>
     private sealed class Histogram(bool alpha, int maxDistinct)
     {
-        private readonly int _capacity = maxDistinct * 2; // a load factor of at most one half
-        private readonly int[] _keys = new int[maxDistinct * 2];
-        private readonly long[] _counts = new long[maxDistinct * 2];
+        // Each slot's key and count side by side, so a lookup touches one cache line. The table starts small and
+        // doubles while more than half full, up to twice maxDistinct slots (a load factor of at most one half).
+        private struct Entry
+        {
+            public int Key;
+            public uint Count; // 0: empty; saturates (past four billion pixels of one colour the weight stops growing)
+        }
+
+        private const int MinBits = 12;
+        private readonly int _maxBits = Math.Max(MinBits, 1 + System.Numerics.BitOperations.Log2(System.Numerics.BitOperations.RoundUpToPowerOf2((uint)Math.Max(maxDistinct, 2))));
+        private Entry[] _table = new Entry[1 << MinBits];
+        private int _bits = MinBits;
         private int _distinct, _shift, _last = 1, _lastSlot = -1;
 
         public bool Coarsened => _shift > 0;
@@ -652,24 +861,33 @@ internal sealed class PaletteQuantizer
         {
             if (argb == _last && _lastSlot >= 0)
             {
-                _counts[_lastSlot]++;
+                ref var last = ref _table[_lastSlot];
+                if (last.Count != uint.MaxValue) last.Count++;
                 return;
             }
             _last = argb;
             var key = Key(argb);
-            var slot = Slot(key);
-            if (_counts[slot] == 0)
+            var slot = Slot(_table, _bits, key);
+            ref var entry = ref _table[slot];
+            if (entry.Count == 0)
             {
-                _keys[slot] = key;
+                entry.Key = key;
                 if (++_distinct > maxDistinct)
                 {
-                    _counts[slot] = 1;
+                    entry.Count = 1;
                     Coarsen();
                     _lastSlot = -1;
                     return;
                 }
+                if (_distinct * 2 > _table.Length && _bits < _maxBits)
+                {
+                    entry.Count = 1;
+                    Rebuild(_bits + 1);
+                    _lastSlot = -1;
+                    return;
+                }
             }
-            _counts[slot]++;
+            if (entry.Count != uint.MaxValue) entry.Count++;
             _lastSlot = slot;
         }
 
@@ -689,11 +907,33 @@ internal sealed class PaletteQuantizer
             return a << 24 | colour;
         }
 
-        private int Slot(int key)
+        private static int Slot(Entry[] table, int bits, int key)
         {
-            var slot = (int)((uint)(key * -1640531535) >> 13) & (_capacity - 1);
-            while (_counts[slot] != 0 && _keys[slot] != key) slot = (slot + 1) & (_capacity - 1);
+            var mask = table.Length - 1;
+            var slot = (int)((uint)(key * -1640531535) >> (32 - bits));
+            while (table[slot].Count != 0 && table[slot].Key != key) slot = (slot + 1) & mask;
             return slot;
+        }
+
+        // Re-inserts every entry (keys passed through Key, so coarsened if _shift moved) into a table of 2^bits slots.
+        private void Rebuild(int bits)
+        {
+            var old = _table;
+            _table = new Entry[1 << bits];
+            _bits = bits;
+            _distinct = 0;
+            foreach (var e in old)
+            {
+                if (e.Count == 0) continue;
+                var key = Key(e.Key);
+                ref var entry = ref _table[Slot(_table, bits, key)];
+                if (entry.Count == 0)
+                {
+                    entry.Key = key;
+                    _distinct++;
+                }
+                entry.Count = (uint)Math.Min(uint.MaxValue, (ulong)entry.Count + e.Count);
+            }
         }
 
         private void Coarsen()
@@ -701,23 +941,32 @@ internal sealed class PaletteQuantizer
             while (_distinct > maxDistinct / 2)
             {
                 _shift++;
-                var keys = (int[])_keys.Clone();
-                var counts = (long[])_counts.Clone();
-                Array.Clear(_counts);
-                _distinct = 0;
-                for (var i = 0; i < _capacity; i++)
-                {
-                    if (counts[i] == 0) continue;
-                    var key = Key(keys[i]);
-                    var slot = Slot(key);
-                    if (_counts[slot] == 0)
-                    {
-                        _keys[slot] = key;
-                        _distinct++;
-                    }
-                    _counts[slot] += counts[i];
-                }
+                Rebuild(_bits);
             }
+        }
+
+        // Least-significant-digit radix sort on the unsigned keys, two 16-bit digits, each pass stable.
+        private static (int[] Keys, long[] Weights) RadixSort(int[] keys, long[] weights)
+        {
+            var n = keys.Length;
+            var k2 = new int[n];
+            var w2 = new long[n];
+            var count = new int[1 << 16];
+            for (var shift = 0; shift < 32; shift += 16)
+            {
+                Array.Clear(count);
+                for (var i = 0; i < n; i++) count[(int)((uint)keys[i] >> shift) & 0xFFFF]++;
+                for (int d = 0, at = 0; d < count.Length; d++) (count[d], at) = (at, at + count[d]);
+                for (var i = 0; i < n; i++)
+                {
+                    var to = count[(int)((uint)keys[i] >> shift) & 0xFFFF]++;
+                    k2[to] = keys[i];
+                    w2[to] = weights[i];
+                }
+                (keys, k2) = (k2, keys);
+                (weights, w2) = (w2, weights);
+            }
+            return (keys, weights);
         }
 
         /// <summary>The colours (bin centres once coarsened) and their counts, in key order.</summary>
@@ -726,14 +975,14 @@ internal sealed class PaletteQuantizer
             var keys = new int[_distinct];
             var weights = new long[_distinct];
             var n = 0;
-            for (var i = 0; i < _capacity; i++)
+            foreach (var e in _table)
             {
-                if (_counts[i] == 0) continue;
-                keys[n] = _keys[i];
-                weights[n++] = _counts[i];
+                if (e.Count == 0) continue;
+                keys[n] = e.Key;
+                weights[n++] = e.Count;
             }
-            // Key order, not slot order, so the result does not depend on the table's layout.
-            Array.Sort(keys, weights, Comparer<int>.Create((x, y) => ((uint)x).CompareTo((uint)y)));
+            // Key order (unsigned), not slot order, so the result depends only on the colours counted.
+            (keys, weights) = RadixSort(keys, weights);
             if (_shift > 0)
             {
                 var half = 1 << (_shift - 1);
@@ -757,9 +1006,13 @@ internal sealed class PaletteQuantizer
     /// </summary>
     internal sealed class Mapper
     {
-        // A direct-mapped cache: most images reuse few colours, so most lookups skip the search.
-        private readonly int[] _cacheKey = new int[1 << 16];
-        private readonly byte[] _cacheIndex = new byte[1 << 16];
+        // A direct-mapped cache: most images reuse few colours, so most lookups skip the search. It grows with the
+        // frames mapped, up to 2^MaxCacheBits entries: a photo has hundreds of thousands of colours. An empty slot
+        // holds Empty, which no colour is once normalised (transparent with a colour).
+        private const int MinCacheBits = 12, MaxCacheBits = 18, Empty = 1;
+        private int[] _cacheKey = NewCache(MinCacheBits);
+        private byte[] _cacheIndex = new byte[1 << MinCacheBits];
+        private int _cacheShift = 32 - MinCacheBits;
         private readonly int[] _palette;
         private readonly bool _alpha;
         private readonly Space _space;
@@ -777,21 +1030,53 @@ internal sealed class PaletteQuantizer
         }
 
         /// <summary>The nearest entry to a 0xAARRGGBB colour (alpha ignored for an opaque palette).</summary>
-        public byte Nearest(int argb)
+        public byte Nearest(int argb) => Nearest(argb, -1);
+
+        // hint: an entry likely near (the previous pixel's), or -1; it only speeds the search.
+        internal byte Nearest(int argb, int hint)
         {
-            if (!_alpha) argb |= unchecked((int)0xFF000000);
-            else if ((uint)argb < 0x01000000u) argb = 0;
-            var slot = (int)((uint)(argb * -1640531535) >> 16);
-            if (_cacheKey[slot] == argb + 1 && argb != -1) return _cacheIndex[slot];
+            argb = Normalise(argb);
+            var slot = (int)((uint)(argb * -1640531535) >> _cacheShift);
+            if (_cacheKey[slot] == argb) return _cacheIndex[slot];
             Span<float> f = stackalloc float[4];
             _space.Features(argb, f);
-            var best = (byte)_search.Nearest(f, out _);
-            _cacheKey[slot] = argb + 1;
+            var best = (byte)_search.Nearest(f, out _, hint);
+            _cacheKey[slot] = argb;
             _cacheIndex[slot] = best;
             return best;
         }
 
-        /// <summary>The nearest entry by testing every one: the reference for <see cref="Nearest"/>.</summary>
+        // The colour as the palette sees it: opaque for an opaque palette, 0 for every fully transparent one.
+        private int Normalise(int argb) => !_alpha ? argb | unchecked((int)0xFF000000) : (uint)argb < 0x01000000u ? 0 : argb;
+
+        private static int[] NewCache(int bits)
+        {
+            var keys = new int[1 << bits];
+            Array.Fill(keys, Empty);
+            return keys;
+        }
+
+        // Grows the cache toward one entry per pixel of a frame of this size.
+        private void FitCache(int pixels)
+        {
+            var bits = Math.Clamp(32 - System.Numerics.BitOperations.LeadingZeroCount((uint)Math.Max(pixels - 1, 1)), MinCacheBits, MaxCacheBits);
+            if (32 - _cacheShift >= bits) return;
+            _cacheKey = NewCache(bits);
+            _cacheIndex = new byte[1 << bits];
+            _cacheShift = 32 - bits;
+        }
+
+        /// <summary>The nearest entry by the scalar search, whatever the machine: <see cref="Nearest(int)"/>'s twin, for the tests.</summary>
+        internal byte NearestScalar(int argb)
+        {
+            if (!_alpha) argb |= unchecked((int)0xFF000000);
+            else if ((uint)argb < 0x01000000u) argb = 0;
+            Span<float> f = stackalloc float[4];
+            _space.Features(argb, f);
+            return (byte)_search.NearestScalar(f, out _);
+        }
+
+        /// <summary>The nearest entry by testing every one: the reference for <see cref="Nearest(int)"/>.</summary>
         internal byte NearestFull(int argb)
         {
             if (!_alpha) argb |= unchecked((int)0xFF000000);
@@ -804,10 +1089,10 @@ internal sealed class PaletteQuantizer
         /// <summary>Maps one frame, optionally with Floyd–Steinberg dithering; transparent pixels are skipped by the diffusion.</summary>
         public void Map(ReadOnlySpan<int> argb, int width, int height, Span<byte> indices, int transparentIndex, bool dither)
         {
+            FitCache(argb.Length);
             if (!dither)
             {
-                for (var i = 0; i < argb.Length; i++)
-                    indices[i] = !_alpha && IsTransparent(argb[i]) ? (byte)transparentIndex : Nearest(argb[i]);
+                MapPlain(argb, indices, transparentIndex);
                 return;
             }
 
@@ -815,8 +1100,19 @@ internal sealed class PaletteQuantizer
             // next, with a pixel of margin at each end; four channels.
             var current = new int[(width + 2) * 4];
             var below = new int[(width + 2) * 4];
+            var previous = -1;
+            // Each pixel's diffusion strength, a row at a time, from the luma of this row and its neighbours.
+            var lumaAbove = new int[width];
+            var luma = new int[width];
+            var lumaBelow = new int[width];
+            var strengths = new int[width];
+            LumaRow(argb.Slice(0, width), luma);
             for (var y = 0; y < height; y++)
             {
+                if (y + 1 < height) LumaRow(argb.Slice((y + 1) * width, width), lumaBelow);
+                RowStrength(y > 0 ? lumaAbove : null, luma, y + 1 < height ? lumaBelow : null, strengths);
+                (lumaAbove, luma, lumaBelow) = (luma, lumaBelow, lumaAbove);
+
                 // Serpentine: odd rows run right to left, with the kernel mirrored (R. Ulichney, Digital Halftoning, 1987).
                 var step = Serpentine && (y & 1) == 1 ? -1 : 1;
                 for (int n = 0, x = step > 0 ? 0 : width - 1; n < width; n++, x += step)
@@ -839,9 +1135,10 @@ internal sealed class PaletteQuantizer
                     int r = Clamp(((p >> 16) & 255) + Round256(current[e])),
                         g = Clamp(((p >> 8) & 255) + Round256(current[e + 1])),
                         b = Clamp((p & 255) + Round256(current[e + 2]));
-                    var index = Nearest(a << 24 | r << 16 | g << 8 | b);
+                    var index = Nearest(a << 24 | r << 16 | g << 8 | b, previous);
+                    previous = index;
                     indices[i] = index;
-                    var strength = Strength(argb, width, height, x, y);
+                    var strength = strengths[x];
                     if (strength == 0) continue;
                     var q = _palette[index];
                     var d = step * 4;
@@ -853,6 +1150,53 @@ internal sealed class PaletteQuantizer
                 (current, below) = (below, current);
                 Array.Clear(below);
             }
+        }
+
+        // Without dithering: the colours the cache misses are gathered into batches, so their coordinates are computed
+        // a batch at a time (the vector path), then searched, each from the previous answer.
+        private void MapPlain(ReadOnlySpan<int> argb, Span<byte> indices, int transparentIndex)
+        {
+            const int Batch = 64;
+            Span<int> at = stackalloc int[Batch];
+            Span<int> colours = stackalloc int[Batch];
+            Span<float> f = stackalloc float[Batch * 4];
+            int pending = 0, previous = -1;
+            for (var i = 0; i < argb.Length; i++)
+            {
+                var p = argb[i];
+                if (!_alpha && IsTransparent(p))
+                {
+                    indices[i] = (byte)transparentIndex;
+                    continue;
+                }
+                p = Normalise(p);
+                var slot = (int)((uint)(p * -1640531535) >> _cacheShift);
+                if (_cacheKey[slot] == p)
+                {
+                    indices[i] = _cacheIndex[slot];
+                    continue;
+                }
+                at[pending] = i;
+                colours[pending++] = p;
+                if (pending == Batch) Flush(at, colours, f, indices, ref pending, ref previous);
+            }
+            Flush(at, colours, f, indices, ref pending, ref previous);
+        }
+
+        private void Flush(Span<int> at, Span<int> colours, Span<float> f, Span<byte> indices, ref int pending, ref int previous)
+        {
+            _space.Features(colours[..pending], f);
+            for (var j = 0; j < pending; j++)
+            {
+                var best = (byte)_search.Nearest(f.Slice(j * 4, 4), out _, previous);
+                previous = best;
+                var p = colours[j];
+                var slot = (int)((uint)(p * -1640531535) >> _cacheShift);
+                _cacheKey[slot] = p;
+                _cacheIndex[slot] = best;
+                indices[at[j]] = best;
+            }
+            pending = 0;
         }
 
         /// <summary>Run odd rows right to left (for ablation; on by default).</summary>
@@ -868,18 +1212,31 @@ internal sealed class PaletteQuantizer
         /// </summary>
         internal int EdgeLimit { get; init; } = 32;
 
-        // The pixel's diffusion strength in sixteenths.
-        private int Strength(ReadOnlySpan<int> argb, int width, int height, int x, int y)
+        private static void LumaRow(ReadOnlySpan<int> argb, int[] luma)
         {
-            if (EdgeLimit == 0) return Diffusion;
-            var i = y * width + x;
-            var l = Luma(argb[i]);
-            var contrast = 0;
-            if (x > 0) contrast = Math.Max(contrast, Math.Abs(l - Luma(argb[i - 1])));
-            if (x + 1 < width) contrast = Math.Max(contrast, Math.Abs(l - Luma(argb[i + 1])));
-            if (y > 0) contrast = Math.Max(contrast, Math.Abs(l - Luma(argb[i - width])));
-            if (y + 1 < height) contrast = Math.Max(contrast, Math.Abs(l - Luma(argb[i + width])));
-            return contrast >= EdgeLimit ? 0 : Diffusion * (EdgeLimit - contrast) / EdgeLimit;
+            for (var x = 0; x < argb.Length; x++) luma[x] = Luma(argb[x]);
+        }
+
+        // Each pixel's diffusion strength in sixteenths, from its largest luma step to a 4-neighbour (rows above and
+        // below null at the image's edges).
+        private void RowStrength(int[]? above, int[] luma, int[]? below, int[] strengths)
+        {
+            var width = luma.Length;
+            if (EdgeLimit == 0)
+            {
+                Array.Fill(strengths, Diffusion);
+                return;
+            }
+            for (var x = 0; x < width; x++)
+            {
+                var l = luma[x];
+                var contrast = 0;
+                if (x > 0) contrast = Math.Max(contrast, Math.Abs(l - luma[x - 1]));
+                if (x + 1 < width) contrast = Math.Max(contrast, Math.Abs(l - luma[x + 1]));
+                if (above != null) contrast = Math.Max(contrast, Math.Abs(l - above[x]));
+                if (below != null) contrast = Math.Max(contrast, Math.Abs(l - below[x]));
+                strengths[x] = contrast >= EdgeLimit ? 0 : Diffusion * (EdgeLimit - contrast) / EdgeLimit;
+            }
         }
 
         private static int Luma(int argb) => (((argb >> 16) & 255) * 77 + ((argb >> 8) & 255) * 150 + (argb & 255) * 29) >> 8;
@@ -893,7 +1250,8 @@ internal sealed class PaletteQuantizer
             below[e + d + channel] += error;
         }
 
-        private static int Round256(int v) => v >= 0 ? (v + 128) >> 8 : -((-v + 128) >> 8);
+        // v / 256 rounded, halves away from zero, without a branch: for v < 0, -((-v + 128) >> 8) is (v + 127) >> 8.
+        private static int Round256(int v) => (v + 128 + (v >> 31)) >> 8;
 
         private static int Clamp(int v) => v < 0 ? 0 : v > 255 ? 255 : v;
     }

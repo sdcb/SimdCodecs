@@ -183,6 +183,8 @@ internal static class FacadeSmoke
             ("png", PngWriter.Encode(rgba, w, h)),
             ("png-quantize", PngWriter.Encode(rgba, w, h, new PngWriteOptions { Quantize = new PngQuantizeOptions { MaxColors = 64, MaxQuality = 80 } })),
             ("png-quantize-fs", PngWriter.Encode(rgba, w, h, new PngWriteOptions { Quantize = new PngQuantizeOptions { Dither = true } })),
+            ("png-quantize-large", PngWriter.Encode(Noisy(320, 240), 320, 240, new PngWriteOptions { Quantize = new PngQuantizeOptions { MaxQuality = 20 } })),
+            ("png-quantize-large-fs", PngWriter.Encode(Noisy(320, 240), 320, 240, new PngWriteOptions { Quantize = new PngQuantizeOptions { Dither = true } })),
             ("apng", Apng(rgba, w, h, wide: false)),
             ("apng-16", Apng(rgba, w, h, wide: true)),
             ("jpeg", JpegEncoder.Encode(rgb, w, h, 3, new JpegEncodeOptions { Quality = 80 })),
@@ -222,6 +224,24 @@ internal static class FacadeSmoke
     }
 
     // An animated PNG of three frames (the second a mirror, the third changing a corner only), through the encoder class.
+    // Gradients plus noise, with translucent pixels: tens of thousands of colours, enough for the quantizer's
+    // merged-colour path, which the small image never reaches.
+    private static byte[] Noisy(int w, int h)
+    {
+        var rgba = new byte[w * h * 4];
+        var s = 12345u;
+        for (var i = 0; i < w * h; i++)
+        {
+            s = s * 1664525 + 1013904223;
+            int x = i % w, y = i / w, n = (int)(s >> 26) - 32;
+            rgba[i * 4] = (byte)Math.Clamp(x * 255 / w + n, 0, 255);
+            rgba[i * 4 + 1] = (byte)Math.Clamp(y * 255 / h - n, 0, 255);
+            rgba[i * 4 + 2] = (byte)Math.Clamp((x + y) * 255 / (w + h) + n / 2, 0, 255);
+            rgba[i * 4 + 3] = (byte)(x < w / 4 ? 255 * x / (w / 4) : 255);
+        }
+        return rgba;
+    }
+
     private static byte[] Apng(byte[] rgba, int w, int h, bool wide)
     {
         var encoder = new PngAnimationEncoder(w, h, new PngWriteOptions { LoopCount = 2 }, sixteenBit: wide);

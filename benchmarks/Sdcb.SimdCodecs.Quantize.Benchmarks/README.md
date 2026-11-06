@@ -17,7 +17,7 @@ dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Quantize.Benchmarks -
 |---|---|---|
 | `pngquant-s<N>` | pngquant CLI at `--speed N`, `--nofs` when not dithering | GPL: a black-box binary only, never read. The reference for the summary. Its time is the whole process (PNG decode, quantize, PNG encode, start-up). |
 | `ours` | `src/Shared/PaletteQuantizer.cs` (as GIF compiles it) in RGBA mode, as the PNG encoder uses it | |
-| `baseline-wu` | the quantizer at an earlier commit, compiled from `.cache/baseline/` | only when that file exists (see below) |
+| `baseline` | the quantizer at an earlier commit, compiled from `.cache/baseline/`, driven like `ours` | only when that file exists (see below) |
 | `imagesharp-wu`, `imagesharp-octree` | ImageSharp's `WuQuantizer` / `OctreeQuantizer` through the `Quantize` processor | black box |
 
 `--ablate` adds `ours` with a stage switched off or resized (`ours-no-kmeans`, `ours-rgb-space`, `ours-kmeans4` / `20`, `ours-hist64k` / `16k`); `--ablate-dither` adds dithering variants (`ours-raster`, `ours-full-fs` for plain Floyd–Steinberg, `ours-no-edge`, `ours-diff16`, `ours-edge16` / `64`).
@@ -32,7 +32,7 @@ To compare against the quantizer of an earlier commit in the same run, put that 
 git show <ref>:src/Shared/PaletteQuantizer.cs | python -c "import sys,re; sys.stdout.write(re.sub(r'#if SIMDCODECS_GIF.*?#endif\n', 'namespace Sdcb.SimdCodecs.Quantize.Benchmarks.Baseline;\n', sys.stdin.read(), flags=re.S))" > benchmarks/Sdcb.SimdCodecs.Quantize.Benchmarks/.cache/baseline/PaletteQuantizer.cs
 ```
 
-`baseline-wu` drives it through the old API (RGB only, 1-bit alpha); after an API change, adjust `BaselineWu` in `Contestants.cs` or delete the file.
+`baseline` drives it through the API of `ours` (RGBA, default settings); after an API change, adjust `BaselineQuantizer` in `Contestants.cs` or delete the file. The `rd` time column then compares the two in the same run.
 
 ## Inputs
 

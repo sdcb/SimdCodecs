@@ -154,7 +154,7 @@ Console.WriteLine($"pngquant: {reference[0].Version}");
 var contestants = new List<IContestant>(reference)
 {
 #if HAS_BASELINE
-    new BaselineWu(),
+    new BaselineQuantizer(),
 #endif
     new OursQuantizer("ours"),
     new OursPng(),

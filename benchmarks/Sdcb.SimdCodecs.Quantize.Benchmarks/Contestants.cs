@@ -21,34 +21,24 @@ internal interface IContestant
 
 #if HAS_BASELINE
 /// <summary>
-/// The quantizer as it was at the commit <c>.cache/baseline/PaletteQuantizer.cs</c> came from (see README): Wu's box
-/// split in RGB, alpha below 128 transparent and every other pixel opaque. One entry goes to the transparent colour
-/// when there is one.
+/// The quantizer as it was at the commit <c>.cache/baseline/PaletteQuantizer.cs</c> came from (see README), driven the
+/// way <see cref="OursQuantizer"/> drives the current one: RGBA, default settings.
 /// </summary>
-internal sealed class BaselineWu : IContestant
+internal sealed class BaselineQuantizer : IContestant
 {
-    public string Name => "baseline-wu";
+    public string Name => "baseline";
 
     public Quantized Run(EncodeImage image, int colors, bool dither)
     {
         var sw = Stopwatch.StartNew();
-        int n = image.Width * image.Height;
-        int[] argb = Argb(image);
-        bool anyTransparent = argb.Any(Baseline.PaletteQuantizer.IsTransparent);
-        var quantizer = new Baseline.PaletteQuantizer();
-        foreach (int p in argb)
-        {
-            if (!Baseline.PaletteQuantizer.IsTransparent(p)) quantizer.Add(p & 0xFFFFFF);
-        }
-
-        int[] palette = quantizer.BuildPalette(anyTransparent ? colors - 1 : colors);
-        var indices = new byte[n];
-        int transparentIndex = palette.Length;
-        new Baseline.PaletteQuantizer.Mapper(palette).Map(argb, image.Width, image.Height, indices, transparentIndex, dither);
-        return new Quantized(OursQuantizer.Expand(indices, palette, transparentIndex, opaque: true), sw.Elapsed.TotalMilliseconds, null);
+        int[] argb = OursQuantizer.Argb(image);
+        var quantizer = new Baseline.PaletteQuantizer(alpha: true);
+        foreach (int p in argb) quantizer.Add(p);
+        int[] palette = quantizer.BuildPalette(colors);
+        var indices = new byte[argb.Length];
+        new Baseline.PaletteQuantizer.Mapper(palette, alpha: true).Map(argb, image.Width, image.Height, indices, -1, dither);
+        return new Quantized(OursQuantizer.Expand(indices, palette, -1, opaque: false), sw.Elapsed.TotalMilliseconds, null);
     }
-
-    internal static int[] Argb(EncodeImage image) => OursQuantizer.Argb(image);
 }
 #endif
 

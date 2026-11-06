@@ -35,6 +35,7 @@ public sealed class PaletteQuantizerTests
         var palette = Palette(kind, random);
         if (!alpha) palette = [.. palette.Select(p => p & 0xFFFFFF)];
         var mapper = new Quantizer.Mapper(palette, alpha);
+        var hinted = new Quantizer.Mapper(palette, alpha);
         var colours = Enumerable.Range(0, 100_000).Select(_ => alpha ? random.Next() * 2 + random.Next(2) : random.Next(1 << 24))
             .Concat(palette)
             .Concat(from r in new[] { 0, 15, 16, 127, 128, 255 }
@@ -43,7 +44,36 @@ public sealed class PaletteQuantizerTests
                     from a in new[] { 0, 1, 128, 254, 255 }
                     select a << 24 | r << 16 | g << 8 | b);
         foreach (var argb in colours)
-            mapper.Nearest(argb).ShouldBe(mapper.NearestFull(argb), $"{kind}: 0x{argb:X8}");
+        {
+            var full = mapper.NearestFull(argb);
+            mapper.Nearest(argb).ShouldBe(full, $"{kind}: 0x{argb:X8}");
+            // A hint (any entry) only tightens the bound early; it never changes the answer.
+            var hint = random.Next(palette.Length);
+            hinted.Nearest(argb, hint).ShouldBe(full, $"{kind} (hint {hint}): 0x{argb:X8}");
+            mapper.NearestScalar(argb).ShouldBe(full, $"{kind} (scalar): 0x{argb:X8}");
+        }
+    }
+
+    [Fact]
+    public void Batched_coordinates_equal_one_at_a_time()
+    {
+        // The vector path converts four colours at a time; it must give the scalar path's bits exactly.
+        var random = new Random(3);
+        int[] colours = [.. Enumerable.Range(0, 100_003).Select(_ => random.Next() * 2 + random.Next(2)),
+            0, -1, 0x01000000, unchecked((int)0xFF000000), 0x00FFFFFF, unchecked((int)0xFF010101), unchecked((int)0x80FEFEFE)];
+        foreach (var perceptual in new[] { true, false })
+        {
+            var space = new Quantizer.Space(perceptual);
+            var batched = new float[colours.Length * 4];
+            space.Features(colours, batched);
+            var single = new float[4];
+            for (var i = 0; i < colours.Length; i++)
+            {
+                space.Features(colours[i], single);
+                for (var c = 0; c < 4; c++)
+                    BitConverter.SingleToInt32Bits(batched[i * 4 + c]).ShouldBe(BitConverter.SingleToInt32Bits(single[c]), $"0x{colours[i]:X8}[{c}]");
+            }
+        }
     }
 
     [Fact]
