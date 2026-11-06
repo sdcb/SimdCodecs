@@ -83,6 +83,10 @@ jobs:
     # dev box would then quietly disagree about what the reference is.
     - name: Fetch JPEG 2000 oracle (OpenJPEG)
       run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/jpeg2000/fetch.sh
+    # libjpeg-turbo's official release (pinned, SHA-256 checked), binary only: TurboJpegOracle
+    # decodes the encoder's restart-interval streams with it (JpegEncoderRestartTests).
+    - name: Fetch JPEG oracle (libjpeg-turbo)
+      run: bash benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/scripts/fetch-libjpeg-turbo.sh
     - name: Cache NuGet packages
       uses: actions/cache@v6
       with:
@@ -98,7 +102,7 @@ jobs:
       # oracle harness degrades to a skip so a clean clone stays green, which is
       # right locally and misleading here -- without this, a CI job that stopped
       # installing jbig2dec or building an oracle would look exactly like one
-      # that did. All three external oracles (jbig2dec, OpenJPEG
+      # that did. All four external oracles (jbig2dec, OpenJPEG, libjpeg-turbo
       # and libwebp's dwebp / anim_dump) are gated and fetched or built above,
       # so this run has no silently-absent oracle left.
       env:

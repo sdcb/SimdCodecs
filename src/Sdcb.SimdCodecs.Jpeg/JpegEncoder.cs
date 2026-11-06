@@ -45,6 +45,8 @@ public static class JpegEncoder
         if (channels is < 1 or > 4) throw new ArgumentOutOfRangeException(nameof(channels), channels, "Channels must be 1..4.");
         options ??= new JpegEncodeOptions();
         if (options.Quality is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(options), options.Quality, "Quality must be 1..100.");
+        if (options.RestartInterval is < 0 or > 65535)
+            throw new ArgumentOutOfRangeException(nameof(options), options.RestartInterval, "RestartInterval must be 0..65535.");
 
         var exif = ValidateExif(options.Exif);
         var xmp = options.Xmp is { } xmpOptions ? BuildXmpPacket(xmpOptions) : default;
@@ -68,7 +70,7 @@ public static class JpegEncoder
         var lumaQuant = ScaleQuant(LumaQuant, scale);
         var chromaQuant = ScaleQuant(ChromaQuant, scale);
 
-        var frame = new Frame(width, height, gray, subsample);
+        var frame = new Frame(width, height, gray, subsample) { RestartInterval = options.RestartInterval };
         frame.Components[0].Recip = Reciprocals(lumaQuant);
         for (var c = 1; c < frame.Components.Length; c++) frame.Components[c].Recip = Reciprocals(chromaQuant);
 
@@ -82,6 +84,7 @@ public static class JpegEncoder
                 WriteFrame(ref w, frame, progressive: false);
                 var (dcL, acL, dcC, acC) = (StdDcLuma, StdAcLuma, StdDcChroma, StdAcChroma);
                 WriteHuffmanTables(ref w, gray ? [(0, 0, dcL), (1, 0, acL)] : [(0, 0, dcL), (1, 0, acL), (0, 1, dcC), (1, 1, acC)]);
+                WriteRestartInterval(ref w, frame.RestartInterval);
                 WriteBaselineScanHeader(ref w, frame);
                 Transform(pixels, channels, frame, ref w, [dcL, dcC], [acL, acC]);
             }
@@ -94,11 +97,13 @@ public static class JpegEncoder
                 if (options.Progressive)
                 {
                     WriteFrame(ref w, frame, progressive: true);
+                    WriteRestartInterval(ref w, frame.RestartInterval);
                     JpegProgressiveEncoder.Encode(ref w, frame, gray ? JpegProgressiveEncoder.GrayScript : JpegProgressiveEncoder.ColorScript);
                 }
                 else
                 {
                     WriteFrame(ref w, frame, progressive: false);
+                    WriteRestartInterval(ref w, frame.RestartInterval);
                     EncodeOptimizedBaseline(ref w, frame);
                 }
             }
@@ -144,6 +149,9 @@ public static class JpegEncoder
     {
         public readonly int Width, Height, HMax, VMax, McusX, McusY;
         public readonly Component[] Components;
+
+        /// <summary>MCUs per restart interval in every scan (T.81 B.2.4.4); 0 for none.</summary>
+        public int RestartInterval;
 
         public Frame(int width, int height, bool gray, bool subsample)
         {
@@ -234,6 +242,9 @@ public static class JpegEncoder
         Span<short> scratch = stackalloc short[64];
         Span<int> pred = stackalloc int[3];
         pred.Clear();
+        var restart = f.RestartInterval;
+        var mcusDone = 0; // MCUs entropy coded so far, for the restart intervals
+        var restartIndex = 0;
         var store = dcTables is null;
         var dcCodes = new uint[comps.Length][];
         var acCodes = new uint[comps.Length][];
@@ -322,8 +333,32 @@ public static class JpegEncoder
 
                     if (!store)
                     {
-                        EncodeChunk(ref w, comps, mcus, y, subsample ? cb2 : cb, subsample ? cr2 : cr, stride, subsample ? halfStride : stride,
-                            pred, dcCodes, acCodes, scratch);
+                        var c1 = subsample ? cb2 : cb;
+                        var c2 = subsample ? cr2 : cr;
+                        var cStride = subsample ? halfStride : stride;
+                        if (restart == 0)
+                        {
+                            EncodeChunk(ref w, comps, 0, mcus, y, c1, c2, stride, cStride, pred, dcCodes, acCodes, scratch);
+                            continue;
+                        }
+
+                        // Restart intervals: the chunk is coded in runs that end on an interval boundary, so
+                        // the per-MCU loop stays free of the check. A marker goes before an interval's first
+                        // MCU, never after the image's last (T.81 B.2.4.4, F.1.2.3).
+                        for (var s = 0; s < mcus;)
+                        {
+                            if (mcusDone > 0 && mcusDone % restart == 0)
+                            {
+                                w.WriteRestart(restartIndex++);
+                                pred.Clear();
+                            }
+
+                            var run = Math.Min(mcus - s, restart - mcusDone % restart);
+                            EncodeChunk(ref w, comps, s, s + run, y, c1, c2, stride, cStride, pred, dcCodes, acCodes, scratch);
+                            s += run;
+                            mcusDone += run;
+                        }
+
                         continue;
                     }
 
@@ -393,15 +428,15 @@ public static class JpegEncoder
     }
 
     /// <summary>
-    /// Transforms and Huffman codes the MCUs of one chunk: each block's forward DCT and its entropy
+    /// Transforms and Huffman codes MCUs <c>mcuStart .. mcuEnd - 1</c> of one chunk: each block's forward DCT and its entropy
     /// coding run back to back in this one method, so there is no call per block and the
     /// out-of-order core can overlap one block's serial entropy coding with the next transform.
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
-    private static void EncodeChunk(ref JpegBitWriter writer, Component[] comps, int mcus, float[] y, float[] c1, float[] c2,
+    private static void EncodeChunk(ref JpegBitWriter writer, Component[] comps, int mcuStart, int mcuEnd, float[] y, float[] c1, float[] c2,
         int yStride, int cStride, Span<int> pred, uint[][] dcCodes, uint[][] acCodes, Span<short> scratch)
     {
-        for (var mx = 0; mx < mcus; mx++)
+        for (var mx = mcuStart; mx < mcuEnd; mx++)
         {
             writer.Ensure(JpegBitWriter.McuReserve);
             for (var c = 0; c < comps.Length; c++)
@@ -546,6 +581,8 @@ public static class JpegEncoder
         var acFreq = new long[tables][];
         for (var t = 0; t < tables; t++) { dcFreq[t] = new long[256]; acFreq[t] = new long[256]; }
 
+        // The statistics pass resets the DC predictors where the coding pass writes restart markers,
+        // so the tables are built from exactly the symbols that are written.
         Span<int> pred = stackalloc int[3];
         pred.Clear();
         ForEachMcuBlock(f, (int c, int row, int col, ref int p) => p = CountBlock(comps[c].Block(row, col), p, dcFreq[comps[c].TableId], acFreq[comps[c].TableId]), pred);
@@ -565,10 +602,19 @@ public static class JpegEncoder
         WriteBaselineScanHeader(ref w, f);
 
         pred.Clear();
+        var restartIndex = 0;
+        var untilRestart = RestartCountdown(f.RestartInterval);
         for (var my = 0; my < f.McusY; my++)
         {
             for (var mx = 0; mx < f.McusX; mx++)
             {
+                if (untilRestart-- == 0)
+                {
+                    untilRestart = f.RestartInterval - 1;
+                    w.WriteRestart(restartIndex++);
+                    pred.Clear();
+                }
+
                 for (var c = 0; c < comps.Length; c++)
                 {
                     var comp = comps[c];
@@ -587,14 +633,32 @@ public static class JpegEncoder
 
     internal delegate void BlockVisitor(int component, int row, int col, ref int pred);
 
-    /// <summary>Visits every block of an interleaved scan over all components in MCU order.</summary>
+    /// <summary>
+    /// The start value of a restart countdown, decremented before each MCU of a scan: <c>if (left-- == 0)</c>
+    /// is true exactly before the first MCU of the second and every later interval of <paramref name="interval"/>
+    /// MCUs, where the caller writes the marker and sets <c>left = interval - 1</c>. Never before the first MCU,
+    /// so no marker follows the last; with no interval (0) it never reaches zero (a scan has under 2^27 MCUs).
+    /// </summary>
+    internal static int RestartCountdown(int interval) => interval == 0 ? int.MaxValue : interval;
+
+    /// <summary>
+    /// Visits every block of an interleaved scan over all components in MCU order, clearing
+    /// <paramref name="pred"/> at the start of each restart interval (<see cref="Frame.RestartInterval"/>).
+    /// </summary>
     internal static void ForEachMcuBlock(Frame f, BlockVisitor visit, Span<int> pred)
     {
         var comps = f.Components;
+        var untilRestart = RestartCountdown(f.RestartInterval);
         for (var my = 0; my < f.McusY; my++)
         {
             for (var mx = 0; mx < f.McusX; mx++)
             {
+                if (untilRestart-- == 0)
+                {
+                    untilRestart = f.RestartInterval - 1;
+                    pred.Clear();
+                }
+
                 for (var c = 0; c < comps.Length; c++)
                 {
                     var comp = comps[c];
@@ -730,6 +794,14 @@ public static class JpegEncoder
             w.WriteBytes(table.Bits);
             w.WriteBytes(table.Values);
         }
+    }
+
+    /// <summary>DRI (T.81 B.2.4.4): the restart interval in MCUs, for every scan that follows; nothing for 0.</summary>
+    private static void WriteRestartInterval(ref JpegBitWriter w, int interval)
+    {
+        if (interval == 0) return;
+        w.WriteBytes([0xFF, 0xDD, 0, 4]);
+        w.WriteUInt16(interval);
     }
 
     private static void WriteBaselineScanHeader(ref JpegBitWriter w, Frame f)

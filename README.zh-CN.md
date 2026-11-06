@@ -143,7 +143,7 @@ JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插
 <details>
 <summary>各包的详细特性</summary>
 
-- **Jpeg**：T.81 解码器，支持 baseline、progressive、restart interval、任意采样方式，灰度 / YCbCr / RGB / CMYK / YCCK，1/2–1/8 缩放解码，无损（SOF3）。SIMD 编码器支持 baseline、优化 Huffman 或 progressive；4:4:4 / 4:2:0 / 灰度；可写入 EXIF（APP1）、XMP 和 ICC 配置文件（APP2）。
+- **Jpeg**：T.81 解码器，支持 baseline、progressive、restart interval、任意采样方式，灰度 / YCbCr / RGB / CMYK / YCCK，1/2–1/8 缩放解码，无损（SOF3）。SIMD 编码器支持 baseline、优化 Huffman 或 progressive；4:4:4 / 4:2:0 / 灰度；restart interval；可写入 EXIF（APP1）、XMP 和 ICC 配置文件（APP2）。
 - **Png**：所有标准位深（包括 1/2/4 位灰度和调色板），tEXt / zTXt / iTXt 文本块，PNG-3 的 cICP / mDCV / cLLI HDR 标记。APNG：`PngAnimationDecoder` 支持所有 dispose / blend 操作并可跳帧，门面的 `TryOpenFrames` 可逐帧播放；`PngAnimationEncoder`（以及门面的多帧编码）只写变化矩形，并合并不变的帧。
 - **Tiff**：多页，经典 TIFF 和 BigTIFF；8/16/32 位整数和浮点；Deflate / LZW（另可读 PackBits 和带 JPEGTables 的 JPEG）；条带或分块；chunky 或 planar；按需读取单个条带或分块，区域解码只读与区域相交的条带或分块；门面把调色板、CMYK、YCbCr 页面呈现为 RGB，额外采样呈现为 alpha；读取 1/2/4 位页面（扩展为 8 位）、CCITT 传真（Group 3 1D/2D、 Group 4、Modified Huffman）和浮点预测器。
 - **Webp**：RFC 6386 / RFC 9649：VP8 有损、VP8L 无损、ALPH、带跳转的动画、ICC / EXIF / XMP。门面的 `TryDecode` 返回静态图或动画的第 0 帧，`TryOpenFrames` 返回所有帧；`WebpAnimationDecoder` 另外提供 按时间戳定位和每帧的矩形。`WebpEncoder.EncodeLossless` 编码 VP8L 静态图（含 alpha），压缩力度 0–9； `WebpEncoder.EncodeLossy` 编码 VP8 静态图，质量 0–100、力度 0–6，透明度写进 ALPH 平面（默认无损，`AlphaQuality` 低于 100 时减少 alpha 级数）；两者都输出到数组或流，并可写入 ICC / Exif / XMP。`WebpAnimationEncoder`（逐帧添加）和 `WebpEncoder.EncodeAnimation` 编码动画：有损（默认）、无损，或每帧取两者中较小的；输入可以是整帧画布（编码器只写变化的 矩形，选择 blend 或直接覆盖，合并不变的帧），也可以是调用方给定的 ANMF 帧；`MaxKeyframeDistance` 限制跳转时要解码的帧数。

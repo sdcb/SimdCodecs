@@ -88,6 +88,13 @@ internal static class JpegProgressiveEncoder
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void RunScan(ref Coder coder, JpegEncoder.Frame f, JpegEncoder.Component[] comps, Scan scan)
     {
+        // Restart intervals (T.81 B.2.4.4, G.1.2): in an interleaved scan the interval counts MCUs, in a
+        // single-component scan blocks of that component (its MCU, A.2.2). Each interval ends with any pending
+        // end-of-band run and correction bits flushed, then the marker; a new one starts with the DC
+        // predictors and the end-of-band run at zero. The counting run takes the same steps (without the
+        // marker), so its tables fit the written symbols.
+        var interval = f.RestartInterval;
+        var untilRestart = JpegEncoder.RestartCountdown(interval);
         if (scan.Ss == 0)
         {
             Span<int> pred = stackalloc int[comps.Length];
@@ -98,7 +105,16 @@ internal static class JpegProgressiveEncoder
                 for (var row = 0; row < comp.ScanBlocksH; row++)
                 {
                     for (var col = 0; col < comp.ScanBlocksW; col++)
+                    {
+                        if (untilRestart-- == 0)
+                        {
+                            untilRestart = interval - 1;
+                            coder.Restart();
+                            pred.Clear();
+                        }
+
                         coder.Dc(comp.Block(row, col)[0], ref pred[0], comp.TableId, scan.Ah, scan.Al);
+                    }
                 }
             }
             else
@@ -107,6 +123,13 @@ internal static class JpegProgressiveEncoder
                 {
                     for (var mx = 0; mx < f.McusX; mx++)
                     {
+                        if (untilRestart-- == 0)
+                        {
+                            untilRestart = interval - 1;
+                            coder.Restart();
+                            pred.Clear();
+                        }
+
                         for (var c = 0; c < comps.Length; c++)
                         {
                             var comp = comps[c];
@@ -128,6 +151,12 @@ internal static class JpegProgressiveEncoder
         {
             for (var col = 0; col < single.ScanBlocksW; col++)
             {
+                if (untilRestart-- == 0)
+                {
+                    untilRestart = interval - 1;
+                    coder.Restart();
+                }
+
                 var block = single.Block(row, col);
                 if (scan.Ah == 0) coder.AcFirst(block, scan.Ss, scan.Se, scan.Al);
                 else coder.AcRefine(block, scan.Ss, scan.Se, scan.Al);
@@ -221,6 +250,20 @@ internal static class JpegProgressiveEncoder
             BeginBlock();
             FlushEobRun();
             EndBlock();
+        }
+
+        private int _restartIndex;
+
+        /// <summary>
+        /// Ends a restart interval: flushes the end-of-band run with its buffered correction bits (an EOBRUN
+        /// never spans a restart marker, G.1.2.2), then pads and writes RSTm. The caller resets the DC predictors.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public void Restart()
+        {
+            Finish();
+            if (_freq is null) _w.WriteRestart(_restartIndex);
+            _restartIndex++;
         }
 
         private void FlushEobRun()

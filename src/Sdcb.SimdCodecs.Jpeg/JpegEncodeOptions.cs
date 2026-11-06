@@ -18,7 +18,7 @@ public enum JpegSubsampling : byte
 /// Options for <see cref="JpegEncoder.Encode"/>. The default is baseline sequential JPEG with
 /// the Annex K Huffman tables, the fastest mode; <see cref="OptimizeHuffman"/> and
 /// <see cref="Progressive"/> trade encode time for smaller files with identical pixels.
-/// Restart intervals are not written.
+/// <see cref="RestartInterval"/> adds restart markers, which also leave the pixels unchanged.
 /// </summary>
 public sealed record JpegEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
@@ -45,6 +45,22 @@ public sealed record JpegEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOpti
     /// the decoded pixels are identical to a baseline encode with the same settings.
     /// </summary>
     public bool Progressive { get; init; }
+
+    /// <summary>
+    /// Restart interval in MCUs (T.81 B.2.4.4), 0..65535; 0 (the default) writes no restart markers and leaves the
+    /// output byte-identical to an encode without the option. With N &gt; 0 the encoder writes a DRI segment and, in
+    /// every scan, after each N MCUs (not after the last) pads the entropy-coded data to a byte boundary, writes a
+    /// restart marker RST0..RST7 in turn and resets the DC predictors (and, in progressive scans, the end-of-band run).
+    /// A decoder can then resynchronise after corrupt data, or decode intervals in parallel; each marker costs a few
+    /// bytes. The decoded pixels are unchanged.
+    /// <para>
+    /// An MCU is the interleaved unit of the scan: 8×8 pixels for grey or 4:4:4, 16×16 for 4:2:0 in a baseline or
+    /// progressive DC scan. A progressive AC scan holds one component, and there the MCU is one 8×8 block of that
+    /// component (T.81 A.2.2), so the same N counts blocks. A value outside 0..65535 is an
+    /// <see cref="System.ArgumentOutOfRangeException"/> from <see cref="JpegEncoder.Encode"/>.
+    /// </para>
+    /// </summary>
+    public int RestartInterval { get; init; }
 
     /// <summary>
     /// When set, written as an APP1 <c>Exif\0\0</c> segment right after the APP0 JFIF header. The bytes are the
