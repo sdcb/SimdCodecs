@@ -25,7 +25,8 @@ namespace Sdcb.SimdCodecs.Heif;
 /// <para>
 /// Metadata: the <c>Exif</c> and XMP (<c>mime</c>) items describing the primary image are passed through
 /// (<see cref="TryReadMetadata"/>); its <c>thmb</c> thumbnail decodes through <see cref="TryDecodeThumbnail"/>. The
-/// Exif orientation tag is not applied (the item properties are): transcode with care, or rewrite it to 1.
+/// Exif orientation tag is not applied (the item properties are): because the pixels are already display-oriented,
+/// the Exif block handed out has its Orientation tag (IFD0) reset to 1, so a transcode does not rotate twice.
 /// The planes (<see cref="IPlanarImageDecoder"/>) are the canvas before the transformative properties, at the coded
 /// bit depth; an image with any transform has no planar output (<see cref="TryReadPlanarInfo"/> is false).
 /// </para>
@@ -214,7 +215,7 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
     }
 
     /// <inheritdoc />
-    /// <remarks>The <c>Exif</c> item (from its TIFF header) and XMP <c>mime</c> item that describe the primary image
+    /// <remarks>The <c>Exif</c> item (from its TIFF header, Orientation reset to 1 to match the display-oriented pixels) and XMP <c>mime</c> item that describe the primary image
     /// (<c>cdsc</c>), and the <c>colr</c> ICC profile.</remarks>
     public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata)
     {

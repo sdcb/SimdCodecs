@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Heif.Isobmff;
 
@@ -12,12 +12,9 @@ namespace Sdcb.SimdCodecs.Heif;
 /// </summary>
 internal static class HeifMetadata
 {
-    private const uint RefCdsc = 0x63647363; // 'cdsc'
     private const uint RefThmb = 0x74686D62; // 'thmb'
-    private const uint ItemExif = 0x45786966; // 'Exif'
     private const uint ItemMime = 0x6D696D65; // 'mime'
     private const uint ItemHvc1 = 0x68766331; // 'hvc1'
-    private const long MaxItemBytes = 16 << 20;
 
     /// <summary>The Exif and XMP blocks described as metadata of the primary item, and its ICC profile.</summary>
     public static ImageMetadata Read(ReadOnlySpan<byte> data, HeifContainer container)
@@ -26,12 +23,12 @@ internal static class HeifMetadata
         var items = container.Items;
         foreach (var reference in items.References)
         {
-            if (reference.Type != RefCdsc || Array.IndexOf(reference.To, items.PrimaryItemId) < 0)
+            if (reference.Type != ExifItem.RefCdsc || Array.IndexOf(reference.To, items.PrimaryItemId) < 0)
                 continue;
             var item = items.Find(reference.From);
             if (item is null)
                 continue;
-            if (item.Type == ItemExif && exif.IsEmpty)
+            if (item.Type == ExifItem.ItemExif && exif.IsEmpty)
                 exif = ReadExif(data, items, item);
             else if (item.Type == ItemMime && xmp.IsEmpty && IsXmp(item.ContentType))
                 xmp = ReadItem(data, items, item) ?? default;
@@ -56,36 +53,16 @@ internal static class HeifMetadata
     private static bool IsXmp(string? contentType) =>
         contentType is "application/rdf+xml" or "application/xmp+xml" or "text/xml";
 
-    // The Exif item's payload (23008-12 A.2.1): a 32-bit offset to the TIFF header, then the Exif data; returned from
-    // the TIFF header on.
+    // The decoder outputs display-oriented pixels (irot / imir applied), so an Exif Orientation other than 1 would
+    // make a transcoder rotate twice: reset it in the private copy ReadItem made.
     private static ReadOnlyMemory<byte> ReadExif(ReadOnlySpan<byte> data, ItemContainer items, ItemContainer.Item item)
     {
-        if (ReadItem(data, items, item) is not { Length: >= 4 } payload)
-            return default;
-        var offset = BinaryPrimitives.ReadUInt32BigEndian(payload);
-        if (offset > (uint)payload.Length - 4)
-            return default;
-        var tiff = payload.AsMemory(4 + (int)offset);
-        // Some writers put "Exif\0\0" before the header and count it in the offset, some do not.
-        if (tiff.Span.StartsWith("Exif\0\0"u8))
-            tiff = tiff[6..];
-        return tiff.Length >= 8 ? tiff : default;
+        var exif = ExifItem.Read(data, items, item);
+        if (!exif.IsEmpty)
+            ExifOrientation.TryReset(MemoryMarshal.AsMemory(exif).Span);
+        return exif;
     }
 
-    private static byte[]? ReadItem(ReadOnlySpan<byte> data, ItemContainer items, ItemContainer.Item item)
-    {
-        try
-        {
-            var length = ItemContainer.GetItemLength(item);
-            if (length <= 0 || length > data.Length || length > MaxItemBytes)
-                return null;
-            var buffer = new byte[length];
-            items.Resolve(data, item, buffer);
-            return buffer;
-        }
-        catch (Exception e) when (e is InvalidDataException or ArgumentException or OverflowException)
-        {
-            return null;
-        }
-    }
+    private static byte[]? ReadItem(ReadOnlySpan<byte> data, ItemContainer items, ItemContainer.Item item) =>
+        ExifItem.ReadItem(data, items, item);
 }

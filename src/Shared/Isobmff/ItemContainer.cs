@@ -2,8 +2,10 @@
 // under that package's namespace so the copies are distinct types.
 #if SIMDCODECS_HEIF
 namespace Sdcb.SimdCodecs.Heif.Isobmff;
+#elif SIMDCODECS_EXIF
+namespace Sdcb.SimdCodecs.Exif.Isobmff;
 #else
-#error ItemContainer.cs is shared source for the ISOBMFF-based packages (Sdcb.SimdCodecs.Heif, Sdcb.SimdCodecs.Avif).
+#error ItemContainer.cs is shared source for the ISOBMFF-based packages (Sdcb.SimdCodecs.Heif, Sdcb.SimdCodecs.Exif).
 #endif
 
 /// <summary>

@@ -1,6 +1,12 @@
 using System.Runtime.CompilerServices;
 
+#if SIMDCODECS_HEIF
 namespace Sdcb.SimdCodecs.Heif.Isobmff;
+#elif SIMDCODECS_EXIF
+namespace Sdcb.SimdCodecs.Exif.Isobmff;
+#else
+#error BoxReader.cs is shared source for the ISOBMFF-based packages (Sdcb.SimdCodecs.Heif, Sdcb.SimdCodecs.Exif).
+#endif
 
 /// <summary>
 /// Reads ISOBMFF boxes from a contiguous span of bytes.

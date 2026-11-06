@@ -60,6 +60,20 @@ public static class ExifWriter
     private readonly record struct Entry(ushort Tag, ushort Type, int Count, byte[] Value);
 
     /// <summary>
+    /// A copy of <paramref name="exif"/> with the Orientation tag (0x0112, IFD0) set to 1 (normal), for a caller that
+    /// rotates the pixels itself according to <c>ImageInfo.Orientation</c> and must not leave the tag to rotate them
+    /// a second time. <paramref name="exif"/> is any container's Exif block, with or without the leading
+    /// <c>Exif\0\0</c>, which is kept if present. The copy is unchanged when the tag is absent, not a SHORT of count 1,
+    /// or the block is malformed.
+    /// </summary>
+    public static byte[] ResetOrientation(ReadOnlySpan<byte> exif)
+    {
+        var copy = exif.ToArray();
+        ExifOrientation.TryReset(copy);
+        return copy;
+    }
+
+    /// <summary>
     /// Builds the EXIF blob (TIFF header onwards, without the <c>Exif\0\0</c> signature). With nothing set the result
     /// is a valid blob with an empty IFD0.
     /// </summary>
