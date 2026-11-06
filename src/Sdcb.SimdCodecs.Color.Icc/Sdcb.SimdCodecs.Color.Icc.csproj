@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <DefineConstants>$(DefineConstants);SIMDCODECS_COLOR_ICC</DefineConstants>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
@@ -25,6 +26,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
+    <Compile Include="..\Shared\IccPrimaries.cs" Link="Shared\IccPrimaries.cs" />
     <EmbeddedResource Include="sRGB-v4.icc" />
   </ItemGroup>
 

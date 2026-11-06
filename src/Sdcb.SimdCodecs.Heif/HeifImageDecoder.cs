@@ -31,9 +31,11 @@ namespace Sdcb.SimdCodecs.Heif;
 /// </para>
 /// <para>
 /// An ICC profile in the container is passed through as is. <see cref="IDecodedImage.ColorEncoding"/> takes
-/// its primaries and transfer function from the <c>colr</c> / nclx box. A <c>colr</c> box overrides the HEVC
-/// VUI, so with an ICC profile and no nclx it is <see cref="ColorEncoding.AssumedSrgb"/> (the encoding is never
-/// derived from a profile; phones commonly pair a Display P3 profile with a BT.601 VUI). With no <c>colr</c>
+/// its primaries and transfer function from the <c>colr</c> / nclx box, which wins over an ICC profile. A <c>colr</c>
+/// box overrides the HEVC VUI, so with an ICC profile and no nclx the encoding is <see cref="ColorEncoding.AssumedSrgb"/>
+/// with the primaries the profile declares when they are BT.709, Display P3 or BT.2020 (phones commonly pair a
+/// Display P3 profile with a BT.601 VUI; the VUI still picks the YCbCr matrix, so the pixels do not change), and
+/// plain <see cref="ColorEncoding.AssumedSrgb"/> for any other profile. With no <c>colr</c>
 /// box at all, the VUI colour description is used when it specifies one.
 /// It is always full range: limited-range Y′CbCr is expanded by the colour conversion. An image whose transfer
 /// function is PQ or HLG decodes through <see cref="TryDecode"/>, but <see cref="TryDecodeInto"/> refuses it, as
@@ -322,8 +324,9 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
 
     /// <summary>
     /// The colour encoding of the decoded RGB: primaries and transfer from nclx; with an ICC profile and no
-    /// nclx, <see cref="ColorEncoding.AssumedSrgb"/> (the <c>colr</c> box overrides the VUI); with no <c>colr</c>,
-    /// the VUI colour description when it specifies one. Always full range (the conversion expands limited
+    /// nclx, <see cref="ColorEncoding.AssumedSrgb"/> with the primaries the profile declares when they are BT.709,
+    /// Display P3 or BT.2020 (the <c>colr</c> box overrides the VUI); with no <c>colr</c>, the VUI colour
+    /// description when it specifies one. Always full range (the conversion expands limited
     /// range). H.273 code points are 8-bit; a larger nclx value reads as unspecified.
     /// </summary>
     internal static ColorEncoding ColorEncodingOf(HeifContainer container)
@@ -335,7 +338,9 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
         }
         else if (container.IccProfile is not null)
         {
-            return ColorEncoding.AssumedSrgb;
+            // The colr box overrides the VUI, so the VUI is not consulted; the profile's primaries when H.273
+            // names them (the YCbCr matrix still comes from the VUI), else the sRGB assumption.
+            return IccPrimaries.Encoding(container.IccProfile) ?? ColorEncoding.AssumedSrgb;
         }
         else
         {

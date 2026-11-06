@@ -44,6 +44,10 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
         }
     }
 
+    // WebP has no colour signalling besides its ICCP chunk: that profile's primaries, when H.273 names them.
+    private static ColorEncoding EncodingOf(ReadOnlySpan<byte> iccProfile) =>
+        IccPrimaries.Encoding(iccProfile) ?? ColorEncoding.AssumedSrgb;
+
     /// <inheritdoc />
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
     {
@@ -56,7 +60,7 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
                 Format = ImageFormat.Webp,
                 Orientation = container.HasExif ? ExifOrientation.Read(container.Exif) : ImageOrientation.Normal,
                 FrameCount = Math.Max(1, webpInfo.FrameCount),
-                ColorEncoding = ColorEncoding.AssumedSrgb,
+                ColorEncoding = EncodingOf(container.HasIccProfile ? container.IccProfile : default),
             };
             return true;
         }
@@ -101,7 +105,7 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
             : null;
 
         var raster = RasterImage.Create(webpInfo.Width, webpInfo.Height, channels, SampleFormat.UInt8, options?.Pool,
-            colorEncoding: ColorEncoding.AssumedSrgb, bitDepth: 8, metadata: metadata);
+            colorEncoding: EncodingOf(container.HasIccProfile ? container.IccProfile : default), bitDepth: 8, metadata: metadata);
 
         try
         {

@@ -99,6 +99,7 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
             {
                 Format = ImageFormat.Jpeg2000,
                 BitDepth = depth,
+                ColorEncoding = ColorOf(read.Colour),
             };
             j2k = read;
             return true;
@@ -251,6 +252,7 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
             image.Components,
             format,
             pool,
+            colorEncoding: ColorOf(image.Colour),
             bitDepth: bitDepth,
             metadata: icc is null ? null : new ImageMetadata { Icc = icc });
 
@@ -296,6 +298,12 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
     /// one, exactly the colour channels (1 or 3, matching an enumerated colour space) plus at most
     /// one opacity channel that applies to the whole image.
     /// </summary>
+    // A JP2 colr box is either an enumerated colour space (sRGB / grey, the assumption) or a restricted ICC
+    // profile, whose primaries are reported when H.273 names them.
+    private static ColorEncoding ColorOf(Jp2Colour? colour) =>
+        colour is { Method: 2, IccProfile: { } profile } ? IccPrimaries.Encoding(profile) ?? ColorEncoding.AssumedSrgb
+            : ColorEncoding.AssumedSrgb;
+
     private static bool Presentable(int components, Jp2Colour? colour, IReadOnlyList<Jp2Channel>? channels)
     {
         if (colour is { EnumeratedColourSpace: { } space } && space is not (Jp2EnumeratedColourSpace.Srgb or Jp2EnumeratedColourSpace.Greyscale))

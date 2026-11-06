@@ -98,8 +98,9 @@ public sealed class JpegImageDecoder : IImageDecoder
         var region = options?.Region ?? new PixelRect(0, 0, width, height);
         if ((long)region.Width * region.Height * channels > Array.MaxLength)
             return false;
+        var metadata = ReadMetadata(data);
         var raster = RasterImage.Create(region.Width, region.Height, channels, SampleFormat.UInt8, options?.Pool,
-            metadata: ReadMetadata(data));
+            colorEncoding: IccPrimaries.Encoding(metadata.Icc.Span), metadata: metadata);
         try
         {
             if (options?.Region is not null)
@@ -195,14 +196,20 @@ public sealed class JpegImageDecoder : IImageDecoder
         TryDecodeInto(data, rgbaDestination, 0, PixelFormat.Rgba32);
 
     /// <summary>The <see cref="ImageInfo"/> of what <see cref="TryDecode"/> returns for a stream with header <paramref name="info"/>.</summary>
-    internal static ImageInfo ToImageInfo(JpegInfo info, ReadOnlySpan<byte> data) =>
-        new(info.Width, info.Height, info.Components == 1 ? 1 : 3, SampleFormat.UInt8)
+    internal static ImageInfo ToImageInfo(JpegInfo info, ReadOnlySpan<byte> data)
+    {
+        var imageInfo = new ImageInfo(info.Width, info.Height, info.Components == 1 ? 1 : 3, SampleFormat.UInt8)
         {
             Format = ImageFormat.Jpeg,
             Orientation = info.Orientation,
             Resolution = JpegMetadata.ReadResolution(data),
             HasThumbnail = JpegMetadata.HasExifThumbnail(data),
         };
+        // JPEG has no colour signalling of its own: the ICC profile's primaries, when it declares ones H.273 names.
+        return JpegDecoder.TryReadIccProfile(data, out var icc) && IccPrimaries.Encoding(icc) is { } encoding
+            ? imageInfo with { ColorEncoding = encoding }
+            : imageInfo;
+    }
 
     /// <summary>The <see cref="JpegPixelFormat"/> writing the same bytes as <paramref name="format"/>, one of the five
     /// <see cref="PixelFormat.IsBasic8"/> formats.</summary>

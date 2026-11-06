@@ -37,6 +37,7 @@
 
   <ItemGroup>
     <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
+    <Compile Include="..\Shared\IccPrimaries.cs" Link="Shared\IccPrimaries.cs" />
     <Compile Include="..\Shared\ExifOrientation.cs" Link="Shared\ExifOrientation.cs" />
   </ItemGroup>
 

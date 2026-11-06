@@ -98,7 +98,7 @@ public sealed class IccPrimariesTests
         return image.ColorEncoding.Primaries;
     }
 
-    private static byte[] DisplayP3 { get; } =
+    internal static byte[] DisplayP3 { get; } =
         WithColorants(IccProfiles.SRgbV4.ToArray(), (0.515121, 0.241196, -0.001053), (0.291977, 0.692245, 0.041885), (0.157104, 0.066574, 0.784073));
 
     // The bundled sRGB profile with its rXYZ / gXYZ / bXYZ values replaced.

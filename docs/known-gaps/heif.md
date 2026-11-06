@@ -49,6 +49,6 @@
 - **平面输出只给没有变换的图。** 带 `clap` / `irot` / `imir` 的图 `TryReadPlanarInfo` 返回 `false`，走 RGB 路径。
 - **`Gray8` 是存储的亮度。** `TryDecodeInto(Gray8)` 取 Y 平面，按与 RGB 路径相同的系数做范围映射（limited → full、10 → 8 位），不是 RGB 的 BT.601 亮度，可能差一两个码值；identity 矩阵（GBR）的图退回 RGB 求亮度。
 - **PQ / HLG 不给 8 位投影。** nclx（或 VUI）的传递函数是 PQ（16）或 HLG（18）时，`TryDecodeInto` 返回 `false`，`TryDecode` 照常解码并在 `ColorEncoding` 里如实报告，与 PNG 的 cICP 处理一致。
-- **只有 ICC、没有 nclx 时 `ColorEncoding` 报默认的 sRGB**：`colr` 盒优先于 VUI（手机照片常是 Display P3 ICC 配 BT.601 的 VUI），而 `ColorEncoding` 不从 ICC 推导。
+- **只有 ICC、没有 nclx 时，`ColorEncoding` 只取 ICC 的原色**：`colr` 盒优先于 VUI（手机照片常是 Display P3 ICC 配 BT.601 的 VUI），所以此时不看 VUI 的原色；ICC 声明的原色是 BT.709、Display P3 或 BT.2020 时，报 sRGB 加上这组原色（手机照片报 `DisplayP3`），其他情况报默认的 sRGB。YCbCr 矩阵仍取自 VUI，像素不变。有 nclx 盒时 nclx 优先于 ICC。
 - **已调优（M3）。** 单核 HEVC 阶段是 libde265 的 0.68–0.87×；8 核端到端到 RGBA 是 libheif 的 0.20–0.32×（网格 手机照片和单 item 图都是：单 item 的 WPP 图按 CTB 行做 wavefront 并行），Magick.NET 的 0.09–0.14×。每个 tile 解完立即按目标像素格式和 stride 写进调用方缓冲区（所有 `PixelFormat`，含 `clap` / `irot` / `imir`），没有 整帧中间缓冲。冷进程首次解码的峰值工作集增量：12.6 MP 网格 75 MB（输出 48 MB，libheif 80 MB），未达 ≤ 64 MB 的目标，余量是 JIT 和 16 个并行 tile 各自的工作集；50 MP 网格 230 MB（libheif 373 MB）。见 [HEIF M3 记录](../../benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md)。
 - **专利**：HEVC 有专利负担，本包是 MIT，不授予任何专利许可。

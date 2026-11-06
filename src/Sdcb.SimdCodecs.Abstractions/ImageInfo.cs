@@ -103,7 +103,7 @@ public readonly record struct ImageInfo(int Width, int Height, int Channels, Sam
 
     /// <summary>
     /// How the decoded samples will encode colour, known before decoding: what
-    /// <see cref="IDecodedImage.ColorEncoding"/> of the decoded image will report (PNG cICP / gAMA, HEIF nclx, …), so a
+    /// <see cref="IDecodedImage.ColorEncoding"/> of the decoded image will report (PNG cICP / gAMA, HEIF nclx, the primaries of an ICC profile, …), so a
     /// caller can tell an HDR (PQ / HLG) file apart up front. Defaults to <see cref="ColorEncoding.AssumedSrgb"/>.
     /// </summary>
     public ColorEncoding ColorEncoding

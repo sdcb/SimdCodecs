@@ -33,7 +33,7 @@ internal sealed class PngFrameReader : IImageFrameReader
             Format = ImageFormat.Png,
             BitDepth = animation.BitDepth,
             Orientation = header.Exif is { } exif ? ExifOrientation.Read(exif) : ImageOrientation.Normal,
-            ColorEncoding = PngImageDecoder.MapColorEncoding(header.Cicp, header.Gamma),
+            ColorEncoding = PngImageDecoder.MapColorEncoding(header.Cicp, header.Gamma, header.IccProfile),
             FrameCount = 1,
         };
         _displayReferred = header.Cicp is not { TransferFunction: TransferFunction.Pq or TransferFunction.Hlg };

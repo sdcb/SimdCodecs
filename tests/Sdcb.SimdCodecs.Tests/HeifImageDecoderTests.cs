@@ -256,19 +256,18 @@ public sealed class HeifImageDecoderTests
     }
 
     /// <summary>
-    /// Which colour signalling wins: the phone photos carry an ICC profile and a VUI that says BT.601 primaries —
-    /// the <c>colr</c> box overrides the VUI and the encoding is not derived from the profile, so assumed sRGB; the
+    /// Which colour signalling wins: the phone photo carries a Display P3 ICC profile and a VUI that says BT.601 primaries —
+    /// the <c>colr</c> box overrides the VUI, so the encoding is sRGB with the profile's primaries; the
     /// synthetic files have no <c>colr</c> box and a VUI of BT.709 primaries with the sRGB transfer.
     /// </summary>
     [Theory]
-    [InlineData("hevc-main-3072x4096-grid.heic", ColorPrimaries.BT709, TransferFunction.Srgb)]
+    [InlineData("hevc-main-3072x4096-grid.heic", ColorPrimaries.DisplayP3, TransferFunction.Srgb)]
     [InlineData("synth-photo-fuji-1600x900-main8.heic", ColorPrimaries.BT709, TransferFunction.Srgb)]
     public void ColourSignalling_Precedence(string fixture, ColorPrimaries primaries, TransferFunction transfer)
     {
         byte[] data = HeifTests.ReadFixture(fixture);
         HeifImageDecoder.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.ColorEncoding.ShouldBe(new ColorEncoding { Primaries = primaries, Transfer = transfer, FullRange = true });
-        if (image.Metadata.Icc.Span.Length > 0) image.ColorEncoding.ShouldBeSameAs(ColorEncoding.AssumedSrgb);
     }
 
     /// <summary>Rewrites the nclx box in memory: each code point is reported as is, the transfer decides the refusal.</summary>
