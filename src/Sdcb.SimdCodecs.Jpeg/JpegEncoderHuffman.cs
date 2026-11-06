@@ -328,6 +328,19 @@ internal struct JpegBitWriter
         Mark = Position;
     }
 
+    /// <summary>
+    /// Ends a restart interval (T.81 F.1.2.3, B.1.1.3): pads the entropy-coded segment to a byte boundary with
+    /// 1-bits and writes the marker RST<c>m</c>, <c>m</c> = <paramref name="index"/> mod 8.
+    /// </summary>
+    public void WriteRestart(int index)
+    {
+        FlushBits();
+        Ensure(2);
+        Buffer[Position++] = 0xFF;
+        Buffer[Position++] = (byte)(0xD0 + (index & 7));
+        Mark = Position;
+    }
+
     private void PutByteStuffed(byte b)
     {
         Buffer[Position++] = b;

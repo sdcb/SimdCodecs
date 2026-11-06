@@ -30,7 +30,7 @@ Encode to a baseline JPEG:
 byte[] jpeg = JpegEncoder.Encode(rgba, width, height, quality: 85);
 ```
 
-`JpegEncodeOptions` selects chroma subsampling, optimised Huffman tables, progressive mode, and an optional Exif blob.
+`JpegEncodeOptions` selects chroma subsampling, optimised Huffman tables, progressive mode, a restart interval (`RestartInterval`, in MCUs: DRI plus RST0..RST7 markers in every scan, decoded pixels unchanged), and an optional Exif blob.
 
 ## JPEG inside another container
 

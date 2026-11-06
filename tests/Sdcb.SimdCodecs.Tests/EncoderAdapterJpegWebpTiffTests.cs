@@ -66,6 +66,19 @@ public sealed class EncoderAdapterJpegWebpTiffTests
     }
 
     [Fact]
+    public void Jpeg_passes_the_restart_interval_through()
+    {
+        var options = new JpegEncodeOptions { Quality = 80, RestartInterval = 3 };
+        var pixels = RandomImage(PixelFormat.Rgb24, 2);
+        var expected = JpegEncoder.Encode(pixels, W, H, 3, options);
+        var actual = Session(o => JpegImageEncoder.Create(o, options), pixels, PixelFormat.Rgb24);
+        actual.ShouldBe(expected);
+        actual.ShouldNotBe(JpegEncoder.Encode(pixels, W, H, 3, options with { RestartInterval = 0 }));
+        // DRI with Ri = 3.
+        actual.AsSpan().IndexOf((ReadOnlySpan<byte>)[0xFF, 0xDD, 0, 4, 0, 3]).ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
     public void Jpeg_closest_formats_are_8_bit_grey_or_colour()
     {
         foreach (var format in PixelFormat.All)
