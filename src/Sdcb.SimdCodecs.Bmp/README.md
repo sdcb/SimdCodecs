@@ -38,7 +38,7 @@ byte[] rle = BmpEncoder.Encode(rgba, width, height, PixelFormat.Rgba32,
 
 | Option | |
 |---|---|
-| `Format` | `Indexed1` / `Indexed4` / `Indexed8` (exact when the colours fit, otherwise Wu-quantized, optionally dithered), `Rgb555`, `Rgb565`, `Rgb24`, `Rgb32`, `Argb32`. `Auto` (the default): 32-bit with alpha when the input's alpha is not all 255, an 8-bit grey palette for grey input, 24-bit otherwise |
+| `Format` | `Indexed1` / `Indexed4` / `Indexed8` (exact when the colours fit, otherwise quantized by the shared perceptual quantizer, optionally dithered), `Rgb555`, `Rgb565`, `Rgb24`, `Rgb32`, `Argb32`. `Auto` (the default): 32-bit with alpha when the input's alpha is not all 255, an 8-bit grey palette for grey input, 24-bit otherwise |
 | `Rle` | `BI_RLE4` / `BI_RLE8` for a 4- or 8-bit palette |
 | `Header` | `Core`, `Info`, `V4` or `V5`. `Auto`: V5 with an ICC profile, V4 for alpha (`BI_BITFIELDS` with an alpha mask), `Info` otherwise |
 | `TopDown` | A negative height, top row first |

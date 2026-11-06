@@ -28,6 +28,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+    <!-- The quantizer benchmark times the shared PaletteQuantizer directly. -->
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Quantize.Benchmarks" />
   </ItemGroup>
 
   <ItemGroup>

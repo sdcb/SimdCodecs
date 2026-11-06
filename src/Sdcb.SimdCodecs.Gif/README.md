@@ -38,11 +38,11 @@ byte[] animation = GifEncoder.EncodeAnimation(
 GIF holds at most 256 colours and 1-bit transparency, so the encoder:
 
 - treats alpha below 128 as transparent, the rest as opaque;
-- uses one global palette for every frame: exact (lossless) when the opaque colours of all frames fit in 256, or 255 beside a transparent index; otherwise built by Wu's variance-minimising quantizer, with optional Floyd–Steinberg dithering (`Dither`);
+- uses one global palette for every frame: exact (lossless) when the opaque colours of all frames fit in 256, or 255 beside a transparent index; otherwise built by the shared perceptual quantizer (colours compared in OKLab; a variance-minimising box split refined by k-means), with optional edge-aware Floyd–Steinberg dithering (`Dither`: full strength on smooth areas, none across edges);
 - writes an opaque animation's frames as the rectangle that changed, unchanged pixels as the transparent index; an animation with transparency writes whole frames, each cleared before the next;
 - takes `LoopCount` as plays (0 forever, 1 writes no loop extension), the same meaning the frame reader reports.
 
-Input is 1 (grey), 3 (RGB) or 4 (RGBA) channels of 8 bits. The quantizer's quality and the encoder's speed are not tuned yet: a benchmark and quality gate come separately.
+Input is 1 (grey), 3 (RGB) or 4 (RGBA) channels of 8 bits. The quantizer is measured against pngquant and ImageSharp by [`benchmarks/Sdcb.SimdCodecs.Quantize.Benchmarks`](../../benchmarks/Sdcb.SimdCodecs.Quantize.Benchmarks/); the encoder's speed is not tuned yet.
 
 ## Decisions
 
