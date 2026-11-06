@@ -5,7 +5,11 @@ Measures lossy reduction to a palette (what pngquant does) on quality, size and 
 ```bash
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Quantize.Benchmarks -- rd [--max-dim 1024] [--images TEXT] [--colors 256,128,64,32,16] [--dither off|on|both] [--reps 3] [--pngquant PATH] [--speeds 4] [--contestants LIST] [--ablate] [--ablate-dither]
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Quantize.Benchmarks -- stages [--images TEXT]   # ours per stage: histogram, palette, mapping
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Quantize.Benchmarks -- quality [--images TEXT] [--optimal]   # PNG Quantize { MaxQuality = q } vs pngquant --quality 0-q
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Quantize.Benchmarks -- calibrate [--images TEXT]   # pngquant's error per quality: the source of PngQuantization's quality table
 ```
+
+`rd` compares quantizers at fixed palette sizes, every result written by one common PNG writer. `quality` compares the PNG encoder's lossy mode end to end: both sides choose their palette size from the same quality number and write their own files (ours at `CompressionLevel.SmallestSize`, since pngquant writes at its strongest deflate; `--optimal` for the default level), reporting per image and overall BD-rate over the quality sweep and the size ratio at equal quality numbers. `calibrate` prints the OKLab error pngquant reaches at each `--quality 0-q`; the median over the corpus is the table in `src/Sdcb.SimdCodecs.Png/PngQuantization.cs`, so re-run it (and update the table) only on purpose.
 
 ## Contestants
 

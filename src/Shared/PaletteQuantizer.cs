@@ -64,14 +64,22 @@ internal sealed class PaletteQuantizer
     /// <summary>Whether colours are compared in OKLab (true) or in premultiplied sRGB (false, for ablation).</summary>
     internal bool Perceptual { get; init; } = true;
 
+    /// <summary>Whether the palette last built is the colours added, each exactly (every pixel is its own entry).</summary>
+    internal bool Exact { get; private set; }
+
     /// <summary>The mean squared distance, in the comparison space, of the colours added to the palette last built.</summary>
     internal double MeanSquaredError { get; private set; }
 
     /// <summary>Counts one colour into the histogram.</summary>
     public void Add(int argb) => _histogram.Add(_alpha ? argb : argb | unchecked((int)0xFF000000));
 
-    /// <summary>Builds a palette of at most <paramref name="maxColors"/> entries from the colours added.</summary>
-    public int[] BuildPalette(int maxColors)
+    /// <summary>
+    /// Builds a palette of at most <paramref name="maxColors"/> entries from the colours added. With a
+    /// <paramref name="targetError"/> (a mean squared distance in the comparison space) it stops adding entries once
+    /// the error is down to it, so an image that needs few colours gets few; <see cref="MeanSquaredError"/> says what
+    /// was reached.
+    /// </summary>
+    public int[] BuildPalette(int maxColors, double targetError = 0)
     {
         var (keys, weights) = _histogram.Entries();
         var n = keys.Length;
@@ -87,34 +95,55 @@ internal sealed class PaletteQuantizer
             space.Features(keys[i], features.AsSpan(i * 4, 4));
 
         int[] palette;
-        float[] centres;
-        if (n <= maxColors && !_histogram.Coarsened)
+        if (n <= maxColors && !_histogram.Coarsened && targetError == 0)
         {
-            // Every colour fits: the palette is the colours themselves.
+            // Every colour fits and every one is wanted: the palette is the colours themselves.
             palette = [.. keys];
-            centres = features;
+            MeanSquaredError = 0;
+            Exact = true;
         }
         else
         {
-            centres = Split(features, weights, maxColors);
-            // Most iterations on the colours merged into at most CoarseColours groups (each at its weighted mean),
-            // the last ones on every colour: nearly the error of iterating on all of them, for a fraction of the time.
-            var fine = Math.Min(Iterations, FineIterations);
-            if (Iterations > fine && n > CoarseColours)
+            // The box split stops at the target; k-means then lowers the error further, so the result usually meets it
+            // with entries to spare. When rounding or coarsening leaves it short, split further and try again.
+            ReadOnlySpan<double> stops = [1.0, 0.8, 0.6, 0];
+            palette = [];
+            Exact = false;
+            foreach (var stop in stops)
             {
-                var (coarse, coarseWeights) = Coarse(keys, features, weights);
-                Refine(coarse, coarseWeights, centres, Iterations - fine);
+                (palette, MeanSquaredError) = Build(space, keys, features, weights, maxColors, targetError * stop);
+                if (MeanSquaredError <= targetError || palette.Length >= maxColors) break;
             }
-            else
-            {
-                fine = Iterations;
-            }
-            Refine(features, weights, centres, fine);
-            palette = new int[centres.Length / 4];
-            for (var k = 0; k < palette.Length; k++)
-                palette[k] = space.Colour(centres.AsSpan(k * 4, 4), _alpha);
-            palette = Dedupe(palette);
         }
+
+        if (!_alpha)
+        {
+            for (var k = 0; k < palette.Length; k++) palette[k] &= 0xFFFFFF;
+        }
+        return palette;
+    }
+
+    private (int[] Palette, double Error) Build(Space space, int[] keys, float[] features, long[] weights, int maxColors, double stopError)
+    {
+        var n = keys.Length;
+        var centres = Split(features, weights, maxColors, stopError);
+        // Most iterations on the colours merged into at most CoarseColours groups (each at its weighted mean),
+        // the last ones on every colour: nearly the error of iterating on all of them, for a fraction of the time.
+        var fine = Math.Min(Iterations, FineIterations);
+        if (Iterations > fine && n > CoarseColours)
+        {
+            var (coarse, coarseWeights) = Coarse(keys, features, weights);
+            Refine(coarse, coarseWeights, centres, Iterations - fine);
+        }
+        else
+        {
+            fine = Iterations;
+        }
+        Refine(features, weights, centres, fine);
+        var palette = new int[centres.Length / 4];
+        for (var k = 0; k < palette.Length; k++)
+            palette[k] = space.Colour(centres.AsSpan(k * 4, 4), _alpha);
+        palette = Dedupe(palette);
 
         // The error of the palette as written (entries rounded to 8 bits).
         var written = new float[palette.Length * 4];
@@ -128,13 +157,7 @@ internal sealed class PaletteQuantizer
             error += d * weights[i];
             total += weights[i];
         }
-        MeanSquaredError = error / total;
-
-        if (!_alpha)
-        {
-            for (var k = 0; k < palette.Length; k++) palette[k] &= 0xFFFFFF;
-        }
-        return palette;
+        return (palette, error / total);
     }
 
     // Distinct entries, first occurrence kept: two centres can round to the same 8-bit colour.
@@ -151,9 +174,10 @@ internal sealed class PaletteQuantizer
 
     /// <summary>
     /// The variance-minimising box split: the box of largest squared error is cut until there are
-    /// <paramref name="maxColors"/> boxes or no box can be cut. Returns the boxes' weighted means.
+    /// <paramref name="maxColors"/> boxes, the mean squared error is at most <paramref name="stopError"/>, or no box can
+    /// be cut. Returns the boxes' weighted means.
     /// </summary>
-    private static float[] Split(float[] features, long[] weights, int maxColors)
+    private static float[] Split(float[] features, long[] weights, int maxColors, double stopError)
     {
         var n = weights.Length;
         var order = new int[n];
@@ -165,7 +189,9 @@ internal sealed class PaletteQuantizer
         var bucketWeight = new double[Buckets];
         var bucketSum = new double[Buckets * 4];
         var bucketCount = new int[Buckets];
-        while (boxes.Count < maxColors)
+        double totalWeight = boxes[0].Weight, totalError = boxes[0].Error;
+        // At least two entries when there are two colours: one colour is no palette worth writing.
+        while (boxes.Count < maxColors && (boxes.Count < 2 || totalError > stopError * totalWeight))
         {
             var pick = -1;
             for (var i = 0; i < boxes.Count; i++)
@@ -189,7 +215,8 @@ internal sealed class PaletteQuantizer
             }
             if (!(hi > lo))
             {
-                boxes[pick] = box with { Error = 0 }; // every colour equal along its widest coordinate: nothing to gain
+                // Every colour equal along its widest coordinate: nothing to gain. Its error still counts in the total.
+                boxes[pick] = box with { Error = 0 };
                 continue;
             }
             var scale = Buckets / (hi - lo);
@@ -245,6 +272,7 @@ internal sealed class PaletteQuantizer
             tmp.CopyTo(items);
             boxes[pick] = Measure(features, weights, order, box.Start, cutCount);
             boxes.Add(Measure(features, weights, order, box.Start + cutCount, box.Count - cutCount));
+            totalError += boxes[pick].Error + boxes[^1].Error - box.Error;
         }
 
         var centres = new float[boxes.Count * 4];

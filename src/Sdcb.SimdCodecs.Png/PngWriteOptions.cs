@@ -75,6 +75,19 @@ public sealed record PngWriteOptions : Sdcb.SimdCodecs.Abstractions.EncodeOption
     /// </remarks>
     public bool LosslessReduction { get; init; }
 
+    /// <summary>
+    /// Lossy reduction to a palette (the pngquant use case): the image is reduced to at most
+    /// <see cref="PngQuantizeOptions.MaxColors"/> colours, alpha included, and written as indexed colour with tRNS.
+    /// Null (the default) writes the samples as given. Not together with <see cref="TransparentColor"/>, and not for
+    /// <see cref="PngAnimationEncoder"/>; either is an <see cref="System.ArgumentException"/>.
+    /// </summary>
+    /// <remarks>
+    /// The quantized image is written in its smallest exact layout, as <see cref="LosslessReduction"/> would write it
+    /// (usually indexed; greyscale when every colour is a grey), whether or not that option is set. When the image
+    /// misses <see cref="PngQuantizeOptions.MinQuality"/>, it is written as if this option were null.
+    /// </remarks>
+    public PngQuantizeOptions? Quantize { get; init; }
+
     /// <summary>When set, emit a <c>cHRM</c> chunk with the supplied primaries + white point.</summary>
     public ChromaticityChunk? Chromaticity { get; init; }
 

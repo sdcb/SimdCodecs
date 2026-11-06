@@ -120,6 +120,29 @@ internal sealed class OursQuantizer(string name, int iterations = 16, bool perce
     }
 }
 
+/// <summary>
+/// The PNG encoder's lossy mode end to end: <c>PngWriter.Encode</c> with <c>PngWriteOptions.Quantize</c>, decoded back
+/// with our reader. Time includes the PNG encode (deflate), like pngquant's.
+/// </summary>
+internal sealed class OursPng(System.IO.Compression.CompressionLevel level = System.IO.Compression.CompressionLevel.Optimal) : IContestant
+{
+    public string Name => "ours-png";
+
+    public Quantized Run(EncodeImage image, int colors, bool dither) =>
+        Run(image, new PngQuantizeOptions { MaxColors = colors, Dither = dither });
+
+    public Quantized Run(EncodeImage image, PngQuantizeOptions quantize)
+    {
+        var sw = Stopwatch.StartNew();
+        byte[] file = PngWriter.Encode(image.Rgba, image.Width, image.Height, new PngWriteOptions { Quantize = quantize, CompressionLevel = level });
+        double ms = sw.Elapsed.TotalMilliseconds;
+        PngImage png = PngReader.Decode(file);
+        var rgba = new byte[image.Rgba.Length];
+        png.ExpandToRgba8(rgba);
+        return new Quantized(rgba, ms, file.Length);
+    }
+}
+
 /// <summary>ImageSharp's quantizers through the documented <c>Quantize</c> processor (black box).</summary>
 internal sealed class ImageSharpQuantizer(string name, Func<QuantizerOptions, IQuantizer> make) : IContestant
 {
@@ -158,6 +181,32 @@ internal sealed class PngquantCli(string exe, int speed) : IContestant
         args.Add(input);
         var sw = Stopwatch.StartNew();
         Exec(exe, args);
+        double ms = sw.Elapsed.TotalMilliseconds;
+        byte[] file = File.ReadAllBytes(output);
+        PngImage png = PngReader.Decode(file);
+        var rgba = new byte[image.Rgba.Length];
+        png.ExpandToRgba8(rgba);
+        return new Quantized(rgba, ms, file.Length);
+    }
+
+    /// <summary>pngquant's own quality search: <c>--quality=min-max</c>; null when it refuses (exit 99, quality below min).</summary>
+    public Quantized? RunQuality(EncodeImage image, int min, int max, bool dither)
+    {
+        string input = Input(image);
+        string output = Path.Combine(BenchPaths.Work, $"pq-{image.Name}-q{min}-{max}-{(dither ? "fs" : "nofs")}-s{speed}.png");
+        var args = new List<string> { "--force", "--strip", "--speed", speed.ToString(), "--quality", $"{min}-{max}", "--output", output };
+        if (!dither) args.Add("--nofs");
+        args.Add(input);
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            Exec(exe, args);
+        }
+        catch (InvalidOperationException e) when (e.Message.Contains("exited 99"))
+        {
+            return null;
+        }
+
         double ms = sw.Elapsed.TotalMilliseconds;
         byte[] file = File.ReadAllBytes(output);
         PngImage png = PngReader.Decode(file);

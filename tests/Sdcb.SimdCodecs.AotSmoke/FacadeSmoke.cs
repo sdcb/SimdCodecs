@@ -181,6 +181,8 @@ internal static class FacadeSmoke
         return
         [
             ("png", PngWriter.Encode(rgba, w, h)),
+            ("png-quantize", PngWriter.Encode(rgba, w, h, new PngWriteOptions { Quantize = new PngQuantizeOptions { MaxColors = 64, MaxQuality = 80 } })),
+            ("png-quantize-fs", PngWriter.Encode(rgba, w, h, new PngWriteOptions { Quantize = new PngQuantizeOptions { Dither = true } })),
             ("apng", Apng(rgba, w, h, wide: false)),
             ("apng-16", Apng(rgba, w, h, wide: true)),
             ("jpeg", JpegEncoder.Encode(rgb, w, h, 3, new JpegEncodeOptions { Quality = 80 })),
@@ -198,6 +200,7 @@ internal static class FacadeSmoke
                 [new WebpAnimationCanvasFrame(rgba, TimeSpan.FromMilliseconds(50)), new WebpAnimationCanvasFrame(rgba.Reverse().ToArray(), TimeSpan.FromMilliseconds(50))],
                 w, h, PixelFormat.Rgba32, new WebpAnimationEncodeOptions { Mode = WebpAnimationMode.Mixed })),
             ("gif", GifEncoder.Encode(rgb, w, h, 3)),
+            ("gif-dither", GifEncoder.Encode(rgba, w, h, 4, new GifEncodeOptions { Dither = true })),
             ("gif-anim", GifEncoder.EncodeAnimation(
                 [new GifAnimationFrame(rgb, TimeSpan.FromMilliseconds(50)), new GifAnimationFrame(rgb.Reverse().ToArray(), TimeSpan.FromMilliseconds(50))],
                 w, h, 3)),

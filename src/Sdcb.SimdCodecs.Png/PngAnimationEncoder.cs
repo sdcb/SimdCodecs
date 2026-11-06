@@ -66,6 +66,8 @@ public sealed class PngAnimationEncoder
             throw new ArgumentException("DiscardAlpha does not apply to an animation; LosslessReduction drops an alpha channel that no frame uses.", nameof(options));
         if (options.TransparentColor is not null)
             throw new ArgumentException("A transparent colour (tRNS) does not apply to an animation; LosslessReduction finds one where it fits.", nameof(options));
+        if (options.Quantize is not null)
+            throw new ArgumentException("Quantize is not supported for an animation yet.", nameof(options));
         if (options.LoopCount < 0)
             throw new ArgumentOutOfRangeException(nameof(options), options.LoopCount, "LoopCount must not be negative.");
         PngWriter.ValidateText(options);

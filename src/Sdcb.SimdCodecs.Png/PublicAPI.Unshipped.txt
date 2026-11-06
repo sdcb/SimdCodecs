@@ -61,5 +61,24 @@ Sdcb.SimdCodecs.Png.PngAnimationEncoder.Encode() -> byte[]!
 Sdcb.SimdCodecs.Png.PngAnimationEncoder.Encode(System.IO.Stream! output) -> void
 Sdcb.SimdCodecs.Png.PngAnimationEncoder.FrameCount.get -> int
 Sdcb.SimdCodecs.Png.PngAnimationEncoder.PngAnimationEncoder(int canvasWidth, int canvasHeight, Sdcb.SimdCodecs.Png.PngWriteOptions? options = null, bool sixteenBit = false) -> void
+override Sdcb.SimdCodecs.Png.PngQuantizeOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Png.PngQuantizeOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Png.PngQuantizeOptions.ToString() -> string!
+Sdcb.SimdCodecs.Png.PngQuantizeOptions
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.<Clone>$() -> Sdcb.SimdCodecs.Png.PngQuantizeOptions!
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.Equals(Sdcb.SimdCodecs.Png.PngQuantizeOptions? other) -> bool
+static Sdcb.SimdCodecs.Png.PngQuantizeOptions.operator !=(Sdcb.SimdCodecs.Png.PngQuantizeOptions? left, Sdcb.SimdCodecs.Png.PngQuantizeOptions? right) -> bool
+static Sdcb.SimdCodecs.Png.PngQuantizeOptions.operator ==(Sdcb.SimdCodecs.Png.PngQuantizeOptions? left, Sdcb.SimdCodecs.Png.PngQuantizeOptions? right) -> bool
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.Dither.get -> bool
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.Dither.init -> void
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.MaxColors.get -> int
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.MaxColors.init -> void
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.MaxQuality.get -> int
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.MaxQuality.init -> void
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.MinQuality.get -> int
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.MinQuality.init -> void
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.PngQuantizeOptions() -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.Quantize.get -> Sdcb.SimdCodecs.Png.PngQuantizeOptions?
+Sdcb.SimdCodecs.Png.PngWriteOptions.Quantize.init -> void
 Sdcb.SimdCodecs.Png.PngWriteOptions.LoopCount.get -> int
 Sdcb.SimdCodecs.Png.PngWriteOptions.LoopCount.init -> void

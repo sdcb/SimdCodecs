@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
+using Sdcb.SimdCodecs.Png;
 using Sdcb.SimdCodecs.Quantize.Benchmarks;
 using SixLabors.ImageSharp.Processing.Processors.Quantization;
 
@@ -45,6 +46,90 @@ if (args.Length > 0 && args[0] == "stages")
     return 0;
 }
 
+if (args.Length > 0 && args[0] == "calibrate")
+{
+    // pngquant's --quality=0-q, black box: per quality, the colours it chose and the OKLab error it reached, so our
+    // own quality scale can be set to mean the same error.
+    var pq = new PngquantCli(args.SkipWhile(a => a != "--pngquant").Skip(1).FirstOrDefault() ?? "pngquant", 4);
+    List<EncodeImage> calibration = Corpus.Load(1024, args.SkipWhile(a => a != "--images").Skip(1).FirstOrDefault());
+    calibration.Add(Corpus.WithAlpha(calibration).Single(i => i.Name == "sticker"));
+    int[] qualities = [0, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100];
+    Console.WriteLine("image                         q  colors  OKLab-RMS  SSIM-dB     bytes");
+    var byQuality = qualities.ToDictionary(q => q, _ => new List<double>());
+    foreach (EncodeImage image in calibration)
+    {
+        foreach (int q in qualities)
+        {
+            Quantized r = pq.RunQuality(image, 0, q, dither: false)!;
+            double ok = Metrics.OklabRms(image.Rgba, r.Rgba);
+            byQuality[q].Add(ok);
+            Console.WriteLine($"{image.Name,-28} {q,3} {Metrics.DistinctColors(r.Rgba),7} {ok,10:F3} {Metrics.SsimDb(image.Rgba, r.Rgba, image.Width, image.Height, image.HasAlpha),8:F2} {r.NativeBytes,9}");
+        }
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("  q   median OKLab-RMS   (min .. max)");
+    foreach (int q in qualities)
+    {
+        var v = byQuality[q].Order().ToArray();
+        Console.WriteLine($"{q,3} {v[v.Length / 2],12:F3}   ({v[0]:F3} .. {v[^1]:F3})");
+    }
+
+    return 0;
+}
+
+if (args.Length > 0 && args[0] == "quality")
+{
+    // The quality scale end to end: pngquant --quality 0-q against PngWriteOptions.Quantize { MaxQuality = q }, both
+    // writing their own files. Same quality number should mean about the same error; the rest is who does it smaller.
+    var pq = new PngquantCli(args.SkipWhile(a => a != "--pngquant").Skip(1).FirstOrDefault() ?? "pngquant", 4);
+    // pngquant writes at its strongest deflate, so ours does too (CompressionLevel.SmallestSize) unless --optimal.
+    var png = new OursPng(args.Contains("--optimal") ? System.IO.Compression.CompressionLevel.Optimal : System.IO.Compression.CompressionLevel.SmallestSize);
+    List<EncodeImage> set = Corpus.Load(1024, null);
+    set.Add(Corpus.WithAlpha(set).Single(i => i.Name == "sticker"));
+    if (args.SkipWhile(a => a != "--images").Skip(1).FirstOrDefault() is { } filter) set = set.Where(i => i.Name.Contains(filter)).ToList();
+    int[] qualities = [5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+    foreach (bool dither in new[] { false, true })
+    {
+        Console.WriteLine();
+        Console.WriteLine($"dither {(dither ? "on" : "off")}");
+        Console.WriteLine("image                        q | pngquant: colors     bytes  SSIM-dB blurred | ours: colors     bytes  SSIM-dB blurred    ms");
+        var bdSsim = new List<double>();
+        var bdBlur = new List<double>();
+        var logBytes = new List<double>();
+        var logTime = new List<double>();
+        foreach (EncodeImage image in set)
+        {
+            var a = new List<(long, double, double)>();
+            var b = new List<(long, double, double)>();
+            png.Run(image, new PngQuantizeOptions { Dither = dither }); // warm-up
+            foreach (int q in qualities)
+            {
+                Quantized p = pq.RunQuality(image, 0, q, dither)!;
+                Quantized o = png.Run(image, new PngQuantizeOptions { MaxQuality = q, Dither = dither });
+                double ps = Metrics.SsimDb(image.Rgba, p.Rgba, image.Width, image.Height, image.HasAlpha), os = Metrics.SsimDb(image.Rgba, o.Rgba, image.Width, image.Height, image.HasAlpha);
+                double pb = Metrics.BlurredOklabRms(image.Rgba, p.Rgba, image.Width, image.Height), ob = Metrics.BlurredOklabRms(image.Rgba, o.Rgba, image.Width, image.Height);
+                a.Add((p.NativeBytes!.Value, ps, -pb));
+                b.Add((o.NativeBytes!.Value, os, -ob));
+                logBytes.Add(Math.Log((double)o.NativeBytes.Value / p.NativeBytes.Value));
+                logTime.Add(Math.Log(o.Milliseconds / p.Milliseconds));
+                Console.WriteLine($"{image.Name,-27} {q,3} |        {Metrics.DistinctColors(p.Rgba),6} {p.NativeBytes,9} {ps,8:F2} {pb,7:F3} |   {Metrics.DistinctColors(o.Rgba),6} {o.NativeBytes,9} {os,8:F2} {ob,7:F3} {o.Milliseconds,5:F0}");
+            }
+
+            double s = Metrics.BdRate(a.Select(x => (x.Item1, x.Item2)), b.Select(x => (x.Item1, x.Item2)));
+            double l = Metrics.BdRate(a.Select(x => (x.Item1, x.Item3)), b.Select(x => (x.Item1, x.Item3)));
+            if (!double.IsNaN(s)) bdSsim.Add(s);
+            if (!double.IsNaN(l)) bdBlur.Add(l);
+            Console.WriteLine($"  {image.Name}: BD-rate SSIM {s * 100:+0.0;-0.0}%, blurred {l * 100:+0.0;-0.0}%");
+        }
+
+        Console.WriteLine($"summary, dither {(dither ? "on" : "off")}: BD-rate vs pngquant (own files) SSIM {bdSsim.Average() * 100:+0.0;-0.0}%, blurred {bdBlur.Average() * 100:+0.0;-0.0}%; " +
+                          $"bytes at the same quality number ×{Math.Exp(logBytes.Average()):F2}; time ×{Math.Exp(logTime.Average()):F2}");
+    }
+
+    return 0;
+}
+
 if (args.Length == 0 || args[0] != "rd")
 {
     Console.WriteLine(Usage);
@@ -72,6 +157,7 @@ var contestants = new List<IContestant>(reference)
     new BaselineWu(),
 #endif
     new OursQuantizer("ours"),
+    new OursPng(),
     new ImageSharpQuantizer("imagesharp-wu", o => new WuQuantizer(o)),
     new ImageSharpQuantizer("imagesharp-octree", o => new OctreeQuantizer(o)),
 };
