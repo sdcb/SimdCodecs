@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants>$(DefineConstants);SIMDCODECS_EXIF</DefineConstants>
     <IsAotCompatible>true</IsAotCompatible>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 
@@ -32,6 +33,14 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared source: the Orientation reset and the ISOBMFF item model (no codec code) that finds the Exif item of a HEIF / AVIF file. -->
+    <Compile Include="..\Shared\ExifOrientation.cs" Link="Shared\ExifOrientation.cs" />
+    <Compile Include="..\Shared\Isobmff\BoxReader.cs" Link="Shared\Isobmff\BoxReader.cs" />
+    <Compile Include="..\Shared\Isobmff\ItemContainer.cs" Link="Shared\Isobmff\ItemContainer.cs" />
+    <Compile Include="..\Shared\Isobmff\ExifItem.cs" Link="Shared\Isobmff\ExifItem.cs" />
   </ItemGroup>
 
 </Project>

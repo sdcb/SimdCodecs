@@ -26,7 +26,7 @@
 | nclx `colr` 盒、HEVC VUI | ✅ | 决定矩阵、范围和 `ColorEncoding` |
 | ICC（`prof` / `rICC`） | ✅ | 透传，不应用 |
 | PQ / HLG | ⚠️ | `TryDecode` 照常解码，`TryDecodeInto` 返回 `false` |
-| Exif、XMP item | ✅ | Exif 方向原样透传 |
+| Exif、XMP item | ✅ | Exif 方向标签已改写为 1，与转正后的像素一致 |
 | `thmb` 缩略图 | ✅ | 门面 `TryDecodeThumbnail` |
 
 ### 门面与性能
@@ -45,7 +45,7 @@
 - **只解码 HEVC 静态图**（Main、Main 10、Main Still Picture，4:2:0），含网格（`grid`）拼图和 `clap` / `irot` / `imir`。**不支持**：图像序列（`.heics`，主品牌 `msf1` 等，`CanDecode` 认得但不解码）、HEVC 范围扩展 profile（Main 10 Intra、Main 12、4:4:4 等）、AVIF。
 - **不解码辅助图像**：alpha（彩色主图照常解码，按不透明输出，`Channels` 为 3）、HDR 增益图、深度图。
 - **Main 10 的 8 位输出与 16 位图像收窄后最多差 1。** 2.0 起 Main 10 的 `TryDecode` 给出 16 位样本（`BitDepth` 10）；`TryDecodeInto` 输出 8 位格式时仍从编码样本直接做冻结的 8 位转换（只舍入一次），所以与把 16 位图像 `>> 8` 收窄的结果可能差 1 个码值。这是 `IImageDecoder.TryDecodeInto` 契约里写明的例外。
-- **Exif 方向原样透传。** `TryReadMetadata` 的 Exif 块里的方向标签不改写，像素却已按 `irot` / `imir` 转正； 转码到别的格式时调用方需要把方向改写为 1。
+- **Exif 方向标签已改写为 1。** 像素已按 `irot` / `imir` 转正，所以 `TryReadMetadata` 和解码结果 `Metadata.Exif` 里的方向标签（SHORT、IFD0）在交出的副本中被改为 1，转码时不会转两次。文件里记录的原始方向可用 `ExifReader.FromHeif` 读到。
 - **平面输出只给没有变换的图。** 带 `clap` / `irot` / `imir` 的图 `TryReadPlanarInfo` 返回 `false`，走 RGB 路径。
 - **`Gray8` 是存储的亮度。** `TryDecodeInto(Gray8)` 取 Y 平面，按与 RGB 路径相同的系数做范围映射（limited → full、10 → 8 位），不是 RGB 的 BT.601 亮度，可能差一两个码值；identity 矩阵（GBR）的图退回 RGB 求亮度。
 - **PQ / HLG 不给 8 位投影。** nclx（或 VUI）的传递函数是 PQ（16）或 HLG（18）时，`TryDecodeInto` 返回 `false`，`TryDecode` 照常解码并在 `ColorEncoding` 里如实报告，与 PNG 的 cICP 处理一致。

@@ -47,6 +47,7 @@ responsible for evaluating HEVC patent obligations in their jurisdiction.</Descr
     <Compile Include="..\Shared\ExifOrientation.cs" Link="Shared\ExifOrientation.cs" />
     <Compile Include="..\Shared\Isobmff\BoxReader.cs" Link="Shared\Isobmff\BoxReader.cs" />
     <Compile Include="..\Shared\Isobmff\ItemContainer.cs" Link="Shared\Isobmff\ItemContainer.cs" />
+    <Compile Include="..\Shared\Isobmff\ExifItem.cs" Link="Shared\Isobmff\ExifItem.cs" />
   </ItemGroup>
 
 </Project>

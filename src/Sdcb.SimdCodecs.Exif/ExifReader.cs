@@ -9,7 +9,7 @@ using Sdcb.SimdCodecs.Tiff;
 namespace Sdcb.SimdCodecs.Exif;
 
 /// <summary>
-/// Reads EXIF metadata from JPEG / TIFF / PNG / WebP containers. EXIF is
+/// Reads EXIF metadata from JPEG / TIFF / PNG / WebP / HEIF / AVIF containers. EXIF is
 /// structurally a TIFF-IFD chain regardless of where it's embedded:
 /// <list type="bullet">
 /// <item>JPEG carries it in the APP1 segment (<c>FF E1</c>) prefixed with
@@ -18,6 +18,7 @@ namespace Sdcb.SimdCodecs.Exif;
 /// <item>PNG carries it in the optional <c>eXIf</c> ancillary chunk
 ///   (introduced in the 2017 PNG 1.2 errata).</item>
 /// <item>WebP carries it in the extended format's <c>EXIF</c> RIFF chunk.</item>
+/// <item>HEIF and AVIF carry it as an <c>Exif</c> item of the ISOBMFF <c>meta</c> box (<see cref="FromHeif"/>).</item>
 /// </list>
 /// All four are handled by stripping the container framing and feeding
 /// the raw "TIFF-with-IFDs" payload to the same IFD walker.
@@ -33,7 +34,8 @@ public static class ExifReader
     /// <summary>
     /// Auto-detect the container and decode EXIF. Sniffs the first few
     /// bytes for JPEG (<c>FF D8</c>), TIFF (<c>II</c>/<c>MM</c>+42),
-    /// PNG (89 50 4E 47 …) or WebP (<c>RIFF</c> … <c>WEBP</c>) and dispatches.
+    /// PNG (89 50 4E 47 …), WebP (<c>RIFF</c> … <c>WEBP</c>) or an ISOBMFF <c>ftyp</c> with a HEIF / AVIF brand
+    /// (heic, heix, heim, heis, hevc, hevx, mif1, msf1, avif, avis) and dispatches.
     /// </summary>
     public static ExifMetadata? FromBytes(ReadOnlySpan<byte> bytes)
     {
@@ -47,7 +49,51 @@ public static class ExifReader
             return FromPng(bytes);
         if (bytes.Length >= 12 && bytes[..4].SequenceEqual("RIFF"u8) && bytes.Slice(8, 4).SequenceEqual("WEBP"u8))
             return FromWebp(bytes);
+        if (IsHeifBrand(bytes)) return FromHeif(bytes);
         return null;
+    }
+
+    // ISO/IEC 14496-12 §4.3: 'ftyp' is the first box; its major brand and compatible brands name the file type.
+    private static bool IsHeifBrand(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length < 16 || !bytes.Slice(4, 4).SequenceEqual("ftyp"u8)) return false;
+        var size = BinaryPrimitives.ReadUInt32BigEndian(bytes);
+        var end = size < 16 || size > (uint)bytes.Length ? bytes.Length : (int)size;
+        // Major brand at 8, minor version at 12, then compatible brands from 16.
+        for (var pos = 8; pos + 4 <= end; pos += pos == 8 ? 8 : 4)
+        {
+            var brand = bytes.Slice(pos, 4);
+            foreach (var known in HeifBrands)
+                if (brand.SequenceEqual(known)) return true;
+        }
+        return false;
+    }
+
+    private static readonly byte[][] HeifBrands =
+    [
+        "heic"u8.ToArray(), "heix"u8.ToArray(), "heim"u8.ToArray(), "heis"u8.ToArray(), "hevc"u8.ToArray(),
+        "hevx"u8.ToArray(), "mif1"u8.ToArray(), "msf1"u8.ToArray(), "avif"u8.ToArray(), "avis"u8.ToArray(),
+    ];
+
+    /// <summary>
+    /// Reads the EXIF block of a HEIF / HEIC / AVIF still image (ISO/IEC 23008-12): the <c>Exif</c> item that the
+    /// primary image's <c>cdsc</c> reference points to, found through the <c>meta</c> box alone, no image data is
+    /// decoded. The block is returned as the file records it, Orientation included (the pixels the file's
+    /// <c>irot</c> / <c>imir</c> properties produce are a separate matter). Returns <c>null</c> when there is no Exif
+    /// item or the file is malformed; never throws.
+    /// </summary>
+    public static ExifMetadata? FromHeif(ReadOnlySpan<byte> heif)
+    {
+        try
+        {
+            var items = Isobmff.ItemContainer.Parse(heif);
+            var exif = Isobmff.ExifItem.FindPrimary(heif, items);
+            return exif.IsEmpty ? null : FromTiff(exif.Span);
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or OverflowException or IndexOutOfRangeException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

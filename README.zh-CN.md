@@ -67,7 +67,7 @@ File.WriteAllBytes("photo.jpg", jpeg);
 | JPEG 2000 | ✅ | — | Part 1（T.800），用于 PDF 的 `/JPXDecode`；JP2 alpha（`cdef`）；按分辨率级别缩小解码；tile 内多核并行 |
 | JBIG2 | ✅ | — | T.88，用于 PDF 的 `/JBIG2Decode` |
 | HEIF / HEIC | ✅ | — | 独立包，需显式注册（HEVC 专利；不授予专利许可）。HEVC Main / Main 10 / Main Still Picture 静态图及手机拍照的网格拼图，与 ffmpeg 逐字节一致；ICC、nclx、Exif / XMP item、`thmb` 缩略图、`clap` / `irot` / `imir`；输出 8 位，Main 10 输出 16 位；可输出 YCbCr 平面 |
-| EXIF | ✅ | ✅ | 读取 JPEG、TIFF、PNG、WebP 中的 EXIF；`ExifWriter` 生成可交给 JPEG 编码器的数据块 |
+| EXIF | ✅ | ✅ | 读取 JPEG、TIFF、PNG、WebP、HEIF、AVIF 中的 EXIF；`ExifWriter` 生成可交给 JPEG 编码器的数据块 |
 | ICC 配置文件 | ✅ | ✅ | 解码器返回内嵌的配置文件；`IccProfiles.Describe` 读出其名称；内置 sRGB v4；可把配置文件写入现有 JPEG |
 
 上表描述的是各格式包本身的能力。`Sdcb.SimdCodecs` 门面有意提供更窄的识别和显示契约；例如独立的 `LosslessJpeg.FromMemory` API 可以直接处理 SOF3，而 `JpegDecoder` 和门面会拒绝这类文件。其他门面限制见 [docs/known-gaps.md](docs/known-gaps.md)。
@@ -152,7 +152,7 @@ JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插
 - **Ico**：基于 Bmp 和 Png 的图标和光标：读出每张图，默认取最大、位深最高的一张，带热点坐标；编码多尺寸图标和光标， 每张图可选 PNG 或 1/4/8/24/32 位 DIB。
 - **Qoi**：按 QOI 规范实现：3 通道和 4 通道图像；会报告色彩空间（线性色彩空间报告为线性传递函数）；可直接解码成任意 `PixelFormat` 且不分配内存；编码输入可以是 RGBA、BGRA、RGB、BGR 或灰度。
 - **Pnm**：Netpbm：P1–P6 的 ASCII 和二进制格式，maxval 最高 65535（大于 255 时为 16 位样本）；1–4 通道的 PAM（P7）； PFM（`Pf` / `PF`）读出浮点样本；文件里只读第一张图。所有格式都能编码，ASCII 输出每行不超过 70 个字符。 格式说明没有定死的行为列在包的 README 里。
-- **Exif**：读取 JPEG、TIFF、PNG 和 WebP；`ExifWriter` 生成可赋给 `JpegEncodeOptions.Exif` 的数据块。
+- **Exif**：读取 JPEG、TIFF、PNG、WebP、HEIF 和 AVIF；`ExifWriter` 生成可赋给 `JpegEncodeOptions.Exif` 的数据块。
 - **Heif**：基于 ISOBMFF item 模型的 ISO/IEC 23008-12 静态图：HEVC 帧内解码（H.265 Main、Main 10、 Main Still Picture，4:2:0），`grid` 分块并行解码，应用 `clap` / `irot` / `imir`，ICC 原样传出，报告 nclx / VUI 色彩；PQ / HLG 不给 8 位投影。1.x 输出 8 位样本；不解码 alpha、增益图、图像序列和范围扩展 profile。详见包的 README。
 
 </details>

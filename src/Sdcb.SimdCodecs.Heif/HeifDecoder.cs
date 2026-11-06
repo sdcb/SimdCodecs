@@ -21,7 +21,7 @@ namespace Sdcb.SimdCodecs.Heif;
 /// The transformative properties of the primary item — clean aperture (<c>clap</c>), rotation
 /// (<c>irot</c>) and mirroring (<c>imir</c>) — are applied in the order the file associates them, so the
 /// pixels come out display-oriented. An Exif orientation tag in the file is not applied (HEIF readers
-/// use the item properties instead).
+/// use the item properties instead); the Exif block in the decoded metadata has it reset to 1 to match the pixels.
 /// </para>
 /// </remarks>
 public static class HeifDecoder

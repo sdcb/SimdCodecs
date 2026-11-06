@@ -68,7 +68,7 @@ Each format is also its own package with a richer API: scaled JPEG decoding, TIF
 | JPEG 2000 | ✅ | — | Part 1 (T.800), for PDF `/JPXDecode`; JP2 alpha (`cdef`); resolution-reduced decode; tiles decoded on all cores |
 | JBIG2 | ✅ | — | T.88, for PDF `/JBIG2Decode` |
 | HEIF / HEIC | ✅ | — | Separate opt-in package, registered explicitly (HEVC patents; no patent licence conveyed). HEVC Main / Main 10 / Main Still Picture stills and phone-camera grids, byte-exact with ffmpeg; ICC, nclx, Exif / XMP items, `thmb` thumbnails, `clap` / `irot` / `imir`; 8-bit, or 16-bit for Main 10; YCbCr planes |
-| EXIF | ✅ | ✅ | From JPEG, TIFF, PNG and WebP; `ExifWriter` builds a block for the JPEG encoder |
+| EXIF | ✅ | ✅ | From JPEG, TIFF, PNG, WebP, HEIF and AVIF; `ExifWriter` builds a block for the JPEG encoder |
 | ICC profiles | ✅ | ✅ | Decoders return embedded profiles; `IccProfiles.Describe` names one; bundled sRGB v4 profile; splice a profile into an existing JPEG |
 
 The table describes the individual format packages. The `Sdcb.SimdCodecs` facade intentionally exposes a narrower dispatch/display contract; for example, the separate `LosslessJpeg.FromMemory` API supports SOF3 directly, while `JpegDecoder` and the facade reject it. The other facade-specific limits are listed in [docs/known-gaps.md](docs/known-gaps.md) (in Chinese).
@@ -153,7 +153,7 @@ All packages ship in lockstep under one version.
 - **Ico** — icons and cursors over Bmp and Png: every image, the largest and deepest by default, hotspots; encodes multi-size icons and cursors, each image PNG or a 1/4/8/24/32-bit DIB.
 - **Qoi** — the QOI specification: 3- and 4-channel images, the colour space reported (a linear one as a linear transfer); decodes into any `PixelFormat` without allocating; encodes from RGBA, BGRA, RGB, BGR or grey.
 - **Pnm** — Netpbm: P1–P6 plain and raw at any maximum up to 65535 (16-bit samples above 255), PAM (P7) with 1–4 channels, PFM (`Pf` / `PF`) as float samples; only a file's first image. Encodes every format; plain output keeps lines within 70 characters. The decisions the format pages leave open are listed in the package README.
-- **Exif** — reads JPEG, TIFF, PNG and WebP; `ExifWriter` builds a blob for `JpegEncodeOptions.Exif`.
+- **Exif** — reads JPEG, TIFF, PNG, WebP, HEIF and AVIF; `ExifWriter` builds a blob for `JpegEncodeOptions.Exif`.
 - **Heif** — ISO/IEC 23008-12 still images over the ISOBMFF item model: HEVC intra decoding (H.265 Main, Main 10, Main Still Picture, 4:2:0), `grid` tiles decoded in parallel, `clap` / `irot` / `imir` applied, ICC passed through, nclx / VUI colour reported; PQ / HLG refuse the 8-bit projection. 1.x outputs 8-bit samples; alpha, gain maps, sequences and range-extension profiles are not decoded. See the package README.
 
 </details>
