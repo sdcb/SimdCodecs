@@ -210,6 +210,18 @@ internal sealed class EncodeSetup
             Check(Names.Baseline, encode(rgba, w, h));
             setup.Contestants.Add(new(Names.Baseline, () => encode(rgba, w, h)));
         }
+        if (Baseline.IsBuilt && Want(Names.BaselineStream) && Baseline.CanEncodeStream)
+        {
+            var encode = Baseline.CreateStreamEncoder(options);
+            var stream = new MemoryStream();
+            encode(rgba, w, h, stream);
+            Check(Names.BaselineStream, stream.ToArray());
+            setup.Contestants.Add(new(Names.BaselineStream, () =>
+            {
+                stream.SetLength(0);
+                encode(rgba, w, h, stream);
+            }));
+        }
 
         IsBits? bits = c.Format switch
         {

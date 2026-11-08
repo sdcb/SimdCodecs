@@ -27,7 +27,9 @@ internal static unsafe class Baseline
 
     private sealed class Bound
     {
-        public IntPtr BmpDecodeInto, IcoDecodeInto, BmpEncode;
+        public IntPtr BmpDecodeInto, IcoDecodeInto, BmpEncode, BmpEncodeStream;
+        // 2.0 added (DecodeOptions?, CancellationToken) to TryDecodeInto; a 1.x baseline has the four-parameter form.
+        public bool BmpDecodeHasOptions, IcoDecodeHasOptions;
         public Type? OptionsType;
     }
 
@@ -35,14 +37,39 @@ internal static unsafe class Baseline
 
     public static bool CanEncode => Loaded.Value.BmpEncode != IntPtr.Zero && Loaded.Value.OptionsType is not null;
 
+    public static bool CanEncodeStream => Loaded.Value.BmpEncodeStream != IntPtr.Zero && Loaded.Value.OptionsType is not null;
+
     /// <summary>The baseline's <c>BmpImageDecoder</c> / <c>IcoImageDecoder.TryDecodeInto</c>, to RGBA.</summary>
-    public static bool TryDecodeInto(bool icon, ReadOnlySpan<byte> data, Span<byte> rgba) =>
-        ((delegate*<ReadOnlySpan<byte>, Span<byte>, int, PixelFormat, bool>)(icon ? Loaded.Value.IcoDecodeInto : Loaded.Value.BmpDecodeInto))(
-            data, rgba, 0, PixelFormat.Rgba32);
+    public static bool TryDecodeInto(bool icon, ReadOnlySpan<byte> data, Span<byte> rgba)
+    {
+        var bound = Loaded.Value;
+        var fn = icon ? bound.IcoDecodeInto : bound.BmpDecodeInto;
+        return (icon ? bound.IcoDecodeHasOptions : bound.BmpDecodeHasOptions)
+            ? ((delegate*<ReadOnlySpan<byte>, Span<byte>, int, PixelFormat, object?, CancellationToken, bool>)fn)(
+                data, rgba, 0, PixelFormat.Rgba32, null, default)
+            : ((delegate*<ReadOnlySpan<byte>, Span<byte>, int, PixelFormat, bool>)fn)(data, rgba, 0, PixelFormat.Rgba32);
+    }
 
     /// <summary>The baseline's <c>BmpEncoder.Encode(pixels, width, height, Rgba32, options)</c>, the options copied
     /// across by property name.</summary>
     public static Func<byte[], int, int, byte[]> CreateEncoder(BmpEncodeOptions options)
+    {
+        var copy = CopyOptions(options);
+        var fn = Loaded.Value.BmpEncode;
+        return (pixels, width, height) =>
+            ((delegate*<ReadOnlySpan<byte>, int, int, PixelFormat, object, int, byte[]>)fn)(pixels, width, height, PixelFormat.Rgba32, copy, 0);
+    }
+
+    /// <summary>The baseline's <c>BmpEncoder.Encode(pixels, width, height, Rgba32, stream, options)</c>.</summary>
+    public static Action<byte[], int, int, Stream> CreateStreamEncoder(BmpEncodeOptions options)
+    {
+        var copy = CopyOptions(options);
+        var fn = Loaded.Value.BmpEncodeStream;
+        return (pixels, width, height, stream) =>
+            ((delegate*<ReadOnlySpan<byte>, int, int, PixelFormat, Stream, object, int, void>)fn)(pixels, width, height, PixelFormat.Rgba32, stream, copy, 0);
+    }
+
+    private static object CopyOptions(BmpEncodeOptions options)
     {
         var bound = Loaded.Value;
         var copy = Activator.CreateInstance(bound.OptionsType!)!;
@@ -53,9 +80,7 @@ internal static unsafe class Baseline
             var value = property.GetValue(options);
             target.SetValue(copy, value is Enum e ? Enum.Parse(target.PropertyType, e.ToString()) : value);
         }
-        var fn = bound.BmpEncode;
-        return (pixels, width, height) =>
-            ((delegate*<ReadOnlySpan<byte>, int, int, PixelFormat, object, int, byte[]>)fn)(pixels, width, height, PixelFormat.Rgba32, copy, 0);
+        return copy;
     }
 
     private static Bound Load()
@@ -65,19 +90,25 @@ internal static unsafe class Baseline
         var alc = new DirectoryLoadContext(dir);
         var bound = new Bound();
         var bmp = alc.LoadFromAssemblyName(new AssemblyName("Sdcb.SimdCodecs.Bmp"));
-        bound.BmpDecodeInto = Pointer(bmp.GetType("Sdcb.SimdCodecs.Bmp.BmpImageDecoder"), "TryDecodeInto", 4);
+        (bound.BmpDecodeInto, bound.BmpDecodeHasOptions) = DecodeIntoPointer(bmp.GetType("Sdcb.SimdCodecs.Bmp.BmpImageDecoder"));
         bound.OptionsType = bmp.GetType("Sdcb.SimdCodecs.Bmp.BmpEncodeOptions");
         var encoder = bmp.GetType("Sdcb.SimdCodecs.Bmp.BmpEncoder");
         var encode = encoder?.GetMethods(BindingFlags.Public | BindingFlags.Static).SingleOrDefault(m =>
             m.Name == "Encode" && m.GetParameters() is { Length: 6 } p && p[3].ParameterType.Name == nameof(PixelFormat));
         bound.BmpEncode = encode?.MethodHandle.GetFunctionPointer() ?? IntPtr.Zero;
+        var encodeStream = encoder?.GetMethods(BindingFlags.Public | BindingFlags.Static).SingleOrDefault(m =>
+            m.Name == "Encode" && m.GetParameters() is { Length: 7 } p && p[3].ParameterType.Name == nameof(PixelFormat) && p[4].ParameterType == typeof(Stream));
+        bound.BmpEncodeStream = encodeStream?.MethodHandle.GetFunctionPointer() ?? IntPtr.Zero;
         if (File.Exists(Path.Combine(dir, "Sdcb.SimdCodecs.Ico.dll")))
         {
             var ico = alc.LoadFromAssemblyName(new AssemblyName("Sdcb.SimdCodecs.Ico"));
-            bound.IcoDecodeInto = Pointer(ico.GetType("Sdcb.SimdCodecs.Ico.IcoImageDecoder"), "TryDecodeInto", 4);
+            (bound.IcoDecodeInto, bound.IcoDecodeHasOptions) = DecodeIntoPointer(ico.GetType("Sdcb.SimdCodecs.Ico.IcoImageDecoder"));
         }
         return bound;
     }
+
+    private static (IntPtr Pointer, bool HasOptions) DecodeIntoPointer(Type? type) =>
+        Pointer(type, "TryDecodeInto", 6) is var six && six != IntPtr.Zero ? (six, true) : (Pointer(type, "TryDecodeInto", 4), false);
 
     private static IntPtr Pointer(Type? type, string name, int parameters) =>
         type?.GetMethods(BindingFlags.Public | BindingFlags.Static).SingleOrDefault(m => m.Name == name && m.GetParameters().Length == parameters)

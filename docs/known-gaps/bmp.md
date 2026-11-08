@@ -59,5 +59,5 @@
 - **OS/2 Huffman 1D 和 RLE24 没有外部参照。** WIC 和 ImageMagick 都不读这两种压缩，解码器只用按 T.4 码表构造 的流验证过；白色对应调色板索引 0、行之间不填充，这两点是根据规范的推断，没有真实文件核对。
 - **宽于 8 位的通道（10-10-10-2 等）只取高 8 位**，不提供 16 位输出。
 - **V4 / V5 的校准色彩空间被忽略**：`LCS_CALIBRATED_RGB` 的端点和伽马、链接的 profile（`PROFILE_LINKED`）都 不读；只返回内嵌的 ICC。
-- **从 RGBA 输入编码 32 位时比 ImageSharp 慢**（1920×1080 写进流：约 0.41 ms 对 0.23 ms），差在 RGBA→BGRA 的 重排上；从 BGRA 输入就是直接拷贝（0.23 ms），24 位与 ImageSharp 持平。都比 WIC 快 12 倍以上。
+- **从 RGBA 输入编码 32 位进流，与 ImageSharp 大致持平，比从 BGRA 输入略慢**（1920×1080，photo 内容 5 次同进程交替计时：约 0.26–0.32 ms，ImageSharp 0.22–0.32 ms，两种内容逐次比值 0.79–1.36×、中位 1.08×；从 BGRA 输入是直接拷贝，0.22–0.29 ms）。RGBA→BGRA 重排的核心循环仍比同样字节的拷贝慢约 0.04 ms；测量和归因见 [基准记录](../../benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/shuffle32-2026-11-09-amd-ryzen-7-5800x.md)。24 位与 ImageSharp 持平。都比 WIC 快 12 倍以上。
 - **编码器不写** RLE24、Huffman 1D、`BI_PNG`、`BI_ALPHABITFIELDS` 和 2 位调色板。调色板量化用的是 GIF 同一个量化器，局限也相同（见 [GIF](gif.md)）。

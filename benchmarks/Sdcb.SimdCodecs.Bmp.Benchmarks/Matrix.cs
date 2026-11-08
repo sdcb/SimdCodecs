@@ -86,23 +86,23 @@ internal static class Matrix
         sb.AppendLine($"### Encode ({source}, ms; sizes in KB)");
         sb.AppendLine();
         sb.AppendLine("`current` = `BmpEncoder.Encode` from RGBA to a new array (`IcoEncoder.Encode` for the icon set); `current → stream` " +
-                      "= the `Stream` overload into a reused stream, as ImageSharp and WIC write; `current BGR(A)` = that from the B, G, R(, A) " +
+                      "= the `Stream` overload into a reused stream, as ImageSharp and WIC write; `baseline` / `baseline → stream` = the same two for the previous commit; `current BGR(A)` = that from the B, G, R(, A) " +
                       "input WIC gets; ImageSharp = `BmpEncoder` with the same bits per pixel into a reused stream, one " +
                       "thread, from an `Image<Rgba32>` built beforehand; WIC = WPF's `BmpBitmapEncoder` over a `BitmapSource` of B, G, " +
                       "R(, A), into a reused stream (24- and 32-bit only). Every output decodes, and the lossless layouts give the source back.");
         sb.AppendLine();
-        sb.AppendLine("| Case | current | KB | current → stream | current BGR(A) | baseline | ImageSharp | KB | WIC | KB | stream ÷ ImageSharp | BGR(A) ÷ WIC | ÷ baseline |");
-        sb.AppendLine("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+        sb.AppendLine("| Case | current | KB | current → stream | current BGR(A) | baseline | baseline → stream | ImageSharp | KB | WIC | KB | stream ÷ ImageSharp | BGR(A) ÷ WIC | ÷ baseline | stream ÷ baseline |");
+        sb.AppendLine("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
         var notes = new List<string>();
         foreach (var (s, ms) in rows)
         {
             sb.AppendLine($"| `{s.Case.Name}` | {Ms(ms, Names.Current)} | {Kb(s, Names.Current)} | {Ms(ms, Names.CurrentStream)} | {Ms(ms, Names.CurrentBgra)} | " +
-                          $"{Ms(ms, Names.Baseline)} | {Ms(ms, Names.ImageSharp)} | {Kb(s, Names.ImageSharp)} | {Ms(ms, Names.Wic)} | {Kb(s, Names.Wic)} | " +
-                          $"{Ratio(ms, Names.CurrentStream, Names.ImageSharp)} | {Ratio(ms, Names.CurrentBgra, Names.Wic)} | {Ratio(ms, Names.Current, Names.Baseline)} |");
+                          $"{Ms(ms, Names.Baseline)} | {Ms(ms, Names.BaselineStream)} | {Ms(ms, Names.ImageSharp)} | {Kb(s, Names.ImageSharp)} | {Ms(ms, Names.Wic)} | {Kb(s, Names.Wic)} | " +
+                          $"{Ratio(ms, Names.CurrentStream, Names.ImageSharp)} | {Ratio(ms, Names.CurrentBgra, Names.Wic)} | {Ratio(ms, Names.Current, Names.Baseline)} | {Ratio(ms, Names.CurrentStream, Names.BaselineStream)} |");
             notes.AddRange(s.Notes.Select(n => $"`{s.Case.Name}`: {n}"));
         }
         AppendAllocations(sb, rows.Select(r => (r.Setup.Case.Name, r.Setup.Allocated)).ToList(),
-            [Names.Current, Names.CurrentStream, Names.CurrentBgra, Names.Baseline, Names.ImageSharp, Names.Wic]);
+            [Names.Current, Names.CurrentStream, Names.CurrentBgra, Names.Baseline, Names.BaselineStream, Names.ImageSharp, Names.Wic]);
         AppendNotes(sb, notes);
         return sb.ToString();
     }
