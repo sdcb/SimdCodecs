@@ -126,7 +126,20 @@ internal static class BmpKernels
             var mask = Vector256.Create(Mask32(control));
             var or = Vector256.Create(set).AsByte();
             var acc = Vector256<byte>.Zero;
-            // Loads and stores 32 bytes at 4x: x + 8 <= width.
+            // Four vectors a step (loads and stores 128 bytes at 4x: x + 32 <= width), then one (32 bytes at 4x:
+            // x + 8 <= width). Four independent load-shuffle-store chains a step measured ~8% faster end to end.
+            for (; x + 32 <= width; x += 32)
+            {
+                var v0 = Avx2.Shuffle(Vector256.LoadUnsafe(ref s, (nuint)(4 * x)), mask) | or;
+                var v1 = Avx2.Shuffle(Vector256.LoadUnsafe(ref s, (nuint)(4 * x + 32)), mask) | or;
+                var v2 = Avx2.Shuffle(Vector256.LoadUnsafe(ref s, (nuint)(4 * x + 64)), mask) | or;
+                var v3 = Avx2.Shuffle(Vector256.LoadUnsafe(ref s, (nuint)(4 * x + 96)), mask) | or;
+                acc |= (v0 | v1) | (v2 | v3);
+                v0.StoreUnsafe(ref d, (nuint)(4 * x));
+                v1.StoreUnsafe(ref d, (nuint)(4 * x + 32));
+                v2.StoreUnsafe(ref d, (nuint)(4 * x + 64));
+                v3.StoreUnsafe(ref d, (nuint)(4 * x + 96));
+            }
             for (; x + 8 <= width; x += 8)
             {
                 var v = Avx2.Shuffle(Vector256.LoadUnsafe(ref s, (nuint)(4 * x)), mask) | or;
@@ -168,15 +181,16 @@ internal static class BmpKernels
         return seen;
     }
 
+    // Byte i of the mask: (i & ~3) + control[i & 3], or Z where that control byte is 4 or more. Built in registers
+    // and inlined, not through a stackalloc'd span: a call here kept the kernel's loop index in a stack slot
+    // across the whole 256-bit loop (a store and reload per 32 bytes), which made Shuffle32 2x slower than a copy.
+    // The callers run only on little-endian machines (BestTier), where byte k of the broadcast word is control[k].
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<byte> Mask32(ReadOnlySpan<byte> control)
     {
-        Span<byte> m = stackalloc byte[16];
-        for (var i = 0; i < 16; i++)
-        {
-            var c = control[i & 3];
-            m[i] = c < 4 ? (byte)((i & ~3) + c) : Z;
-        }
-        return Vector128.Create((ReadOnlySpan<byte>)m);
+        var c = Vector128.Create((uint)(control[0] | control[1] << 8 | control[2] << 16 | control[3] << 24)).AsByte();
+        var pixel = Vector128.Create((byte)0, 0, 0, 0, 4, 4, 4, 4, 8, 8, 8, 8, 12, 12, 12, 12);
+        return Vector128.ConditionalSelect(Vector128.LessThan(c, Vector128.Create((byte)4)), c + pixel, Vector128.Create(Z));
     }
 
     /// <summary>Four bytes per pixel to three: output byte <c>k</c> of each pixel is source byte <c>control[k]</c> (0..3).</summary>

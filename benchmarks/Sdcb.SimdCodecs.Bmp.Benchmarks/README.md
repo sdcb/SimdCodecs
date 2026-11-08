@@ -26,7 +26,7 @@ Every bitmap is `1920×1080` (`--size WxH`), cut from the PNG benchmark's two so
 |---|---|---|
 | `current` | `BmpImageDecoder` / `IcoImageDecoder.TryDecodeInto` to RGBA in a reused buffer | `BmpEncoder` / `IcoEncoder`, from RGBA |
 | `current BGR(A)` | the same to BGRA, WIC's layout | the same from the B, G, R(, A) input WIC gets |
-| `baseline` | the previous commit's decoder, same process (`baseline [git-ref]`) | the previous commit's encoder |
+| `baseline` | the previous commit's decoder, same process (`baseline [git-ref]`) | the previous commit's encoder, to an array and (`baseline → stream`) into a reused stream |
 | ImageSharp 3.1.12 | `Image.Load<Rgba32>` + `CopyPixelDataTo`, `MaxDegreeOfParallelism = 1` (no icons: it has no ICO codec) | `BmpEncoder` with the same bits per pixel, into a reused stream (no RLE) |
 | WIC | WPF's `BitmapDecoder` + `FormatConvertedBitmap` to BGRA (Windows only) | WPF's `BmpBitmapEncoder` from B, G, R(, A) into a reused stream (24- and 32-bit) |
 
