@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -411,6 +412,15 @@ public sealed class BoxDownscaler
     {
         var columns = _columns32!.AsSpan();
         var ch = Channels;
+        if (ch is 3 or 4 && (long)Math.Min(Factor, Width) * _rowsInBox <= MaxBoxPixelsForSums32)
+        {
+            if (ch == 3)
+                EmitColumns8Rgb(columns, destination);
+            else
+                EmitColumns8Rgba(columns, destination);
+            columns.Clear();
+            return;
+        }
         var rows = (ulong)_rowsInBox;
         Span<ulong> sums = stackalloc ulong[4];
         for (var bx = 0; bx < OutputWidth; bx++)
@@ -428,6 +438,129 @@ public sealed class BoxDownscaler
             Finish(sums, ch, n, destination.Slice(bx * ch, ch));
         }
         columns.Clear();
+    }
+
+    // EmitColumns8 for RGB and RGBA boxes of at most this many pixels, in 32 bits: a box sums at most 255 · 2^16 samples
+    // or, with alpha, 65025 · 2^16 = 4 261 478 400 products c·a, and with the rounding term A/2 ≤ 255 · 2^15 that is
+    // still below 2^32. The sums, roundings and quotients are then exactly Finish's 64-bit ones.
+    private const int MaxBoxPixelsForSums32 = 1 << 16;
+
+    /// <summary>
+    /// <see cref="EmitColumns8"/> for 3 channels and boxes of at most <see cref="MaxBoxPixelsForSums32"/> pixels: the same
+    /// <c>(Σc + n/2) / n</c> in 32 bits, as a shift for the full boxes when n is a power of two (d × d, or d × the rows of
+    /// the last box row).
+    /// </summary>
+    private void EmitColumns8Rgb(ReadOnlySpan<uint> columns, Span<byte> destination)
+    {
+        var rows = (uint)_rowsInBox;
+        var d = Factor;
+        var fullBoxes = Width / d;
+        var i = 0;
+        var o = 0;
+        if (fullBoxes > 0)
+        {
+            var n = (uint)d * rows; // ≤ MaxBoxPixelsForSums32: d ≤ Width here, so d = min(Factor, Width)
+            var half = n / 2;
+            var shift = BitOperations.IsPow2(n) ? BitOperations.Log2(n) : -1;
+            for (var bx = 0; bx < fullBoxes; bx++, o += 3)
+            {
+                uint r = 0, g = 0, b = 0;
+                for (var k = 0; k < d; k++, i += 3)
+                {
+                    r += columns[i];
+                    g += columns[i + 1];
+                    b += columns[i + 2];
+                }
+                if (shift >= 0)
+                {
+                    destination[o] = (byte)((r + half) >> shift);
+                    destination[o + 1] = (byte)((g + half) >> shift);
+                    destination[o + 2] = (byte)((b + half) >> shift);
+                }
+                else
+                {
+                    destination[o] = (byte)((r + half) / n);
+                    destination[o + 1] = (byte)((g + half) / n);
+                    destination[o + 2] = (byte)((b + half) / n);
+                }
+            }
+        }
+        if (fullBoxes < OutputWidth)
+        {
+            // The partial box at the right edge: Width − fullBoxes·d columns.
+            uint r = 0, g = 0, b = 0;
+            for (; i < Width * 3; i += 3)
+            {
+                r += columns[i];
+                g += columns[i + 1];
+                b += columns[i + 2];
+            }
+            var n = (uint)(Width - fullBoxes * d) * rows;
+            destination[o] = (byte)((r + n / 2) / n);
+            destination[o + 1] = (byte)((g + n / 2) / n);
+            destination[o + 2] = (byte)((b + n / 2) / n);
+        }
+    }
+
+    /// <summary>
+    /// <see cref="EmitColumns8"/> for 4 channels and boxes of at most <see cref="MaxBoxPixelsForSums32"/> pixels: alpha
+    /// <c>(A + n/2) / n</c> (a shift for full power-of-two boxes) and each colour <c>(Σ(c·a) + A/2) / A</c>, 0 where A is
+    /// 0, in 32 bits.
+    /// </summary>
+    private void EmitColumns8Rgba(ReadOnlySpan<uint> columns, Span<byte> destination)
+    {
+        var rows = (uint)_rowsInBox;
+        var d = Factor;
+        var fullBoxes = Width / d;
+        var i = 0;
+        var o = 0;
+        if (fullBoxes > 0)
+        {
+            var n = (uint)d * rows; // ≤ MaxBoxPixelsForSums32, as in EmitColumns8Rgb
+            var half = n / 2;
+            var shift = BitOperations.IsPow2(n) ? BitOperations.Log2(n) : -1;
+            for (var bx = 0; bx < fullBoxes; bx++, o += 4)
+            {
+                uint r = 0, g = 0, b = 0, a = 0;
+                for (var k = 0; k < d; k++, i += 4)
+                {
+                    r += columns[i];
+                    g += columns[i + 1];
+                    b += columns[i + 2];
+                    a += columns[i + 3];
+                }
+                destination[o + 3] = shift >= 0 ? (byte)((a + half) >> shift) : (byte)((a + half) / n);
+                WriteWeightedColour(destination.Slice(o, 3), r, g, b, a);
+            }
+        }
+        if (fullBoxes < OutputWidth)
+        {
+            uint r = 0, g = 0, b = 0, a = 0;
+            for (; i < Width * 4; i += 4)
+            {
+                r += columns[i];
+                g += columns[i + 1];
+                b += columns[i + 2];
+                a += columns[i + 3];
+            }
+            var n = (uint)(Width - fullBoxes * d) * rows;
+            destination[o + 3] = (byte)((a + n / 2) / n);
+            WriteWeightedColour(destination.Slice(o, 3), r, g, b, a);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void WriteWeightedColour(Span<byte> rgb, uint r, uint g, uint b, uint a)
+    {
+        if (a == 0)
+        {
+            rgb[0] = rgb[1] = rgb[2] = 0;
+            return;
+        }
+        var half = a / 2;
+        rgb[0] = (byte)((r + half) / a);
+        rgb[1] = (byte)((g + half) / a);
+        rgb[2] = (byte)((b + half) / a);
     }
 
     // ---- Other integer paths: 64-bit box sums ---------------------------------------------------------------------

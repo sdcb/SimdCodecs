@@ -256,6 +256,41 @@ public sealed class BoxDownscaleTests
         }
     }
 
+    /// <summary>
+    /// The 8-bit RGB / RGBA emit sums in 32 bits up to 2^16-pixel boxes (shifting for power-of-two ones) and in 64 bits
+    /// beyond: at and around that limit, with the largest sums (white, and a colour, at full alpha) and with noise, every
+    /// size gives the reference.
+    /// </summary>
+    [Theory]
+    [InlineData(256, 256, 256)] // 2^16 pixels, a power of two: the shift
+    [InlineData(256, 255, 256)] // 256 · 255: the 32-bit division
+    [InlineData(512, 128, 512)] // 2^16 again, from a wider box
+    [InlineData(512, 129, 512)] // 512 · 129 > 2^16: the 64-bit path
+    [InlineData(300, 256, 256)] // a full box and a partial one at the right edge
+    public void EightBitBoxesAtTheThirtyTwoBitLimitAreTheReference(int width, int height, int d)
+    {
+        foreach (var channels in new[] { 3, 4 })
+        {
+            var extreme = new byte[width * height * channels];
+            for (var i = 0; i < extreme.Length; i += 2 * channels)
+            {
+                extreme.AsSpan(i, channels).Fill(255);
+                if (i + channels < extreme.Length)
+                {
+                    extreme[i + channels] = 200; extreme[i + channels + 1] = 100; extreme[i + channels + 2] = 1;
+                    if (channels == 4)
+                        extreme[i + 7] = 255;
+                }
+            }
+            foreach (var pixels in new[] { extreme, Image(width, height, channels, SampleFormat.UInt8, 3, width + height) })
+            {
+                var expected = Reference(pixels, width, height, channels, SampleFormat.UInt8, d);
+                foreach (var tier in Tiers)
+                    Stream(pixels, width, height, channels, SampleFormat.UInt8, d, tier).ShouldBe(expected, $"ch{channels} tier{tier}");
+            }
+        }
+    }
+
     [Fact]
     public void AHugeFactorAveragesTheWholeImage()
     {
