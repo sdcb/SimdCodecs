@@ -22,9 +22,41 @@ internal static class JpegMetadata
     public static ReadOnlyMemory<byte> ReadExif(ReadOnlySpan<byte> jpeg) =>
         JpegSegmentScanner.TryFindAppPayload(jpeg, App1, ExifId, out var range) ? jpeg[range].ToArray() : default;
 
-    /// <summary>The standard XMP packet (APP1 with the XMP namespace URI); empty when absent. Extended XMP is not joined.</summary>
-    public static ReadOnlyMemory<byte> ReadXmp(ReadOnlySpan<byte> jpeg) =>
-        JpegSegmentScanner.TryFindAppPayload(jpeg, App1, XmpId, out var range) ? jpeg[range].ToArray() : default;
+    /// <summary>
+    /// The XMP packet: the standard packet (the first APP1 with the XMP namespace URI), with the Extended XMP it names
+    /// (<c>xmpNote:HasExtendedXMP</c>, APP1 <c>http://ns.adobe.com/xmp/extension/</c> chunks) joined in by
+    /// <see cref="JpegExtendedXmp"/>; empty when there is no standard packet. When the extended chunks are missing,
+    /// inconsistent or fail their MD5, the standard packet comes back unchanged.
+    /// </summary>
+    public static ReadOnlyMemory<byte> ReadXmp(ReadOnlySpan<byte> jpeg)
+    {
+        List<JpegSegment> segments;
+        try
+        {
+            segments = JpegSegmentScanner.Scan(jpeg);
+        }
+        catch (InvalidDataException)
+        {
+            return default;
+        }
+
+        JpegSegment? standard = null;
+        var hasExtension = false;
+        foreach (var segment in segments)
+        {
+            if (segment.Marker != App1)
+                continue;
+            if (standard is null && segment.Payload(jpeg).StartsWith(XmpId))
+                standard = segment;
+            else if (JpegExtendedXmp.IsExtensionSegment(jpeg, segment))
+                hasExtension = true;
+        }
+
+        if (standard is not { } s)
+            return default;
+        var packet = s.Payload(jpeg)[XmpId.Length..];
+        return hasExtension && JpegExtendedXmp.TryJoin(jpeg, segments, packet, out var joined) ? joined : packet.ToArray();
+    }
 
     /// <summary>
     /// The density a JFIF APP0 declares (units 1 inch, 2 cm, 0 aspect ratio), or failing that Exif IFD0's

@@ -103,6 +103,96 @@ public sealed class JpegFuzzTests
         await work;
     }
 
+    /// <summary>
+    /// The Extended XMP joiner (<c>JpegExtendedXmp</c>) on damaged XML: the standard and extended packets are mutated
+    /// as text (markup characters, truncation, deletion, duplication) and the GUID recomputed from the damaged bytes,
+    /// so the XML readers run rather than stopping at the MD5 check; the chunks are cut at random places and shuffled,
+    /// and now and then a segment header is damaged too. Reading must never throw, and must finish in time.
+    /// </summary>
+    [Fact]
+    public async Task MutatedExtendedXmp_ReadsWithoutThrowing()
+    {
+        var iterations = Iterations;
+        var seed = Seed;
+        string? current = null;
+        var progress = 0;
+        var joins = 0;
+        var text = JpegExtendedXmpTests.LongText(3_000);
+        var work = Task.Run(() =>
+        {
+            var rng = new Random(seed);
+            for (var it = 0; it < iterations; ++it)
+            {
+                var extended = MutateXml(System.Text.Encoding.UTF8.GetBytes(JpegExtendedXmpTests.ExtendedPacket(text)), rng, rng.Next(3) == 0 ? 0 : 1 + rng.Next(3));
+                var guid = JpegExtendedXmpTests.Md5Hex(extended);
+                var standard = MutateXml(System.Text.Encoding.UTF8.GetBytes(JpegExtendedXmpTests.StandardPacket(guid, rng.Next(2) == 0 ? "xmpNote" : "n")), rng, rng.Next(3) == 0 ? 1 + rng.Next(3) : 0);
+                var cuts = Enumerable.Range(0, rng.Next(4)).Select(_ => rng.Next(1, Math.Max(2, extended.Length))).Distinct().Order().Where(c => c < extended.Length).ToArray();
+                var segments = JpegExtendedXmpTests.Chunks(guid, extended, cuts).OrderBy(_ => rng.Next()).ToList();
+                if (rng.Next(8) == 0 && segments.Count > 0)
+                {
+                    var victim = segments[rng.Next(segments.Count)];
+                    victim[4 + 35 + 32 + rng.Next(8)] ^= (byte)(1 << rng.Next(8)); // full length or offset
+                }
+
+                segments.Insert(rng.Next(segments.Count + 1), JpegExtendedXmpTests.StandardSegment(System.Text.Encoding.UTF8.GetString(standard)));
+                var jpeg = JpegExtendedXmpTests.Jpeg(segments);
+                current = $"iteration {it} (seed {seed})";
+                var sw = Stopwatch.StartNew();
+                try
+                {
+                    if (JpegMetadata.ReadXmp(jpeg).Length > standard.Length)
+                        Interlocked.Increment(ref joins);
+                }
+                catch (Exception e)
+                {
+                    throw new ShouldAssertException($"{current}: {e.GetType().Name}: {e.Message}", e);
+                }
+
+                sw.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(5), current);
+                Volatile.Write(ref progress, it + 1);
+            }
+        }, TestContext.Current.CancellationToken);
+
+        var budget = TimeSpan.FromSeconds(Math.Max(60, iterations / 20));
+        var finished = await Task.WhenAny(work, Task.Delay(budget, TestContext.Current.CancellationToken));
+        (finished == work).ShouldBeTrue($"fuzz run did not finish in {budget} (stuck at {current}, {progress} done)");
+        await work;
+
+        // About one mutant in six is left intact; if none of them joins, the run tested only the early exits.
+        joins.ShouldBeGreaterThan(iterations / 20, "mutants that joined");
+    }
+
+    private static byte[] MutateXml(byte[] src, Random rng, int ops)
+    {
+        ReadOnlySpan<byte> markup = "<>/=\"':&;#!?[]- x\n"u8;
+        var data = new List<byte>(src);
+        for (var op = 0; op < ops && data.Count > 2; ++op)
+        {
+            var pos = rng.Next(data.Count);
+            switch (rng.Next(5))
+            {
+                case 0:
+                case 1:
+                    data[pos] = markup[rng.Next(markup.Length)];
+                    break;
+                case 2:
+                    data.RemoveRange(pos, Math.Min(1 + rng.Next(40), data.Count - pos));
+                    break;
+                case 3:
+                {
+                    var n = Math.Min(1 + rng.Next(80), data.Count - pos);
+                    data.InsertRange(rng.Next(data.Count), data.GetRange(pos, n));
+                    break;
+                }
+                default:
+                    data.RemoveRange(pos, data.Count - pos);
+                    break;
+            }
+        }
+
+        return [.. data];
+    }
+
     private static void DecodeOne(byte[] mutant, JpegScale scale, string context)
     {
         JpegInfo info;

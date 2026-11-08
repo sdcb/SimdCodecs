@@ -188,8 +188,10 @@ public sealed class JpegImageDecoder : IImageDecoder
     }
 
     /// <inheritdoc />
-    /// <remarks>The APP1 Exif block (from its TIFF header, without the <c>Exif\0\0</c> prefix), the APP1 XMP packet and
-    /// the APP2 ICC profile, reassembled from its chunks.</remarks>
+    /// <remarks>The APP1 Exif block (from its TIFF header, without the <c>Exif\0\0</c> prefix), the APP1 XMP packet with
+    /// any Extended XMP it names joined in (the extended <c>rdf:RDF</c> content inserted before the standard packet's
+    /// <c>&lt;/rdf:RDF&gt;</c>; the standard packet alone when the extension is incomplete or fails its MD5), and the
+    /// APP2 ICC profile, reassembled from its chunks.</remarks>
     public static bool TryReadMetadata(ReadOnlySpan<byte> data, [NotNullWhen(true)] out ImageMetadata? metadata)
     {
         metadata = null;
