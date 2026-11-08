@@ -15,7 +15,7 @@ namespace Sdcb.SimdCodecs.Webp;
 /// canvases above 67,108,864 pixels are rejected as malformed before any raster is allocated.
 /// </para>
 /// </summary>
-public static class WebpDecoder
+public static partial class WebpDecoder
 {
     private static readonly Vector128<byte> ChromaPairShuffleIndices = Vector128.Create(
         (byte)0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15);
