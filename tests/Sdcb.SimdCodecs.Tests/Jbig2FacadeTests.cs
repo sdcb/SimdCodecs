@@ -167,6 +167,87 @@ public sealed class Jbig2FacadeTests
         image.ShouldBeNull();
     }
 
+    /// <summary>
+    /// Every page of a multi-page file is a frame through the facade: frame <c>i</c> has page <c>i + 1</c>'s own
+    /// size and pixels, exactly what <see cref="Jbig2Decoder.DecodeFile(ReadOnlySpan{byte}, int, CancellationToken)"/>
+    /// gives that page decoded on its own, and the bitmap the page was built from. Frames are read out of order to
+    /// show that pages are independent.
+    /// </summary>
+    [Fact]
+    public void TryOpenFrames_MultiPageFile_DecodesEveryPage()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        Jbig2Bitmap[] sources =
+        [
+            Jbig2ExtendedOracleTests.Pattern(30, 20),
+            Jbig2ExtendedOracleTests.Pattern(41, 13, seed: 5),
+            Jbig2ExtendedOracleTests.Pattern(17, 26, seed: 11),
+        ];
+        var file = Jbig2ExtendedOracleTests.MultiPageFile(sources);
+
+        SimdCodecs.TryReadInfo(file, out var info).ShouldBeTrue();
+        (info.Width, info.Height, info.FrameCount).ShouldBe((30, 20, 3));
+
+        SimdCodecs.TryOpenFrames(file, out var reader).ShouldBeTrue();
+        using (reader)
+        {
+            reader.FrameCount.ShouldBe(3);
+            reader.LoopCount.ShouldBeNull();
+            foreach (var index in new[] { 2, 0, 1 })
+            {
+                var direct = Jbig2Decoder.DecodeFile(file, index + 1, ct);
+                var expected = direct.ToGray8();
+                (direct.Width, direct.Height).ShouldBe((sources[index].Width, sources[index].Height));
+                expected.ShouldBe(new Jbig2Image(sources[index].Width, sources[index].Height, sources[index].Data).ToGray8());
+
+                reader.TryGetFrameInfo(index, out var frame).ShouldBeTrue();
+                frame.Duration.ShouldBeNull();
+                (frame.Info.Width, frame.Info.Height, frame.Info.Channels, frame.Info.SampleFormat, frame.Info.BitDepth,
+                    frame.Info.FrameCount, frame.Info.Format)
+                    .ShouldBe((direct.Width, direct.Height, 1, SampleFormat.UInt8, 1, 1, ImageFormat.Jbig2), $"frame {index}");
+
+                reader.TryDecodeFrame(index, out var image, cancellationToken: ct).ShouldBeTrue();
+                using (image)
+                {
+                    (image.Width, image.Height, image.Channels).ShouldBe((direct.Width, direct.Height, 1));
+                    image.Pixels.ToArray().ShouldBe(expected, $"frame {index}");
+                }
+
+                var gray = new byte[direct.Width * direct.Height];
+                reader.TryDecodeFrameInto(index, gray, 0, PixelFormat.Gray8, cancellationToken: ct).ShouldBeTrue();
+                gray.ShouldBe(expected, $"frame {index} into");
+
+                // A region goes through the decode-then-crop fallback, still of this page.
+                var region = new PixelRect(3, 2, 9, 7);
+                var crop = new byte[region.Width * region.Height];
+                reader.TryDecodeFrameInto(index, crop, 0, PixelFormat.Gray8, new DecodeOptions { Region = region }, ct).ShouldBeTrue();
+                for (var y = 0; y < region.Height; y++)
+                    crop.AsSpan(y * region.Width, region.Width).ToArray().ShouldBe(
+                        expected.AsSpan((region.Y + y) * direct.Width + region.X, region.Width).ToArray(), $"frame {index} region row {y}");
+
+                reader.TryDecodeFrameInto(index, new byte[gray.Length - 1], 0, PixelFormat.Gray8, cancellationToken: ct).ShouldBeFalse();
+            }
+
+            Should.Throw<ArgumentOutOfRangeException>(() => reader.TryGetFrameInfo(3, out _));
+            Should.Throw<ArgumentOutOfRangeException>(() => reader.TryDecodeFrame(-1, out _, cancellationToken: ct));
+            Should.Throw<ArgumentOutOfRangeException>(() => reader.TryDecodeFrameInto(3, new byte[1 << 12], 0, PixelFormat.Gray8, cancellationToken: ct));
+        }
+
+        Should.Throw<ObjectDisposedException>(() => reader.TryGetFrameInfo(0, out _));
+        Should.Throw<ObjectDisposedException>(() => reader.TryDecodeFrame(0, out _, cancellationToken: ct));
+        Should.Throw<ObjectDisposedException>(() => reader.TryDecodeFrameInto(0, new byte[30 * 20], 0, PixelFormat.Gray8, cancellationToken: ct));
+    }
+
+    /// <summary>A file that is not JBIG2, or whose header is truncated, opens no frame reader.</summary>
+    [Fact]
+    public void TryOpenFrames_OnAMalformedFile_ReturnsFalse()
+    {
+        Jbig2ImageDecoder.TryOpenFrames(BuildFile().AsMemory(0, 10), out var reader).ShouldBeFalse();
+        reader.ShouldBeNull();
+        Jbig2ImageDecoder.TryOpenFrames(new byte[16], out reader).ShouldBeFalse();
+        reader.ShouldBeNull();
+    }
+
     [Fact]
     public void Jb2Signature_DoesNotCollideWithTheOtherRegisteredCodecs()
     {

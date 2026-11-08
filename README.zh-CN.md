@@ -44,7 +44,7 @@ File.WriteAllBytes("photo.jpg", jpeg);
 - `SimdCodecs.TryReadPlanarInfo` / `TryDecodePlanes`：按编码原样输出 YCbCr 平面（HEIF），供视频管线和 GPU 上传使用。
 - `SimdCodecs.DetectFormat(file)`：还能认出不支持解码的格式（AVIF、JPEG XL 等）； `SimdCodecs.IsDecodable(format)` 判断某个格式能否解码。HEIF 在注册它的包之后即可解码。
 - `SimdCodecs.Register(HeifImageDecoder.Registration)`：让上面所有入口都能处理 HEIF / HEIC。HEVC 有专利负担， `Sdcb.SimdCodecs.Heif` 不在门面包里，需要显式安装并注册（本包不授予任何专利许可）。
-- `SimdCodecs.TryOpenFrames(file, out reader)`：按索引、以任意布局逐帧解码：动画 WebP / GIF 是合成好的帧 及其时长，多页 TIFF 是各页，图标是其中的每张图（其他图片就是一帧）；`reader.EnumerateFramesInto(buffer, stride, format)` 用同一块缓冲区按顺序播放。
+- `SimdCodecs.TryOpenFrames(file, out reader)`：按索引、以任意布局逐帧解码：动画 WebP / GIF 是合成好的帧 及其时长，多页 TIFF 和 JBIG2 是各页，图标是其中的每张图（其他图片就是一帧）；`reader.EnumerateFramesInto(buffer, stride, format)` 用同一块缓冲区按顺序播放。
 
 从 1.x 升级：见 [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md)。
 
