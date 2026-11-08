@@ -31,14 +31,6 @@ public static class DecodeOptionsChecks
         }
 
         /// <summary>
-        /// The same as <c>Validate(width, height)</c>: every scale is accepted now, so
-        /// <paramref name="supportsScale"/> no longer matters.
-        /// </summary>
-        /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the scaled image.</exception>
-        [Obsolete("Every decoder accepts every ScaleDenominator now: call Validate(width, height), and decode at GetNativeScale(max).")]
-        public void Validate(int width, int height, bool supportsScale) => options.Validate(width, height);
-
-        /// <summary>
         /// The scale to decode at natively, for a decoder that scales natively by every power of two up to
         /// <paramref name="maxNativeScaleDenominator"/> (1: it does not scale): the largest power of two that is at most
         /// both that and <see cref="DecodeOptions.ScaleDenominator"/>. Pass the decode at it to

@@ -23,3 +23,5 @@ static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.Apply(Sdcb.
 static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.GetNativeScale(this Sdcb.SimdCodecs.Abstractions.DecodeOptions! options, int maxNativeScaleDenominator) -> int
 static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.Validate(this Sdcb.SimdCodecs.Abstractions.DecodeOptions! options, int width, int height) -> void
 static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.extension(Sdcb.SimdCodecs.Abstractions.DecodeOptions!).Apply(Sdcb.SimdCodecs.Abstractions.IDecodedImage! image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options, int nativeScale) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
+*REMOVED*Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.extension(Sdcb.SimdCodecs.Abstractions.DecodeOptions!).Validate(int width, int height, bool supportsScale) -> void
+*REMOVED*static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.Validate(this Sdcb.SimdCodecs.Abstractions.DecodeOptions! options, int width, int height, bool supportsScale) -> void
