@@ -23,16 +23,24 @@ internal static class PeakMemory
         public long RiseBytes => PeakBytes - BaselineBytes;
     }
 
-    public static string Run(IReadOnlyList<string> inputs, int repeats = 3)
+    public static string Run(IReadOnlyList<string> inputs, int repeats = 3, bool scaled = false)
     {
         string self = typeof(PeakMemory).Assembly.Location;
         var samples = new List<Sample>();
         bool hasBaseline = BaselineDecoder.Description is not null;
         foreach (string input in inputs)
         {
-            foreach (string contestant in Contestants)
+            // --scaled: region / scale decodes ("Current:1/4", "Baseline:top", ...) of the lossy stills, after the
+            // whole-image decodes.
+            IEnumerable<string> contestants = Contestants;
+            if (scaled && WebpDecoder.ReadInfo(WebpBenchmarkInputs.Read(input)).Format == WebpFormat.Lossy)
             {
-                if (contestant == "Baseline" && !hasBaseline)
+                contestants = contestants.Concat(ScaledCases.All.SelectMany(c => new[] { "Current:" + c.Name, "Baseline:" + c.Name }));
+            }
+
+            foreach (string contestant in contestants)
+            {
+                if (contestant.StartsWith("Baseline", StringComparison.Ordinal) && !hasBaseline)
                 {
                     continue;
                 }
@@ -71,7 +79,7 @@ internal static class PeakMemory
 
                 Sample median = runs.OrderBy(s => s.RiseBytes).ElementAt(runs.Count / 2);
                 samples.Add(median);
-                Console.WriteLine($"[peakmem] {input,-26} {contestant,-9} first-decode rise {Mib(median.FirstRiseBytes),7} MiB, " +
+                Console.WriteLine($"[peakmem] {input,-26} {contestant,-15} first-decode rise {Mib(median.FirstRiseBytes),7} MiB, " +
                                   $"steady peak {Mib(median.PeakBytes),7} MiB, rise {Mib(median.RiseBytes),7} MiB");
             }
         }
@@ -81,7 +89,8 @@ internal static class PeakMemory
                               "first full-size decode after a warm-up on a tiny file of the same kind (JIT excluded): the decode's " +
                               "working memory;  \"steady\" is a second decode of the same " +
                       "file with pooled buffers already resident. The 1920×1080 RGBA destination (7.9 MiB) is allocated and " +
-                      "touched before either baseline, so it is not part of any rise.");
+                      "touched before either baseline, so it is not part of any rise; a region / scale decode " +
+                      "(\"Current:1/4\", \"Baseline:top\", ...) allocates and touches only its output's RGBA.");
         sb.AppendLine();
         sb.AppendLine("| Input | contestant | first-decode rise | steady peak | steady rise |");
         sb.AppendLine("|---|---|---:|---:|---:|");
@@ -130,6 +139,11 @@ internal static class PeakMemory
     {
         byte[] source = WebpBenchmarkInputs.Read(input);
         WebpInfo info = WebpDecoder.ReadInfo(source);
+        if (contestant.Split(':') is [var who, var caseName])
+        {
+            return ScaledChild(who, ScaledCases.Find(caseName), source, info);
+        }
+
         byte[] rgba = new byte[info.Width * info.Height * 4];
         Action decode = contestant switch
         {
@@ -159,6 +173,37 @@ internal static class PeakMemory
         }
 
         rgba.AsSpan().Fill(0xFF); // commit the destination's pages before any baseline
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        GC.WaitForPendingFinalizers();
+        long firstRise = Measure(decode, out _);
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        GC.WaitForPendingFinalizers();
+        Measure(decode, out (long Baseline, long Peak) steady);
+        Console.WriteLine($"{firstRise}\t{steady.Baseline}\t{steady.Peak}");
+        return 0;
+    }
+
+    private static int ScaledChild(string who, ScaledCases.Case c, byte[] source, WebpInfo info)
+    {
+        var (w, h) = ScaledCases.OutputSize(c, info);
+        byte[] rgba = new byte[w * h * 4];
+        Action decode = who == "Current" ? ScaledCases.Current(source, rgba, c) : ScaledCases.Baseline(source, rgba, c);
+
+        // JIT on a tiny lossy still through the same path: a 1×1 region at the same scale.
+        byte[] tiny = File.ReadAllBytes(Path.Combine(BenchPaths.Root, "..", "..", "tests", "Sdcb.SimdCodecs.Tests",
+            "Fixtures", "webp", info.HasAlpha ? "lossy-alpha-q50.webp" : "gradient-16x16.webp"));
+        byte[] tinyRgba = new byte[4];
+        var region = new Sdcb.SimdCodecs.Abstractions.PixelRect(0, 0, 1, 1);
+        bool warmed = who == "Current"
+            ? WebpImageDecoder.TryDecodeInto(tiny, tinyRgba, 0, Sdcb.SimdCodecs.Abstractions.PixelFormat.Rgba32,
+                new Sdcb.SimdCodecs.Abstractions.DecodeOptions { ScaleDenominator = c.Scale, Region = region })
+            : BaselineImageDecoder.TryDecodeInto(tiny, tinyRgba, BaselineImageDecoder.CreateOptions(c.Scale, region));
+        if (!warmed)
+        {
+            throw new InvalidOperationException("The warm-up decode failed.");
+        }
+
+        rgba.AsSpan().Fill(0xFF);
         GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
         GC.WaitForPendingFinalizers();
         long firstRise = Measure(decode, out _);
