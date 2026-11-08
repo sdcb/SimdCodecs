@@ -174,6 +174,14 @@ public sealed class HeifFuzzTests
                 if (SimdCodecs.TryDecodeInto(data, destination, 0, format) && SimdCodecs.TryDecode(data, out var decoded))
                 {
                     (decoded.Width, decoded.Height).ShouldBe((info.Width, info.Height), context);
+                    // The scaled path (tiles boxed as they are written, or the fallback), into the same format.
+                    var scale = new DecodeOptions { ScaleDenominator = 2 << layout % 3 };
+                    var (sw, sh) = scale.GetScaledSize(info.Width, info.Height);
+                    if (SimdCodecs.TryDecodeInto(data, destination, 0, format, scale) && SimdCodecs.TryDecode(data, out var scaled, scale))
+                    {
+                        using (scaled)
+                            (scaled.Width, scaled.Height).ShouldBe((sw, sh), context);
+                    }
                 }
             }
             else
