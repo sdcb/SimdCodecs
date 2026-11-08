@@ -45,7 +45,7 @@ The rest of the facade:
 - `SimdCodecs.TryReadPlanarInfo` / `TryDecodePlanes` — the YCbCr planes as coded (HEIF), for video pipelines and GPU upload.
 - `SimdCodecs.DetectFormat(file)` — also names formats it recognises but does not decode (AVIF, JPEG XL, …); `SimdCodecs.IsDecodable(format)` tells the two apart. HEIF is decodable once its package is registered.
 - `SimdCodecs.Register(HeifImageDecoder.Registration)` — enables HEIF / HEIC in every entry point above. HEVC is patent-encumbered, so `Sdcb.SimdCodecs.Heif` is not part of the facade package: install and register it explicitly (it conveys no patent licence).
-- `SimdCodecs.TryOpenFrames(file, out reader)` — every frame, by index, in any layout: animated WebP / GIF frames with durations, multi-page TIFF pages, the images of an icon (any other image is one frame). `reader.EnumerateFramesInto(buffer, stride, format)` plays them in order through one buffer.
+- `SimdCodecs.TryOpenFrames(file, out reader)` — every frame, by index, in any layout: animated WebP / GIF frames with durations, multi-page TIFF and JBIG2 pages, the images of an icon (any other image is one frame). `reader.EnumerateFramesInto(buffer, stride, format)` plays them in order through one buffer.
 
 Upgrading from 1.x: see [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md).
 

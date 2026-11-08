@@ -7,7 +7,7 @@
 | 功能 | 状态 | 说明 |
 |---|:-:|---|
 | 独立 `.jb2` 文件 | ✅ | |
-| 多页 | ⚠️ | `Jbig2Decoder.DecodeFile(file, pageNumber)` 可取任意页，门面只给第 1 页 |
+| 多页 | ✅ | 门面的 `TryOpenFrames` 每页一帧（第 `i` 帧是第 `i + 1` 页）；包 API 是 `Jbig2Decoder.DecodeFile(file, pageNumber)` |
 | PDF 内嵌流（`/JBIG2Decode`，含 globals） | ✅ | 直接调用 `Jbig2Decoder.Decode`，门面不识别 |
 | 通用区域：算术编码、MMR | ✅ | MMR 的 2D 扩展码不支持 |
 | 通用区域 EXTTEMPLATE | ❌ | |
@@ -21,7 +21,7 @@
 
 ## 已知缺口与局限
 
-- **门面只解码独立 `.jb2` 文件的第 1 页。** 其他页用 `Jbig2Decoder.DecodeFile(file, pageNumber)`，页数由 `Jbig2Decoder.TryReadFileInfo(file, out w, out h, out pages)` 给出。PDF 内嵌的 JBIG2 流没有文件头可供识别， 需要直接调用 `Jbig2Decoder.Decode(embedded, globals, width, height)`，门面不处理。
+- **门面只处理独立 `.jb2` 文件。** `TryDecode` / `TryDecodeInto` 给第 1 页，`TryOpenFrames` 给每一页，第 `i` 帧是第 `i + 1` 页，与 `Jbig2Decoder.DecodeFile(file, i + 1)` 逐像素一致。PDF 内嵌的 JBIG2 流没有文件头可供识别， 需要直接调用 `Jbig2Decoder.Decode(embedded, globals, width, height)`，门面不处理。
 - **不支持**：
   - EXTTEMPLATE 通用区域；
   - 引用或保留算术上下文的符号字典（符号字典标志的 bit 8、9）；

@@ -18,7 +18,8 @@ namespace Sdcb.SimdCodecs.Jbig2;
 /// dictionary — none of which fits a <c>(bytes) -&gt; image</c> contract. Those
 /// callers use <see cref="Jbig2Decoder.Decode(ReadOnlySpan{byte}, ReadOnlySpan{byte}, int, int, CancellationToken)"/>
 /// directly. Registering here just means a real <c>.jb2</c> file on disk decodes
-/// through the same facade as everything else.
+/// through the same facade as everything else. <see cref="TryDecode"/> gives page 1;
+/// <see cref="TryOpenFrames"/> gives every page, frame <c>i</c> being page <c>i + 1</c>.
 /// </para>
 /// <para>
 /// Fidelity mapping: bilevel expands to 1-channel <see cref="SampleFormat.UInt8"/>
@@ -27,7 +28,7 @@ namespace Sdcb.SimdCodecs.Jbig2;
 /// <see cref="Jbig2Image.Bits"/> rather than go through the facade.
 /// </para>
 /// </summary>
-public sealed class Jbig2ImageDecoder : IImageDecoder
+public sealed class Jbig2ImageDecoder : IMultiFrameImageDecoder
 {
     /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
@@ -40,6 +41,7 @@ public sealed class Jbig2ImageDecoder : IImageDecoder
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
+        TryOpenFrames = TryOpenFrames,
     };
 
     /// <inheritdoc />
@@ -54,15 +56,9 @@ public sealed class Jbig2ImageDecoder : IImageDecoder
     {
         info = default;
         if (!CanDecode(data)) return false;
-        if (!Jbig2Decoder.TryReadFileInfo(data, out var width, out var height, out var pages)) return false;
-
-        // Bilevel: one bit per pixel in the file, decoded as 0 / 255 grey.
-        info = new ImageInfo(width, height, 1, SampleFormat.UInt8)
-        {
-            Format = ImageFormat.Jbig2,
-            BitDepth = 1,
-            FrameCount = Math.Max(1, pages),
-        };
+        if (!Jbig2Decoder.TryReadFileInfo(data, out _, out _, out var pages)) return false;
+        if (!TryReadPageInfo(data, 1, out info)) return false;
+        info = info with { FrameCount = Math.Max(1, pages) };
         return true;
     }
 
@@ -73,18 +69,54 @@ public sealed class Jbig2ImageDecoder : IImageDecoder
 
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
-        DecodeOptions? options = null, CancellationToken cancellationToken = default)
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        TryDecodePage(data, 1, options, cancellationToken, out image);
+
+    /// <inheritdoc />
+    /// <remarks>Every page is a frame: frame <c>i</c> is page <c>i + 1</c>, with its own size, decoded as
+    /// <see cref="Jbig2Decoder.DecodeFile(ReadOnlySpan{byte}, int, CancellationToken)"/> decodes it. Pages are
+    /// independent, so any order costs the same: the segment headers, then that page's segments and the
+    /// page-0 ones it refers to.</remarks>
+    public static bool TryOpenFrames(ReadOnlyMemory<byte> data, [NotNullWhen(true)] out IImageFrameReader? reader)
+    {
+        reader = null;
+        if (!CanDecode(data.Span)) return false;
+        if (!Jbig2Decoder.TryReadFileInfo(data.Span, out _, out _, out var pages) || pages == 0) return false;
+        reader = new Jbig2FrameReader(data, pages);
+        return true;
+    }
+
+    /// <summary>The layout <see cref="TryDecodePage"/> gives page <paramref name="pageNumber"/> (1-based), from its
+    /// page information segment alone.</summary>
+    internal static bool TryReadPageInfo(ReadOnlySpan<byte> data, int pageNumber, out ImageInfo info)
+    {
+        info = default;
+        if (!CanDecode(data)) return false;
+        if (!Jbig2Decoder.TryReadPageSize(data, pageNumber, out var width, out var height)) return false;
+
+        // Bilevel: one bit per pixel in the file, decoded as 0 / 255 grey.
+        info = new ImageInfo(width, height, 1, SampleFormat.UInt8)
+        {
+            Format = ImageFormat.Jbig2,
+            BitDepth = 1,
+        };
+        return true;
+    }
+
+    /// <summary>Page <paramref name="pageNumber"/> (1-based) as <see cref="TryDecode"/> decodes page 1.</summary>
+    internal static bool TryDecodePage(ReadOnlySpan<byte> data, int pageNumber, DecodeOptions? options,
+        CancellationToken cancellationToken, [NotNullWhen(true)] out IDecodedImage? image)
     {
         image = null;
         if (!CanDecode(data)) return false;
-        if (!Jbig2Decoder.TryReadFileInfo(data, out var w, out var h)) return false;
+        if (!Jbig2Decoder.TryReadPageSize(data, pageNumber, out var w, out var h)) return false;
 
         options?.Validate(w, h);
 
         Jbig2Image page;
         try
         {
-            page = Jbig2Decoder.DecodeFile(data, cancellationToken);
+            page = Jbig2Decoder.DecodeFile(data, pageNumber, cancellationToken);
         }
         catch (Exception e) when (IsUndecodable(e))
         {
@@ -110,15 +142,24 @@ public sealed class Jbig2ImageDecoder : IImageDecoder
     {
         if (options is { IsFullImage: false })
             return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
+        return TryDecodePageInto(data, 1, destination, stride, format, options, cancellationToken);
+    }
 
+    /// <summary>
+    /// Page <paramref name="pageNumber"/> (1-based), whole, as <see cref="TryDecodeInto"/> writes page 1. The caller
+    /// sends options that are not <see cref="DecodeOptions.IsFullImage"/> through <see cref="ImageDecoderFallback"/>.
+    /// </summary>
+    internal static bool TryDecodePageInto(ReadOnlySpan<byte> data, int pageNumber, Span<byte> destination, int stride,
+        PixelFormat format, DecodeOptions? options, CancellationToken cancellationToken)
+    {
         if (!CanDecode(data)) return false;
-        if (!Jbig2Decoder.TryReadFileInfo(data, out var width, out var height)) return false;
+        if (!Jbig2Decoder.TryReadPageSize(data, pageNumber, out var width, out var height)) return false;
 
         options?.Validate(width, height);
 
         try
         {
-            var page = Jbig2Decoder.DecodeFile(data, cancellationToken);
+            var page = Jbig2Decoder.DecodeFile(data, pageNumber, cancellationToken);
             if (!PixelConverter.TryGetLayout(width, height, format, stride, destination.Length, out var rowStride)) return false;
 
             // Each row becomes the grey of ToRaster (black 0, white 255), then the requested layout.

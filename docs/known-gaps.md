@@ -25,11 +25,11 @@
 | [QOI](known-gaps/qoi.md) | ✅ | ✅ | | ✅ | | | | | ✅ | ✅ |
 | [Netpbm](known-gaps/netpbm.md) | ✅ | ✅ | | ✅ | ✅ | ✅ | | | ✅ | ✅ |
 | [JPEG 2000](known-gaps/jpeg2000.md) | ✅ | | | ✅ | ✅ | | ✅ | | | ⚠️ |
-| [JBIG2](known-gaps/jbig2.md) | ✅ | | ⚠️ | | | | | | | |
+| [JBIG2](known-gaps/jbig2.md) | ✅ | | ✅ | | | | | | | |
 | [HEIF / HEIC](known-gaps/heif.md) | ✅ | | | | ✅ | ⚠️ | ⚠️ | ✅ | ✅ | ✅ |
 | [EXIF](known-gaps/exif.md) | ✅ | ✅ | | | | | | | | |
 
-几点补充：PNG 和 HEIF 的“浮点 / HDR”指能读出 PQ / HLG 标记和 16 位原始样本，但不投影到 8 位；GIF 的 alpha 只有 1 位；ICO 的“多页”是目录里的各个尺寸；JBIG2 的多页只能通过包 API 取，门面只给第 1 页；JPEG 2000 有基准项目，单核仍慢于 libopenjp2；EXIF 一行的解码 / 编码指读取和生成 Exif 块。
+几点补充：PNG 和 HEIF 的“浮点 / HDR”指能读出 PQ / HLG 标记和 16 位原始样本，但不投影到 8 位；GIF 的 alpha 只有 1 位；ICO 的“多页”是目录里的各个尺寸；JPEG 2000 有基准项目，单核仍慢于 libopenjp2；EXIF 一行的解码 / 编码指读取和生成 Exif 块。
 
 ## 总体
 
@@ -54,8 +54,6 @@ HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmar
 - **`ColorEncoding` 只从 ICC 取原色。** 格式自己的色彩标记优先（PNG 的 cICP，表示线性的 gAMA 1.0，HEIF 的 nclx `colr` 盒；HEIF 没有 `colr` 盒时用 HEVC VUI）。格式没有自己的标记、但带有 ICC 配置文件，并且该文件声明的原色是 BT.709、Display P3 或 BT.2020 时，`ImageInfo.ColorEncoding` 和 `IDecodedImage.ColorEncoding` 报 sRGB 加上这组原色（例如 Display P3 照片报 `Primaries = DisplayP3`）；传递函数和范围不从 ICC 推导，仍是 sRGB 和全范围。ICC 声明的是其他原色（Adobe RGB、ProPhoto、相机或显示器自己的）、是 LUT 配置文件、或者格式损坏时，行为不变，报默认的 sRGB。识别方法与 `IccProfiles.TryGetPrimaries` 相同。覆盖 JPEG、PNG（含帧读取器）、WebP（含帧读取器）、TIFF、HEIF、JPEG 2000（JP2 的受限 ICC）和 BMP V5；像素不受影响。
 - **EXIF 方向只报告、不应用。** `ImageInfo.Orientation` 告诉你该怎样旋转或翻转，像素本身始终是存储时的 方向。
 - **浮点图像没有自动的整数投影。** 浮点 TIFF、增益图 JPEG 重建出的 HDR 等，`TryDecodeInto` 返回 `false` （增益图返回的是 SDR 基础图），`EnumerateFramesInto` 抛出 `NotSupportedException`。HDR 到 8 位需要色调映射， 这是调用方的决定，不是编解码器的。只为查看的话，`PixelConverter.StretchToRgba8` 把颜色范围线性拉伸到 0..255（线性光数据如增益图 HDR 再加 `srgbEncode: true`），但不做色调映射。
-- **多帧读取器的帧数可能少于文件里的帧数。** `ImageInfo.FrameCount` 报告文件里有多少帧或页，但：
-  - JBIG2：门面的读取器只给出独立 `.jb2` 文件的第 1 页（1 帧）；其他页用 `Jbig2Decoder.DecodeFile(file, pageNumber)`。
 - **接口里没有“时间戳 → 帧号”的辅助方法。** WebP 包的 `WebpAnimationDecoder.FrameIndexAt` 有，接口层没有； 需要时可以按各帧的 `Duration` 自己累加。
 - **`IImageFrameReader` 和 `ImageDecoder` 会话都不是线程安全的**（动画需要在调用之间保留画布状态），每个线程各开一个。
 - **元数据只透传、不解析。** `ImageMetadata` 是原始的 Exif / XMP / ICC 块；解析 Exif 用 `Sdcb.SimdCodecs.Exif`。TIFF 页面自己的 IFD 就是 Exif 的 IFD0，所以读出的 Exif 块是重组的（见 [TIFF](known-gaps/tiff.md)），字节布局与源文件不同； JPEG 的扩展 XMP（跨多个 APP1 段）没有拼接。HEIF 的像素已按 `irot` / `imir` 转正，所以它交出的 Exif 块里方向标签已改写为 1；自己按 `ImageInfo.Orientation` 旋转像素的调用方，可以用 `ExifWriter.ResetOrientation` 得到方向为 1 的副本。

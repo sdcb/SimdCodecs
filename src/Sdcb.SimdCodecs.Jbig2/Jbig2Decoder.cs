@@ -189,6 +189,27 @@ public static class Jbig2Decoder
         }
     }
 
+    /// <summary>
+    /// Page <paramref name="pageNumber"/>'s dimensions in a standalone <c>.jb2</c> file, read from its page
+    /// information segment without decoding pixels: the size
+    /// <see cref="DecodeFile(ReadOnlySpan{byte}, int, CancellationToken)"/> gives that page. False when the
+    /// file is malformed, the page has no page information segment, or its striped height is unbounded.
+    /// </summary>
+    internal static bool TryReadPageSize(ReadOnlySpan<byte> file, int pageNumber, out int width, out int height)
+    {
+        width = height = 0;
+        if (pageNumber <= 0) return false;
+        try
+        {
+            var segments = ReadFile(file, out var body);
+            return TryFindPageSize(body, segments, (uint)pageNumber, out width, out height);
+        }
+        catch (Exception e) when (e is InvalidDataException or NotSupportedException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
     // ---- file / stream structure -------------------------------------------------
 
     private static List<SegmentHeader> ReadFile(ReadOnlySpan<byte> file, out ReadOnlySpan<byte> body)

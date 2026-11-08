@@ -269,7 +269,7 @@ public sealed class Jbig2ExtendedOracleTests
             Jbig2StreamBuilder.Segment(3, SegmentType.EndOfPage, 1, []));
 
     /// <summary>A deterministic bitmap with runs, edges and isolated pixels.</summary>
-    private static Jbig2Bitmap Pattern(int width, int height, int seed = 1)
+    internal static Jbig2Bitmap Pattern(int width, int height, int seed = 1)
     {
         var bitmap = new Jbig2Bitmap(width, height);
         for (var y = 0; y < height; y++)
@@ -298,22 +298,23 @@ public sealed class Jbig2ExtendedOracleTests
         return segment;
     }
 
-    private static byte[] MultiPageFile(Jbig2Bitmap first, Jbig2Bitmap second)
+    /// <summary>A sequential file with one page per bitmap, page <c>n</c> holding an immediate generic region of
+    /// bitmap <c>n - 1</c> and its own end-of-page segment.</summary>
+    internal static byte[] MultiPageFile(params Jbig2Bitmap[] pages)
     {
-        var at = GenericRegionDecoder.NominalAt(0).ToArray();
         var file = new List<byte>(Jbig2Decoder.FileSignature.ToArray()) { 0x01 };
-        WriteUInt32(file, 2);
-        file.AddRange(Jbig2StreamBuilder.Segment(0, SegmentType.PageInformation, 1,
-            Jbig2StreamBuilder.PageInformation(first.Width, first.Height)));
-        file.AddRange(Jbig2StreamBuilder.Segment(1, SegmentType.ImmediateGenericRegion, 1,
-            Jbig2StreamBuilder.GenericRegionSegment(first)));
-        file.AddRange(Jbig2StreamBuilder.Segment(2, SegmentType.EndOfPage, 1, []));
-        file.AddRange(Jbig2StreamBuilder.Segment(3, SegmentType.PageInformation, 2,
-            Jbig2StreamBuilder.PageInformation(second.Width, second.Height)));
-        file.AddRange(Jbig2StreamBuilder.Segment(4, SegmentType.ImmediateGenericRegion, 2,
-            Jbig2StreamBuilder.GenericRegionSegment(second)));
-        file.AddRange(Jbig2StreamBuilder.Segment(5, SegmentType.EndOfPage, 2, []));
-        file.AddRange(Jbig2StreamBuilder.Segment(6, SegmentType.EndOfFile, 0, []));
+        WriteUInt32(file, (uint)pages.Length);
+        uint number = 0;
+        for (var i = 0; i < pages.Length; i++)
+        {
+            var page = (uint)(i + 1);
+            file.AddRange(Jbig2StreamBuilder.Segment(number++, SegmentType.PageInformation, page,
+                Jbig2StreamBuilder.PageInformation(pages[i].Width, pages[i].Height)));
+            file.AddRange(Jbig2StreamBuilder.Segment(number++, SegmentType.ImmediateGenericRegion, page,
+                Jbig2StreamBuilder.GenericRegionSegment(pages[i])));
+            file.AddRange(Jbig2StreamBuilder.Segment(number++, SegmentType.EndOfPage, page, []));
+        }
+        file.AddRange(Jbig2StreamBuilder.Segment(number, SegmentType.EndOfFile, 0, []));
         return [.. file];
     }
 
