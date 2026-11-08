@@ -81,6 +81,15 @@ dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Png.Benchmarks -- for
 
 times `PngImageDecoder.TryDecodeInto` in BGRA, RGB, BGR and grey against the two-step path an RGBA-only API leaves a caller (decode to RGBA, then `PixelConverter` over the frame), with RGBA alone and libpng's simplified API in the same layout for scale. The two of ours must give identical bytes before anything is timed. Default cases: grey, RGB, palette, RGBA and 16-bit RGB, plain and Adam7. Report: `.cache/work/formats.md`.
 
+### Region and scale
+
+```bash
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Png.Benchmarks -- scaled [--cases RE] [--rounds N]
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Png.Benchmarks -- scaled-peakmem [--cases RE]
+```
+
+times `PngImageDecoder.TryDecode` with `DecodeOptions` (512² regions at the top, centre and bottom, 1/2, 1/4 and 1/8, and a region of 1/4): the current build against the `baseline` build's, with the full decode for scale. Both must give identical pixels before anything is timed. Built from a commit before native region decoding, the baseline is the generic path: full decode, then `BoxDownscaler` and a crop. `scaled-peakmem` measures the working-set rise of each in a fresh process (median of three, after a warm-up on a 64×64 image of the same case and mode). Default cases: grey, RGB, palette, RGBA and 16-bit RGB, non-interlaced (Adam7 keeps the generic path). Reports: `.cache/work/scaled.md` / `scaled-peakmem.md`. Recorded: [`results/scaled-decode-2026-11-08-amd-ryzen-7-5800x.md`](results/scaled-decode-2026-11-08-amd-ryzen-7-5800x.md).
+
 ### Same-process A/B
 
 ```bash
