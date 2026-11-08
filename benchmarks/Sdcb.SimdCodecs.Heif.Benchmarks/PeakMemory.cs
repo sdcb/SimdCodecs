@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 using Sdcb.SimdCodecs.Heif;
 
 namespace Sdcb.SimdCodecs.Heif.Benchmarks;
@@ -18,18 +20,28 @@ internal static class PeakMemory
         public long RiseBytes => PeakBytes - BaselineBytes;
     }
 
-    public static readonly string[] Contestants = ["ours", "libheif", "magick"];
+    /// <summary>
+    /// Full-size RGBA: <c>ours</c>, <c>libheif</c>, <c>magick</c>. Scaled by d through the adapter
+    /// (<c>HeifImageDecoder.TryDecode</c> with <c>ScaleDenominator</c>, Rgb24 / Rgb48): <c>scaled-dN</c> is the native
+    /// path (tiles boxed as they are written), <c>boxed-dN</c> the fallback it replaces (a full decode, then
+    /// <see cref="BoxDownscaler.Downscale"/>), the same bytes.
+    /// </summary>
+    public static readonly string[] Contestants =
+        ["ours", "libheif", "magick", "scaled-d2", "boxed-d2", "scaled-d4", "boxed-d4", "scaled-d8", "boxed-d8"];
 
     /// <summary>The parent: one fresh child process per (contestant, fixture), median of <paramref name="repeats"/>.</summary>
-    public static string Run(string[] fixtures, int repeats)
+    public static string Run(string[] fixtures, int repeats, string? contestantPattern = null)
     {
+        var contestants = contestantPattern is null
+            ? Contestants
+            : Contestants.Where(c => System.Text.RegularExpressions.Regex.IsMatch(c, contestantPattern)).ToArray();
         var lines = new List<string>
         {
             $"{"fixture",-42} {"contestant",-10} {"ms",8} {"peak MB",9} {"rise MB",9} {"output MB",10}",
         };
         foreach (var fixture in fixtures)
         {
-            foreach (var contestant in Contestants)
+            foreach (var contestant in contestants)
             {
                 var samples = new List<Sample>();
                 for (var r = 0; r < repeats; r++) samples.Add(SpawnChild(contestant, fixture));
@@ -67,14 +79,13 @@ internal static class PeakMemory
     public static int Child(string contestant, string fixture)
     {
         var data = HeifInputs.Load(fixture);
-        long outputBytes = contestant == "ours"
-            ? HeifDecoder.ReadInfo(data).Width * (long)HeifDecoder.ReadInfo(data).Height * 4
-            : long.Parse(fixture.Contains("8192x6144") ? "201326592" : fixture.Contains("3072x4096") ? "50331648" : "0");
-        if (outputBytes == 0)
-        {
-            var info = HeifDecoder.ReadInfo(data);
-            outputBytes = info.Width * (long)info.Height * 4;
-        }
+        var info = HeifDecoder.ReadInfo(data);
+        // The decoded image's size: full-size RGBA, or the scaled Rgb24 / Rgb48 image.
+        var at = contestant.IndexOf("-d", StringComparison.Ordinal);
+        var factor = at < 0 ? 1 : int.Parse(contestant[(at + 2)..]);
+        long outputBytes = factor == 1
+            ? info.Width * (long)info.Height * 4
+            : (long)((info.Width + factor - 1) / factor) * ((info.Height + factor - 1) / factor) * 3 * (info.BitDepth > 8 ? 2 : 1);
 
         var process = Process.GetCurrentProcess();
         GC.Collect();
@@ -115,6 +126,22 @@ internal static class PeakMemory
                 using var image = new ImageMagick.MagickImage(data);
                 using var pixels = image.GetPixels();
                 Touch(pixels.ToByteArray(ImageMagick.PixelMapping.RGBA));
+                break;
+            }
+            case not null when contestant.StartsWith("scaled-d", StringComparison.Ordinal):
+            {
+                if (!HeifImageDecoder.TryDecode(data, out var image, new DecodeOptions { ScaleDenominator = factor }))
+                    throw new InvalidOperationException("The scaled decode failed.");
+                using (image) Touch(image.Pixels);
+                break;
+            }
+            case not null when contestant.StartsWith("boxed-d", StringComparison.Ordinal):
+            {
+                if (!HeifImageDecoder.TryDecode(data, out var full))
+                    throw new InvalidOperationException("The decode failed.");
+                using (full)
+                using (var image = BoxDownscaler.Downscale(full, factor))
+                    Touch(image.Pixels);
                 break;
             }
             default:
