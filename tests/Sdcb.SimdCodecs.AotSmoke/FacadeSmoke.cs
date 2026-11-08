@@ -155,6 +155,12 @@ internal static class FacadeSmoke
             Check(SimdCodecs.TryDecodeInto(heic, pixels, stride, format), "heif", $"TryDecodeInto {format}");
             formats.Add($"{format}={Hash(pixels)}");
         }
+        // Scaled into a padded destination: each tile boxes its pixels and converts the boxes straight into it.
+        var quarter = new DecodeOptions { ScaleDenominator = 4 };
+        var (qw, qh) = quarter.GetScaledSize(info.Width, info.Height);
+        var boxed = new byte[(qw * 4 + 3) * qh];
+        Check(SimdCodecs.TryDecodeInto(heic, boxed, qw * 4 + 3, PixelFormat.Bgra32, quarter), "heif", "TryDecodeInto Bgra32 1/4");
+        formats.Add($"Bgra32/4={Hash(boxed)}");
 
         Console.WriteLine($"facade heif-layouts\t{string.Join(' ', formats)}");
 

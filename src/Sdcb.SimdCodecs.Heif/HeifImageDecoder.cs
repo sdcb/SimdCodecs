@@ -121,8 +121,8 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
     }
 
     /// <inheritdoc />
-    /// <remarks>HEIF does not scale natively: the display size, at scale 1. Other scales are accepted but cost a full
-    /// decode, then the box filter.</remarks>
+    /// <remarks>The display size, at scale 1: HEVC has no reduced-resolution decode. Other scales are accepted; every
+    /// pixel is still decoded, but boxed as each tile is converted (see <see cref="TryDecode"/>).</remarks>
     public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
         out int width, out int height, out int scaleDenominator) =>
         ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
@@ -130,7 +130,12 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
     /// <inheritdoc />
     /// <remarks>RGB, 3 channels, at the display size: 8-bit samples for an 8-bit image, 16-bit (bit depth 10) for a
     /// Main 10 one. A region (in display coordinates) is decoded natively: only the grid tiles it touches are decoded,
-    /// and only its pixels converted.</remarks>
+    /// and only its pixels converted. A <see cref="DecodeOptions.ScaleDenominator"/> above 1 is the frozen box filter of
+    /// that image; it is computed while the tiles are written (each tile boxes the pixels it converts, so no full-size
+    /// image exists) when every tile's pixels make whole boxes: always for a single coded image, and for a grid whose
+    /// tile seams, carried through clap / irot / imir to display coordinates, fall on multiples of the factor (a grid
+    /// of 512-pixel tiles with a display size that is a multiple of the factor, untransformed or turned or mirrored).
+    /// Otherwise the pixels the boxes cover are decoded first, then box-filtered; the bytes are the same.</remarks>
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -148,16 +153,48 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
             return false;
         }
         options?.Validate(size.Width, size.Height);
-        // HEIF does not scale natively: at a scale, the stored pixels the region's boxes cover (all of them without a
-        // region) are decoded, then box-filtered.
         var factor = options?.ScaleDenominator ?? 1;
         var region = options?.Region;
+        var wide = depth > 8;
         if (factor > 1)
-            region = region is { } scaled ? BoxDownscaler.GetSourceRect(scaled, size.Width, size.Height, factor) : null;
+        {
+            bool native;
+            try
+            {
+                native = HeifDecoder.ScalesNatively(container, factor, region);
+            }
+            catch (InvalidDataException)
+            {
+                return false;
+            }
+            if (native)
+            {
+                // Each tile boxes the pixels it converts straight into the scaled image (HeifCanvas).
+                var (w, h) = options!.GetOutputSize(size.Width, size.Height);
+                var scaled = RasterImage.Create(w, h, 3, wide ? SampleFormat.UInt16 : SampleFormat.UInt8, options.Pool,
+                    ColorEncodingOf(container), bitDepth: wide && depth < 16 ? depth : 0, metadata: HeifMetadata.Read(data, container));
+                try
+                {
+                    HeifDecoder.DecodeInto(data, container, scaled.WritablePixels, w * 3 * (wide ? 2 : 1),
+                        wide ? PixelFormat.Rgb48 : PixelFormat.Rgb24, cancellationToken, region, factor);
+                }
+                catch (Exception e)
+                {
+                    scaled.Dispose();
+                    if (e is InvalidDataException or ArgumentException or OverflowException)
+                        return false;
+                    throw;
+                }
+                image = scaled;
+                return true;
+            }
+            // Grid tiles whose seams do not fall on box edges: the stored pixels the region's boxes cover (all of them
+            // without a region) are decoded, then box-filtered.
+            region = region is { } r0 ? BoxDownscaler.GetSourceRect(r0, size.Width, size.Height, factor) : null;
+        }
         if (region is { } r)
             size = (r.Width, r.Height);
 
-        var wide = depth > 8;
         var raster = RasterImage.Create(size.Width, size.Height, 3, wide ? SampleFormat.UInt16 : SampleFormat.UInt8,
             factor == 1 ? options?.Pool : null, ColorEncodingOf(container), bitDepth: wide && depth < 16 ? depth : 0,
             metadata: HeifMetadata.Read(data, container));
@@ -191,8 +228,11 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
     /// 16-bit conversion, both from the coded samples. <see cref="PixelFormat.Gray8"/> is the stored luma,
     /// range-mapped to 8 bits (see <see cref="IImageDecoder.TryDecodeInto"/> on codecs that store luma; the formula is
     /// frozen in <c>HeifColor</c>), except for an identity-matrix (GBR) image, which takes the luma of the RGB. A
-    /// region decodes only the tiles it touches. False, without throwing, for malformed or unsupported data, a
-    /// destination that does not fit, and a PQ or HLG transfer function.
+    /// region decodes only the tiles it touches. A scale above 1 is <see cref="TryDecode"/>'s scaled image (Rgb24, or
+    /// Rgb48 for Main 10) converted with <see cref="PixelConverter"/>, so <see cref="PixelFormat.Gray8"/> is then the luma
+    /// of the RGB and 8-bit formats of a Main 10 image narrow its 16-bit samples; when the tiles allow it (see
+    /// <see cref="TryDecode"/>) the boxes are converted straight into <paramref name="destination"/>. False, without
+    /// throwing, for malformed or unsupported data, a destination that does not fit, and a PQ or HLG transfer function.
     /// </remarks>
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
@@ -210,9 +250,23 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
         options?.Validate(size.Width, size.Height);
         if (options is { ScaleDenominator: > 1 })
         {
-            // A scale is the box filter of TryDecode's image, converted.
+            // A scale is the box filter of TryDecode's image, converted: natively, each tile boxes its Rgb24 / Rgb48 pixels
+            // and converts the finished boxes into the destination; otherwise through TryDecode.
             if (ColorEncodingOf(container).Transfer is TransferFunction.Pq or TransferFunction.Hlg) return false;
-            return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
+            try
+            {
+                if (!HeifDecoder.ScalesNatively(container, options.ScaleDenominator, options.Region))
+                    return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
+                var (w, h) = options.GetOutputSize(size.Width, size.Height);
+                if (!PixelConverter.TryGetLayout(w, h, format, stride, destination.Length, out var scaledStride)) return false;
+                HeifDecoder.DecodeInto(data, container, destination, scaledStride, format, cancellationToken, options.Region,
+                    options.ScaleDenominator);
+                return true;
+            }
+            catch (Exception e) when (e is InvalidDataException or ArgumentException or OverflowException)
+            {
+                return false;
+            }
         }
         var region = options?.Region;
         if (region is { } r)
