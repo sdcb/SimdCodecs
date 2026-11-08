@@ -52,7 +52,7 @@ public static class ImageDecoderFallback
 
     /// <summary>
     /// <see cref="IImageDecoder.TryGetClosestSize"/> for a codec that does not scale natively: the stored size, at
-    /// scale 1, whatever was requested.
+    /// scale 1, whatever was requested (other scales are accepted, but cost a full decode and the box filter).
     /// </summary>
     /// <param name="readInfo">The codec's <see cref="IImageDecoder.TryReadInfo"/>.</param>
     /// <param name="data">The encoded image.</param>

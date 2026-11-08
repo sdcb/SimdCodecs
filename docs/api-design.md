@@ -6,7 +6,7 @@
 
 - **静态抽象成员 + 显式注册。** codec 不靠反射发现，NativeAOT 和 Mono AOT 都安全。每个 codec 用对象初始化器、以自己 具体类型的方法组构造 `Registration`（解码器的 `ImageDecoderRegistration`、编码器的 `ImageEncoderRegistration`），门面 只引用这些属性，从不在泛型方法里绑定委托（Mono AOT 会在那里陷入）。wasm 冒烟测试覆盖所有门面入口。
 - **`ReadOnlySpan<byte>` 一次性 API 是热路径。** 会话 API（`ImageDecoder`）建在它之上。
-- **错误约定。** 不可信输入：`Try*` 返回 `false`（抛出型 API 抛 `InvalidDataException`），不挂起，不无界分配。取消 抛 `OperationCanceledException`；调用方给的选项做不到（不支持的缩放、越界的区域）抛 `NotSupportedException` / `ArgumentException`，不静默回退。
+- **错误约定。** 不可信输入：`Try*` 返回 `false`（抛出型 API 抛 `InvalidDataException`），不挂起，不无界分配。取消 抛 `OperationCanceledException`；调用方给的选项做不到（越界的区域）抛 `ArgumentException`，不静默回退。
 - **`IDecodedImage` 是保真层**：原始通道数和样本类型、主机字节序、非预乘 alpha。
 
 ## 像素格式：`PixelFormat`
@@ -33,10 +33,11 @@
 `IImageDecoder`：`CanDecode`、`TryReadInfo`、`TryGetClosestSize`、`TryDecode`、`TryDecodeInto`、`TryReadMetadata`、 `TryDecodeThumbnail`。
 
 - **`TryDecodeInto` 的契约**：结果等于 `TryDecode` 的图像（同样的选项）的 `Pixels` 经 `PixelConverter` 转换。原生 快速路径必须逐字节一致。例外两种，都需在 codec 文档里写明：存储亮度的 codec 输出灰度时给存储的亮度（YCbCr JPEG 的 Y 平面）；从比 8 位更深的编码样本直接转换到 8 位格式的 codec（HEIF Main 10），只舍入一次，与收窄 16 位图像最多差 1。
-- **`DecodeOptions`**：`ScaleDenominator`（任意 2 的幂，1 到 2^30；每个 codec 只接受自己能原生做到的分母，例如 JPEG 最多 8，其他抛 `NotSupportedException`）、 `Region`（存储坐标；做不到原生区域解码的 codec 整幅解码再裁剪）、`Pool`（像素从池中租用，释放图像即归还）。 调用方先用 `TryGetClosestSize` 问 codec 原生能做到的最接近尺寸（WIC 的协商方式）。
+- **`DecodeOptions`**：`ScaleDenominator`（任意 2 的幂，1 到 2^30，每个 codec 都接受；原生能做到的分母便宜，例如 JPEG 最多 8、JPEG 2000 最多 2 的分解级数次方，其余分母先按最大的原生分母 n 解码，再用冻结的 box 滤波缩小 d / n 倍）、 `Region`（缩放后图像的存储坐标；做不到原生区域解码的 codec 整幅解码再裁剪）、`Pool`（像素从池中租用，释放图像即归还）。 调用方先用 `TryGetClosestSize` 问 codec 原生能做到的最接近尺寸（WIC 的协商方式）；它只报告原生尺寸，其他分母也能用，但要付出一次原生尺寸的解码。
+- **冻结的 box 滤波**（`CodecSupport.BoxDownscaler`）：输出尺寸 ⌈w/k⌉ × ⌈h/k⌉（k 为 box 边长）。输出像素 (bx, by) 取存储像素 x ∈ [bx·k, min(bx·k + k, w))、y 同理的平均，右边和下边的 box 不完整，n 为裁剪后 box 的像素数。在存储的码值上计算（gamma 空间，不线性化）。无 alpha：每个通道 (Σc + n/2) / n，整数运算。有 alpha（GrayAlpha、RGBA）：A = Σa，alpha = (A + n/2) / n，颜色 = A 为 0 时取 0，否则 (Σ(c·a) + A/2) / A，即按 alpha 加权、逐像素不舍入。8 / 16 位精确求和（64 位累加，box 最多 2^32 像素，不会溢出），所以每个 SIMD 层输出相同的字节。Float32 用 double 按行、box 内从左到右累加：Σc / n；有 alpha 时 alpha = A / n，颜色 = A 为 0 时取 0，否则 Σ(c·a) / A；没有向量路径。位深、颜色编码和元数据与 `RasterImage.Crop` 一样保留。它是流式的行累加器：解码器逐行推入源行，每 k 行（以及最后一行）取出一行输出，因此可以边解码边缩小；从 box 边界开始的列窗口（`GetSourceRect`）只缩小区域需要的列。
 - **取消**：检查点放在粗粒度位置（JPEG 每个 MCU 行、HEIF 每个 tile 和每 64 行输出、PNG / QOI 等每 64 行、WebP 每个 宏块行），不进内层循环。
 - **`ImageInfo`** 在解码前给出 `ColorEncoding`（判断是不是 PQ / HLG）、`Resolution`（单位按文件声明）、`HasThumbnail`。
-- **`ImageDecoderFallback`** 给不具备原生能力的 codec 一行实现：解码再转换、原尺寸、无元数据、无缩略图。它和 `DecodeOptions` 的 `Validate` / `Apply`（扩展成员）、`BufferedEncoderSession` 一样放在 `Sdcb.SimdCodecs.Abstractions.CodecSupport`：只有写 codec 的人需要，用户的 IntelliSense 里看不到。
+- **`ImageDecoderFallback`** 给不具备原生能力的 codec 一行实现：解码再转换、原尺寸、无元数据、无缩略图。它和 `DecodeOptions` 的 `Validate` / `GetNativeScale` / `Apply`（扩展成员）、`BoxDownscaler`、`BufferedEncoderSession` 一样放在 `Sdcb.SimdCodecs.Abstractions.CodecSupport`：只有写 codec 的人需要，用户的 IntelliSense 里看不到。
 
 ## 元数据与缩略图
 

@@ -157,15 +157,27 @@ public sealed class DecodeOptionsTests
     }
 
     [Fact]
-    public void AnUnscalingCodecRefusesAScaleAndReportsItsStoredSize()
+    public void AnUnscalingCodecBoxFiltersAScaleAndReportsItsStoredSize()
     {
         var png = Stills["png"];
-        foreach (var d in new[] { 2, 4, 8, 16 })
+        SimdCodecs.TryDecode(png, out var full, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        using (full)
         {
-            var options = new DecodeOptions { ScaleDenominator = d };
-            Should.Throw<NotSupportedException>(() => SimdCodecs.TryDecode(png, out _, options, TestContext.Current.CancellationToken));
-            Should.Throw<NotSupportedException>(() =>
-                SimdCodecs.TryDecodeInto(png, new byte[W * H * 4], 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken));
+            foreach (var d in new[] { 2, 4, 8, 16 })
+            {
+                var options = new DecodeOptions { ScaleDenominator = d };
+                var expected = BoxDownscaleTests.Reference(full.Pixels, W, H, 4, SampleFormat.UInt8, d);
+                var (w, h) = options.GetScaledSize(W, H);
+                SimdCodecs.TryDecode(png, out var scaled, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+                using (scaled)
+                {
+                    (scaled.Width, scaled.Height).ShouldBe((w, h));
+                    scaled.Pixels.ToArray().ShouldBe(expected);
+                }
+                var into = new byte[w * h * 4];
+                SimdCodecs.TryDecodeInto(png, into, 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+                into.ShouldBe(expected);
+            }
         }
 
         foreach (var (wantedWidth, wantedHeight) in new[] { (1, 1), (W / 2, H / 2), (W, H), (W * 3, H * 3) })
@@ -397,19 +409,29 @@ public sealed class DecodeOptionsTests
     [Theory]
     [InlineData(16)]
     [InlineData(1 << 30)]
-    public void AnyPowerOfTwoIsAnOptionAndEachCodecSaysWhichItProduces(int denominator)
+    public void AnyPowerOfTwoIsAnOptionAndEveryCodecProducesIt(int denominator)
     {
-        // The options carry any power of two (JPEG 2000 resolution levels, say, go past 8); a codec refuses what it
-        // cannot produce natively. JPEG's DCT scaling stops at 1/8.
+        // The options carry any power of two (JPEG 2000 resolution levels, say, go past 8). JPEG's DCT scaling stops at
+        // 1/8: past it, the 1/8 decode is box-filtered by the rest.
         var options = new DecodeOptions { ScaleDenominator = denominator };
         options.ScaleDenominator.ShouldBe(denominator);
-        options.GetScaledSize(W, H).ShouldBe(((W + denominator - 1) / denominator, (H + denominator - 1) / denominator));
+        var (w, h) = ((W + denominator - 1) / denominator, (H + denominator - 1) / denominator);
+        options.GetScaledSize(W, H).ShouldBe((w, h));
         var jpeg = ColourJpeg();
-        Should.Throw<NotSupportedException>(() => SimdCodecs.TryDecode(jpeg, out _, options, TestContext.Current.CancellationToken))
-            .Message.ShouldContain("1/8");
-        Should.Throw<NotSupportedException>(() =>
-            SimdCodecs.TryDecodeInto(jpeg, new byte[W * H * 4], 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken));
-        Should.Throw<NotSupportedException>(() => SimdCodecs.TryDecode(Stills["png"], out _, options, TestContext.Current.CancellationToken));
+        var eighth = JpegDecoder.Decode(jpeg, JpegScale.Eighth);
+        var expected = BoxDownscaleTests.Reference(eighth.Pixels, eighth.Width, eighth.Height, 4, SampleFormat.UInt8, denominator / 8);
+        SimdCodecs.TryDecode(jpeg, out var image, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+        using (image)
+        {
+            (image.Width, image.Height).ShouldBe((w, h));
+            image.ToRgba8().ShouldBe(expected);
+        }
+        var into = new byte[w * h * 4];
+        SimdCodecs.TryDecodeInto(jpeg, into, 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+        into.ShouldBe(expected);
+        SimdCodecs.TryDecode(Stills["png"], out var png, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+        using (png)
+            (png.Width, png.Height).ShouldBe((w, h));
     }
 
     [Fact]

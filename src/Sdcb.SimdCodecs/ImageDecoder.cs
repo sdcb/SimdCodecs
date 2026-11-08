@@ -209,7 +209,6 @@ public sealed class ImageFrame
 
     /// <summary>Decodes the frame at its full fidelity (see <see cref="IImageDecoder.TryDecode"/>). Dispose the result.</summary>
     /// <exception cref="InvalidDataException">The frame is undecodable.</exception>
-    /// <exception cref="NotSupportedException">The codec cannot produce <see cref="DecodeOptions.ScaleDenominator"/>.</exception>
     /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the frame.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public IDecodedImage Decode(DecodeOptions? options = null, CancellationToken cancellationToken = default)
@@ -224,8 +223,8 @@ public sealed class ImageFrame
                 throw new InvalidDataException(
                     $"Frame {_index} could not be decoded: its raster ({w}x{h}, {Info.Channels} channels, {bytes} bytes) exceeds " +
                     $"the maximum single-buffer size of {Array.MaxLength} bytes (2 GB). Decode it at a reduced scale " +
-                    "(DecodeOptions.ScaleDenominator = 2, 4 or 8 where the codec scales natively, as JPEG does; see " +
-                    "TryGetClosestSize) or decode a region of it (DecodeOptions.Region).");
+                    "(DecodeOptions.ScaleDenominator, a power of two; one the codec scales to natively, as JPEG does up to 8, " +
+                    "never holds the full size, see TryGetClosestSize) or decode a region of it (DecodeOptions.Region).");
             }
             throw new InvalidDataException($"Frame {_index} could not be decoded.");
         }
@@ -240,7 +239,6 @@ public sealed class ImageFrame
     /// <exception cref="ArgumentException">The destination does not fit, or the region does not lie inside the frame.</exception>
     /// <exception cref="InvalidDataException">The frame is undecodable, or has no integer projection (float samples,
     /// or an HDR transfer a codec refuses to project).</exception>
-    /// <exception cref="NotSupportedException">The codec cannot produce <see cref="DecodeOptions.ScaleDenominator"/>.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public void CopyPixels(PixelRect? region, PixelFormat format, Span<byte> destination, int stride,
         DecodeOptions? options = null, CancellationToken cancellationToken = default)

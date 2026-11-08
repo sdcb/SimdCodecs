@@ -61,7 +61,7 @@ internal sealed class WebpFrameReader : IImageFrameReader
             return WebpImageDecoder.TryDecode(_data.Span, out image, options, cancellationToken);
 
         image = null;
-        options?.Validate(_frameInfo.Width, _frameInfo.Height, supportsScale: false);
+        options?.Validate(_frameInfo.Width, _frameInfo.Height);
         if (!TryComposite(animation, index, cancellationToken)) return false;
 
         var canvas = animation.Canvas;
@@ -106,7 +106,7 @@ internal sealed class WebpFrameReader : IImageFrameReader
         if (options is { IsFullImage: false })
             return ImageDecoderFallback.TryDecodeFrameInto(this, index, destination, stride, format, options, cancellationToken);
 
-        options?.Validate(_frameInfo.Width, _frameInfo.Height, supportsScale: false);
+        options?.Validate(_frameInfo.Width, _frameInfo.Height);
 
         int width = _frameInfo.Width, height = _frameInfo.Height;
         if (!PixelConverter.TryGetLayout(width, height, format, stride, destination.Length, out var rowStride))

@@ -28,8 +28,8 @@ internal static class RasterSize
             throw new ArgumentOutOfRangeException(nameof(width),
                 $"The requested image raster ({width}x{height}, {(long)elementsPerPixel * bytesPerElement} bytes per pixel, " +
                 $"{elements * bytesPerElement} bytes) exceeds the maximum single-buffer size of {Array.MaxLength} elements (2 GB). " +
-                "Decode at a reduced scale (DecodeOptions.ScaleDenominator = 2, 4 or 8, for a codec that scales natively, " +
-                "such as JPEG in the DCT domain) or decode a region of the image (DecodeOptions.Region).");
+                "Decode at a reduced scale (DecodeOptions.ScaleDenominator, a power of two; one the codec scales to natively, " +
+                "such as JPEG up to 8 in the DCT domain, never holds the full size) or decode a region of the image (DecodeOptions.Region).");
         }
 
         return (int)(pixels * elementsPerPixel);

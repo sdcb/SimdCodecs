@@ -151,7 +151,7 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
         {
             // Outside any catch: a scale or a region that does not fit throws on purpose.
             if (!TryReadInfo(data, out var info)) return false;
-            options.Validate(info.Width, info.Height, supportsScale: false);
+            options.Validate(info.Width, info.Height);
         }
         if (!PngReader.TryDecode(data, out var png, cancellationToken)) return false;
         RasterImage raster;

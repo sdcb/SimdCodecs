@@ -19,7 +19,8 @@ namespace Sdcb.SimdCodecs.Jpeg;
 /// <see cref="JpegDecoder.DecodeTo(ReadOnlySpan{byte}, Span{byte}, int, JpegPixelFormat, JpegScale)"/>; the other
 /// formats (16-bit, premultiplied, grey + alpha) are the 8-bit decode widened by <see cref="PixelConverter"/>.
 /// JPEG scales natively in the DCT domain: <see cref="DecodeOptions.ScaleDenominator"/> 2, 4 and 8 decode a
-/// smaller image at a fraction of the cost (<see cref="TryGetClosestSize"/>).
+/// smaller image at a fraction of the cost (<see cref="TryGetClosestSize"/>); 16 and above decode at 1/8, then apply
+/// the box filter of <see cref="BoxDownscaler"/> for the rest.
 /// </para>
 /// </summary>
 public sealed class JpegImageDecoder : IImageDecoder
@@ -58,7 +59,8 @@ public sealed class JpegImageDecoder : IImageDecoder
 
     /// <inheritdoc />
     /// <remarks>The smallest of 1/1, 1/2, 1/4 and 1/8 of the stored size that is at least the requested size in both
-    /// directions (the stored size when the request is larger).</remarks>
+    /// directions (the stored size when the request is larger). Smaller scales are accepted too, but cost the 1/8
+    /// decode and a box filter.</remarks>
     public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
         out int width, out int height, out int scaleDenominator)
     {
@@ -86,24 +88,31 @@ public sealed class JpegImageDecoder : IImageDecoder
         image = null;
         if (!JpegDecoder.TryReadInfo(data, out var info))
             return false;
-        options?.Validate(info.Width, info.Height, maxScaleDenominator: 8);
-        var scale = (JpegScale)(options?.ScaleDenominator ?? 1);
+        options?.Validate(info.Width, info.Height);
+        // Scales up to 1/8 come from the DCT domain; beyond that the 1/8 decode is box-filtered by the rest.
+        var native = options?.GetNativeScale(8) ?? 1;
+        var factor = (options?.ScaleDenominator ?? 1) / native;
+        var scale = (JpegScale)native;
         var (width, height) = info.ScaledSize(scale);
 
         // A one-component frame keeps its samples as stored (Gray8 output is exactly its Y);
         // every other frame is colour, written as RGB since JPEG carries no alpha.
         var (channels, format) = info.Components == 1 ? (1, JpegPixelFormat.Gray8) : (3, JpegPixelFormat.Rgb24);
-        // A region decodes natively (only the region's pixels are ever held), so the raster is the output's size. One
-        // that does not fit a single array (a gigapixel JPEG at 1/1) is refused before anything is allocated.
-        var region = options?.Region ?? new PixelRect(0, 0, width, height);
+        // A region decodes natively (only the region's pixels are ever held), so the raster is the output's size (at a
+        // box-filtered scale, the native pixels the region's boxes cover). One that does not fit a single array (a
+        // gigapixel JPEG at 1/1) is refused before anything is allocated.
+        PixelRect? nativeRegion = options?.Region is { } scaled
+            ? factor == 1 ? scaled : BoxDownscaler.GetSourceRect(scaled, width, height, factor)
+            : null;
+        var region = nativeRegion ?? new PixelRect(0, 0, width, height);
         if ((long)region.Width * region.Height * channels > Array.MaxLength)
             return false;
         var metadata = ReadMetadata(data);
-        var raster = RasterImage.Create(region.Width, region.Height, channels, SampleFormat.UInt8, options?.Pool,
+        var raster = RasterImage.Create(region.Width, region.Height, channels, SampleFormat.UInt8, factor == 1 ? options?.Pool : null,
             colorEncoding: IccPrimaries.Encoding(metadata.Icc.Span), metadata: metadata);
         try
         {
-            if (options?.Region is not null)
+            if (nativeRegion is not null)
             {
                 JpegDecoder.DecodeRegionTo(data, raster.WritablePixels, region.Width * channels, format, scale,
                     region.X, region.Y, region.Width, region.Height, cancellationToken);
@@ -121,7 +130,13 @@ public sealed class JpegImageDecoder : IImageDecoder
             throw;
         }
 
-        image = raster;
+        if (factor == 1)
+        {
+            image = raster;
+            return true;
+        }
+        using (raster)
+            image = BoxDownscaler.Downscale(raster, factor, pool: options!.Pool);
         return true;
     }
 
@@ -129,11 +144,11 @@ public sealed class JpegImageDecoder : IImageDecoder
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
-        if (!format.IsBasic8)
+        if (!format.IsBasic8 || options is { ScaleDenominator: > 8 })
             return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
         if (!JpegDecoder.TryReadInfo(data, out var info))
             return false;
-        options?.Validate(info.Width, info.Height, maxScaleDenominator: 8);
+        options?.Validate(info.Width, info.Height);
         var scale = (JpegScale)(options?.ScaleDenominator ?? 1);
         var (width, height) = info.ScaledSize(scale);
         if (options?.Region is { } region)

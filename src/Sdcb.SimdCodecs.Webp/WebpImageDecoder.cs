@@ -92,7 +92,7 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
         }
 
         var webpInfo = container.Info;
-        options?.Validate(webpInfo.Width, webpInfo.Height, supportsScale: false);
+        options?.Validate(webpInfo.Width, webpInfo.Height);
 
         int channels = webpInfo.HasAlpha ? 4 : 3;
         ImageMetadata? metadata = (container.HasExif || container.HasXmp || container.HasIccProfile)
@@ -159,7 +159,7 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
             return false;
         }
 
-        options?.Validate(info.Width, info.Height, supportsScale: false);
+        options?.Validate(info.Width, info.Height);
 
         if (!PixelConverter.TryGetLayout(info.Width, info.Height, format, stride, destination.Length, out int rowStride))
         {

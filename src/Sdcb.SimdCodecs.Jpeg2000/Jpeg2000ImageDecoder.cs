@@ -43,11 +43,13 @@ namespace Sdcb.SimdCodecs.Jpeg2000;
 /// <para>
 /// <b>Scaled decode.</b> <see cref="DecodeOptions.ScaleDenominator"/> is a resolution reduction: any
 /// power of two up to 2 to the codestream's decomposition levels, decoded by leaving the finer levels
-/// out (they are never entropy-decoded), with the same samples as <c>opj_decompress -r</c>. A
-/// <see cref="DecodeOptions.Region"/> is in the scaled image's coordinates and is cropped from it. An
-/// image whose SIZ image offset is not zero is decoded at scale 1 only: on the reference grid a
-/// halving rounds relative to the origin, which can differ by a pixel from the facade's
-/// <c>⌈w / d⌉</c> (the decoder's own <see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, int, CancellationToken)"/> still reduces it).
+/// out (they are never entropy-decoded), with the same samples as <c>opj_decompress -r</c>. A larger
+/// one decodes at that largest reduction, then applies the box filter of <see cref="BoxDownscaler"/>
+/// for the rest. A <see cref="DecodeOptions.Region"/> is in the scaled image's coordinates and is
+/// cropped from it. An image whose SIZ image offset is not zero has no native reduction (every scale
+/// is the box filter of the full-size decode): on the reference grid a halving rounds relative to the
+/// origin, which can differ by a pixel from the facade's <c>⌈w / d⌉</c> (the decoder's own
+/// <see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, int, CancellationToken)"/> still reduces it).
 /// </para>
 /// <para>
 /// Samples up to 8 bits come back as <see cref="SampleFormat.UInt8"/>, deeper ones as
@@ -114,7 +116,7 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
     /// The largest scale denominator this image decodes at natively: 2 to the number of resolution
     /// levels that can be left out. A reduction halves each side on the reference grid (T.800 B-14),
     /// which is the facade's <c>⌈w / d⌉</c> only when the image region starts at the origin; an image
-    /// whose SIZ offset is not zero can differ by a pixel at some scales, so it is decoded at 1 only
+    /// whose SIZ offset is not zero can differ by a pixel at some scales, so it is decoded at 1 natively
     /// (<see cref="Jpeg2000Decoder.Decode(ReadOnlySpan{byte}, int, CancellationToken)"/> still reduces it).
     /// </summary>
     private static int MaxScaleDenominator(Jpeg2000Info j2k) =>
@@ -123,7 +125,8 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
     /// <inheritdoc />
     /// <remarks>The smallest image, a power-of-two reduction of the stored one, that is at least the requested
     /// size in both directions (the stored size when the request is larger). A reduction costs only the
-    /// levels it keeps: the finer ones are never entropy-decoded.</remarks>
+    /// levels it keeps: the finer ones are never entropy-decoded. Smaller scales are accepted too, but cost the
+    /// largest reduction's decode and a box filter.</remarks>
     public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
         out int width, out int height, out int scaleDenominator)
     {
@@ -154,8 +157,10 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
         if (!CanDecode(data)) return false;
         if (!TryReadInfo(data, out var info, out var read)) return false;
 
-        options?.Validate(info.Width, info.Height, MaxScaleDenominator(read));
-        var reduce = options is null ? 0 : BitOperations.Log2((uint)options.ScaleDenominator);
+        options?.Validate(info.Width, info.Height);
+        // Resolution levels give the scales up to MaxScaleDenominator; the box filter does the rest.
+        var native = options?.GetNativeScale(MaxScaleDenominator(read)) ?? 1;
+        var reduce = BitOperations.Log2((uint)native);
 
         RasterImage? raster;
         try
@@ -171,8 +176,8 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
 
         try
         {
-            // The region is in the scaled image's coordinates, and the raster already is that image.
-            image = DecodeOptions.Apply(raster, options is { ScaleDenominator: > 1 } ? options with { ScaleDenominator = 1 } : options);
+            // The raster is the image at 1/native; the region is in the scaled image's coordinates.
+            image = DecodeOptions.Apply(raster, options, native);
             return true;
         }
         catch

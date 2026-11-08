@@ -48,7 +48,10 @@ public interface IImageDecoder
     /// The size closest to <paramref name="requestedWidth"/> × <paramref name="requestedHeight"/> that this codec can
     /// decode to natively — never smaller than requested in either direction unless the full size is — and the
     /// <see cref="DecodeOptions.ScaleDenominator"/> that produces it. A codec that does not scale natively reports the
-    /// stored size and 1, so the caller knows to scale the result itself. False when the header is unreadable.
+    /// stored size and 1. Only native sizes are reported, because only they are cheap: every codec accepts every power
+    /// of two as <see cref="DecodeOptions.ScaleDenominator"/>, but one beyond its native scales costs a decode at the
+    /// largest native scale and the box filter of <see cref="CodecSupport.BoxDownscaler"/>. False when the header is
+    /// unreadable.
     /// </summary>
     static abstract bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
         out int width, out int height, out int scaleDenominator);

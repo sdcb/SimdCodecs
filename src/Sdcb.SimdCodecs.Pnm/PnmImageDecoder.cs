@@ -174,7 +174,7 @@ internal static class PnmAdapter
             return false;
         }
 
-        options?.Validate(info.Width, info.Height, supportsScale: false);
+        options?.Validate(info.Width, info.Height);
         int bitDepth = pfm ? 32 : (32 - BitOperations.LeadingZeroCount((uint)info.MaxValue));
         var raster = RasterImage.Create(info.Width, info.Height, info.Channels, info.SampleFormat, options?.Pool,
             colorEncoding: pfm ? LinearFloat : null, bitDepth: bitDepth);
