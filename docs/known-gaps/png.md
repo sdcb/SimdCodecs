@@ -20,6 +20,7 @@
 |---|:-:|---|
 | 灰度、灰度 + alpha、RGB、RGBA，8 / 16 位 | ✅ | |
 | 无损缩减（自动选调色板、低位深、灰度） | ✅ | `LosslessReduction` |
+| 有损调色板量化（pngquant 的用途：≤256 色，含半透明 tRNS，质量目标，可抖动） | ✅ | `Quantize`；质量刻度是本库自定义的，按 pngquant 2.17 校准过 |
 | 多线程分段压缩 | ✅ | `ParallelFragments` |
 | Adam7 隔行 | ❌ | |
 
@@ -30,7 +31,7 @@
 | 解码、合成整幅画布 | ✅ | `PngAnimationDecoder`，门面 `TryOpenFrames`，可跳帧 |
 | 编码，只写变化矩形 | ✅ | `PngAnimationEncoder`，门面的多帧编码会话 |
 | 编码时每帧不同的颜色类型 / 调色板 | ❌ | 全部帧共用一种布局 |
-| 编码 Adam7 帧、`DiscardAlpha`、`TransparentColor` | ❌ | |
+| 编码 Adam7 帧、`DiscardAlpha`、`TransparentColor`、`Quantize` | ❌ | |
 
 ### 色彩与元数据（读和写）
 

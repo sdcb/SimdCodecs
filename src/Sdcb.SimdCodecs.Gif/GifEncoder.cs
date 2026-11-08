@@ -31,8 +31,8 @@ public readonly record struct GifAnimationFrame(ReadOnlyMemory<byte> Pixels, Tim
 /// <item>Alpha below 128 is transparent, the rest opaque.</item>
 /// <item>One global palette serves every frame (colours stay put across an animation). When the opaque
 ///   colours of all frames fit (256, or 255 beside a transparent index), it is exact and the encode is
-///   lossless; otherwise it is built by Wu's variance-minimising quantizer, with optional Floyd–Steinberg
-///   dithering (<see cref="GifEncodeOptions.Dither"/>).</item>
+///   lossless; otherwise it is built by the shared perceptual quantizer (OKLab, a variance-minimising box split
+///   refined by k-means), with optional edge-aware Floyd–Steinberg dithering (<see cref="GifEncodeOptions.Dither"/>).</item>
 /// <item>An opaque animation writes each frame as the rectangle that changed, its unchanged pixels as the
 ///   transparent index when the palette has room for one. An animation with transparency writes every frame
 ///   whole, each cleared before the next, so transparent pixels show through.</item>

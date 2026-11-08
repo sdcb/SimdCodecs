@@ -12,7 +12,7 @@
     <PackageId>Sdcb.SimdCodecs.Png</PackageId>
     <Product>Sdcb.SimdCodecs.Png</Product>
     <Authors>sdcb</Authors>
-    <Description>Pure-managed PNG encoder + decoder for .NET. Writer: adaptive per-row filter selection (libpng "minimum sum of absolute values" heuristic), 8/16-bit RGBA/Gray. Reader: chunk parsing with CRC validation, color types 0/2/4/6 at 8/16-bit. Both sides handle iCCP / sRGB / gAMA / cHRM / eXIf metadata plus PNG-3 HDR signaling chunks cICP (Coding-Independent Code Points), mDCv (Mastering Display Color Volume), cLLI (Content Light Level Info) — full HDR10 / HLG round-trip. Also exports PngPredictor as a reusable row-unfilter building block (TIFF Predictor=2 / PDF FlateDecode). AOT-compatible.</Description>
+    <Description>Pure-managed PNG encoder + decoder for .NET. Writer: adaptive per-row filter selection (libpng "minimum sum of absolute values" heuristic), 8/16-bit RGBA/Gray, lossless reduction, and lossy palette quantization with alpha (the pngquant use case). Reader: chunk parsing with CRC validation, color types 0/2/4/6 at 8/16-bit. Both sides handle iCCP / sRGB / gAMA / cHRM / eXIf metadata plus PNG-3 HDR signaling chunks cICP (Coding-Independent Code Points), mDCv (Mastering Display Color Volume), cLLI (Content Light Level Info) — full HDR10 / HLG round-trip. Also exports PngPredictor as a reusable row-unfilter building block (TIFF Predictor=2 / PDF FlateDecode). AOT-compatible.</Description>
     <PackageTags>png image codec encoder decoder hdr hdr10 png3 aot</PackageTags>
     <RepositoryUrl>https://github.com/sdcb/SimdCodecs.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -30,6 +30,8 @@
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Tests" />
     <!-- PngDiagnostics: stage ablation for the benchmark (attribution by ablation, AGENTS.md). -->
     <InternalsVisibleTo Include="Sdcb.SimdCodecs.Png.Benchmarks" />
+    <!-- The quantizer benchmark calibrates the quality scale with PngQuantization's own error weights. -->
+    <InternalsVisibleTo Include="Sdcb.SimdCodecs.Quantize.Benchmarks" />
   </ItemGroup>
 
   <ItemGroup>
@@ -50,6 +52,7 @@
     <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
     <Compile Include="..\Shared\IccPrimaries.cs" Link="Shared\IccPrimaries.cs" />
     <Compile Include="..\Shared\ExifOrientation.cs" Link="Shared\ExifOrientation.cs" />
+    <Compile Include="..\Shared\PaletteQuantizer.cs" Link="Shared\PaletteQuantizer.cs" />
   </ItemGroup>
 
 </Project>

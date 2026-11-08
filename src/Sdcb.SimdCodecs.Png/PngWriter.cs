@@ -270,6 +270,21 @@ public static class PngWriter
         // Refuse a bad keyword before the pixels are deflated, not after: the text is written last.
         ValidateText(options);
 
+        if (options.Quantize is { } quantize)
+        {
+            PngQuantization.Validate(quantize);
+            if (options.TransparentColor is not null)
+                throw new ArgumentException(
+                    "TransparentColor and Quantize do not combine: the quantized palette carries its own transparency",
+                    nameof(PngWriteOptions.TransparentColor));
+            var quantized = PngQuantization.Quantize(samples, width, height, sampleBytes, srcChannels,
+                dropAlpha: dstChannels < srcChannels, quantize);
+            options = options with { Quantize = null };
+            if (quantized is not null)
+                return EncodeCore(quantized, width, height, sampleBytes: 1, srcChannels: 4, dstChannels: 4,
+                    options with { LosslessReduction = true });
+        }
+
         PngEncodePlan plan;
         if (options.LosslessReduction)
         {

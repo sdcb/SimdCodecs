@@ -61,8 +61,8 @@ public enum BmpHeaderVersion
 /// <summary>Options for <see cref="BmpEncoder"/>.</summary>
 public sealed record BmpEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptions
 {
-    /// <summary>The pixel layout. A palette layout is exact when the colours fit it, otherwise built by Wu's
-    /// quantizer (with <see cref="Dither"/>).</summary>
+    /// <summary>The pixel layout. A palette layout is exact when the colours fit it, otherwise built by the
+    /// shared perceptual quantizer (with <see cref="Dither"/>).</summary>
     public BmpEncodeFormat Format { get; init; }
 
     /// <summary>Run-length code a 4- or 8-bit palette (<c>BI_RLE4</c> / <c>BI_RLE8</c>). Not with
@@ -75,7 +75,7 @@ public sealed record BmpEncodeOptions : Sdcb.SimdCodecs.Abstractions.EncodeOptio
     /// <summary>Store the top row first (a negative height). Not with <see cref="Rle"/> or a core header.</summary>
     public bool TopDown { get; init; }
 
-    /// <summary>Floyd–Steinberg error diffusion when a palette has to be quantized.</summary>
+    /// <summary>Edge-aware Floyd–Steinberg error diffusion when a palette has to be quantized.</summary>
     public bool Dither { get; init; }
 
     /// <summary>An ICC profile to embed; it needs a V5 header (chosen by <see cref="BmpHeaderVersion.Auto"/>).</summary>
@@ -623,7 +623,7 @@ public static class BmpEncoder
 
     /// <summary>
     /// The palette (0x00RRGGBB, as stored: blue in the low byte) and one index per pixel. Exact when the colours
-    /// fit <paramref name="size"/>, otherwise Wu-quantized. Alpha is ignored, except that an icon image's
+    /// fit <paramref name="size"/>, otherwise quantized. Alpha is ignored, except that an icon image's
     /// transparent pixels (<paramref name="blackTransparent"/>) count as black.
     /// </summary>
     private static (int[] Palette, byte[] Indices) Palettize(Input input, int size, bool dither, bool blackTransparent)

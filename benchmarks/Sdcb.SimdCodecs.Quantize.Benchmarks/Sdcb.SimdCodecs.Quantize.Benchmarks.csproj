@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Not a shipped package: this project exists to measure the ones that are. -->
+    <IsPackable>false</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <!-- ImageSharp advisories (NU190x) concern hostile input; this tool only reads the images it
+         generates itself and is never shipped. -->
+    <NoWarn>$(NoWarn);NU1901;NU1902;NU1903;NU1904</NoWarn>
+    <!-- 'baseline' (see README) leaves the previous commit's quantizer here, compiled under its own namespace. -->
+    <DefineConstants Condition="Exists('.cache/baseline/PaletteQuantizer.cs')">$(DefineConstants);HAS_BASELINE</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Black-box competitor and corpus loader only. Never read or decompile its source (see AGENTS.md). -->
+    <PackageReference Include="SixLabors.ImageSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include=".cache/baseline/PaletteQuantizer.cs" Condition="Exists('.cache/baseline/PaletteQuantizer.cs')" Link="Baseline/PaletteQuantizer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Png\Sdcb.SimdCodecs.Png.csproj" />
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Gif\Sdcb.SimdCodecs.Gif.csproj" />
+  </ItemGroup>
+
+</Project>

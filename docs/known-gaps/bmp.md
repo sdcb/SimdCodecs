@@ -26,7 +26,7 @@
 
 | 功能 | 状态 | 说明 |
 |---|:-:|---|
-| 1 / 4 / 8 位调色板（精确或 Wu 量化，可抖动） | ✅ | |
+| 1 / 4 / 8 位调色板（精确或感知量化，可抖动） | ✅ | |
 | `BI_RLE4` / `BI_RLE8` | ✅ | |
 | 555、565、24 位、32 位、带 alpha 的 32 位 | ✅ | |
 | Core / INFO / V4 / V5 头部，自上而下 | ✅ | |
@@ -60,4 +60,4 @@
 - **宽于 8 位的通道（10-10-10-2 等）只取高 8 位**，不提供 16 位输出。
 - **V4 / V5 的校准色彩空间被忽略**：`LCS_CALIBRATED_RGB` 的端点和伽马、链接的 profile（`PROFILE_LINKED`）都 不读；只返回内嵌的 ICC。
 - **从 RGBA 输入编码 32 位时比 ImageSharp 慢**（1920×1080 写进流：约 0.41 ms 对 0.23 ms），差在 RGBA→BGRA 的 重排上；从 BGRA 输入就是直接拷贝（0.23 ms），24 位与 ImageSharp 持平。都比 WIC 快 12 倍以上。
-- **编码器不写** RLE24、Huffman 1D、`BI_PNG`、`BI_ALPHABITFIELDS` 和 2 位调色板。调色板量化用的是 GIF 同一个 Wu 量化器，局限也相同（见 [GIF](gif.md)）。
+- **编码器不写** RLE24、Huffman 1D、`BI_PNG`、`BI_ALPHABITFIELDS` 和 2 位调色板。调色板量化用的是 GIF 同一个量化器，局限也相同（见 [GIF](gif.md)）。

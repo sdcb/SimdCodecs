@@ -56,10 +56,10 @@ File.WriteAllBytes("photo.jpg", jpeg);
 |---|:-:|:-:|---|
 | JPEG | ✅ | ✅ | 解码 baseline 和 progressive DCT JPEG、任意采样、CMYK / YCCK，支持 1/2–1/8 缩放和零分配 `DecodeTo`；SOF3 无损 JPEG 由独立的 `LosslessJpeg.FromMemory` API 支持；编码 baseline / 优化 Huffman / progressive，可写入 EXIF、XMP 和 ICC |
 | Ultra HDR JPEG | ✅ | ✅ | 增益图（gain map）读取、组装和 HDR 重建（Ultra HDR / Adobe） |
-| PNG | ✅ | ✅ | 全部位深（1–16 位、调色板）；APNG 动画，解码可跳帧，编码只写变化矩形；文本块；HDR 标记（cICP、mDCV、cLLI） |
+| PNG | ✅ | ✅ | 全部位深（1–16 位、调色板）；有损调色板量化（pngquant 的用途）；APNG 动画，解码可跳帧，编码只写变化矩形；文本块；HDR 标记（cICP、mDCV、cLLI） |
 | TIFF | ✅ | ✅ | 多页、BigTIFF；8/16/32 位整数和浮点；灰度、RGB、调色板、CMYK、YCbCr、alpha；条带或分块；读取 JPEG、Deflate、LZW、PackBits、CCITT G3/G4，可只读单个分块或区域；写入 Deflate |
 | WebP | ✅ | ✅ | 有损、无损、alpha；动画及跳转；输出与 libwebp 逐字节一致；可编码无损（VP8L）和有损（VP8，带透明时附 ALPH 平面）静态图及动画，可写入 ICC / Exif / XMP |
-| GIF | ✅ | ✅ | 87a / 89a：隔行、透明、全部 dispose 方式；动画及跳转；编码静态图和动画（精确调色板，或 Wu 量化 + 抖动） |
+| GIF | ✅ | ✅ | 87a / 89a：隔行、透明、全部 dispose 方式；动画及跳转；编码静态图和动画（精确调色板，或感知量化 + 抖动） |
 | BMP | ✅ | ✅ | Windows 和 OS/2 的全部变体：core 到 V5 各版头部、1–32 位、任意通道掩码、RLE4 / RLE8 / RLE24、OS/2 Huffman 1D、内嵌 PNG、ICC；SIMD 按行直接写进调用方缓冲区、零分配；编码调色板（精确或量化）、RLE、555 / 565、24 / 32 位 |
 | ICO / CUR | ✅ | ✅ | 图标和光标里的每张图（PNG，或带 AND 掩码的 DIB）、热点坐标；多尺寸编码 |
 | QOI | ✅ | ✅ | RGB 和 RGBA，按规范实现；直接解码进调用方缓冲区、零分配；编码到数组或流 |
@@ -144,10 +144,10 @@ JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插
 <summary>各包的详细特性</summary>
 
 - **Jpeg**：T.81 解码器，支持 baseline、progressive、restart interval、任意采样方式，灰度 / YCbCr / RGB / CMYK / YCCK，1/2–1/8 缩放解码，无损（SOF3）。SIMD 编码器支持 baseline、优化 Huffman 或 progressive；4:4:4 / 4:2:0 / 灰度；restart interval；可写入 EXIF（APP1）、XMP 和 ICC 配置文件（APP2）。
-- **Png**：所有标准位深（包括 1/2/4 位灰度和调色板），tEXt / zTXt / iTXt 文本块，PNG-3 的 cICP / mDCV / cLLI HDR 标记。APNG：`PngAnimationDecoder` 支持所有 dispose / blend 操作并可跳帧，门面的 `TryOpenFrames` 可逐帧播放；`PngAnimationEncoder`（以及门面的多帧编码）只写变化矩形，并合并不变的帧。
+- **Png**：所有标准位深（包括 1/2/4 位灰度和调色板），tEXt / zTXt / iTXt 文本块，PNG-3 的 cICP / mDCV / cLLI HDR 标记。`PngWriteOptions.Quantize` 像 pngquant 一样把图片降到最多 256 色（含半透明）：在基准语料上，同等 SSIM 下文件比 pngquant 的小（`benchmarks/Sdcb.SimdCodecs.Quantize.Benchmarks`）。APNG：`PngAnimationDecoder` 支持所有 dispose / blend 操作并可跳帧，门面的 `TryOpenFrames` 可逐帧播放；`PngAnimationEncoder`（以及门面的多帧编码）只写变化矩形，并合并不变的帧。
 - **Tiff**：多页，经典 TIFF 和 BigTIFF；8/16/32 位整数和浮点；Deflate / LZW（另可读 PackBits 和带 JPEGTables 的 JPEG）；条带或分块；chunky 或 planar；按需读取单个条带或分块，区域解码只读与区域相交的条带或分块；门面把调色板、CMYK、YCbCr 页面呈现为 RGB，额外采样呈现为 alpha；读取 1/2/4 位页面（扩展为 8 位）、CCITT 传真（Group 3 1D/2D、 Group 4、Modified Huffman）和浮点预测器。
 - **Webp**：RFC 6386 / RFC 9649：VP8 有损、VP8L 无损、ALPH、带跳转的动画、ICC / EXIF / XMP。门面的 `TryDecode` 返回静态图或动画的第 0 帧，`TryOpenFrames` 返回所有帧；`WebpAnimationDecoder` 另外提供 按时间戳定位和每帧的矩形。`WebpEncoder.EncodeLossless` 编码 VP8L 静态图（含 alpha），压缩力度 0–9； `WebpEncoder.EncodeLossy` 编码 VP8 静态图，质量 0–100、力度 0–6，透明度写进 ALPH 平面（默认无损，`AlphaQuality` 低于 100 时减少 alpha 级数）；两者都输出到数组或流，并可写入 ICC / Exif / XMP。`WebpAnimationEncoder`（逐帧添加）和 `WebpEncoder.EncodeAnimation` 编码动画：有损（默认）、无损，或每帧取两者中较小的；输入可以是整帧画布（编码器只写变化的 矩形，选择 blend 或直接覆盖，合并不变的帧），也可以是调用方给定的 ANMF 帧；`MaxKeyframeDistance` 限制跳转时要解码的帧数。
-- **Gif**：GIF89a：全局 / 局部调色板、隔行、透明、全部 dispose 方式、NETSCAPE2.0 循环次数；合成好的帧， 可跳转。规范没有定死的行为，按浏览器的做法处理，列在包的 README 里。编码器：静态图和动画，精确调色板或 Wu 量化（可选 Floyd–Steinberg 抖动），不透明动画只写变化的矩形。
+- **Gif**：GIF89a：全局 / 局部调色板、隔行、透明、全部 dispose 方式、NETSCAPE2.0 循环次数；合成好的帧， 可跳转。规范没有定死的行为，按浏览器的做法处理，列在包的 README 里。编码器：静态图和动画，精确调色板或感知量化（OKLab 盒切分 + k-means，可选边缘自适应的 Floyd–Steinberg 抖动），不透明动画只写变化的矩形。
 - **Bmp**：Windows DIB 和 OS/2 位图：core、OS/2 2.x、40 字节、V2–V5 各版头部；1/2/4/8 位调色板和 16/24/32 位； `BI_BITFIELDS` / `BI_ALPHABITFIELDS`；带 delta 的 RLE4 / RLE8、OS/2 RLE24 和 Huffman 1D；`BI_PNG`；自顶向下的行； V5 ICC；packed DIB（剪贴板、图标图像）。可直接解码成任意 `PixelFormat` 且不分配内存；与 WIC 逐像素比对过。 文档没有定死的行为列在包的 README 里。
 - **Ico**：基于 Bmp 和 Png 的图标和光标：读出每张图，默认取最大、位深最高的一张，带热点坐标；编码多尺寸图标和光标， 每张图可选 PNG 或 1/4/8/24/32 位 DIB。
 - **Qoi**：按 QOI 规范实现：3 通道和 4 通道图像；会报告色彩空间（线性色彩空间报告为线性传递函数）；可直接解码成任意 `PixelFormat` 且不分配内存；编码输入可以是 RGBA、BGRA、RGB、BGR 或灰度。
@@ -187,7 +187,7 @@ Exif ─ Tiff        Jpeg.IccInjector (no dependencies)
 Heif ─ Abstractions   (not referenced by the facade: registered by the application)
 ```
 
-MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BMP）、Wu 调色板量化器（GIF、BMP）、流和数组写入器（QOI、Netpbm）和 EXIF 方向读取 （JPEG、PNG、WebP）以源码形式共享（`src/Shared`），编译进每个用到它们的包：没有哪个包使用另一个包的内部成员。
+MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BMP）、调色板量化器（GIF、BMP）、流和数组写入器（QOI、Netpbm）和 EXIF 方向读取 （JPEG、PNG、WebP）以源码形式共享（`src/Shared`），编译进每个用到它们的包：没有哪个包使用另一个包的内部成员。
 
 </details>
 
