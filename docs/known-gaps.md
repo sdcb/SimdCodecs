@@ -56,7 +56,7 @@ HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmar
 - **浮点图像没有自动的整数投影。** 浮点 TIFF、增益图 JPEG 重建出的 HDR 等，`TryDecodeInto` 返回 `false` （增益图返回的是 SDR 基础图），`EnumerateFramesInto` 抛出 `NotSupportedException`。HDR 到 8 位需要色调映射， 这是调用方的决定，不是编解码器的。只为查看的话，`PixelConverter.StretchToRgba8` 把颜色范围线性拉伸到 0..255（线性光数据如增益图 HDR 再加 `srgbEncode: true`），但不做色调映射。
 - **接口里没有“时间戳 → 帧号”的辅助方法。** WebP 包的 `WebpAnimationDecoder.FrameIndexAt` 有，接口层没有； 需要时可以按各帧的 `Duration` 自己累加。
 - **`IImageFrameReader` 和 `ImageDecoder` 会话都不是线程安全的**（动画需要在调用之间保留画布状态），每个线程各开一个。
-- **元数据只透传、不解析。** `ImageMetadata` 是原始的 Exif / XMP / ICC 块；解析 Exif 用 `Sdcb.SimdCodecs.Exif`。TIFF 页面自己的 IFD 就是 Exif 的 IFD0，所以读出的 Exif 块是重组的（见 [TIFF](known-gaps/tiff.md)），字节布局与源文件不同； JPEG 的扩展 XMP（跨多个 APP1 段）没有拼接。HEIF 的像素已按 `irot` / `imir` 转正，所以它交出的 Exif 块里方向标签已改写为 1；自己按 `ImageInfo.Orientation` 旋转像素的调用方，可以用 `ExifWriter.ResetOrientation` 得到方向为 1 的副本。
+- **元数据只透传、不解析。** `ImageMetadata` 是原始的 Exif / XMP / ICC 块；解析 Exif 用 `Sdcb.SimdCodecs.Exif`。TIFF 页面自己的 IFD 就是 Exif 的 IFD0，所以读出的 Exif 块是重组的（见 [TIFF](known-gaps/tiff.md)），字节布局与源文件不同。HEIF 的像素已按 `irot` / `imir` 转正，所以它交出的 Exif 块里方向标签已改写为 1；自己按 `ImageInfo.Orientation` 旋转像素的调用方，可以用 `ExifWriter.ResetOrientation` 得到方向为 1 的副本。
 - **一次性解码所有帧不在接口里**，是有意的：全部帧的内存是帧数 × 画布大小。需要时对索引循环即可；WebP 包的 `WebpDecoder.DecodeAnimation` 带总像素上限。
 
 ## 各格式

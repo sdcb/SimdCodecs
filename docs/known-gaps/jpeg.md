@@ -38,7 +38,7 @@
 | 功能 | 状态 | 说明 |
 |---|:-:|---|
 | 读取 Exif、XMP、ICC | ✅ | |
-| 扩展 XMP（跨多个 APP1 段） | ❌ | 不拼接 |
+| 扩展 XMP（跨多个 APP1 段） | ✅ | 按 `xmpNote:HasExtendedXMP` 的 GUID 收集分块（顺序任意），校验长度、覆盖和 MD5 后，把扩展部分 `rdf:RDF` 里的内容插到标准包的 `</rdf:RDF>` 之前，其余字节不变（`HasExtendedXMP` 保留）；扩展部分祖先元素上的命名空间声明会补到插入的元素上。分块缺失、重叠、MD5 不符或 XML 结构不认识时，只返回标准包 |
 | Exif 内嵌缩略图 | ✅ | 门面的 `TryDecodeThumbnail` |
 | Exif 方向 | ✅ | 只读 APP1 的 Exif 段，不看 XMP 的 `tiff:Orientation` |
 | 增益图（Ultra HDR / Adobe） | ✅ | 另一个包，见 [Ultra HDR / 增益图 JPEG](jpeg-gainmap.md) |

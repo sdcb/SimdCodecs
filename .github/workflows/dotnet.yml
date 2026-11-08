@@ -72,8 +72,12 @@ jobs:
     # RFC 9649. Ubuntu's build is older than the libwebp 1.6.0 the committed digests
     # were made with; the two agree on every fixture, and a disagreement between
     # them would be worth knowing about rather than pinning away.
+    #
+    # libimage-exiftool-perl brings exiftool, which writes the Extended XMP (an XMP
+    # packet split over several APP1 segments) that JpegExtendedXmpTests joins.
+    # Binary only as well.
     - name: Install codec oracles
-      run: sudo apt-get update && sudo apt-get install -y jbig2dec webp
+      run: sudo apt-get update && sudo apt-get install -y jbig2dec webp libimage-exiftool-perl
     # OpenJPEG's opj_compress / opj_decompress, the JPEG 2000 reference tools.
     # Downloaded rather than built: OpenJPEG wants CMake, and upstream publishes
     # official builds for both platforms that matter, so this runner and the dev
@@ -102,8 +106,8 @@ jobs:
       # oracle harness degrades to a skip so a clean clone stays green, which is
       # right locally and misleading here -- without this, a CI job that stopped
       # installing jbig2dec or building an oracle would look exactly like one
-      # that did. All four external oracles (jbig2dec, OpenJPEG, libjpeg-turbo
-      # and libwebp's dwebp / anim_dump) are gated and fetched or built above,
+      # that did. All five external oracles (jbig2dec, OpenJPEG, libjpeg-turbo,
+      # libwebp's dwebp / anim_dump and exiftool) are gated and fetched or built above,
       # so this run has no silently-absent oracle left.
       env:
         REQUIRE_ORACLES: 1
