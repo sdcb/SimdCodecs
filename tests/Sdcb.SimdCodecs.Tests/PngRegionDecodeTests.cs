@@ -351,6 +351,54 @@ public sealed class PngRegionDecodeTests
         return ms.ToArray();
     }
 
+    // ---- Robustness -------------------------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("magick ct6 d8")]
+    [InlineData("magick ct3 d4")]
+    [InlineData("magick ct0 d16 tRNS")]
+    [InlineData("magick ct2 d8 tRNS")]
+    public void MutatedImageData_FailsCleanlyOrDecodes(string name)
+    {
+        // Bytes of the image data flipped, or cut short, with the CRC fixed so the window decode itself meets them:
+        // every call returns true or false, never throws.
+        var png = Corpus()[name];
+        var header = PngReader.ReadHeader(png, out var idat);
+        var (offset, length) = idat[0];
+        var random = new Random(name.Length);
+        var formats = new[] { PixelFormat.Rgba32, PixelFormat.Gray16, PixelFormat.Bgra32Premultiplied };
+        var options = new[]
+        {
+            new DecodeOptions { Region = new PixelRect(3, 4, 10, 9) },
+            new DecodeOptions { ScaleDenominator = 4 },
+            new DecodeOptions { ScaleDenominator = 2, Region = new PixelRect(W / 2 - 3, H / 2 - 3, 3, 3) },
+        };
+        var buffer = new byte[W * H * 8];
+        for (var iteration = 0; iteration < 300; iteration++)
+        {
+            byte[] mutated;
+            if (iteration % 5 == 4)
+            {
+                mutated = ReplaceIdat(png, png.AsSpan(offset, random.Next(1, length)).ToArray());
+            }
+            else
+            {
+                var payload = png.AsSpan(offset, length).ToArray();
+                for (var k = random.Next(1, 4); k > 0; k--)
+                    payload[random.Next(payload.Length)] ^= (byte)random.Next(1, 256);
+                mutated = ReplaceIdat(png, payload);
+            }
+            foreach (var option in options)
+            {
+                if (PngImageDecoder.TryDecode(mutated, out var image, option, Ct))
+                    image!.Dispose();
+                foreach (var format in formats)
+                    PngImageDecoder.TryDecodeInto(mutated, buffer, 0, format, option, Ct);
+            }
+        }
+        header.Interlaced.ShouldBeFalse();
+    }
+
     // ---- Memory -----------------------------------------------------------------------------------------------------
 
     [Fact]
