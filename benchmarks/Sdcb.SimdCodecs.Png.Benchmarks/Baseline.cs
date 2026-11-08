@@ -67,7 +67,43 @@ internal static unsafe class BaselinePng
         public IntPtr Decode;
         public readonly Dictionary<EncodeFormat, IntPtr> Encoders = [];
         public Type? OptionsType;
+        public IntPtr TryDecode;
+        public Type? DecodeOptionsType;
+        public Type? PixelRectType;
     }
+
+    /// <summary>
+    /// A <c>DecodeOptions</c> of the baseline's own Abstractions, built by reflection from <paramref name="scale"/> and
+    /// <paramref name="region"/>, for <see cref="TryDecode"/>; null when the baseline has no options overload.
+    /// </summary>
+    public static object? CreateDecodeOptions(int scale, (int X, int Y, int Width, int Height)? region)
+    {
+        Bound b = Loaded.Value;
+        if (b.DecodeOptionsType is null)
+            return null;
+        object options = Activator.CreateInstance(b.DecodeOptionsType)!;
+        b.DecodeOptionsType.GetProperty("ScaleDenominator")!.SetValue(options, scale);
+        if (region is { } r)
+            b.DecodeOptionsType.GetProperty("Region")!.SetValue(options, Activator.CreateInstance(b.PixelRectType!, r.X, r.Y, r.Width, r.Height));
+        return options;
+    }
+
+    public static bool CanDecodeWithOptions => Loaded.Value.TryDecode != IntPtr.Zero && Loaded.Value.DecodeOptionsType is not null;
+
+    /// <summary>The baseline's <c>PngImageDecoder.TryDecode</c>; <paramref name="image"/> is its own <c>IDecodedImage</c>.</summary>
+    public static bool TryDecode(ReadOnlySpan<byte> png, out object? image, object? options) =>
+        ((delegate*<ReadOnlySpan<byte>, out object?, object?, CancellationToken, bool>)Loaded.Value.TryDecode)(
+            png, out image, options, CancellationToken.None);
+
+    /// <summary>The samples of a baseline image (its <c>RasterImage.Pixels</c>), copied out.</summary>
+    public static byte[] PixelsOf(object image)
+    {
+        // A delegate bound to the instance getter: ReadOnlySpan<byte> is the BCL's type in both load contexts.
+        var getter = (SpanGetter)Delegate.CreateDelegate(typeof(SpanGetter), image, image.GetType().GetProperty("Pixels")!.GetMethod!);
+        return getter().ToArray();
+    }
+
+    private delegate ReadOnlySpan<byte> SpanGetter();
 
     /// <summary>The baseline's <c>PngImageDecoder.TryDecodeIntoRgba8</c>.</summary>
     public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> png, Span<byte> rgba) =>
@@ -112,6 +148,14 @@ internal static unsafe class BaselinePng
             .MethodHandle.GetFunctionPointer();
         Type reader = asm.GetType("Sdcb.SimdCodecs.Png.PngReader", throwOnError: true)!;
         bound.Decode = reader.GetMethod("Decode", BindingFlags.Public | BindingFlags.Static)!.MethodHandle.GetFunctionPointer();
+        // TryDecode(ReadOnlySpan<byte>, out IDecodedImage, DecodeOptions?, CancellationToken): the options overload.
+        if (decoder.GetMethods(BindingFlags.Public | BindingFlags.Static).SingleOrDefault(m =>
+                m.Name == "TryDecode" && m.GetParameters() is { Length: 4 } p && p[2].ParameterType.Name == "DecodeOptions") is { } tryDecode)
+        {
+            bound.TryDecode = tryDecode.MethodHandle.GetFunctionPointer();
+            bound.DecodeOptionsType = tryDecode.GetParameters()[2].ParameterType;
+            bound.PixelRectType = Nullable.GetUnderlyingType(bound.DecodeOptionsType.GetProperty("Region")!.PropertyType);
+        }
 
         bound.OptionsType = asm.GetType("Sdcb.SimdCodecs.Png.PngWriteOptions");
         Type writer = asm.GetType("Sdcb.SimdCodecs.Png.PngWriter", throwOnError: true)!;
