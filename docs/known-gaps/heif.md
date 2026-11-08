@@ -36,7 +36,7 @@
 | 需显式注册 | — | HEVC 专利原因，不在元包里 |
 | 区域解码只解相交的 tile | ✅ | |
 | `TryDecodeInto` 直写调用方缓冲区 | ✅ | 所有 `PixelFormat`，每个 tile 解完立即写入 |
-| 原生缩放解码 | ❌ | |
+| 原生缩放解码 | ❌ | 可用，整幅解码后 box 缩小 |
 | 多核并行（tile 并行、WPP wavefront） | ✅ | |
 | 已调优 | ✅ | 8 核到 RGBA 约为 libheif 的 0.20–0.32× |
 
