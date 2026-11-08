@@ -35,4 +35,6 @@ Or point `HEIF_INPUTS` at any directory that contains the three files.
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks -- --filter "*"
 ```
 
+Scaled decode (`ScaleDenominator` 2, 4, 8): `quick --scaled` times the native scaled decode next to the full decode followed by `BoxDownscaler.Downscale` (after checking they give the same bytes), and `peakmem --contestants "^(ours|scaled|boxed)"` measures `scaled-dN` (native) and `boxed-dN` (full decode, then the box filter). `HEIF_BENCH_CPU=all` runs `quick` on every core. See [`results/2026-11-08-amd-ryzen-7-5800x-scaled.md`](results/2026-11-08-amd-ryzen-7-5800x-scaled.md).
+
 Record the machine with every result (CPU, OS, .NET version). Never compare numbers across machines or against a result from an earlier session.

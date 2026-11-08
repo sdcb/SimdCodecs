@@ -26,7 +26,7 @@
 | [Netpbm](known-gaps/netpbm.md) | ✅ | ✅ | | ✅ | ✅ | ✅ | | | ✅ | ✅ |
 | [JPEG 2000](known-gaps/jpeg2000.md) | ✅ | | | ✅ | ✅ | | ✅ | | | ⚠️ |
 | [JBIG2](known-gaps/jbig2.md) | ✅ | | ⚠️ | | | | | | | |
-| [HEIF / HEIC](known-gaps/heif.md) | ✅ | | | | ✅ | ⚠️ | | ✅ | ✅ | ✅ |
+| [HEIF / HEIC](known-gaps/heif.md) | ✅ | | | | ✅ | ⚠️ | ⚠️ | ✅ | ✅ | ✅ |
 | [EXIF](known-gaps/exif.md) | ✅ | ✅ | | | | | | | | |
 
 几点补充：PNG 和 HEIF 的“浮点 / HDR”指能读出 PQ / HLG 标记和 16 位原始样本，但不投影到 8 位；GIF 的 alpha 只有 1 位；ICO 的“多页”是目录里的各个尺寸；JBIG2 的多页只能通过包 API 取，门面只给第 1 页；JPEG 2000 有基准项目，单核仍慢于 libopenjp2；EXIF 一行的解码 / 编码指读取和生成 Exif 块。
