@@ -69,7 +69,8 @@ public sealed class GainMapImageDecoder : IImageDecoder
 
     /// <inheritdoc />
     /// <remarks>The reconstructed HDR is not scaled natively; the SDR base is a plain JPEG, which is (see
-    /// <c>JpegImageDecoder.TryGetClosestSize</c>). A file whose fidelity tier is the HDR reports its stored size.</remarks>
+    /// <c>JpegImageDecoder.TryGetClosestSize</c>). A file whose fidelity tier is the HDR reports its stored size; other
+    /// scales are accepted, and box-filter the full-size HDR.</remarks>
     public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
         out int width, out int height, out int scaleDenominator)
     {
@@ -90,7 +91,7 @@ public sealed class GainMapImageDecoder : IImageDecoder
         {
             if (!JpegImageDecoder.TryReadInfo(data, out var info))
                 return false;
-            options?.Validate(info.Width, info.Height, supportsScale: false);
+            options?.Validate(info.Width, info.Height);
             cancellationToken.ThrowIfCancellationRequested();
             if (!JpegGainMap.TryRead(data, out var gainMap))
                 return false;

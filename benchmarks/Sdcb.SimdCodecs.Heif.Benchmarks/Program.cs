@@ -6,16 +6,18 @@ const string Usage = """
 
       verify                       every contestant against us, before any timing; exit 1 on a difference
       equivalence                  serial and parallel tile decode produce the identical RGBA buffer
-      quick [--reps N] [--fixtures RE]
-                                   ours only, one CPU (HEIF_BENCH_CPU, default 2): HEVC stage and RGBA, for A/B rounds
+      quick [--reps N] [--fixtures RE] [--scaled]
+                                   ours only, one CPU (HEIF_BENCH_CPU, default 2): HEVC stage and RGBA, for A/B rounds;
+                                   --scaled adds ScaleDenominator 2 / 4 / 8, native vs full decode + box filter
       multi [--reps N] [--fixtures RE]
                                    multi-core decode speed and allocation, ours vs libheif vs Magick
       single [--reps N] [--fixtures RE]
                                    one logical CPU for the whole process, tile parallelism off on every side
       ablate [--reps N] [--fixtures RE]
                                    single-core time with one decode stage switched off at a time
-      peakmem [--reps N] [--fixtures RE]
-                                   peak working set per decode, one fresh process each (ours, libheif, magick)
+      peakmem [--reps N] [--fixtures RE] [--contestants RE]
+                                   peak working set per decode, one fresh process each (ours, libheif, magick;
+                                   scaled-dN native scaled decode, boxed-dN full decode + box filter)
       [--filter ...] [BDN args]    BenchmarkDotNet (HeifDecodeBenchmarks)
 
     Every contestant decodes in this process on the same bytes. Native competitors:
@@ -48,7 +50,7 @@ switch (command)
         Console.WriteLine(SingleCore.Run(Select(defaultAll: true), Reps(), verify: true));
         return 0;
     case "quick":
-        Console.WriteLine(Quick.Run(Select(defaultAll: true), Reps()));
+        Console.WriteLine(Quick.Run(Select(defaultAll: true), Reps(), args.Contains("--scaled")));
         return 0;
     case "multi":
         Console.WriteLine(MultiCore.Run(Select(defaultAll: true), Reps()));
@@ -57,7 +59,7 @@ switch (command)
         Console.WriteLine(Ablation.Run(Select(defaultAll: true), Reps()));
         return 0;
     case "peakmem":
-        Console.WriteLine(PeakMemory.Run(Select(defaultAll: true), Reps()));
+        Console.WriteLine(PeakMemory.Run(Select(defaultAll: true), Reps(), Opt("--contestants")));
         return 0;
     case "peakmem-child":
         return PeakMemory.Child(args[1], args[2]);

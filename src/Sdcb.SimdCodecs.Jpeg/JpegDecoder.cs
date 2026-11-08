@@ -355,7 +355,7 @@ public static class JpegDecoder
         $"The requested image raster ({width}x{height}, {bytesPerPixel} bytes per pixel, {bytes} bytes) exceeds the maximum " +
         $"single-buffer size of {Array.MaxLength} bytes (2 GB). Decode a gigapixel JPEG at a reduced scale " +
         "(DecodeOptions.ScaleDenominator = 2, 4 or 8, or JpegScale.Half / Quarter / Eighth: scaled in the DCT domain, " +
-        "never at full size) or decode a region of it (DecodeOptions.Region).";
+        "never at full size; larger powers of two box-filter the 1/8 decode) or decode a region of it (DecodeOptions.Region).";
 
     private static int BytesPerPixel(JpegPixelFormat format) => format switch
     {

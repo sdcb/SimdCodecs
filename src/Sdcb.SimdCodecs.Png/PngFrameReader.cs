@@ -78,7 +78,7 @@ internal sealed class PngFrameReader : IImageFrameReader
             return PngImageDecoder.TryDecode(_data.Span, out image, options, cancellationToken);
 
         image = null;
-        options?.Validate(_frameInfo.Width, _frameInfo.Height, supportsScale: false);
+        options?.Validate(_frameInfo.Width, _frameInfo.Height);
         if (!TryComposite(animation, index, cancellationToken)) return false;
 
         int width = _frameInfo.Width, height = _frameInfo.Height;
@@ -117,7 +117,7 @@ internal sealed class PngFrameReader : IImageFrameReader
 
         if (options is { IsFullImage: false })
             return ImageDecoderFallback.TryDecodeFrameInto(this, index, destination, stride, format, options, cancellationToken);
-        options?.Validate(_frameInfo.Width, _frameInfo.Height, supportsScale: false);
+        options?.Validate(_frameInfo.Width, _frameInfo.Height);
 
         // As for a still: 8-bit samples are a display projection, which an HDR-encoded file has none of.
         if (format.Sample == SampleFormat.UInt8 && !_displayReferred) return false;

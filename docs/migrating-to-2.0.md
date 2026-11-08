@@ -27,7 +27,7 @@ Code that `switch`ed over `ImagePixelFormat` switches over `format.Layout` (`Cha
 ## New in 2.0
 
 - 16-bit and premultiplied output: `PixelFormat.Rgba64`, `Gray16`, `Bgra32Premultiplied`, … in every `TryDecodeInto`.
-- `DecodeOptions`: region, scaled decode (JPEG 1/2–1/8), pooled memory; `TryGetClosestSize` negotiation.
+- `DecodeOptions`: region, scaled decode (any power of two for every codec: JPEG 1/2–1/8 and JPEG 2000 resolution levels natively, the rest by a frozen box filter after the native decode), pooled memory; `TryGetClosestSize` negotiation (native sizes only).
 - Metadata: `TryReadMetadata` (Exif, XMP, ICC as raw blocks), `TryDecodeThumbnail`, `IDecodedImage.Metadata`.
 - `ImageDecoder` / `ImageFrame`: a session over a `Stream`, a file (memory-mapped) or memory, with `OpenAsync`.
 - `IImageEncoder` and `SimdCodecs.Encode` / `CreateEncoder`: every encoder through one API, every `PixelFormat` in.

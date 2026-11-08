@@ -1,4 +1,5 @@
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 using Sdcb.SimdCodecs.Heif.Hevc;
 
 namespace Sdcb.SimdCodecs.Heif;
@@ -28,6 +29,14 @@ namespace Sdcb.SimdCodecs.Heif;
 /// (<see cref="HeifColor.ToRgba64420Row"/>), RGBA64 written directly, the others converted from its row. Those
 /// are exactly the bytes of decoding to RGBA (8- or 16-bit) and converting.
 /// </para>
+/// <para>
+/// <b>Scaling.</b> With a factor d &gt; 1 an output pixel is a box of d × d displayed pixels (<see cref="BoxDownscaler"/>).
+/// Its preimage on the canvas is a d × d square too, so when every tile's displayed rectangle starts on a box edge and
+/// ends on one or at the image's edge (<see cref="BoxesAlignWithTiles"/>), a tile holds whole boxes: it converts its
+/// pixels to Rgb24 / Rgb48, pushes them in display order (rows, reversed rows, or columns after a quarter turn) through a
+/// <see cref="BoxDownscaler"/> of its own and converts each finished row of boxes into the output. The integer box sums
+/// do not depend on the order of the pixels, so the boxes are those of downscaling the whole image.
+/// </para>
 /// </remarks>
 internal sealed unsafe class HeifCanvas
 {
@@ -42,11 +51,18 @@ internal sealed unsafe class HeifCanvas
     private readonly bool _wide; // 16-bit output: _k is the 16-bit coefficient set
     private readonly CancellationToken _cancellationToken;
 
+    // Scaled output (_factor > 1): _format is the layout the boxes average (Rgb24, or Rgb48 above 8 bits: TryDecode's),
+    // _outFormat the destination's, converted from each finished output row.
+    private readonly int _factor;
+    private readonly PixelFormat _outFormat;
+    private readonly int _outBpp;
+
     // output = (a·x + b·y + c, d·x + e·y + f) for canvas (x, y) inside the region.
     private readonly int _a, _b, _c, _d, _e, _f;
     private readonly int _regionX0, _regionY0, _regionX1, _regionY1;
 
-    /// <summary>The displayed size: the output's width and height.</summary>
+    /// <summary>The displayed size: the output's width and height. When scaled, the size of the displayed pixels the
+    /// output's boxes average (<see cref="BoxDownscaler.GetSourceRect"/>), not the output's.</summary>
     internal int Width { get; }
 
     /// <inheritdoc cref="Width"/>
@@ -55,17 +71,30 @@ internal sealed unsafe class HeifCanvas
     /// <summary>
     /// Sets up the output for <paramref name="container"/>'s canvas. <paramref name="destination"/> must stay pinned
     /// while tiles are written; it must hold the display size at <paramref name="stride"/> bytes per row.
+    /// <para>
+    /// With <paramref name="factor"/> &gt; 1 the output is the display image box-filtered by that factor
+    /// (<see cref="BoxDownscaler"/>), or its <paramref name="region"/> (then in scaled coordinates): each tile boxes the
+    /// <paramref name="boxFormat"/> pixels it converts and writes the finished boxes, converted to
+    /// <paramref name="format"/>; <paramref name="destination"/> holds the scaled size. That needs every tile's pixels
+    /// to make whole boxes (<see cref="BoxesAlignWithTiles"/>).
+    /// </para>
     /// </summary>
     internal HeifCanvas(HeifContainer container, byte* destination, long length, int stride, PixelFormat format,
-        in HeifColor.Coefficients coefficients, CancellationToken cancellationToken = default, PixelRect? region = null)
+        in HeifColor.Coefficients coefficients, CancellationToken cancellationToken = default, PixelRect? region = null,
+        int factor = 1, PixelFormat boxFormat = default)
     {
+        if (factor > 1 && boxFormat != PixelFormat.Rgb24 && boxFormat != PixelFormat.Rgb48)
+            throw new ArgumentException("A scaled output boxes Rgb24 or Rgb48 pixels.", nameof(boxFormat));
         _destination = destination;
         _length = length;
         _stride = stride;
-        _format = format;
-        _bpp = format.BytesPerPixel;
+        _factor = Math.Max(factor, 1);
+        _outFormat = format;
+        _outBpp = format.BytesPerPixel;
+        _format = _factor > 1 ? boxFormat : format;
+        _bpp = _format.BytesPerPixel;
         _k = coefficients;
-        _wide = format.Sample == SampleFormat.UInt16;
+        _wide = _format.Sample == SampleFormat.UInt16;
         _cancellationToken = cancellationToken;
 
         int canvasW = container.CanvasWidth, canvasH = container.CanvasHeight;
@@ -110,6 +139,23 @@ internal sealed unsafe class HeifCanvas
         // A region of the displayed image is one more translation: output' = output − (X, Y), on a Width × Height
         // rectangle. The preimage below then shrinks to the canvas pixels that land in it, so tiles outside it are
         // skipped (Intersects) and only its pixels are converted.
+        // Scaled, the translation is to the displayed pixels the scaled region's boxes average (all of them without a
+        // region): output box (bx, by) then averages output pixels [bx·d, bx·d + d) × [by·d, by·d + d), clipped.
+        int outW, outH;
+        if (_factor > 1)
+        {
+            var scaledW = (int)(((long)width + _factor - 1) / _factor);
+            var scaledH = (int)(((long)height + _factor - 1) / _factor);
+            var scaled = region ?? new PixelRect(0, 0, scaledW, scaledH);
+            if (!scaled.FitsIn(scaledW, scaledH))
+                throw new ArgumentException($"The region {scaled} does not lie inside the {scaledW}x{scaledH} image.");
+            region = BoxDownscaler.GetSourceRect(scaled, width, height, _factor);
+            (outW, outH) = (scaled.Width, scaled.Height);
+        }
+        else
+        {
+            (outW, outH) = region is { } q ? (q.Width, q.Height) : (width, height);
+        }
         if (region is { } r)
         {
             if (!r.FitsIn(width, height))
@@ -136,11 +182,78 @@ internal sealed unsafe class HeifCanvas
         }
         (_regionX0, _regionX1, _regionY0, _regionY1) = (xLo, Math.Max(xLo, xHi), yLo, Math.Max(yLo, yHi));
 
-        if (width <= 0 || height <= 0 || stride < (long)width * _bpp || length < (long)(height - 1) * stride + (long)width * _bpp)
+        // The output rectangle the destination must hold: the region (scaled, when scaled) in the output format.
+        if (width <= 0 || height <= 0 || outW <= 0 || outH <= 0 || stride < (long)outW * _outBpp
+            || length < (long)(outH - 1) * stride + (long)outW * _outBpp)
         {
             throw new ArgumentException("The destination does not fit the image.");
         }
     }
+
+    /// <summary>
+    /// The output rectangle (before scaling) that canvas pixels [x0, x1) × [y0, y1) map onto: a signed permutation and a
+    /// translation send a rectangle to a rectangle.
+    /// </summary>
+    private (int U0, int U1, int V0, int V1) ToOutput(int x0, int x1, int y0, int y1)
+    {
+        if (_a != 0)
+        {
+            var (u0, u1) = MapRange(_a, _c, x0, x1);
+            var (v0, v1) = MapRange(_e, _f, y0, y1);
+            return (u0, u1, v0, v1);
+        }
+        else
+        {
+            var (u0, u1) = MapRange(_b, _c, y0, y1);
+            var (v0, v1) = MapRange(_d, _f, x0, x1);
+            return (u0, u1, v0, v1);
+        }
+    }
+
+    /// <summary>The canvas rectangle that output pixels [u0, u1) × [v0, v1) come from: <see cref="ToOutput"/> inverted.</summary>
+    private (int X0, int X1, int Y0, int Y1) ToCanvas(int u0, int u1, int v0, int v1)
+    {
+        // v = s·x + o with s = ±1 inverts to x = s·v − s·o: the same form, with offset −s·o.
+        if (_a != 0)
+        {
+            var (x0, x1) = MapRange(_a, -_a * _c, u0, u1);
+            var (y0, y1) = MapRange(_e, -_e * _f, v0, v1);
+            return (x0, x1, y0, y1);
+        }
+        else
+        {
+            var (y0, y1) = MapRange(_b, -_b * _c, u0, u1);
+            var (x0, x1) = MapRange(_d, -_d * _f, v0, v1);
+            return (x0, x1, y0, y1);
+        }
+    }
+
+    /// <summary>The image of [lo, hi) under v ↦ s·v + offset (s = ±1).</summary>
+    private static (int Lo, int Hi) MapRange(int s, int offset, int lo, int hi) =>
+        s > 0 ? (lo + offset, hi + offset) : (offset - hi + 1, offset - lo + 1);
+
+    /// <summary>
+    /// True when every tile's visible pixels make whole boxes of the scaled output, so each tile can box its own pixels
+    /// (<see cref="WriteTile"/>): the output rectangle of every tile that reaches the output starts on a multiple of the
+    /// factor and ends on one or at the output's edge, on both axes. Always true for one coded image (its rectangle is
+    /// the whole output), and for a grid when the tile seams, carried through clap / irot / imir to display coordinates,
+    /// fall on multiples of the factor (a region does not change that: its boxes start on multiples of the factor).
+    /// </summary>
+    internal bool BoxesAlignWithTiles(int tileCount, int columns, int tileW, int tileH)
+    {
+        if (_factor == 1) return true;
+        for (var i = 0; i < tileCount; i++)
+        {
+            int x = i % columns * tileW, y = i / columns * tileH;
+            if (!Intersects(x, y, tileW, tileH)) continue;
+            var (u0, u1, v0, v1) = ToOutput(Math.Max(x, _regionX0), Math.Min(x + tileW, _regionX1),
+                Math.Max(y, _regionY0), Math.Min(y + tileH, _regionY1));
+            if (!Aligned(u0, u1, Width) || !Aligned(v0, v1, Height)) return false;
+        }
+        return true;
+    }
+
+    private bool Aligned(int lo, int hi, int size) => lo % _factor == 0 && (hi % _factor == 0 || hi == size);
 
     /// <summary>True when canvas pixels [x, x + w) × [y, y + h) reach the output: a tile outside the region is skipped.</summary>
     internal bool Intersects(int x, int y, int w, int h) =>
@@ -172,6 +285,11 @@ internal sealed unsafe class HeifCanvas
     internal void WriteTile(HevcPicture picture, int canvasX, int canvasY, int tileW, int tileH, bool parallel = false)
     {
         _cancellationToken.ThrowIfCancellationRequested();
+        if (_factor > 1)
+        {
+            WriteTileScaled(picture, canvasX, canvasY, tileW, tileH, parallel);
+            return;
+        }
         var ys = Math.Max(canvasY, _regionY0);
         var ye = Math.Min(canvasY + tileH, _regionY1);
         const int Band = 64;
@@ -217,6 +335,125 @@ internal sealed unsafe class HeifCanvas
         {
             if (row is not null) System.Buffers.ArrayPool<byte>.Shared.Return(row);
         }
+    }
+
+    // Output rows (or, rotated, columns) a band of a scaled tile spans before the factor rounds it up: a band boxes its
+    // pixels on its own, so it bounds the per-band buffers (one row; rotated, this many canvas rows).
+    private const int ScaledBand = 64;
+
+    /// <summary>
+    /// The scaled <see cref="WriteTile"/>: the tile's visible pixels, which make whole boxes (<see cref="BoxesAlignWithTiles"/>),
+    /// are converted to the box layout, boxed and written into the output boxes they make, in bands of whole boxes
+    /// across the output axis canvas rows run along (in parallel for a coded image decoded alone). Bands, like tiles,
+    /// write disjoint output pixels.
+    /// </summary>
+    private void WriteTileScaled(HevcPicture picture, int canvasX, int canvasY, int tileW, int tileH, bool parallel)
+    {
+        var xs = Math.Max(canvasX, _regionX0);
+        var xe = Math.Min(canvasX + tileW, _regionX1);
+        var ys = Math.Max(canvasY, _regionY0);
+        var ye = Math.Min(canvasY + tileH, _regionY1);
+        if (xs >= xe || ys >= ye) return;
+        var (u0, u1, v0, v1) = ToOutput(xs, xe, ys, ye);
+        if (!Aligned(u0, u1, Width) || !Aligned(v0, v1, Height))
+            throw new InvalidOperationException("A tile's pixels do not make whole boxes: check BoxesAlignWithTiles first.");
+
+        var band = Math.Max(ScaledBand, _factor); // both powers of two: a multiple of the factor
+        var rows = _a != 0; // canvas rows land on output rows; otherwise (a quarter turn) on output columns
+        int lo = rows ? v0 : u0, hi = rows ? v1 : u1;
+        var count = (int)(((long)hi - lo + band - 1) / band);
+        void Band(int k)
+        {
+            var s = lo + k * band;
+            var t = (int)Math.Min((long)s + band, hi);
+            if (rows) BoxBand(picture, canvasX, canvasY, u0, u1, s, t);
+            else BoxBand(picture, canvasX, canvasY, s, t, v0, v1);
+        }
+        if (!parallel || count == 1 || Environment.ProcessorCount < 2)
+        {
+            for (var k = 0; k < count; k++) Band(k);
+            return;
+        }
+        Parallel.For(0, count, new ParallelOptions { CancellationToken = _cancellationToken }, Band);
+    }
+
+    /// <summary>
+    /// Boxes output pixels [u0, u1) × [v0, v1) (before scaling; whole boxes, from multiples of the factor) of the picture
+    /// and writes the boxes, converted to the output format. Output row v is pushed as its own pixels in order: canvas
+    /// row e·(v − f) read left to right (mirrored: right to left), or after a quarter turn canvas column d·(v − f), read
+    /// from a scratch of the band's converted canvas rows.
+    /// </summary>
+    private void BoxBand(HevcPicture picture, int canvasX, int canvasY, int u0, int u1, int v0, int v1)
+    {
+        _cancellationToken.ThrowIfCancellationRequested();
+        var (x0, x1, y0, y1) = ToCanvas(u0, u1, v0, v1);
+        int width = u1 - u0, bpp = _bpp, rowBytes = width * bpp;
+        var box = new BoxDownscaler(width, v1 - v0, 3, _format.Sample, _factor);
+        var pool = System.Buffers.ArrayPool<byte>.Shared;
+        var taken = _outFormat != _format ? pool.Rent(box.OutputRowBytes) : null;
+        var row = pool.Rent(rowBytes);
+        byte[]? other = null;
+        try
+        {
+            int ox = u0 / _factor, oy = v0 / _factor;
+            if (_a != 0)
+            {
+                // Output row v is canvas row y = e·(v − f), columns x0 .. x1 − 1 (= u0 .. u1 − 1, reversed when a = −1).
+                if (_a < 0) other = pool.Rent(rowBytes);
+                for (var v = v0; v < v1; v++)
+                {
+                    ConvertRow(picture, _e * (v - _f) - canvasY, x0 - canvasX, width, row);
+                    var pushed = row;
+                    if (other is not null)
+                    {
+                        for (int i = 0, j = rowBytes - bpp; i < rowBytes; i += bpp, j -= bpp)
+                            row.AsSpan(j, bpp).CopyTo(other.AsSpan(i, bpp));
+                        pushed = other;
+                    }
+                    if (box.PushRow(pushed)) Emit(box, ox, oy, taken);
+                }
+                return;
+            }
+
+            // A quarter turn: output row v is canvas column x = d·(v − f), and output pixel u canvas row b·(u − c). The
+            // band's canvas rows [y0, y1) are converted first (columns x0 .. x1 − 1), then each output row gathered.
+            var canvasRowBytes = (x1 - x0) * bpp;
+            other = pool.Rent(canvasRowBytes * (y1 - y0));
+            for (var y = y0; y < y1; y++)
+                ConvertRow(picture, y - canvasY, x0 - canvasX, x1 - x0, other.AsSpan((y - y0) * canvasRowBytes, canvasRowBytes));
+            var step = _b * canvasRowBytes;
+            for (var v = v0; v < v1; v++)
+            {
+                var source = (_b * (u0 - _c) - y0) * canvasRowBytes + (_d * (v - _f) - x0) * bpp;
+                for (var i = 0; i < rowBytes; i += bpp, source += step)
+                {
+                    for (var k = 0; k < bpp; k++)
+                        row[i + k] = other[source + k];
+                }
+                if (box.PushRow(row)) Emit(box, ox, oy, taken);
+            }
+        }
+        finally
+        {
+            pool.Return(row);
+            if (other is not null) pool.Return(other);
+            if (taken is not null) pool.Return(taken);
+        }
+    }
+
+    /// <summary>Takes the output row <paramref name="box"/> finished into the output at box column <paramref name="ox"/>,
+    /// row <paramref name="oy"/> + the rows taken before it, through <paramref name="taken"/> when the formats differ.</summary>
+    private void Emit(BoxDownscaler box, int ox, int oy, byte[]? taken)
+    {
+        var offset = (long)(oy + box.RowsTaken) * _stride + (long)ox * _outBpp;
+        if (taken is null)
+        {
+            box.TakeRow(Output(offset, box.OutputRowBytes));
+            return;
+        }
+        box.TakeRow(taken);
+        PixelConverter.ConvertRow(taken.AsSpan(0, box.OutputRowBytes), _format, Output(offset, box.OutputWidth * _outBpp),
+            _outFormat, box.OutputWidth);
     }
 
     /// <summary>

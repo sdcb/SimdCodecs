@@ -262,7 +262,6 @@ public static partial class SimdCodecs
     /// <param name="image">The decoded image.</param>
     /// <param name="options">Scale, region and pool; null for the whole image at full size.</param>
     /// <param name="cancellationToken">Checked between coarse units of work.</param>
-    /// <exception cref="NotSupportedException">The codec cannot produce <see cref="DecodeOptions.ScaleDenominator"/>.</exception>
     /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the image.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
@@ -290,7 +289,8 @@ public static partial class SimdCodecs
     /// <summary>
     /// The size closest to <paramref name="requestedWidth"/> × <paramref name="requestedHeight"/> that the codec decodes
     /// to natively, and the <see cref="DecodeOptions.ScaleDenominator"/> that gives it (see
-    /// <see cref="IImageDecoder.TryGetClosestSize"/>): the stored size and 1 for a codec that does not scale. False when
+    /// <see cref="IImageDecoder.TryGetClosestSize"/>): the stored size and 1 for a codec that does not scale. Every codec
+    /// accepts every other power of two too, at the cost of a decode at its native size and a box filter. False when
     /// no codec recognises the stream or the header is malformed.
     /// </summary>
     public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
@@ -314,7 +314,6 @@ public static partial class SimdCodecs
     /// pixels are. Returns false when no codec recognises the stream, the destination does not fit, or the payload is
     /// undecodable.
     /// </summary>
-    /// <exception cref="NotSupportedException">The codec cannot produce <see cref="DecodeOptions.ScaleDenominator"/>.</exception>
     /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the image.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,

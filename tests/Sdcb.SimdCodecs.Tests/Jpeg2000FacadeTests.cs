@@ -224,7 +224,8 @@ public class Jpeg2000FacadeTests
         (image.Width, image.Height).ShouldBe((width, height));
     }
 
-    /// <summary>Odd sizes round up (⌈w / d⌉), and a codestream is never scaled past its levels.</summary>
+    /// <summary>Odd sizes round up (⌈w / d⌉), and a codestream is never scaled natively past its levels: beyond them the
+    /// decode at the largest reduction is box-filtered by the rest.</summary>
     [Fact]
     public void ClosestSize_RoundsUpAndNeverExceedsTheLevels()
     {
@@ -234,10 +235,23 @@ public class Jpeg2000FacadeTests
         SimdCodecs.TryGetClosestSize(File("nodwt-struct32.j2k"), 1, 1, out w, out h, out d).ShouldBeTrue();
         (w, h, d).ShouldBe((32, 32, 1));
 
-        Should.Throw<NotSupportedException>(() => SimdCodecs.TryDecode(File("odd37x23.j2k"), out _,
-            new DecodeOptions { ScaleDenominator = 8 }, TestContext.Current.CancellationToken));
-        Should.Throw<NotSupportedException>(() => SimdCodecs.TryDecode(File("nodwt-struct32.j2k"), out _,
-            new DecodeOptions { ScaleDenominator = 2 }, TestContext.Current.CancellationToken));
+        foreach (var (file, k, native) in new[] { ("odd37x23.j2k", 8, 4), ("odd37x23.j2k", 32, 4), ("nodwt-struct32.j2k", 2, 1) })
+        {
+            var ct = TestContext.Current.CancellationToken;
+            SimdCodecs.TryDecode(File(file), out var reduced, new DecodeOptions { ScaleDenominator = native }, ct).ShouldBeTrue();
+            using (reduced)
+            {
+                var expected = BoxDownscaleTests.Reference(reduced.Pixels, reduced.Width, reduced.Height, reduced.Channels,
+                    reduced.SampleFormat, k / native);
+                SimdCodecs.TryDecode(File(file), out var scaled, new DecodeOptions { ScaleDenominator = k }, ct).ShouldBeTrue();
+                using (scaled)
+                {
+                    SimdCodecs.TryReadInfo(File(file), out var info).ShouldBeTrue();
+                    (scaled.Width, scaled.Height).ShouldBe(new DecodeOptions { ScaleDenominator = k }.GetScaledSize(info.Width, info.Height));
+                    scaled.Pixels.ToArray().ShouldBe(expected, $"{file} d{k}");
+                }
+            }
+        }
     }
 
     /// <summary>A region is in the scaled image's coordinates and is exactly that crop of the scaled decode.</summary>

@@ -36,7 +36,7 @@ File.WriteAllBytes("photo.jpg", jpeg);
 门面的其他入口：
 
 - `SimdCodecs.TryDecodeInto(file, buffer, stride, format)`：按任意行跨度，把任意 `PixelFormat` 直接写进你的缓冲区： BGRA（Windows / Skia）、`Bgra32Premultiplied`（WPF、Direct2D、合成器）、RGB、BGR（OpenCV）、灰度（OCR），以及 它们的 16 位版本（`Rgba64`、`Gray16` 等），16 位 PNG、10 位 HEIC 的精度不会丢失。JPEG 和 PNG 原生输出 8 位布局， 不经过 RGBA 整帧；彩色 JPEG 的灰度就是它的 Y 平面。
-- `SimdCodecs.TryDecode(file, out image, options, cancellationToken)`：保留原始布局：通道数、8/16 位或浮点采样、 真实位深、ICC、Exif / XMP（`image.Metadata`）。`DecodeOptions` 可以只解一个区域、缩放解码（JPEG 在 DCT 域 1/2 到 1/8，JPEG 2000 按分辨率级别；`TryGetClosestSize` 告诉你 codec 原生能做到什么）或使用池化内存（释放图像即归还）。所有入口都接受 `CancellationToken`。
+- `SimdCodecs.TryDecode(file, out image, options, cancellationToken)`：保留原始布局：通道数、8/16 位或浮点采样、 真实位深、ICC、Exif / XMP（`image.Metadata`）。`DecodeOptions` 可以只解一个区域、缩放解码（每个 codec 都接受任意 2 的幂：JPEG 在 DCT 域 1/2 到 1/8、JPEG 2000 按分辨率级别是原生的，其余整幅解码后用 box 滤波缩小；`TryGetClosestSize` 告诉你 codec 原生能做到什么）或使用池化内存（释放图像即归还）。所有入口都接受 `CancellationToken`。
 - `SimdCodecs.TryReadInfo(file, out info)`：只读文件头：格式、存储位深、颜色编码（是不是 PQ / HLG HDR）、分辨率 （DPI）、EXIF 方向（只报告，不旋转像素）、帧数或页数、有没有缩略图。
 - `SimdCodecs.TryReadMetadata(file, out metadata)` / `TryDecodeThumbnail(file, out thumb)`：取出 Exif、XMP、ICC 原始块供转码透传，以及内嵌的预览图（Exif IFD1、HEIF `thmb`）。
 - `ImageDecoder.Open(stream | path | memory)`：WIC 式的会话：`Format`、`FrameCount`，再 `GetFrame(i).Decode(options)` 或 `.CopyPixels(region, format, buffer, stride)`；不可寻址的流用 `OpenAsync`。

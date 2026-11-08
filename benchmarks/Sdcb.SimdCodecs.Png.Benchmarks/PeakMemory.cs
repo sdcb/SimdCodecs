@@ -117,13 +117,13 @@ internal static class PeakMemory
         return list.Count == 1 ? list[0] : throw new InvalidOperationException($"{contestant} cannot run {caseName}");
     }
 
-    private static void TouchManagedHeap()
+    internal static void TouchManagedHeap()
     {
         GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
         GC.WaitForPendingFinalizers();
     }
 
-    private static long Measure(Action operation)
+    internal static long Measure(Action operation)
     {
         long baseline = CurrentWorkingSet();
         // The OS peak counter covers the process lifetime, so a transient spike before the baseline

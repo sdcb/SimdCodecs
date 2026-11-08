@@ -59,11 +59,11 @@ internal static unsafe class BaselineDecoder
 
     public static string Label => Loaded.Value.Label;
 
-    /// <summary>The baseline's <c>WebpDecoder.DecodeTo(data, rgba, stride: 0)</c>.</summary>
+    /// <summary>The baseline's <c>WebpDecoder.DecodeTo(data, rgba, stride: 0, cancellationToken)</c>.</summary>
     public static void DecodeTo(ReadOnlySpan<byte> webp, Span<byte> rgba)
     {
-        var fn = (delegate*<ReadOnlySpan<byte>, Span<byte>, int, void>)Loaded.Value.Fn;
-        fn(webp, rgba, 0);
+        var fn = (delegate*<ReadOnlySpan<byte>, Span<byte>, int, CancellationToken, void>)Loaded.Value.Fn;
+        fn(webp, rgba, 0, CancellationToken.None);
     }
 
     private static (IntPtr, string) Load()
@@ -71,7 +71,7 @@ internal static unsafe class BaselineDecoder
         (Assembly asm, string label) = Assembly.Value;
         Type type = asm.GetType("Sdcb.SimdCodecs.Webp.WebpDecoder", throwOnError: true)!;
         MethodInfo method = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Single(m => m.Name == "DecodeTo" && m.GetParameters().Length == 3);
+            .Single(m => m.Name == "DecodeTo" && m.GetParameters() is { Length: 4 } p && p[3].ParameterType == typeof(CancellationToken));
         return (method.MethodHandle.GetFunctionPointer(), label);
     }
 

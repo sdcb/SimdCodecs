@@ -151,20 +151,67 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
         {
             // Outside any catch: a scale or a region that does not fit throws on purpose.
             if (!TryReadInfo(data, out var info)) return false;
-            options.Validate(info.Width, info.Height, supportsScale: false);
+            options.Validate(info.Width, info.Height);
         }
-        if (!PngReader.TryDecode(data, out var png, cancellationToken)) return false;
         RasterImage raster;
         try
         {
+            var header = PngReader.ReadHeader(data, out var idat);
+            if (options is { IsFullImage: false } && !header.Interlaced)
+            {
+                image = DecodeWindow(data, header, idat, options, cancellationToken);
+                return true;
+            }
+            var png = header with
+            {
+                Pixels = header.Interlaced
+                    ? PngReader.InflateAdam7(data, idat, header.Width, header.Height, header.SourceBitDepth, header.ColorType, cancellationToken)
+                    : PngReader.InflateAndUnfilter(data, idat, header.Width, header.Height, header.SourceBitDepth, header.ColorType, cancellationToken),
+            };
             raster = ToDecoded(png);
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
         {
             return false;
         }
+        // Adam7 scatters every pass over the whole image, so an interlaced file is decoded whole, then scaled and cropped.
         image = DecodeOptions.Apply(raster, options);
         return true;
+    }
+
+    // TryDecode's region / scale path for a non-interlaced image: the window's rows only, box-filtered as they are
+    // decoded (PngReader.DecodeWindow), into an image of the output's size. The same pixels, colour signalling and
+    // metadata as the full decode in ToDecoded's layout followed by DecodeOptions.Apply, but the decode stops after the
+    // last row the output needs.
+    private static RasterImage DecodeWindow(ReadOnlySpan<byte> data, PngImage header, List<(int Offset, int Length)> idat,
+        DecodeOptions options, CancellationToken cancellationToken)
+    {
+        var region = Window(header, options, out var sourceRect);
+        var format = PngReader.FidelityFormat(header);
+        // 1-, 2- and 4-bit greyscale comes out as 8-bit samples; the file's precision is what bitDepth records (ToDecoded).
+        var depth = header.ColorType == 0 && header.SourceBitDepth < 8 ? header.SourceBitDepth : 0;
+        var raster = RasterImage.Create(region.Width, region.Height, format.Channels, format.Sample, options.Pool,
+            MapColorEncoding(header.Cicp, header.Gamma, header.IccProfile), depth, MetadataOf(header));
+        try
+        {
+            PngReader.DecodeWindow(data, header, idat, sourceRect, options.ScaleDenominator, raster.WritablePixels, 0, format,
+                cancellationToken);
+            return raster;
+        }
+        catch
+        {
+            raster.Dispose();
+            throw;
+        }
+    }
+
+    // The output region (the options' region, or the whole scaled image) and the source pixels it averages.
+    private static PixelRect Window(PngImage header, DecodeOptions options, out PixelRect sourceRect)
+    {
+        var (scaledWidth, scaledHeight) = options.GetScaledSize(header.Width, header.Height);
+        var region = options.Region ?? new PixelRect(0, 0, scaledWidth, scaledHeight);
+        sourceRect = BoxDownscaler.GetSourceRect(region, header.Width, header.Height, options.ScaleDenominator);
+        return region;
     }
 
     /// <inheritdoc />
@@ -179,7 +226,9 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
-        if (options is { IsFullImage: false } || !format.IsBasic8)
+        if (options is { IsFullImage: false })
+            return TryDecodeWindowInto(data, destination, stride, format, options, cancellationToken);
+        if (!format.IsBasic8)
         {
             // 8-bit samples are display projections, so the HDR refusal applies to them whichever the layout;
             // 16-bit formats keep the file's code values and go through the generic path as they are.
@@ -197,6 +246,41 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
         {
             return false;
         }
+    }
+
+    // TryDecodeInto with a region or a scale. A non-interlaced image is decoded a window at a time
+    // (PngReader.DecodeWindow): boxed in TryDecode's layout, then converted to the format, the generic path's order, so
+    // exactly its pixels. An interlaced one takes the generic path.
+    private static bool TryDecodeWindowInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions options, CancellationToken cancellationToken)
+    {
+        // 8-bit samples are display projections, so the HDR refusal applies to them whichever the layout;
+        // 16-bit formats keep the file's code values.
+        PngImage? header = null;
+        List<(int Offset, int Length)>? idat = null;
+        if (format.Sample == SampleFormat.UInt8 && !TryReadDisplayReferred(data, out header, out idat)) return false;
+        // Outside any catch: a region that does not fit throws on purpose, as TryDecode does.
+        if (!TryReadInfo(data, out var info)) return false;
+        options.Validate(info.Width, info.Height);
+        try
+        {
+            if (header is null)
+                header = PngReader.ReadHeader(data, out idat);
+            if (!header.Interlaced)
+            {
+                var region = Window(header, options, out var sourceRect);
+                if (!PixelConverter.TryGetLayout(region.Width, region.Height, format, stride, destination.Length, out var rowStride))
+                    return false;
+                PngReader.DecodeWindow(data, header, idat!, sourceRect, options.ScaleDenominator, destination, rowStride, format,
+                    cancellationToken);
+                return true;
+            }
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+        return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
     }
 
     /// <summary>

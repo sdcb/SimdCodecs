@@ -1,3 +1,27 @@
 #nullable enable
-Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.extension(Sdcb.SimdCodecs.Abstractions.DecodeOptions!).Validate(int width, int height, int maxScaleDenominator) -> void
-static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.Validate(this Sdcb.SimdCodecs.Abstractions.DecodeOptions! options, int width, int height, int maxScaleDenominator) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.BoxDownscaler(int width, int height, int channels, Sdcb.SimdCodecs.Abstractions.SampleFormat sampleFormat, int factor) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.Channels.get -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.Factor.get -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.Height.get -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.IsComplete.get -> bool
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.OutputHeight.get -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.OutputRowBytes.get -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.OutputWidth.get -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.PushRow(System.ReadOnlySpan<byte> row) -> bool
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.RowsPushed.get -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.RowsTaken.get -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.SampleFormat.get -> Sdcb.SimdCodecs.Abstractions.SampleFormat
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.SourceRowBytes.get -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.TakeRow(System.Span<byte> destination) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.Width.get -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.extension(Sdcb.SimdCodecs.Abstractions.DecodeOptions!).GetNativeScale(int maxNativeScaleDenominator) -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.extension(Sdcb.SimdCodecs.Abstractions.DecodeOptions!).Validate(int width, int height) -> void
+static Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.Downscale(Sdcb.SimdCodecs.Abstractions.IDecodedImage! source, int factor, Sdcb.SimdCodecs.Abstractions.PixelRect? scaledRegion = null, System.Buffers.ArrayPool<byte>? pool = null) -> Sdcb.SimdCodecs.Abstractions.RasterImage!
+static Sdcb.SimdCodecs.Abstractions.CodecSupport.BoxDownscaler.GetSourceRect(Sdcb.SimdCodecs.Abstractions.PixelRect scaledRegion, int width, int height, int factor) -> Sdcb.SimdCodecs.Abstractions.PixelRect
+static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.Apply(Sdcb.SimdCodecs.Abstractions.IDecodedImage! image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options, int nativeScale) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
+static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.GetNativeScale(this Sdcb.SimdCodecs.Abstractions.DecodeOptions! options, int maxNativeScaleDenominator) -> int
+static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.Validate(this Sdcb.SimdCodecs.Abstractions.DecodeOptions! options, int width, int height) -> void
+static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.extension(Sdcb.SimdCodecs.Abstractions.DecodeOptions!).Apply(Sdcb.SimdCodecs.Abstractions.IDecodedImage! image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options, int nativeScale) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
+*REMOVED*Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.extension(Sdcb.SimdCodecs.Abstractions.DecodeOptions!).Validate(int width, int height, bool supportsScale) -> void
+*REMOVED*static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.Validate(this Sdcb.SimdCodecs.Abstractions.DecodeOptions! options, int width, int height, bool supportsScale) -> void

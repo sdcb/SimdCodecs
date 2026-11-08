@@ -169,7 +169,7 @@ internal static class IcoAdapter
     {
         cancellationToken.ThrowIfCancellationRequested();
         var entry = container.Entries[index];
-        options?.Validate(entry.Width, entry.Height, supportsScale: false);
+        options?.Validate(entry.Width, entry.Height);
         var raster = RasterImage.Create(entry.Width, entry.Height, 4, SampleFormat.UInt8, options?.Pool);
         try
         {

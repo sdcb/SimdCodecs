@@ -43,7 +43,7 @@ internal sealed class GifFrameReader(ReadOnlyMemory<byte> data, GifCanvas canvas
         Check(index);
         cancellationToken.ThrowIfCancellationRequested();
         image = null;
-        options?.Validate(canvas.Width, canvas.Height, supportsScale: false);
+        options?.Validate(canvas.Width, canvas.Height);
         if (!TryComposite(index, cancellationToken)) return false;
         var raster = ToImage(canvas, frameInfo.Channels, options?.Pool);
         image = DecodeOptions.Apply(raster, options);

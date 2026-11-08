@@ -108,6 +108,11 @@ internal static class Vp8Decoder
     /// small row cache, the previous rows' loop filtering completes as this row is filtered, and
     /// finished rows go to <paramref name="sink"/> while they are still in cache. Working memory is
     /// a few macroblock rows, not a frame.
+    /// <para>
+    /// With <paramref name="rowLimit"/> below <paramref name="height"/> the decode stops after the macroblock row whose
+    /// output reaches it: rows [0, rowLimit) are emitted (and possibly a few more), and the macroblock rows below are
+    /// neither entropy-decoded nor validated. A stream damaged only below them decodes without error.
+    /// </para>
     /// </summary>
     internal static void DecodeFrame<TSink>(
         ReadOnlySpan<byte> frame,
@@ -115,7 +120,8 @@ internal static class Vp8Decoder
         int height,
         WebpAblation ablation,
         ref TSink sink,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int rowLimit = int.MaxValue)
         where TSink : IVp8RowSink, allows ref struct
     {
         bool applyLoopFilter = (ablation & WebpAblation.SkipLoopFilter) == 0;
@@ -400,6 +406,10 @@ internal static class Vp8Decoder
                 }
 
                 emitted = end;
+                if (emitted >= rowLimit)
+                {
+                    break;
+                }
 
                 // Slide the cache down by one macroblock row, keeping the rows the next row's loop
                 // filter and output still need.

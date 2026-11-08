@@ -76,7 +76,7 @@ public sealed class QoiImageDecoder : IImageDecoder
             return false;
         }
 
-        options?.Validate(info.Width, info.Height, supportsScale: false);
+        options?.Validate(info.Width, info.Height);
         var raster = RasterImage.Create(info.Width, info.Height, info.Channels, SampleFormat.UInt8, options?.Pool,
             colorEncoding: ColorOf(info.ColorSpace), bitDepth: 8);
         try

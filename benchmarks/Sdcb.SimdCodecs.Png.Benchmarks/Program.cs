@@ -24,6 +24,9 @@ const string Usage = """
       formats                      decode into BGRA / RGB / BGR / grey: the native path vs decode-to-RGBA + convert, and libpng
                                    in the same layout (default cases: the common colour types; writes .cache/work/formats.md)
       peakmem decode|encode        peak working set per operation, one fresh process per run (native memory included)
+      scaled                       TryDecode with a region / scale: native window decode vs the baseline's, and the full
+                                   decode (default cases: the common colour types; writes .cache/work/scaled.md)
+      scaled-peakmem               the same, peak working set, one fresh process per run (writes .cache/work/scaled-peakmem.md)
       inputs [--force]             (re)generate the decode inputs into .cache/inputs (done on demand otherwise)
       baseline [git-ref]           build git-ref's (default HEAD) Sdcb.SimdCodecs.Png as the A/B baseline
 
@@ -111,6 +114,24 @@ switch (command)
         Console.Write(MachineInfo.Describe());
         return Write("formats.md", MachineInfo.Describe() + Environment.NewLine + Formats.Run(rounds));
     }
+    case "scaled" or "scaled-peakmem":
+    {
+        if (Opt("--cases") is null)
+        {
+            Environment.SetEnvironmentVariable(Settings.CasesVariable, Scaled.DefaultCases);
+        }
+
+        Console.Write(MachineInfo.Describe());
+        if (command == "scaled-peakmem")
+        {
+            return Write("scaled-peakmem.md", MachineInfo.Describe() + Environment.NewLine + Scaled.RunPeakMemory());
+        }
+
+        int rounds = int.TryParse(Opt("--rounds"), out int r) ? r : 7;
+        return Write("scaled.md", MachineInfo.Describe() + Environment.NewLine + Scaled.Run(rounds));
+    }
+    case "scaled-child":
+        return Scaled.Child(args[1], int.Parse(args[2], System.Globalization.CultureInfo.InvariantCulture), args[3]);
     case "peakmem" when args.Length > 1 && args[1] is "decode" or "encode":
     {
         string report = MachineInfo.Describe() + Environment.NewLine + PeakMemory.Run(args[1] == "decode");

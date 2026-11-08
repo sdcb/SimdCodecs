@@ -30,7 +30,7 @@ namespace Sdcb.SimdCodecs.Png;
 /// </list>
 /// <para>APNG (animated PNG) layers on top of this decoder: see <see cref="PngAnimationDecoder"/>.</para>
 /// </remarks>
-public static class PngReader
+public static partial class PngReader
 {
     private static readonly byte[] Signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 

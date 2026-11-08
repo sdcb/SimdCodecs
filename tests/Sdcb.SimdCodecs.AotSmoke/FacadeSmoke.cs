@@ -105,14 +105,20 @@ internal static class FacadeSmoke
         var rgba = new byte[info.Width * info.Height * 4];
         // Float samples (PFM) have no 8-bit layout without a tone policy: TryDecodeInto says no.
         Check(SimdCodecs.TryDecodeIntoRgba8(data, rgba) == (info.SampleFormat != SampleFormat.Float32), label, "TryDecodeIntoRgba8");
+        // A scale past every codec's native ones: the box filter (BoxDownscaler's vector kernels), whole and a region.
+        var sixteenth = new DecodeOptions { ScaleDenominator = 16 };
+        Check(SimdCodecs.TryDecode(data, out var small, sixteenth), label, "TryDecode 1/16");
+        Check(SimdCodecs.TryDecode(data, out var smallRegion, sixteenth with { Region = new PixelRect(small.Width / 2, 0, small.Width - small.Width / 2, small.Height) }),
+            label, "TryDecode 1/16 region");
         Check(SimdCodecs.TryOpenFrames(data, out var reader), label, "TryOpenFrames");
         using (reader)
         {
             var last = reader.FrameCount - 1;
             Check(reader.TryDecodeFrame(last, out var frame), label, "TryDecodeFrame");
+            Check(reader.TryDecodeFrame(last, out var smallFrame, new DecodeOptions { ScaleDenominator = 2 }), label, "TryDecodeFrame 1/2");
             Console.WriteLine(
                 $"facade {label} {SimdCodecs.DetectFormat(data)}/{info.Format} {info.Width}x{info.Height}x{info.Channels} {info.SampleFormat} frames={reader.FrameCount}" +
-                $"\t{Hash(Pixels(image))} {Hash(rgba)} {Hash(Pixels(frame))}");
+                $"\t{Hash(Pixels(image))} {Hash(rgba)} {Hash(Pixels(frame))} {Hash(Pixels(small))} {Hash(Pixels(smallRegion))} {Hash(Pixels(smallFrame))}");
         }
     }
 
@@ -149,6 +155,12 @@ internal static class FacadeSmoke
             Check(SimdCodecs.TryDecodeInto(heic, pixels, stride, format), "heif", $"TryDecodeInto {format}");
             formats.Add($"{format}={Hash(pixels)}");
         }
+        // Scaled into a padded destination: each tile boxes its pixels and converts the boxes straight into it.
+        var quarter = new DecodeOptions { ScaleDenominator = 4 };
+        var (qw, qh) = quarter.GetScaledSize(info.Width, info.Height);
+        var boxed = new byte[(qw * 4 + 3) * qh];
+        Check(SimdCodecs.TryDecodeInto(heic, boxed, qw * 4 + 3, PixelFormat.Bgra32, quarter), "heif", "TryDecodeInto Bgra32 1/4");
+        formats.Add($"Bgra32/4={Hash(boxed)}");
 
         Console.WriteLine($"facade heif-layouts\t{string.Join(' ', formats)}");
 

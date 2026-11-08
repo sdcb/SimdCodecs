@@ -33,9 +33,10 @@ namespace Sdcb.SimdCodecs.Tiff;
 /// </para>
 /// <para>
 /// 1/2/4-bit grey is expanded to fill 8 bits (the maximum code becomes 255) and reports
-/// <see cref="IDecodedImage.BitDepth"/> 1/2/4; 16-bit float reports 16. Scaling is not supported (a
-/// <see cref="DecodeOptions.ScaleDenominator"/> other than 1 throws <see cref="NotSupportedException"/>); a
-/// <see cref="DecodeOptions.Region"/> reads only the strips or tiles it intersects. Cancellation is checked per strip,
+/// <see cref="IDecodedImage.BitDepth"/> 1/2/4; 16-bit float reports 16. TIFF does not scale natively: a
+/// <see cref="DecodeOptions.ScaleDenominator"/> above 1 decodes at full size, then applies the box filter of
+/// <see cref="BoxDownscaler"/>. A <see cref="DecodeOptions.Region"/> reads only the strips or tiles it (at a scale,
+/// the stored pixels its boxes cover) intersects. Cancellation is checked per strip,
 /// per row of tiles and per page.
 /// </para>
 /// </summary>
@@ -157,10 +158,11 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         }
         if (!TiffColor.TryCreate(layout, out var plan))
             return false;
-        options?.Validate(layout.Width, layout.Height, supportsScale: false);
-        if (plan.OutFormat == SampleFormat.Float32)
+        options?.Validate(layout.Width, layout.Height);
+        if (plan.OutFormat == SampleFormat.Float32 || options is { ScaleDenominator: > 1 })
         {
-            // PixelConverter defines float output through the decoded image; keep exactly that.
+            // PixelConverter defines float output through the decoded image, and a scale is the box filter of the
+            // decoded image; keep exactly that.
             if (!TryDecodePage(data, pageIndex, options is null ? null : options with { Pool = null }, cancellationToken, out var image))
                 return false;
             using (image)
@@ -314,7 +316,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         if (!TiffColor.TryCreate(layout, out plan))
             return false;
         // Check the options against the page before any strip is decoded (outside the try: they throw).
-        options?.Validate(layout.Width, layout.Height, supportsScale: false);
+        options?.Validate(layout.Width, layout.Height);
 
         ImageMetadata? metadata;
         try
@@ -328,12 +330,15 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         if (metadata is { IsEmpty: true })
             metadata = null;
 
-        if (options?.Region is { } region)
+        if (options?.Region is { } scaledRegion)
         {
             // Only the strips or tiles the region intersects are read, decoded and converted, straight into the
-            // result: the same pixels as decoding the page whole and cropping it.
-            var result = RasterImage.Create(region.Width, region.Height, plan.OutChannels, plan.OutFormat, options.Pool,
-                ColorOf(layout), BitDepthOf(layout, plan), metadata);
+            // result: the same pixels as decoding the page whole and cropping it. At a scale, that is the stored
+            // pixels the region's boxes cover, box-filtered afterwards.
+            var factor = options.ScaleDenominator;
+            var region = factor == 1 ? scaledRegion : BoxDownscaler.GetSourceRect(scaledRegion, layout.Width, layout.Height, factor);
+            var result = RasterImage.Create(region.Width, region.Height, plan.OutChannels, plan.OutFormat,
+                factor == 1 ? options.Pool : null, ColorOf(layout), BitDepthOf(layout, plan), metadata);
             try
             {
                 var target = result.WritablePixels;
@@ -358,7 +363,13 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
                 result.Dispose();
                 throw;
             }
-            image = result;
+            if (factor == 1)
+            {
+                image = result;
+                return true;
+            }
+            using (result)
+                image = BoxDownscaler.Downscale(result, factor, pool: options.Pool);
             return true;
         }
 
