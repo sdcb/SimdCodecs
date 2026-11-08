@@ -149,9 +149,10 @@ jobs:
     # its tests compare all of them against libpng (Magick.NET), so they run on every tier too.
     - name: Test PNG
       run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Png"
-    # BMP's row kernels (byte shuffles, 5-6-5 widening) have scalar twins too, and ICO decodes through them.
-    - name: Test BMP and ICO
-      run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Bmp|FullyQualifiedName~Ico|FullyQualifiedName~Qoi|FullyQualifiedName~Pnm"
+    # BMP's row kernels (byte shuffles, 5-6-5 widening) have scalar twins too, and ICO decodes through them;
+    # so has the box filter behind scaled decodes (BoxDownscaler, in Abstractions).
+    - name: Test BMP, ICO and the box filter
+      run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Bmp|FullyQualifiedName~Ico|FullyQualifiedName~Qoi|FullyQualifiedName~Pnm|FullyQualifiedName~BoxDownscale"
     # The HEVC / HEIF kernels have scalar twins too. HeifEquivalenceTests compares the tiers on random
     # blocks and needs nothing; the golden tests need the fixtures (fetched before the build). No
     # REQUIRE_ORACLES here, so the live ffmpeg comparison skips while the goldens are still compared.

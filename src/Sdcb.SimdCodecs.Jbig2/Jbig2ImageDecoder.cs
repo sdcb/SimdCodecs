@@ -79,7 +79,7 @@ public sealed class Jbig2ImageDecoder : IImageDecoder
         if (!CanDecode(data)) return false;
         if (!Jbig2Decoder.TryReadFileInfo(data, out var w, out var h)) return false;
 
-        options?.Validate(w, h, supportsScale: false);
+        options?.Validate(w, h);
 
         Jbig2Image page;
         try
@@ -114,7 +114,7 @@ public sealed class Jbig2ImageDecoder : IImageDecoder
         if (!CanDecode(data)) return false;
         if (!Jbig2Decoder.TryReadFileInfo(data, out var width, out var height)) return false;
 
-        options?.Validate(width, height, supportsScale: false);
+        options?.Validate(width, height);
 
         try
         {

@@ -45,7 +45,7 @@ public sealed class DecodeIntoTests
 
     private static readonly Lazy<Dictionary<string, byte[]>> CorpusCache = new(BuildCorpus);
 
-    private static Dictionary<string, byte[]> Corpus() => CorpusCache.Value;
+    internal static Dictionary<string, byte[]> Corpus() => CorpusCache.Value;
 
     private static Dictionary<string, byte[]> BuildCorpus()
     {

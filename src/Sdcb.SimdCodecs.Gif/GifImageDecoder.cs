@@ -60,7 +60,7 @@ public sealed class GifImageDecoder : IMultiFrameImageDecoder
         image = null;
         cancellationToken.ThrowIfCancellationRequested();
         if (!TryFirstFrame(data, out var canvas, out var info, cancellationToken)) return false;
-        options?.Validate(info.Width, info.Height, supportsScale: false);
+        options?.Validate(info.Width, info.Height);
         var raster = GifFrameReader.ToImage(canvas, info.Channels, options?.Pool);
         image = DecodeOptions.Apply(raster, options);
         return true;

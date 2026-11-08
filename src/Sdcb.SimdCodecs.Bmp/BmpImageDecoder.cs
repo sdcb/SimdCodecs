@@ -84,7 +84,7 @@ public sealed class BmpImageDecoder : IImageDecoder
             return false;
         }
 
-        options?.Validate(bmp.Width, bmp.Height, supportsScale: false);
+        options?.Validate(bmp.Width, bmp.Height);
         var raster = RasterImage.Create(bmp.Width, bmp.Height, bmp.Channels, SampleFormat.UInt8, options?.Pool,
             colorEncoding: ColorOf(data, header),
             metadata: BmpDecoder.Icc(data, header) is { } icc ? new ImageMetadata { Icc = icc } : null);

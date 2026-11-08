@@ -19,10 +19,11 @@ public readonly record struct PixelRect(int X, int Y, int Width, int Height)
 /// What a decode should produce besides the default — the whole image at full size, in freshly allocated memory.
 /// <para>
 /// Size negotiation works as in WIC: ask the decoder what it can do natively
-/// (<see cref="IImageDecoder.TryGetClosestSize"/>), then request exactly that. A decoder never falls back silently:
-/// a <see cref="ScaleDenominator"/> it cannot produce is refused with <see cref="NotSupportedException"/>, so the
-/// caller knows to scale the result itself. A <see cref="Region"/> works with every decoder; one without native region
-/// decoding decodes the whole image and crops it, with the same result and no speed-up.
+/// (<see cref="IImageDecoder.TryGetClosestSize"/>), then request exactly that for the cheapest decode. Every decoder
+/// accepts every <see cref="ScaleDenominator"/>, though: one beyond its native scales decodes at the largest native
+/// scale and applies the frozen box filter described there for the rest. A <see cref="Region"/> works with every
+/// decoder; one without native region decoding decodes the whole image and crops it, with the same result and no
+/// speed-up.
 /// </para>
 /// </summary>
 public sealed record DecodeOptions
@@ -34,9 +35,21 @@ public sealed record DecodeOptions
 
     /// <summary>
     /// Decode at 1 / <c>ScaleDenominator</c> of the stored size in each direction: a power of two, 1 to 2^30. The
-    /// scaled size is <c>⌈width / d⌉ × ⌈height / d⌉</c>. Each codec accepts the denominators it produces natively and
-    /// throws <see cref="NotSupportedException"/> for the others (JPEG: up to 8, in the DCT domain; codecs that do
-    /// not scale: 1 only); ask <see cref="IImageDecoder.TryGetClosestSize"/> which one to use.
+    /// scaled size is <c>⌈width / d⌉ × ⌈height / d⌉</c>. Every codec accepts every denominator. Those it produces
+    /// natively are cheap (JPEG: up to 8, in the DCT domain; JPEG 2000: up to 2 to its decomposition levels; other
+    /// codecs: 1 only), and <see cref="IImageDecoder.TryGetClosestSize"/> reports them. A larger one decodes at the
+    /// largest native scale <c>n</c>, then reduces that image by the box filter of
+    /// <see cref="CodecSupport.BoxDownscaler"/> with box side <c>d / n</c>.
+    /// <para>
+    /// The box filter is frozen. Output pixel (bx, by) averages the input pixels x ∈ [bx·k, min(bx·k + k, w)) of the
+    /// rows y ∈ [by·k, min(by·k + k, h)), k the box side; boxes at the right and bottom edges are partial, n is the
+    /// number of pixels in the clipped box. It works on the stored code values (gamma space, no linearisation). Without
+    /// alpha each channel is <c>(Σc + n/2) / n</c> in integers. With alpha, A = Σa: alpha is <c>(A + n/2) / n</c> and
+    /// each colour channel <c>(Σ(c·a) + A/2) / A</c>, or 0 where A is 0 (weighted by alpha, without rounding per
+    /// pixel). 8- and 16-bit sums are exact, so every SIMD tier gives the same bytes. Float32 samples sum in double,
+    /// row by row and left to right in each box: <c>Σc / n</c>, with alpha <c>A / n</c> and <c>Σ(c·a) / A</c> (0 where A
+    /// is 0). The bit depth, colour encoding and metadata are kept. A <see cref="Region"/> applies after the scale.
+    /// </para>
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Set to a value that is not a power of two from 1 to 2^30.</exception>
     public int ScaleDenominator

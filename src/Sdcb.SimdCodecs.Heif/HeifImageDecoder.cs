@@ -121,7 +121,8 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
     }
 
     /// <inheritdoc />
-    /// <remarks>HEIF does not scale natively: the display size, at scale 1.</remarks>
+    /// <remarks>HEIF does not scale natively: the display size, at scale 1. Other scales are accepted but cost a full
+    /// decode, then the box filter.</remarks>
     public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
         out int width, out int height, out int scaleDenominator) =>
         ImageDecoderFallback.TryGetStoredSize(TryReadInfo, data, out width, out height, out scaleDenominator);
@@ -146,14 +147,19 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
         {
             return false;
         }
-        options?.Validate(size.Width, size.Height, supportsScale: false);
+        options?.Validate(size.Width, size.Height);
+        // HEIF does not scale natively: at a scale, the stored pixels the region's boxes cover (all of them without a
+        // region) are decoded, then box-filtered.
+        var factor = options?.ScaleDenominator ?? 1;
         var region = options?.Region;
+        if (factor > 1)
+            region = region is { } scaled ? BoxDownscaler.GetSourceRect(scaled, size.Width, size.Height, factor) : null;
         if (region is { } r)
             size = (r.Width, r.Height);
 
         var wide = depth > 8;
         var raster = RasterImage.Create(size.Width, size.Height, 3, wide ? SampleFormat.UInt16 : SampleFormat.UInt8,
-            options?.Pool, ColorEncodingOf(container), bitDepth: wide && depth < 16 ? depth : 0,
+            factor == 1 ? options?.Pool : null, ColorEncodingOf(container), bitDepth: wide && depth < 16 ? depth : 0,
             metadata: HeifMetadata.Read(data, container));
         try
         {
@@ -168,7 +174,13 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
             throw;
         }
         // The region is decoded natively: only the grid tiles it touches are decoded, only its pixels converted.
-        image = raster;
+        if (factor == 1)
+        {
+            image = raster;
+            return true;
+        }
+        using (raster)
+            image = BoxDownscaler.Downscale(raster, factor, pool: options!.Pool);
         return true;
     }
 
@@ -195,7 +207,13 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
         {
             return false;
         }
-        options?.Validate(size.Width, size.Height, supportsScale: false);
+        options?.Validate(size.Width, size.Height);
+        if (options is { ScaleDenominator: > 1 })
+        {
+            // A scale is the box filter of TryDecode's image, converted.
+            if (ColorEncodingOf(container).Transfer is TransferFunction.Pq or TransferFunction.Hlg) return false;
+            return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
+        }
         var region = options?.Region;
         if (region is { } r)
             size = (r.Width, r.Height);
