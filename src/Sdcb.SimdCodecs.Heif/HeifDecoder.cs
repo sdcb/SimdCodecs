@@ -168,6 +168,38 @@ public static class HeifDecoder
     internal static int MatrixCoefficients(HeifContainer container) =>
         container.NclxColour is { } nclx ? nclx.MatrixCoefficients : container.TileConfigs[0].ParseSps().MatrixCoefficients;
 
+    /// <summary>The size of a coded image's output (its conformance window), checked to cover the canvas with the grid.</summary>
+    private static (int Width, int Height) TileSize(HeifContainer container)
+    {
+        var sps = container.TileConfigs[0].ParseSps();
+        if (sps.BitDepthY != sps.BitDepthC) throw new InvalidDataException("Different luma and chroma bit depths are not supported.");
+        int tileW = sps.Width - sps.ConfLeft - sps.ConfRight, tileH = sps.Height - sps.ConfTop - sps.ConfBottom;
+        if ((long)tileW * container.GridColumns < container.CanvasWidth || (long)tileH * container.GridRows < container.CanvasHeight)
+        {
+            throw new InvalidDataException("The grid tiles do not cover the output image.");
+        }
+        return (tileW, tileH);
+    }
+
+    /// <summary>
+    /// True when <see cref="DecodeInto"/> can box by <paramref name="factor"/> while it writes the tiles: every tile that
+    /// reaches the output (or the scaled <paramref name="region"/>) covers whole boxes, so the tiles' seams, carried
+    /// through clap / irot / imir to display coordinates, fall on multiples of the factor
+    /// (<see cref="HeifCanvas.BoxesAlignWithTiles"/>). Always true for a single coded image and for a factor of 1.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The container's tiles are malformed.</exception>
+    /// <exception cref="ArgumentException"><paramref name="region"/> does not lie inside the scaled image.</exception>
+    internal static unsafe bool ScalesNatively(HeifContainer container, int factor, PixelRect? region)
+    {
+        if (factor <= 1) return true;
+        var (tileW, tileH) = TileSize(container);
+        // Geometry only: a canvas over no buffer, through which nothing is written.
+        HeifColor.Coefficients none = default;
+        var canvas = new HeifCanvas(container, null, long.MaxValue, int.MaxValue, PixelFormat.Rgb24, none, default, region,
+            factor, PixelFormat.Rgb24);
+        return canvas.BoxesAlignWithTiles(container.Tiles.Count, container.GridColumns, tileW, tileH);
+    }
+
     /// <summary>
     /// Decodes the primary image, display-oriented, into <paramref name="destination"/> in <paramref name="format"/>
     /// with <paramref name="stride"/> bytes per row; returns the coded bit depth. Each tile is converted into the
@@ -175,30 +207,36 @@ public static class HeifDecoder
     /// image-sized buffer is the destination. A 16-bit <paramref name="format"/> takes the 16-bit conversion
     /// (<see cref="HeifColor.For16"/>); an 8-bit one the frozen 8-bit conversion, straight from the coded samples.
     /// Cancellation is checked per tile and per band of output rows.
+    /// <para>
+    /// With <paramref name="factor"/> &gt; 1 the output is the box filter (<see cref="Abstractions.CodecSupport.BoxDownscaler"/>)
+    /// of the Rgb24 image (Rgb48 above 8 bits) by that factor, or its <paramref name="region"/> in scaled coordinates,
+    /// converted to <paramref name="format"/>: each tile boxes the pixels it converts, so no full-size image exists. It
+    /// requires <see cref="ScalesNatively"/>.
+    /// </para>
     /// </summary>
     internal static unsafe int DecodeInto(ReadOnlySpan<byte> data, HeifContainer container, Span<byte> destination, int stride,
-        PixelFormat format, CancellationToken cancellationToken = default, PixelRect? region = null)
+        PixelFormat format, CancellationToken cancellationToken = default, PixelRect? region = null, int factor = 1)
     {
         var payloads = ResolvePayloads(data, container);
         var configs = container.TileConfigs;
         var sps = configs[0].ParseSps();
-        if (sps.BitDepthY != sps.BitDepthC) throw new InvalidDataException("Different luma and chroma bit depths are not supported.");
-        int tileW = sps.Width - sps.ConfLeft - sps.ConfRight, tileH = sps.Height - sps.ConfTop - sps.ConfBottom;
-        if ((long)tileW * container.GridColumns < container.CanvasWidth || (long)tileH * container.GridRows < container.CanvasHeight)
-        {
-            throw new InvalidDataException("The grid tiles do not cover the output image.");
-        }
+        var (tileW, tileH) = TileSize(container);
         var (matrix, fullRange) = container.NclxColour is { } nclx
             ? (nclx.MatrixCoefficients, nclx.FullRange)
             : (sps.MatrixCoefficients, sps.VideoFullRange);
-        var coefficients = format.Sample == SampleFormat.UInt16
+        // Scaled, the boxes average TryDecode's layout, so the conversion is the one for it.
+        var boxFormat = sps.BitDepthY > 8 ? PixelFormat.Rgb48 : PixelFormat.Rgb24;
+        var coefficients = (factor > 1 ? boxFormat : format).Sample == SampleFormat.UInt16
             ? HeifColor.For16(matrix, fullRange, sps.BitDepthY)
             : HeifColor.For(matrix, fullRange, sps.BitDepthY);
 
         fixed (byte* pointer = destination)
         {
-            var canvas = new HeifCanvas(container, pointer, destination.Length, stride, format, coefficients, cancellationToken, region);
+            var canvas = new HeifCanvas(container, pointer, destination.Length, stride, format, coefficients, cancellationToken, region,
+                factor, boxFormat);
             var columns = container.GridColumns;
+            if (!canvas.BoxesAlignWithTiles(payloads.Length, columns, tileW, tileH))
+                throw new InvalidOperationException("The boxes do not line up with the tiles: check ScalesNatively first.");
             ForEachTile(payloads.Length, i =>
             {
                 // A tile none of whose pixels reach the output (a region of a grid) is not decoded at all.
