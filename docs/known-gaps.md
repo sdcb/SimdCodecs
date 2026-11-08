@@ -16,7 +16,7 @@
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | [JPEG](known-gaps/jpeg.md) | ✅ | ✅ | | | | | ✅ | ⚠️ | ✅ | ✅ |
 | [Ultra HDR / 增益图](known-gaps/jpeg-gainmap.md) | ✅ | ✅ | | | | ✅ | | | | |
-| [PNG](known-gaps/png.md) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | | | ✅ | ✅ |
+| [PNG](known-gaps/png.md) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | ⚠️ | ✅ | ✅ |
 | [TIFF](known-gaps/tiff.md) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | | ✅ | ⚠️ | |
 | [WebP](known-gaps/webp.md) | ✅ | ✅ | ✅ | ✅ | | | | | ✅ | ✅ |
 | [GIF](known-gaps/gif.md) | ✅ | ✅ | ✅ | ⚠️ | | | | | | |
