@@ -226,7 +226,7 @@ internal static class QuickAb
     /// <summary>Contestant name of the opt-in multithreaded decode (<c>quick --mt</c>).</summary>
     public const string Multithreaded = "Multithreaded";
 
-    public static void Run(IReadOnlyList<string> inputs, bool ablate, int rounds, bool multithreaded = false)
+    public static void Run(IReadOnlyList<string> inputs, bool ablate, int rounds, bool multithreaded = false, bool scaled = false)
     {
         Console.Write(MachineInfo.Describe());
         bool hasBaseline = BaselineDecoder.Description is not null;
@@ -244,6 +244,25 @@ internal static class QuickAb
             if (hasBaseline)
             {
                 contestants.Add((nameof(AbBenchmarks.Baseline), () => BaselineDecoder.DecodeTo(source, rgba)));
+            }
+
+            // quick --scaled: region and scale decodes (ScaledCases), current (native for lossy stills) against the
+            // baseline's generic path, each checked equal before timing.
+            if (scaled && info.Format == WebpFormat.Lossy)
+            {
+                if (!hasBaseline)
+                {
+                    throw new InvalidOperationException("quick --scaled compares against the baseline: build one with the baseline command first.");
+                }
+
+                foreach (ScaledCases.Case c in ScaledCases.All)
+                {
+                    ScaledCases.Check(source, c);
+                    var (w, h) = ScaledCases.OutputSize(c, info);
+                    byte[] output = new byte[w * h * 4];
+                    contestants.Add(("Current " + c.Name, ScaledCases.Current(source, output, c)));
+                    contestants.Add(("Baseline " + c.Name, ScaledCases.Baseline(source, output, c)));
+                }
             }
 
             if (multithreaded)
@@ -307,6 +326,35 @@ internal static class QuickAb
 
         Console.WriteLine(AbBenchmarks.RenderTable(medians, BaselineDecoder.Description ?? "(none built)",
             $"in-process medians of {rounds} interleaved rounds × 10 decodes"));
+        if (scaled)
+        {
+            Console.WriteLine(RenderScaled(medians));
+        }
+    }
+
+    private static string RenderScaled(Dictionary<(string Input, string Method), double> medians)
+    {
+        static string Ms(double v) => v.ToString("F3", CultureInfo.InvariantCulture);
+        var sb = new StringBuilder();
+        sb.AppendLine("Region / scale decodes (`WebpImageDecoder.TryDecodeInto`, RGBA; regions 640×270 at full scale), ms. " +
+                      "Current = native lossy path; baseline = generic path (whole decode, box filter, crop).");
+        sb.AppendLine();
+        sb.AppendLine("| Input | case | current | baseline | current / baseline |");
+        sb.AppendLine("|---|---|---:|---:|---:|");
+        foreach (string input in medians.Keys.Select(k => k.Input).Distinct())
+        {
+            foreach (ScaledCases.Case c in ScaledCases.All)
+            {
+                if (medians.TryGetValue((input, "Current " + c.Name), out double current) &&
+                    medians.TryGetValue((input, "Baseline " + c.Name), out double baseline))
+                {
+                    sb.AppendLine($"| `{Path.GetFileName(input)}` | {c.Name} | {Ms(current)} | {Ms(baseline)} | " +
+                                  $"{(current / baseline).ToString("F2", CultureInfo.InvariantCulture)}× |");
+                }
+            }
+        }
+
+        return sb.ToString();
     }
 }
 

@@ -36,20 +36,20 @@ The second command is a 12-second single-threaded loop over the lossy 1080p inpu
 ```bash
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- baseline [git-ref]   # default HEAD
 dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- ab [--ablate] [--inputs RE]
-dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- quick [--ablate] [--inputs RE|--files PATTERN] [--rounds N] [--mt]
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- quick [--ablate] [--inputs RE|--files PATTERN] [--rounds N] [--mt] [--scaled]
 ```
 
-`baseline` builds a commit's decoder into `.cache/baseline/` (through a temporary git worktree) and loads it into its own `AssemblyLoadContext`, so `ab` times baseline, current and libwebp in one BenchmarkDotNet run, interleaved per input — never against a number from an earlier session. Both `ab` and `quick` first check that the current decoder's output is byte-identical to libwebp and refuse to time it otherwise. `--ablate` adds runs with one stage switched off (internal `WebpAblation` flags via `WebpDiagnostics`): a stage's cost is the time that disappears (the set of ablations is chosen from the file's content: VP8 stages, ALPH, or VP8L transforms and the predictor transform alone). `quick` is an in-process interleaved loop that answers in seconds; use it while iterating and `ab` for the numbers that go into a commit. It warms every contestant for at least 300 ms first, so small files are not timed as tier-0 code. `--files PATTERN` times files of the verification corpus (below) instead of the three inputs — the inputs are flat `testsrc2` frames, and the corpus' noisy content is where entropy decoding dominates. `--mt` adds the opt-in multithreaded decode (`WebpDecodeOptions.Multithreaded`) as a separate table; it is never part of the single-thread comparison.
+`baseline` builds a commit's decoder into `.cache/baseline/` (through a temporary git worktree) and loads it into its own `AssemblyLoadContext`, so `ab` times baseline, current and libwebp in one BenchmarkDotNet run, interleaved per input — never against a number from an earlier session. Both `ab` and `quick` first check that the current decoder's output is byte-identical to libwebp and refuse to time it otherwise. `--ablate` adds runs with one stage switched off (internal `WebpAblation` flags via `WebpDiagnostics`): a stage's cost is the time that disappears (the set of ablations is chosen from the file's content: VP8 stages, ALPH, or VP8L transforms and the predictor transform alone). `quick` is an in-process interleaved loop that answers in seconds; use it while iterating and `ab` for the numbers that go into a commit. It warms every contestant for at least 300 ms first, so small files are not timed as tier-0 code. `--files PATTERN` times files of the verification corpus (below) instead of the three inputs — the inputs are flat `testsrc2` frames, and the corpus' noisy content is where entropy decoding dominates. `--mt` adds the opt-in multithreaded decode (`WebpDecodeOptions.Multithreaded`) as a separate table; it is never part of the single-thread comparison. `--scaled` adds region and scale decodes of the lossy stills through `WebpImageDecoder.TryDecodeInto` (1/2, 1/4, 1/8, and a 640×270 region at the top, middle and bottom at full scale) as a separate table: the current build's native path against the baseline's, each checked byte-identical to the baseline's output before timing (it needs a baseline).
 
 ### Memory
 
 `ab` runs with BenchmarkDotNet's `MemoryDiagnoser` and reports managed bytes allocated per decode. libwebp allocates natively, which that cannot see, so
 
 ```bash
-dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- peakmem [--inputs RE]
+dotnet run -c Release --project benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks -- peakmem [--inputs RE] [--scaled]
 ```
 
-measures the peak working set of each decode in a fresh process (current, baseline, libwebp): after a warm-up decode of a tiny file of the same kind (JIT excluded) and with the RGBA destination already touched, the rise during the first full-size decode is the decoder's working memory; a second decode shows the steady state with pooled buffers resident.
+measures the peak working set of each decode in a fresh process (current, baseline, libwebp): after a warm-up decode of a tiny file of the same kind (JIT excluded) and with the RGBA destination already touched, the rise during the first full-size decode is the decoder's working memory; a second decode shows the steady state with pooled buffers resident. `--scaled` adds the same region and scale decodes as `quick --scaled`, current and baseline, each with only its output's RGBA destination touched.
 
 ### Verification corpus
 

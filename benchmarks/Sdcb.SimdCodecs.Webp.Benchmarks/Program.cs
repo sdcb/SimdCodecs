@@ -20,9 +20,10 @@ const string Usage = """
       --profile-webp-lossy                12-second single-thread lossy decode loop (for attaching a profiler)
       baseline [git-ref]                  build git-ref's (default HEAD) decoder as the A/B baseline
       ab [--ablate] [--inputs RE]         BenchmarkDotNet A/B: current vs baseline vs libwebp; --ablate adds stage costs
-      quick [--ablate] [--inputs RE|--files PATTERN] [--rounds N] [--mt]
+      quick [--ablate] [--inputs RE|--files PATTERN] [--rounds N] [--mt] [--scaled]
                                           in-process interleaved A/B (seconds); for the inner loop, not for commits
-      peakmem [--inputs RE]               peak working set per decode, one fresh process each (current, baseline, libwebp)
+      peakmem [--inputs RE] [--scaled]    peak working set per decode, one fresh process each (current, baseline, libwebp);
+                                          --scaled adds region / scale decodes, current vs baseline
       corpus [path-to-cwebp]              encode the synthetic verification corpus into .cache/corpus
       verify                              decode the corpus and benchmark inputs with this decoder and libwebp; compare bytes
       encode [--mode lossless|lossy|lossy-alpha|anim|all] [--reps N] [--max-dim N] [--images TEXT] [--cwebp PATH] [--no-cwebp] [--efforts 0,6] [--gate]
@@ -63,13 +64,14 @@ switch (command)
             ? Directory.GetFiles(Corpus.Dir, pattern).Order(StringComparer.Ordinal).ToList()
             : SelectInputs();
         CheckCorrectness(inputs, requireBaseline: false);
-        QuickAb.Run(inputs, args.Contains("--ablate"), int.TryParse(Opt("--rounds"), out int r) ? r : 15, args.Contains("--mt"));
+        QuickAb.Run(inputs, args.Contains("--ablate"), int.TryParse(Opt("--rounds"), out int r) ? r : 15, args.Contains("--mt"),
+            args.Contains("--scaled"));
         return 0;
     }
     case "ab":
         return Ab(SelectInputs(), args.Contains("--ablate"));
     case "peakmem":
-        Console.WriteLine(PeakMemory.Run(SelectInputs()));
+        Console.WriteLine(PeakMemory.Run(SelectInputs(), scaled: args.Contains("--scaled")));
         return 0;
     case "peakmem-child":
         return PeakMemory.Child(args[1], args[2]);

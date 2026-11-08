@@ -14,6 +14,12 @@ namespace Sdcb.SimdCodecs.Webp;
 /// ICCP profile is passed through, and the colour encoding is reported as assumed sRGB. Malformed or
 /// unsupported data makes the <c>Try</c> methods return false rather than throw.
 /// </para>
+/// <para>
+/// <see cref="DecodeOptions.Region"/> and <see cref="DecodeOptions.ScaleDenominator"/> of a lossy still decode natively:
+/// only the rows the region's boxes cover are converted and box-filtered as they are decoded, and decoding stops after
+/// the macroblock row holding the last of them, so the rest of the bitstream is not read or validated. The output is
+/// exactly the generic path's (whole decode, box filter, crop). Lossless and animated input take the generic path.
+/// </para>
 /// </summary>
 public sealed class WebpImageDecoder : IMultiFrameImageDecoder
 {
@@ -104,8 +110,35 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
             }
             : null;
 
+        var colorEncoding = EncodingOf(container.HasIccProfile ? container.IccProfile : default);
+        if (options is { IsFullImage: false } && webpInfo.Format == WebpFormat.Lossy)
+        {
+            // A lossy still decodes the region and scale natively: only the rows its boxes cover, streamed through
+            // the box filter, into a raster of the output's size.
+            var (outputWidth, outputHeight) = options.GetOutputSize(webpInfo.Width, webpInfo.Height);
+            var region = options.Region ?? new PixelRect(0, 0, outputWidth, outputHeight);
+            var output = RasterImage.Create(outputWidth, outputHeight, channels, SampleFormat.UInt8, options.Pool,
+                colorEncoding: colorEncoding, bitDepth: 8, metadata: metadata);
+            try
+            {
+                WebpDecoder.DecodeLossyRegion(container.Vp8Bitstream, container.AlphaData, container.HasAlphaChunk,
+                    webpInfo.Width, webpInfo.Height, channels, options.ScaleDenominator, region, output.WritablePixels,
+                    outputWidth * channels, channels == 4 ? PixelFormat.Rgba32 : PixelFormat.Rgb24, fancy: true, cancellationToken);
+            }
+            catch (Exception e)
+            {
+                output.Dispose();
+                if (e is InvalidDataException or ArgumentException or NotSupportedException)
+                    return false;
+                throw;
+            }
+
+            image = output;
+            return true;
+        }
+
         var raster = RasterImage.Create(webpInfo.Width, webpInfo.Height, channels, SampleFormat.UInt8, options?.Pool,
-            colorEncoding: EncodingOf(container.HasIccProfile ? container.IccProfile : default), bitDepth: 8, metadata: metadata);
+            colorEncoding: colorEncoding, bitDepth: 8, metadata: metadata);
 
         try
         {
@@ -152,7 +185,7 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         if (options is { IsFullImage: false })
-            return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
+            return TryDecodeRegionInto(data, destination, stride, format, options, cancellationToken);
 
         if (!WebpDecoder.TryReadInfo(data, out WebpInfo info))
         {
@@ -208,6 +241,46 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
             {
                 ArrayPool<byte>.Shared.Return(rented);
             }
+        }
+    }
+
+    // A region or scale: native for a lossy still, the generic path (whole decode, box filter, crop) otherwise. The
+    // native rows are box-filtered in TryDecode's layout (RGB, or RGBA with alpha) and only then converted to the format,
+    // as the generic path does.
+    private static bool TryDecodeRegionInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
+        DecodeOptions options, CancellationToken cancellationToken)
+    {
+        WebpContainer container;
+        try
+        {
+            container = WebpContainer.Read(data);
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+
+        WebpInfo info = container.Info;
+        if (info.Format != WebpFormat.Lossy)
+            return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
+
+        options.Validate(info.Width, info.Height);
+        var (outputWidth, outputHeight) = options.GetOutputSize(info.Width, info.Height);
+        if (!PixelConverter.TryGetLayout(outputWidth, outputHeight, format, stride, destination.Length, out int rowStride))
+            return false;
+
+        int channels = info.HasAlpha ? 4 : 3;
+        try
+        {
+            WebpDecoder.DecodeLossyRegion(container.Vp8Bitstream, container.AlphaData, container.HasAlphaChunk,
+                info.Width, info.Height, channels, options.ScaleDenominator,
+                options.Region ?? new PixelRect(0, 0, outputWidth, outputHeight), destination, rowStride, format,
+                fancy: true, cancellationToken);
+            return true;
+        }
+        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException or OverflowException)
+        {
+            return false;
         }
     }
 
