@@ -21,6 +21,7 @@ public sealed class GifImageDecoder : IMultiFrameImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -55,15 +56,18 @@ public sealed class GifImageDecoder : IMultiFrameImageDecoder
 
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
-        DecodeOptions? options = null, CancellationToken cancellationToken = default)
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        ImageDecoderFallback.TryDecode(Decode, data, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
-        image = null;
         cancellationToken.ThrowIfCancellationRequested();
-        if (!TryFirstFrame(data, out var canvas, out var info, cancellationToken)) return false;
+        var canvas = FirstFrame(data, out var info, cancellationToken);
         options?.Validate(info.Width, info.Height);
         var raster = GifFrameReader.ToImage(canvas, info.Channels, options?.Pool);
-        image = DecodeOptions.Apply(raster, options);
-        return true;
+        return DecodeOptions.Apply(raster, options);
     }
 
     /// <inheritdoc />
@@ -124,16 +128,23 @@ public sealed class GifImageDecoder : IMultiFrameImageDecoder
         info = default;
         try
         {
-            var container = GifContainer.Read(data);
-            info = ToImageInfo(container);
-            canvas = new GifCanvas(container);
-            canvas.DecodeFrame(data, 0, cancellationToken);
+            canvas = FirstFrame(data, out info, cancellationToken);
             return true;
         }
         catch (InvalidDataException)
         {
             return false;
         }
+    }
+
+    // TryFirstFrame that throws the container's or the frame's InvalidDataException.
+    private static GifCanvas FirstFrame(ReadOnlySpan<byte> data, out ImageInfo info, CancellationToken cancellationToken)
+    {
+        var container = GifContainer.Read(data);
+        info = ToImageInfo(container);
+        var canvas = new GifCanvas(container);
+        canvas.DecodeFrame(data, 0, cancellationToken);
+        return canvas;
     }
 
     // Palette entries are 8-bit, whatever the index depth.

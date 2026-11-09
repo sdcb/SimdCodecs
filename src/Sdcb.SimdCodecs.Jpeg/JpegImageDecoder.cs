@@ -35,6 +35,7 @@ public sealed class JpegImageDecoder : IImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -83,11 +84,15 @@ public sealed class JpegImageDecoder : IImageDecoder
 
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
-        DecodeOptions? options = null, CancellationToken cancellationToken = default)
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        ImageDecoderFallback.TryDecode(Decode, data, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
-        image = null;
-        if (!JpegDecoder.TryReadInfo(data, out var info))
-            return false;
+        // ReadInfo throws the header's InvalidDataException, with its reason.
+        var info = JpegDecoder.ReadInfo(data);
         options?.Validate(info.Width, info.Height);
         // Scales up to 1/8 come from the DCT domain; beyond that the 1/8 decode is box-filtered by the rest.
         var native = options?.GetNativeScale(8) ?? 1;
@@ -106,7 +111,8 @@ public sealed class JpegImageDecoder : IImageDecoder
             : null;
         var region = nativeRegion ?? new PixelRect(0, 0, width, height);
         if ((long)region.Width * region.Height * channels > Array.MaxLength)
-            return false;
+            throw new InvalidDataException(JpegDecoder.TooLargeMessage(region.Width, region.Height, channels,
+                (long)region.Width * region.Height * channels));
         var metadata = ReadMetadata(data);
         var raster = RasterImage.Create(region.Width, region.Height, channels, SampleFormat.UInt8, factor == 1 ? options?.Pool : null,
             colorEncoding: IccPrimaries.Encoding(metadata.Icc.Span), metadata: metadata);
@@ -122,22 +128,16 @@ public sealed class JpegImageDecoder : IImageDecoder
                 _ = JpegDecoder.DecodeTo(data, raster.WritablePixels, width * channels, format, scale, cancellationToken);
             }
         }
-        catch (Exception e)
+        catch
         {
             raster.Dispose();
-            if (e is InvalidDataException)
-                return false;
             throw;
         }
 
         if (factor == 1)
-        {
-            image = raster;
-            return true;
-        }
+            return raster;
         using (raster)
-            image = BoxDownscaler.Downscale(raster, factor, pool: options!.Pool);
-        return true;
+            return BoxDownscaler.Downscale(raster, factor, pool: options!.Pool);
     }
 
     /// <inheritdoc />

@@ -25,3 +25,20 @@ static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.Validate(th
 static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.extension(Sdcb.SimdCodecs.Abstractions.DecodeOptions!).Apply(Sdcb.SimdCodecs.Abstractions.IDecodedImage! image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options, int nativeScale) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 *REMOVED*Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.extension(Sdcb.SimdCodecs.Abstractions.DecodeOptions!).Validate(int width, int height, bool supportsScale) -> void
 *REMOVED*static Sdcb.SimdCodecs.Abstractions.CodecSupport.DecodeOptionsChecks.Validate(this Sdcb.SimdCodecs.Abstractions.DecodeOptions! options, int width, int height, bool supportsScale) -> void
+Sdcb.SimdCodecs.Abstractions.IImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
+Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.Decode.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.DecodeHandler?
+Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.Decode.init -> void
+Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.DecodeHandler
+Sdcb.SimdCodecs.Abstractions.PixelBuffer
+Sdcb.SimdCodecs.Abstractions.PixelBuffer.ColorEncoding.get -> Sdcb.SimdCodecs.Abstractions.ColorEncoding!
+Sdcb.SimdCodecs.Abstractions.PixelBuffer.Dispose() -> void
+Sdcb.SimdCodecs.Abstractions.PixelBuffer.Format.get -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+Sdcb.SimdCodecs.Abstractions.PixelBuffer.Height.get -> int
+Sdcb.SimdCodecs.Abstractions.PixelBuffer.Metadata.get -> Sdcb.SimdCodecs.Abstractions.ImageMetadata!
+Sdcb.SimdCodecs.Abstractions.PixelBuffer.Pixels.get -> System.ReadOnlySpan<byte>
+Sdcb.SimdCodecs.Abstractions.PixelBuffer.Stride.get -> int
+Sdcb.SimdCodecs.Abstractions.PixelBuffer.Width.get -> int
+Sdcb.SimdCodecs.Abstractions.PixelBuffer.WritablePixels.get -> System.Span<byte>
+static Sdcb.SimdCodecs.Abstractions.CodecSupport.ImageDecoderFallback.TryDecode(Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.DecodeHandler! decode, System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options, System.Threading.CancellationToken cancellationToken) -> bool
+static Sdcb.SimdCodecs.Abstractions.PixelBuffer.Create(int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, System.Buffers.ArrayPool<byte>? pool = null, Sdcb.SimdCodecs.Abstractions.ColorEncoding? colorEncoding = null, Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata = null) -> Sdcb.SimdCodecs.Abstractions.PixelBuffer!
+virtual Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.DecodeHandler.Invoke(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options, System.Threading.CancellationToken cancellationToken) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!

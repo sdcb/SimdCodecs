@@ -38,6 +38,7 @@ public sealed class Jbig2ImageDecoder : IMultiFrameImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -71,6 +72,11 @@ public sealed class Jbig2ImageDecoder : IMultiFrameImageDecoder
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
         DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
         TryDecodePage(data, 1, options, cancellationToken, out image);
+
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        DecodePage(data, 1, options, cancellationToken);
 
     /// <inheritdoc />
     /// <remarks>Every page is a frame: frame <c>i</c> is page <c>i + 1</c>, with its own size, decoded as
@@ -107,9 +113,26 @@ public sealed class Jbig2ImageDecoder : IMultiFrameImageDecoder
     internal static bool TryDecodePage(ReadOnlySpan<byte> data, int pageNumber, DecodeOptions? options,
         CancellationToken cancellationToken, [NotNullWhen(true)] out IDecodedImage? image)
     {
-        image = null;
-        if (!CanDecode(data)) return false;
-        if (!Jbig2Decoder.TryReadPageSize(data, pageNumber, out var w, out var h)) return false;
+        try
+        {
+            image = DecodePage(data, pageNumber, options, cancellationToken);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            image = null;
+            return false;
+        }
+    }
+
+    /// <summary>Page <paramref name="pageNumber"/> (1-based) as <see cref="Decode"/> decodes page 1.</summary>
+    internal static IDecodedImage DecodePage(ReadOnlySpan<byte> data, int pageNumber, DecodeOptions? options,
+        CancellationToken cancellationToken)
+    {
+        if (!CanDecode(data))
+            throw new InvalidDataException("The data does not start with the JBIG2 file header.");
+        if (!Jbig2Decoder.TryReadPageSize(data, pageNumber, out var w, out var h))
+            throw PageSizeError(data, pageNumber, cancellationToken);
 
         options?.Validate(w, h);
 
@@ -120,14 +143,13 @@ public sealed class Jbig2ImageDecoder : IMultiFrameImageDecoder
         }
         catch (Exception e) when (IsUndecodable(e))
         {
-            return false;
+            throw Undecodable(e);
         }
 
         var raster = page.ToRaster(options?.Pool);
         try
         {
-            image = DecodeOptions.Apply(raster, options);
-            return true;
+            return DecodeOptions.Apply(raster, options);
         }
         catch
         {
@@ -135,6 +157,31 @@ public sealed class Jbig2ImageDecoder : IMultiFrameImageDecoder
             throw;
         }
     }
+
+    // Why TryReadPageSize found no size: the decoder's reason when decoding the page fails (it parses what the size
+    // read parses, then more), otherwise that the page's height is not bounded up front.
+    private static InvalidDataException PageSizeError(ReadOnlySpan<byte> data, int pageNumber, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = Jbig2Decoder.DecodeFile(data, pageNumber, cancellationToken);
+        }
+        catch (Exception e) when (IsUndecodable(e))
+        {
+            return Undecodable(e);
+        }
+        return new InvalidDataException(
+            $"JBIG2: page {pageNumber}'s information segment gives no height and no maximum stripe size, so its size is unknown before decoding.");
+    }
+
+    // An undecodable payload (IsUndecodable) as the InvalidDataException Decode throws, with the decoder's reason.
+    private static InvalidDataException Undecodable(Exception e) => e switch
+    {
+        InvalidDataException invalid => invalid,
+        NotSupportedException => new InvalidDataException($"JBIG2: the file uses a feature this decoder does not support: {e.Message}", e),
+        OutOfMemoryException => new InvalidDataException("JBIG2: the page's bitmaps do not fit in memory.", e),
+        _ => new InvalidDataException($"JBIG2: the file is invalid: {e.Message}", e),
+    };
 
     /// <inheritdoc />
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,

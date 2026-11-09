@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 using Sdcb.SimdCodecs.Bmp;
 using Sdcb.SimdCodecs.Gif;
 using Sdcb.SimdCodecs.Ico;
@@ -137,7 +138,8 @@ public static partial class ImageCodecs
     /// meta-package because HEVC is patent-encumbered: install it, then call
     /// <c>ImageCodecs.Register(HeifImageDecoder.Registration)</c> once at start-up. Every entry point —
     /// <see cref="CanDecode"/>, <see cref="DetectFormat"/>, <see cref="IsDecodable"/>, <see cref="TryReadInfo"/>,
-    /// <see cref="TryDecode"/>, <see cref="TryDecodeInto"/>, <see cref="TryOpenFrames"/> — then dispatches to it.
+    /// <see cref="Decode(ReadOnlySpan{byte}, DecodeOptions?, CancellationToken)"/>, <see cref="TryDecode"/>,
+    /// <see cref="TryDecodeInto"/>, <see cref="TryOpenFrames"/> — then dispatches to it.
     /// <para>
     /// A registered codec is sniffed after every built-in one, in registration order, so it never takes a
     /// stream a built-in codec claims. Registering the same codec again (the same format, and delegates over
@@ -171,7 +173,7 @@ public static partial class ImageCodecs
         ReferenceEquals(a, b)
         || (a.Format == b.Format && a.CanDecode.Equals(b.CanDecode) && a.TryReadInfo.Equals(b.TryReadInfo)
             && a.TryGetClosestSize.Equals(b.TryGetClosestSize)
-            && a.TryDecode.Equals(b.TryDecode) && a.TryDecodeInto.Equals(b.TryDecodeInto)
+            && a.TryDecode.Equals(b.TryDecode) && Equals(a.Decode, b.Decode) && a.TryDecodeInto.Equals(b.TryDecodeInto)
             && a.TryReadMetadata.Equals(b.TryReadMetadata) && a.TryDecodeThumbnail.Equals(b.TryDecodeThumbnail)
             && Equals(a.TryOpenFrames, b.TryOpenFrames) && Equals(a.TryReadPlanarInfo, b.TryReadPlanarInfo)
             && Equals(a.TryDecodePlanes, b.TryDecodePlanes));
@@ -251,6 +253,206 @@ public static partial class ImageCodecs
         }
         return null;
     }
+
+    /// <summary>
+    /// Decodes <paramref name="data"/> into a codec-neutral <see cref="IDecodedImage"/> (fidelity tier: the source's
+    /// bit depth and channel count, as <see cref="TryDecode"/>), and says why when it cannot: the exception names the
+    /// format and the codec's reason, for a caller that reports it ("file corrupt: the zlib stream ends early"). Dispose
+    /// the image when done with it (it returns pooled memory, see <see cref="DecodeOptions.Pool"/>).
+    /// </summary>
+    /// <param name="data">The complete encoded image.</param>
+    /// <param name="options">Scale, region and pool; null for the whole image at full size.</param>
+    /// <param name="cancellationToken">Checked between coarse units of work.</param>
+    /// <exception cref="NotSupportedException">No registered codec decodes the data: it is not a recognised image
+    /// format, or one the facade recognises but does not decode (AVIF, JPEG XL, …, and HEIF until
+    /// <c>Sdcb.SimdCodecs.Heif</c> is registered with <see cref="Register"/>). The message names
+    /// <see cref="DetectFormat"/>'s answer.</exception>
+    /// <exception cref="System.IO.InvalidDataException">The codec cannot decode the file: it is malformed or truncated,
+    /// or uses a variant the codec does not decode. The message starts with the format; the codec's own exception is
+    /// the <see cref="Exception.InnerException"/>.</exception>
+    /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the image.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var entry = Find(data) ?? throw new NotSupportedException(NoCodecMessage(data));
+        if (entry.Decode is not { } decode)
+        {
+            // A registration from before IImageDecoder.Decode: decode through TryDecode, without a reason.
+            return entry.TryDecode(data, out var image, options, cancellationToken)
+                ? image
+                : throw new System.IO.InvalidDataException($"The {FormatName(entry.Format)} file cannot be decoded.");
+        }
+        try
+        {
+            return decode(data, options, cancellationToken);
+        }
+        catch (System.IO.InvalidDataException e)
+        {
+            throw Wrap(entry.Format, e);
+        }
+    }
+
+    /// <summary>
+    /// Decodes <paramref name="data"/> straight to <paramref name="format"/> in one call: the image (scaled and cropped
+    /// as <paramref name="options"/> say) as tightly packed pixels in that layout — <see cref="PixelFormat.Rgba32"/> for a
+    /// browser canvas or an ML tensor, <see cref="PixelFormat.Bgr24"/> for an OpenCV <c>Mat</c>,
+    /// <see cref="PixelFormat.Gray8"/> for OCR — with the file's <see cref="PixelBuffer.Metadata"/> and
+    /// <see cref="PixelBuffer.ColorEncoding"/>. It is <see cref="TryReadInfo"/>, a buffer of
+    /// <see cref="DecodeOptions.GetOutputSize"/> (rented from <see cref="DecodeOptions.Pool"/> when set), and
+    /// <see cref="TryDecodeInto"/>, so the pixels are exactly that path's and a codec's native writer (JPEG's colour
+    /// conversion, PNG's row expansion) fills the buffer without an intermediate image. Dispose the result when done with
+    /// it.
+    /// <para>
+    /// When the codec's fidelity tier is float but it has an integer projection (a gain-map JPEG: HDR floats, SDR base
+    /// pixels), the pixels are that projection and <see cref="PixelBuffer.ColorEncoding"/> describes it: sRGB with the
+    /// image's primaries.
+    /// </para>
+    /// </summary>
+    /// <param name="data">The complete encoded image.</param>
+    /// <param name="format">The layout of the result.</param>
+    /// <param name="options">Scale, region and pool; null for the whole image at full size in new memory.</param>
+    /// <param name="cancellationToken">Checked between coarse units of work.</param>
+    /// <exception cref="NotSupportedException">No registered codec decodes the data (see
+    /// <see cref="Decode(ReadOnlySpan{byte}, DecodeOptions?, CancellationToken)"/>); or the image has no projection to
+    /// <paramref name="format"/>: float samples (a float TIFF, a PFM), which have no integer form without a tone policy
+    /// (decode it with <see cref="Decode(ReadOnlySpan{byte}, DecodeOptions?, CancellationToken)"/> and use
+    /// <see cref="IDecodedImage.ToFloats"/> or <see cref="PixelConverter.StretchToRgba8(IDecodedImage, bool)"/>), or an
+    /// HDR transfer (PQ, HLG) that a codec refuses to show as display pixels.</exception>
+    /// <exception cref="System.IO.InvalidDataException">The codec cannot decode the file (see
+    /// <see cref="Decode(ReadOnlySpan{byte}, DecodeOptions?, CancellationToken)"/>), or its pixels in
+    /// <paramref name="format"/> need more than <see cref="Array.MaxLength"/> bytes.</exception>
+    /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the image.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    public static PixelBuffer Decode(ReadOnlySpan<byte> data, PixelFormat format, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var entry = Find(data) ?? throw new NotSupportedException(NoCodecMessage(data));
+        if (!entry.TryReadInfo(data, out var info))
+            throw DecodeFailure(entry, data, options, cancellationToken, $"The {FormatName(entry.Format)} header cannot be read.")!;
+        options?.Validate(info.Width, info.Height);
+        var (width, height) = (options ?? DecodeOptions.Default).GetOutputSize(info.Width, info.Height);
+        var bytes = (long)width * height * format.BytesPerPixel;
+        if (bytes > Array.MaxLength)
+        {
+            throw new System.IO.InvalidDataException(
+                $"The {FormatName(entry.Format)} image is {width}x{height}: as {format} its pixels take {bytes} bytes, more than " +
+                $"the {Array.MaxLength} bytes one buffer holds. Decode it at a reduced scale (DecodeOptions.ScaleDenominator) " +
+                "or a region of it (DecodeOptions.Region).");
+        }
+
+        // Metadata is a header walk (no pixels), cheap beside the decode; the codec does the same walk for TryDecode.
+        var metadata = entry.TryReadMetadata(data, out var blocks) ? blocks : ImageMetadata.Empty;
+        var buffer = PixelBuffer.Create(width, height, format, options?.Pool, ProjectionEncoding(info), metadata);
+        try
+        {
+            if (entry.TryDecodeInto(data, buffer.WritablePixels, 0, format, options, cancellationToken))
+                return buffer;
+        }
+        catch
+        {
+            buffer.Dispose();
+            throw;
+        }
+        buffer.Dispose();
+
+        // The buffer fits, so the codec either cannot decode the file (its Decode says why, and a corrupt file is
+        // reported as one whatever it holds) or has no projection of it to the format.
+        if (DecodeFailure(entry, data, options, cancellationToken, null) is { } failure)
+            throw failure;
+        var name = FormatName(entry.Format);
+        if (info.SampleFormat == SampleFormat.Float32)
+        {
+            throw new NotSupportedException(
+                $"The {name} image has float samples, which have no {format} form without a tone policy: decode it with " +
+                "ImageCodecs.Decode(data) and use IDecodedImage.ToFloats or PixelConverter.StretchToRgba8.");
+        }
+        throw new NotSupportedException(
+            $"The {name} image decodes, but its codec has no {format} projection of it (an HDR transfer such as PQ " +
+            "or HLG has no display pixels without tone mapping): decode it with ImageCodecs.Decode(data) instead.");
+    }
+
+    // The colour encoding of TryDecodeInto's pixels: the image's own, unless its fidelity tier is float and the codec
+    // still projects integers (a gain-map JPEG's SDR base), which are display pixels in the image's primaries.
+    private static ColorEncoding ProjectionEncoding(ImageInfo info) =>
+        info.SampleFormat != SampleFormat.Float32 ? info.ColorEncoding
+        : info.ColorEncoding.Primaries is ColorPrimaries.DisplayP3 or ColorPrimaries.BT2020
+            ? ColorEncoding.AssumedSrgb with { Primaries = info.ColorEncoding.Primaries }
+            : ColorEncoding.AssumedSrgb;
+
+    /// <summary>
+    /// The exception that says why <paramref name="entry"/> cannot decode <paramref name="data"/>, found by running
+    /// its <see cref="ImageDecoderRegistration.Decode"/>: that exception, its message prefixed with the format. When
+    /// the decode succeeds (or the registration has none), an <see cref="System.IO.InvalidDataException"/> with
+    /// <paramref name="fallback"/>, or null when that is null. Only failure paths call it, so the extra decode costs a
+    /// successful one nothing.
+    /// </summary>
+    internal static System.IO.InvalidDataException? DecodeFailure(ImageDecoderRegistration entry, ReadOnlySpan<byte> data,
+        DecodeOptions? options, CancellationToken cancellationToken, string? fallback)
+    {
+        if (entry.Decode is { } decode)
+        {
+            try
+            {
+                // Into new memory: the image is thrown away.
+                decode(data, options is null ? null : options with { Pool = null }, cancellationToken).Dispose();
+            }
+            catch (System.IO.InvalidDataException e)
+            {
+                return Wrap(entry.Format, e);
+            }
+        }
+        return fallback is null ? null : new System.IO.InvalidDataException(fallback);
+    }
+
+    // A codec's InvalidDataException with the format in front: "The PNG file cannot be decoded: <the codec's reason>".
+    // A reason the codec already prefixes with the format ("JBIG2: truncated segment header.") loses that prefix.
+    private static System.IO.InvalidDataException Wrap(ImageFormat format, System.IO.InvalidDataException e)
+    {
+        var name = FormatName(format);
+        var reason = e.Message.StartsWith(name + ": ", StringComparison.Ordinal) ? e.Message[(name.Length + 2)..] : e.Message;
+        return new System.IO.InvalidDataException($"The {name} file cannot be decoded: {reason}", e);
+    }
+
+    /// <summary>
+    /// Why no registered codec takes <paramref name="data"/>, from <see cref="DetectFormat"/>: not a recognised format,
+    /// a format the facade recognises but does not decode, or HEIF, whose package is installed and registered apart.
+    /// </summary>
+    internal static string NoCodecMessage(ReadOnlySpan<byte> data) => DetectFormat(data) switch
+    {
+        ImageFormat.Unknown => "The data is not a recognised image format.",
+        ImageFormat.Heif =>
+            "The data is HEIF, which no registered codec decodes: install the Sdcb.SimdCodecs.Heif package and register it " +
+            "once at start-up with ImageCodecs.Register(HeifImageDecoder.Registration).",
+        var format when IsDecodable(format) =>
+            $"The data looks like {FormatName(format)}, but no registered codec accepts it.",
+        var format => $"The data is {FormatName(format)}, which Sdcb.SimdCodecs recognises but does not decode.",
+    };
+
+    /// <summary>The name a message gives <paramref name="format"/>: "PNG", "JPEG 2000", "WebP".</summary>
+    internal static string FormatName(ImageFormat format) => format switch
+    {
+        ImageFormat.Png => "PNG",
+        ImageFormat.Jpeg => "JPEG",
+        ImageFormat.Tiff => "TIFF",
+        ImageFormat.Jbig2 => "JBIG2",
+        ImageFormat.Jpeg2000 => "JPEG 2000",
+        ImageFormat.Webp => "WebP",
+        ImageFormat.Gif => "GIF",
+        ImageFormat.Bmp => "BMP",
+        ImageFormat.Ico => "ICO",
+        ImageFormat.Cur => "CUR",
+        ImageFormat.Heif => "HEIF",
+        ImageFormat.Avif => "AVIF",
+        ImageFormat.JpegXl => "JPEG XL",
+        ImageFormat.JpegXr => "JPEG XR",
+        ImageFormat.OpenExr => "OpenEXR",
+        ImageFormat.Psd => "PSD",
+        ImageFormat.Qoi => "QOI",
+        ImageFormat.Pnm => "Netpbm",
+        ImageFormat.Pfm => "PFM",
+        _ => format.ToString(),
+    };
 
     /// <summary>
     /// Decodes <paramref name="data"/> into a codec-neutral <see cref="IDecodedImage"/>

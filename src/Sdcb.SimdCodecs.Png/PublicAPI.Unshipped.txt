@@ -82,3 +82,4 @@ Sdcb.SimdCodecs.Png.PngWriteOptions.Quantize.get -> Sdcb.SimdCodecs.Png.PngQuant
 Sdcb.SimdCodecs.Png.PngWriteOptions.Quantize.init -> void
 Sdcb.SimdCodecs.Png.PngWriteOptions.LoopCount.get -> int
 Sdcb.SimdCodecs.Png.PngWriteOptions.LoopCount.init -> void
+static Sdcb.SimdCodecs.Png.PngImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!

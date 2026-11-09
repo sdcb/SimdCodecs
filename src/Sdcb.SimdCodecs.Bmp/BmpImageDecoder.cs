@@ -21,6 +21,7 @@ public sealed class BmpImageDecoder : IImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -69,21 +70,15 @@ public sealed class BmpImageDecoder : IImageDecoder
 
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
-        DecodeOptions? options = null, CancellationToken cancellationToken = default)
-    {
-        image = null;
-        BmpHeader header;
-        BmpInfo bmp;
-        try
-        {
-            header = BmpHeader.ReadFile(data);
-            bmp = BmpDecoder.Info(data, header);
-        }
-        catch (InvalidDataException)
-        {
-            return false;
-        }
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        ImageDecoderFallback.TryDecode(Decode, data, out image, options, cancellationToken);
 
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var header = BmpHeader.ReadFile(data);
+        var bmp = BmpDecoder.Info(data, header);
         options?.Validate(bmp.Width, bmp.Height);
         var raster = RasterImage.Create(bmp.Width, bmp.Height, bmp.Channels, SampleFormat.UInt8, options?.Pool,
             colorEncoding: ColorOf(data, header),
@@ -93,15 +88,12 @@ public sealed class BmpImageDecoder : IImageDecoder
             BmpPixels.Decode(data, header, raster.WritablePixels, bmp.Width * bmp.Channels,
                 bmp.Channels == 4 ? PixelFormat.Rgba32 : PixelFormat.Rgb24, cancellationToken);
         }
-        catch (Exception e)
+        catch
         {
             raster.Dispose();
-            if (e is InvalidDataException)
-                return false;
             throw;
         }
-        image = DecodeOptions.Apply(raster, options);
-        return true;
+        return DecodeOptions.Apply(raster, options);
     }
 
     /// <inheritdoc />

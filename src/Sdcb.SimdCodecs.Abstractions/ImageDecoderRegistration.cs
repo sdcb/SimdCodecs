@@ -32,6 +32,9 @@ public sealed class ImageDecoderRegistration
     public delegate bool TryDecodeHandler(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
         DecodeOptions? options, CancellationToken cancellationToken);
 
+    /// <summary><see cref="IImageDecoder.Decode"/>.</summary>
+    public delegate IDecodedImage DecodeHandler(ReadOnlySpan<byte> data, DecodeOptions? options, CancellationToken cancellationToken);
+
     /// <summary><see cref="IImageDecoder.TryDecodeInto"/>.</summary>
     public delegate bool TryDecodeIntoHandler(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
         DecodeOptions? options, CancellationToken cancellationToken);
@@ -77,6 +80,13 @@ public sealed class ImageDecoderRegistration
 
     /// <summary>The codec's fidelity decode.</summary>
     public required TryDecodeHandler TryDecode { get; init => field = NotNull(value); }
+
+    /// <summary>
+    /// The codec's fidelity decode that throws <see cref="System.IO.InvalidDataException"/> with the reason, or null
+    /// for a registration built before <see cref="IImageDecoder.Decode"/> existed: the facade then decodes through
+    /// <see cref="TryDecode"/> and reports a failure without a reason.
+    /// </summary>
+    public DecodeHandler? Decode { get; init; }
 
     /// <summary>The codec's decode into a caller's buffer.</summary>
     public required TryDecodeIntoHandler TryDecodeInto { get; init => field = NotNull(value); }

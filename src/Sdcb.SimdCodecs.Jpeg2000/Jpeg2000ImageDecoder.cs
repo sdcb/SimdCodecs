@@ -67,6 +67,7 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -151,34 +152,47 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
 
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
-        DecodeOptions? options = null, CancellationToken cancellationToken = default)
-    {
-        image = null;
-        if (!CanDecode(data)) return false;
-        if (!TryReadInfo(data, out var info, out var read)) return false;
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        ImageDecoderFallback.TryDecode(Decode, data, out image, options, cancellationToken);
 
-        options?.Validate(info.Width, info.Height);
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!CanDecode(data))
+            throw new InvalidDataException("JPEG 2000: the data is neither a JP2 file nor a J2K codestream.");
+        Jpeg2000Info read;
+        try
+        {
+            read = Jpeg2000Decoder.ReadInfo(data);
+        }
+        catch (Exception e) when (IsUndecodable(e))
+        {
+            throw Undecodable(e);
+        }
+        if (!Presentable(read.Components, read.Colour, read.Channels))
+            throw Unpresentable(read.Components, read.Colour);
+
+        options?.Validate(read.Width, read.Height);
         // Resolution levels give the scales up to MaxScaleDenominator; the box filter does the rest.
         var native = options?.GetNativeScale(MaxScaleDenominator(read)) ?? 1;
         var reduce = BitOperations.Log2((uint)native);
 
-        RasterImage? raster;
+        RasterImage raster;
         try
         {
             var j2k = Jpeg2000Decoder.Decode(data, reduce, cancellationToken);
-            raster = ToRaster(j2k, options?.Pool);
-            if (raster is null) return false;
+            raster = ToRaster(j2k, options?.Pool) ?? throw Unpresentable(j2k.Components, j2k.Colour);
         }
         catch (Exception e) when (IsUndecodable(e))
         {
-            return false;
+            throw Undecodable(e);
         }
 
         try
         {
             // The raster is the image at 1/native; the region is in the scaled image's coordinates.
-            image = DecodeOptions.Apply(raster, options, native);
-            return true;
+            return DecodeOptions.Apply(raster, options, native);
         }
         catch
         {
@@ -186,6 +200,21 @@ public sealed class Jpeg2000ImageDecoder : IImageDecoder
             throw;
         }
     }
+
+    // An undecodable payload (IsUndecodable) as the InvalidDataException Decode throws, with the decoder's reason.
+    private static InvalidDataException Undecodable(Exception e) => e switch
+    {
+        InvalidDataException invalid => invalid,
+        NotSupportedException => new InvalidDataException($"JPEG 2000: the image uses a feature this decoder does not support: {e.Message}", e),
+        OutOfMemoryException => new InvalidDataException("JPEG 2000: the image's samples do not fit in memory.", e),
+        _ => new InvalidDataException($"JPEG 2000: the image is invalid: {e.Message}", e),
+    };
+
+    // The refusal of Presentable, named: the facade presents grey or RGB, with at most one whole-image opacity channel.
+    private static InvalidDataException Unpresentable(int components, Jp2Colour? colour) =>
+        new($"JPEG 2000: an image of {components} component(s)" +
+            (colour is { EnumeratedColourSpace: { } space } ? $" in the {space} colour space" : "") +
+            " is not presented as grey or RGB (with at most one opacity channel) here; Jpeg2000Decoder.Decode returns every component.");
 
     /// <inheritdoc />
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
