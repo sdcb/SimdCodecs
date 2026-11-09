@@ -230,7 +230,7 @@ public sealed class ImageFrame
         if (!_decoder.Frames.TryDecodeFrame(_index, out var image, options, cancellationToken))
         {
             // A codec returns false for an image whose raster does not fit one array; say so, and what to do instead.
-            var (w, h) = (options ?? DecodeOptions.Default).GetOutputSize(Info.Width, Info.Height);
+            var (w, h) = (options ?? DecodeOptions.Default).GetOutputSize(Info);
             var bytes = (Int128)w * h * Info.Channels * RasterImage.BytesPerSample(Info.SampleFormat);
             if (bytes > Array.MaxLength)
             {
@@ -258,7 +258,7 @@ public sealed class ImageFrame
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         var effective = region is null ? options : (options ?? DecodeOptions.Default) with { Region = region };
-        var (w, h) = (effective ?? DecodeOptions.Default).GetOutputSize(Info.Width, Info.Height);
+        var (w, h) = (effective ?? DecodeOptions.Default).GetOutputSize(Info);
         if (!PixelConverter.TryGetLayout(w, h, format, stride, destination.Length, out _))
             throw new ArgumentException($"The destination does not hold a {w}x{h} {format} image at stride {stride}.", nameof(destination));
         if (!_decoder.Frames.TryDecodeFrameInto(_index, destination, stride, format, effective, cancellationToken))

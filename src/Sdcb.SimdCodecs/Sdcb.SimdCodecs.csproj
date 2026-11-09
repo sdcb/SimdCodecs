@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsAotCompatible>true</IsAotCompatible>
+    <DefineConstants>$(DefineConstants);SIMDCODECS_FACADE</DefineConstants>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
 
     <PackageId>Sdcb.SimdCodecs</PackageId>
@@ -23,6 +24,11 @@
 
   <ItemGroup>
     <NuGetReadme Include="../../README.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Shared source, compiled into this assembly under its own namespace: see src/Shared/MqDecoder.cs. -->
+    <Compile Include="..\Shared\ExifOrientation.cs" Link="Shared\ExifOrientation.cs" />
   </ItemGroup>
 
   <ItemGroup>

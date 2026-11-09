@@ -85,12 +85,16 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
         DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
-        TryDecodePage(data, 0, options, cancellationToken, out image);
+        options is { ApplyOrientation: true }
+            ? ImageDecoderFallback.TryDecodeOriented(TryDecode, TryReadInfo, data, out image, options, cancellationToken)
+            : TryDecodePage(data, 0, options, cancellationToken, out image);
 
     /// <inheritdoc />
     public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
         CancellationToken cancellationToken = default) =>
-        DecodePage(data, 0, options, cancellationToken);
+        options is { ApplyOrientation: true }
+            ? ImageDecoderFallback.DecodeOriented(Decode, TryReadInfo, data, options, cancellationToken)
+            : DecodePage(data, 0, options, cancellationToken);
     /// <inheritdoc />
     /// <remarks>Every page is a frame, with its own size, layout and orientation; a page this adapter
     /// refuses (palette, CMYK, ...) is listed but fails to decode, without stopping the others. Pages are
@@ -146,7 +150,9 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
     /// still take.</remarks>
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
         DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
-        TryDecodePageInto(data, 0, destination, stride, format, options, cancellationToken);
+        options is { ApplyOrientation: true }
+            ? ImageDecoderFallback.TryDecodeIntoOriented(TryDecodeInto, TryReadInfo, data, destination, stride, format, options, cancellationToken)
+            : TryDecodePageInto(data, 0, destination, stride, format, options, cancellationToken);
 
     /// <summary>Page <paramref name="pageIndex"/> as <see cref="TryDecodeInto"/> writes the first.</summary>
     internal static bool TryDecodePageInto(ReadOnlySpan<byte> data, int pageIndex, Span<byte> destination, int stride,

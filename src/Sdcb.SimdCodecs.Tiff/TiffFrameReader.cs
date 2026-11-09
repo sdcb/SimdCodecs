@@ -29,6 +29,8 @@ internal sealed class TiffFrameReader(ReadOnlyMemory<byte> data, int pages) : II
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         Check(index);
+        if (options is { ApplyOrientation: true })
+            return ImageDecoderFallback.TryDecodeFrameOriented(this, index, out image, options, cancellationToken);
         return TiffImageDecoder.TryDecodePage(data.Span, index, options, cancellationToken, out image);
     }
 
@@ -37,6 +39,8 @@ internal sealed class TiffFrameReader(ReadOnlyMemory<byte> data, int pages) : II
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         Check(index);
+        if (options is { ApplyOrientation: true })
+            return ImageDecoderFallback.TryDecodeFrameIntoOriented(this, index, destination, stride, format, options, cancellationToken);
         return TiffImageDecoder.TryDecodePageInto(data.Span, index, destination, stride, format, options, cancellationToken);
     }
 

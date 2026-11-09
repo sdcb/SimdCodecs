@@ -74,6 +74,8 @@ internal sealed class PngFrameReader : IImageFrameReader
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         var animation = Check(index);
+        if (options is { ApplyOrientation: true })
+            return ImageDecoderFallback.TryDecodeFrameOriented(this, index, out image, options, cancellationToken);
         if (!animation.IsAnimated)
             return PngImageDecoder.TryDecode(_data.Span, out image, options, cancellationToken);
 
@@ -112,6 +114,8 @@ internal sealed class PngFrameReader : IImageFrameReader
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         var animation = Check(index);
+        if (options is { ApplyOrientation: true })
+            return ImageDecoderFallback.TryDecodeFrameIntoOriented(this, index, destination, stride, format, options, cancellationToken);
         if (!animation.IsAnimated)
             return PngImageDecoder.TryDecodeInto(_data.Span, destination, stride, format, options, cancellationToken);
 

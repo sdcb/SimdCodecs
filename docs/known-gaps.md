@@ -52,11 +52,11 @@ HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmar
 - **整幅输出受单个数组 2 GB 上限约束。** 输出光栅超过 `Array.MaxLength` 字节时，`TryDecode` 返回 false， `ImageDecoder` 的 `Decode` 抛出 `InvalidDataException` 并提示改用缩放或区域解码；`RasterImage` 的工厂方法抛出 `ArgumentOutOfRangeException`。JPEG progressive 或分多次扫描的帧要整帧保存系数，总样本数上限为 `int.MaxValue`， 缩放解码也不例外。
 - **`Stream` 输入会先读进内存。** `ImageDecoder.Open(Stream)` 对可寻址的流按需读取的 `IByteSource` 已经就位，但 2.0 里所有 codec 仍在整份文件上解码：可寻址的流一次读入，不可寻址的流先缓冲，文件路径用内存映射（不复制）。 逐 codec 换成真正的增量输入是 2.x 的性能项。
 - **`ColorEncoding` 只从 ICC 取原色。** 格式自己的色彩标记优先（PNG 的 cICP，表示线性的 gAMA 1.0，HEIF 的 nclx `colr` 盒；HEIF 没有 `colr` 盒时用 HEVC VUI）。格式没有自己的标记、但带有 ICC 配置文件，并且该文件声明的原色是 BT.709、Display P3 或 BT.2020 时，`ImageInfo.ColorEncoding` 和 `IDecodedImage.ColorEncoding` 报 sRGB 加上这组原色（例如 Display P3 照片报 `Primaries = DisplayP3`）；传递函数和范围不从 ICC 推导，仍是 sRGB 和全范围。ICC 声明的是其他原色（Adobe RGB、ProPhoto、相机或显示器自己的）、是 LUT 配置文件、或者格式损坏时，行为不变，报默认的 sRGB。识别方法与 `IccProfiles.TryGetPrimaries` 相同。覆盖 JPEG、PNG（含帧读取器）、WebP（含帧读取器）、TIFF、HEIF、JPEG 2000（JP2 的受限 ICC）和 BMP V5；像素不受影响。
-- **EXIF 方向只报告、不应用。** `ImageInfo.Orientation` 告诉你该怎样旋转或翻转，像素本身始终是存储时的 方向。
+- **EXIF 方向默认只报告、不应用。** `ImageInfo.Orientation` 告诉你该怎样旋转或翻转，默认解码出的像素是存储时的方向；设置 `DecodeOptions.ApplyOrientation` 后，JPEG（含增益图）、PNG（含 APNG 帧）、WebP（含动画帧）和 TIFF（每页按各自的标签）输出转正后的像素。顺序是先在存储方向上缩放、再旋转，所以 box 滤波不满的边缘块在存储时的右边和下边；`Region` 按转正后的坐标给出。旋转是一次额外的整幅拷贝（`TryDecodeInto` 要先解进临时缓冲区），没有 SIMD 加速。
 - **浮点图像没有自动的整数投影。** 浮点 TIFF、增益图 JPEG 重建出的 HDR 等，`TryDecodeInto` 返回 `false` （增益图返回的是 SDR 基础图），`EnumerateFramesInto` 抛出 `NotSupportedException`。HDR 到 8 位需要色调映射， 这是调用方的决定，不是编解码器的。只为查看的话，`PixelConverter.StretchToRgba8` 把颜色范围线性拉伸到 0..255（线性光数据如增益图 HDR 再加 `srgbEncode: true`），但不做色调映射。
 - **接口里没有“时间戳 → 帧号”的辅助方法。** WebP 包的 `WebpAnimationDecoder.FrameIndexAt` 有，接口层没有； 需要时可以按各帧的 `Duration` 自己累加。
 - **`IImageFrameReader` 和 `ImageDecoder` 会话都不是线程安全的**（动画需要在调用之间保留画布状态），每个线程各开一个。
-- **元数据只透传、不解析。** `ImageMetadata` 是原始的 Exif / XMP / ICC 块；解析 Exif 用 `Sdcb.SimdCodecs.Exif`。TIFF 页面自己的 IFD 就是 Exif 的 IFD0，所以读出的 Exif 块是重组的（见 [TIFF](known-gaps/tiff.md)），字节布局与源文件不同。HEIF 的像素已按 `irot` / `imir` 转正，所以它交出的 Exif 块里方向标签已改写为 1；自己按 `ImageInfo.Orientation` 旋转像素的调用方，可以用 `ExifWriter.ResetOrientation` 得到方向为 1 的副本。
+- **元数据只透传、不解析。** `ImageMetadata` 是原始的 Exif / XMP / ICC 块；解析 Exif 用 `Sdcb.SimdCodecs.Exif`。TIFF 页面自己的 IFD 就是 Exif 的 IFD0，所以读出的 Exif 块是重组的（见 [TIFF](known-gaps/tiff.md)），字节布局与源文件不同。HEIF 的像素已按 `irot` / `imir` 转正，所以它交出的 Exif 块里方向标签已改写为 1；`ApplyOrientation` 和 `PixelTransform.Orient` 交出的 Exif 块同样已把方向改写为 1（其余字节不变）；自己按 `ImageInfo.Orientation` 旋转像素的调用方，可以用 `ExifWriter.ResetOrientation` 得到方向为 1 的副本。
 - **一次性解码所有帧不在接口里**，是有意的：全部帧的内存是帧数 × 画布大小。需要时对索引循环即可；WebP 包的 `WebpDecoder.DecodeAnimation` 带总像素上限。
 
 ## 各格式

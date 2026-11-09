@@ -27,6 +27,7 @@ namespace Sdcb.SimdCodecs.Heif;
 /// (<see cref="TryReadMetadata"/>); its <c>thmb</c> thumbnail decodes through <see cref="TryDecodeThumbnail"/>. The
 /// Exif orientation tag is not applied (the item properties are): because the pixels are already display-oriented,
 /// the Exif block handed out has its Orientation tag (IFD0) reset to 1, so a transcode does not rotate twice.
+/// <see cref="DecodeOptions.ApplyOrientation"/> therefore changes nothing here.
 /// The planes (<see cref="IPlanarImageDecoder"/>) are the canvas before the transformative properties, at the coded
 /// bit depth; an image with any transform has no planar output (<see cref="TryReadPlanarInfo"/> is false).
 /// </para>

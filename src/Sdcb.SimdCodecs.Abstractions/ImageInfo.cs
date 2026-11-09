@@ -68,8 +68,9 @@ public readonly record struct ImageInfo(int Width, int Height, int Channels, Sam
     }
 
     /// <summary>
-    /// How the stored pixels are to be turned for display (EXIF / TIFF Orientation). Decoders never
-    /// apply it; <see cref="Width"/> and <see cref="Height"/> are the stored dimensions. A file
+    /// How the stored pixels are to be turned for display (EXIF / TIFF Orientation). Decoders apply it only when
+    /// <see cref="DecodeOptions.ApplyOrientation"/> is set; <see cref="Width"/> and <see cref="Height"/> are the stored
+    /// dimensions either way (<see cref="DecodeOptions.GetOutputSize(in ImageInfo)"/> gives the decoded size). A file
     /// without the tag, or with a value outside 1..8, reads as <see cref="ImageOrientation.Normal"/>.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Set to a value that is not a defined member.</exception>

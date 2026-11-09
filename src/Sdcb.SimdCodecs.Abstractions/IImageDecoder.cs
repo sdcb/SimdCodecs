@@ -92,7 +92,7 @@ public interface IImageDecoder
     /// — the display hot path, straight into a UI surface, an OpenCV <c>Mat</c> or
     /// an OCR input. Row <c>y</c> starts at byte <c>y × stride</c>; bytes between
     /// rows are left untouched. Size the destination from <see cref="TryReadInfo"/> and
-    /// <see cref="DecodeOptions.GetOutputSize"/> (<see cref="PixelConverter.TryGetLayout"/> states the requirement).
+    /// <see cref="DecodeOptions.GetOutputSize(in ImageInfo)"/> (<see cref="PixelConverter.TryGetLayout"/> states the requirement).
     /// <para>
     /// The pixels are exactly those of the image <see cref="TryDecode"/> returns (with the same options), converted to
     /// <paramref name="format"/> by <see cref="PixelConverter"/> from its <see cref="IDecodedImage.Pixels"/>. A codec

@@ -57,6 +57,8 @@ internal sealed class WebpFrameReader : IImageFrameReader
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         var animation = Check(index);
+        if (options is { ApplyOrientation: true })
+            return ImageDecoderFallback.TryDecodeFrameOriented(this, index, out image, options, cancellationToken);
         if (animation is null)
             return WebpImageDecoder.TryDecode(_data.Span, out image, options, cancellationToken);
 
@@ -100,6 +102,8 @@ internal sealed class WebpFrameReader : IImageFrameReader
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
         var animation = Check(index);
+        if (options is { ApplyOrientation: true })
+            return ImageDecoderFallback.TryDecodeFrameIntoOriented(this, index, destination, stride, format, options, cancellationToken);
         if (animation is null)
             return WebpImageDecoder.TryDecodeInto(_data.Span, destination, stride, format, options, cancellationToken);
 
