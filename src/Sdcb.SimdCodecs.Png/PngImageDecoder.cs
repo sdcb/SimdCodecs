@@ -36,6 +36,7 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -144,13 +145,17 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
 
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
-        DecodeOptions? options = null, CancellationToken cancellationToken = default)
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        ImageDecoderFallback.TryDecode(Decode, data, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
-        image = null;
         if (options is not null)
         {
             // Outside any catch: a scale or a region that does not fit throws on purpose.
-            if (!TryReadInfo(data, out var info)) return false;
+            if (!TryReadInfo(data, out var info)) throw HeaderError(data);
             options.Validate(info.Width, info.Height);
         }
         RasterImage raster;
@@ -158,10 +163,7 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
         {
             var header = PngReader.ReadHeader(data, out var idat);
             if (options is { IsFullImage: false } && !header.Interlaced)
-            {
-                image = DecodeWindow(data, header, idat, options, cancellationToken);
-                return true;
-            }
+                return DecodeWindow(data, header, idat, options, cancellationToken);
             var png = header with
             {
                 Pixels = header.Interlaced
@@ -170,14 +172,38 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
             };
             raster = ToDecoded(png);
         }
-        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        catch (Exception e) when (e is ArgumentException or NotSupportedException)
         {
-            return false;
+            throw Undecodable(e);
         }
         // Adam7 scatters every pass over the whole image, so an interlaced file is decoded whole, then scaled and cropped.
-        image = DecodeOptions.Apply(raster, options);
-        return true;
+        return DecodeOptions.Apply(raster, options);
     }
+
+    // Why TryReadInfo refused the file: PngReader's reason, or the IHDR layout check TryReadInfo makes on its own.
+    private static InvalidDataException HeaderError(ReadOnlySpan<byte> data)
+    {
+        try
+        {
+            var header = PngReader.ReadHeader(data, out _);
+            return new InvalidDataException(
+                $"The IHDR chunk is invalid: colour type {header.ColorType} at bit depth {header.SourceBitDepth}, {header.Width}x{header.Height}.");
+        }
+        catch (InvalidDataException e)
+        {
+            return e;
+        }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException)
+        {
+            return Undecodable(e);
+        }
+    }
+
+    // A reader exception other than InvalidDataException (an argument the stream's numbers make invalid, a variant the
+    // reader does not support) as the InvalidDataException Decode throws for untrusted input.
+    private static InvalidDataException Undecodable(Exception e) =>
+        new(e is NotSupportedException ? $"The PNG uses a feature this decoder does not support: {e.Message}"
+            : $"The PNG data is invalid: {e.Message}", e);
 
     // TryDecode's region / scale path for a non-interlaced image: the window's rows only, box-filtered as they are
     // decoded (PngReader.DecodeWindow), into an image of the output's size. The same pixels, colour signalling and

@@ -112,6 +112,24 @@ internal static class FacadeSmoke
         var rgba = new byte[info.Width * info.Height * 4];
         // Float samples (PFM) have no 8-bit layout without a tone policy: TryDecodeInto says no.
         Check(ImageCodecs.TryDecodeIntoRgba8(data, rgba) == (info.SampleFormat != SampleFormat.Float32), label, "TryDecodeIntoRgba8");
+        // The throwing forms: Decode is TryDecode's image; Decode to a format is TryReadInfo + TryDecodeInto in one call.
+        using (var decoded = ImageCodecs.Decode(data))
+            Check(Hash(Pixels(decoded)) == Hash(Pixels(image)), label, "Decode");
+        if (info.SampleFormat != SampleFormat.Float32)
+        {
+            using var buffer = ImageCodecs.Decode(data, PixelFormat.Rgba32);
+            Check(buffer.Pixels.SequenceEqual(rgba), label, "Decode Rgba32");
+        }
+        else
+        {
+            Check(Throws<NotSupportedException>(() => ImageCodecs.Decode(data, PixelFormat.Rgba32)), label, "Decode Rgba32 refuses float");
+        }
+        // Cut short past its header, the file is corrupt: Decode throws why, TryDecode returns false.
+        var cut = data.AsSpan(0, Math.Min(data.Length, 40)).ToArray();
+        if (!ImageCodecs.TryDecode(cut, out var cutImage))
+            Check(Throws<InvalidDataException>(() => ImageCodecs.Decode(cut)), label, "Decode (truncated)");
+        else
+            cutImage.Dispose();
         // A scale past every codec's native ones: the box filter (BoxDownscaler's vector kernels), whole and a region.
         var sixteenth = new DecodeOptions { ScaleDenominator = 16 };
         Check(ImageCodecs.TryDecode(data, out var small, sixteenth), label, "TryDecode 1/16");
@@ -146,6 +164,7 @@ internal static class FacadeSmoke
         Check(!ImageCodecs.TryReadInfo(heic, out _), "heif", "TryReadInfo (unregistered)");
         Check(!ImageCodecs.TryDecode(heic, out _), "heif", "TryDecode (unregistered)");
         Check(!ImageCodecs.TryOpenFrames(heic, out _), "heif", "TryOpenFrames (unregistered)");
+        Check(Throws<NotSupportedException>(() => ImageCodecs.Decode(heic)), "heif", "Decode (unregistered)");
 
         ImageCodecs.Register(HeifImageDecoder.Registration);
         ImageCodecs.Register(HeifImageDecoder.Registration); // idempotent
@@ -284,6 +303,19 @@ internal static class FacadeSmoke
     // Float rasters (PFM) have no 8-bit form: their samples are hashed as they are.
     private static byte[] Pixels(IDecodedImage image) =>
         image.SampleFormat == SampleFormat.Float32 ? [.. System.Runtime.InteropServices.MemoryMarshal.AsBytes(image.ToFloats().AsSpan())] : image.ToRgba8();
+
+    private static bool Throws<T>(Action action) where T : Exception
+    {
+        try
+        {
+            action();
+            return false;
+        }
+        catch (T)
+        {
+            return true;
+        }
+    }
 
     private static string Hash(byte[] data) => Convert.ToHexString(SHA256.HashData(data))[..16];
 

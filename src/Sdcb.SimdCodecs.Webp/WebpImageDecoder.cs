@@ -84,17 +84,21 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
 
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
-        DecodeOptions? options = null, CancellationToken cancellationToken = default)
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        ImageDecoderFallback.TryDecode(Decode, data, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
-        image = null;
         WebpContainer container;
         try
         {
             container = WebpContainer.Read(data);
         }
-        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        catch (Exception e) when (e is ArgumentException or NotSupportedException)
         {
-            return false;
+            throw Undecodable(e);
         }
 
         var webpInfo = container.Info;
@@ -128,13 +132,12 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
             catch (Exception e)
             {
                 output.Dispose();
-                if (e is InvalidDataException or ArgumentException or NotSupportedException)
-                    return false;
+                if (e is ArgumentException or NotSupportedException)
+                    throw Undecodable(e);
                 throw;
             }
 
-            image = output;
-            return true;
+            return output;
         }
 
         var raster = RasterImage.Create(webpInfo.Width, webpInfo.Height, channels, SampleFormat.UInt8, options?.Pool,
@@ -171,14 +174,19 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
         catch (Exception e)
         {
             raster.Dispose();
-            if (e is InvalidDataException or ArgumentException or NotSupportedException)
-                return false;
+            if (e is ArgumentException or NotSupportedException)
+                throw Undecodable(e);
             throw;
         }
 
-        image = DecodeOptions.Apply(raster, options);
-        return true;
+        return DecodeOptions.Apply(raster, options);
     }
+
+    // A decoder exception other than InvalidDataException (an argument the stream's numbers make invalid, a variant the
+    // decoder does not support) as the InvalidDataException Decode throws for untrusted input.
+    private static InvalidDataException Undecodable(Exception e) =>
+        new(e is NotSupportedException ? $"The WebP uses a feature this decoder does not support: {e.Message}"
+            : $"The WebP data is invalid: {e.Message}", e);
 
     /// <inheritdoc />
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
@@ -323,6 +331,7 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,

@@ -18,3 +18,4 @@ const Sdcb.SimdCodecs.Tiff.TiffTag.YCbCrSubSampling = 530 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.YCbCrPositioning = 531 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.ReferenceBlackWhite = 532 -> ushort
 Sdcb.SimdCodecs.Tiff.TiffCompression.OldJpeg = 6 -> Sdcb.SimdCodecs.Tiff.TiffCompression
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!

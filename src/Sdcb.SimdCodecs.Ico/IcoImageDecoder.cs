@@ -20,6 +20,7 @@ public sealed class IcoImageDecoder : IMultiFrameImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -44,7 +45,12 @@ public sealed class IcoImageDecoder : IMultiFrameImageDecoder
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
         DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
-        IcoAdapter.TryDecode(data, IcoKind.Icon, out image, options, cancellationToken);
+        ImageDecoderFallback.TryDecode(Decode, data, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        IcoAdapter.Decode(data, IcoKind.Icon, options, cancellationToken);
 
     /// <inheritdoc />
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
@@ -82,6 +88,7 @@ public sealed class CurImageDecoder : IMultiFrameImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -106,7 +113,12 @@ public sealed class CurImageDecoder : IMultiFrameImageDecoder
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
         DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
-        IcoAdapter.TryDecode(data, IcoKind.Cursor, out image, options, cancellationToken);
+        ImageDecoderFallback.TryDecode(Decode, data, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        IcoAdapter.Decode(data, IcoKind.Cursor, options, cancellationToken);
 
     /// <inheritdoc />
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
@@ -183,28 +195,11 @@ internal static class IcoAdapter
         return DecodeOptions.Apply(raster, options);
     }
 
-    public static bool TryDecode(ReadOnlySpan<byte> data, IcoKind kind, [NotNullWhen(true)] out IDecodedImage? image,
-        DecodeOptions? options, CancellationToken cancellationToken)
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, IcoKind kind, DecodeOptions? options,
+        CancellationToken cancellationToken)
     {
-        image = null;
-        IcoContainer container;
-        try
-        {
-            container = Read(data, kind);
-        }
-        catch (InvalidDataException)
-        {
-            return false;
-        }
-        try
-        {
-            image = DecodeRaster(data, container, container.Best, options, cancellationToken);
-            return true;
-        }
-        catch (InvalidDataException)
-        {
-            return false;
-        }
+        var container = Read(data, kind);
+        return DecodeRaster(data, container, container.Best, options, cancellationToken);
     }
 
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, IcoKind kind, Span<byte> destination, int stride, PixelFormat format,

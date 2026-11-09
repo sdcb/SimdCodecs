@@ -1,1 +1,2 @@
 #nullable enable
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!

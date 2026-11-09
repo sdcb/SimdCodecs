@@ -17,7 +17,8 @@ namespace Sdcb.SimdCodecs.Abstractions;
 /// </para>
 /// <para>
 /// Errors: undecodable input makes the <c>Try</c> members return false (it never hangs, allocates without bound or
-/// throws <see cref="System.IO.InvalidDataException"/> out of them); a cancelled token throws
+/// throws <see cref="System.IO.InvalidDataException"/> out of them) and <see cref="Decode"/> throw
+/// <see cref="System.IO.InvalidDataException"/> saying why; a cancelled token throws
 /// <see cref="OperationCanceledException"/>; options a decoder cannot honour throw <see cref="NotSupportedException"/>
 /// or <see cref="ArgumentException"/> (see <see cref="DecodeOptions"/>).
 /// </para>
@@ -67,6 +68,24 @@ public interface IImageDecoder
     /// <param name="cancellationToken">Checked between coarse units of work (rows of blocks, tiles).</param>
     static abstract bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
         DecodeOptions? options = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// <see cref="TryDecode"/> that says why it fails: the same image for the same input, but undecodable input
+    /// throws <see cref="System.IO.InvalidDataException"/> whose message names what is wrong (a truncated chunk, an
+    /// unsupported variant, an image too large for one buffer) instead of returning false. <see cref="TryDecode"/>
+    /// returns false exactly when this throws <see cref="System.IO.InvalidDataException"/>. Untrusted input never
+    /// makes it throw anything else (no <see cref="IndexOutOfRangeException"/>, <see cref="OverflowException"/> or
+    /// <see cref="OutOfMemoryException"/>). Dispose the image when done with it.
+    /// </summary>
+    /// <param name="data">The complete encoded image.</param>
+    /// <param name="options">Scale, region and pool; null for the whole image at full size in new memory.</param>
+    /// <param name="cancellationToken">Checked between coarse units of work (rows of blocks, tiles).</param>
+    /// <exception cref="System.IO.InvalidDataException">The data is malformed, or uses a variant this decoder does
+    /// not decode.</exception>
+    /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the image.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    static abstract IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Decodes into a caller-provided destination in <paramref name="format"/>

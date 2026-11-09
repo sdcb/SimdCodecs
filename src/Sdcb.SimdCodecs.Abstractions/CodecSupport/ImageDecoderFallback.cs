@@ -35,6 +35,32 @@ public static class ImageDecoderFallback
     }
 
     /// <summary>
+    /// <see cref="IImageDecoder.TryDecode"/> by way of the codec's <see cref="IImageDecoder.Decode"/>: false where it
+    /// throws <see cref="System.IO.InvalidDataException"/>. Every other exception (a region outside the image, a
+    /// cancelled token) passes through.
+    /// </summary>
+    /// <param name="decode">The codec's <see cref="IImageDecoder.Decode"/>.</param>
+    /// <param name="data">The complete encoded image.</param>
+    /// <param name="image">The decoded image, or null on false.</param>
+    /// <param name="options">The decode options.</param>
+    /// <param name="cancellationToken">Passed on to <paramref name="decode"/>.</param>
+    public static bool TryDecode(ImageDecoderRegistration.DecodeHandler decode, ReadOnlySpan<byte> data,
+        [NotNullWhen(true)] out IDecodedImage? image, DecodeOptions? options, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(decode);
+        try
+        {
+            image = decode(data, options, cancellationToken);
+            return true;
+        }
+        catch (System.IO.InvalidDataException)
+        {
+            image = null;
+            return false;
+        }
+    }
+
+    /// <summary>
     /// <see cref="IImageFrameReader.TryDecodeFrameInto"/> by way of <see cref="IImageFrameReader.TryDecodeFrame"/>,
     /// then <see cref="PixelConverter.TryConvert"/>.
     /// </summary>

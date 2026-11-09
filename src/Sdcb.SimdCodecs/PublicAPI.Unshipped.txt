@@ -45,3 +45,5 @@ static Sdcb.SimdCodecs.ImageCodecs.TryOpenFrames(System.ReadOnlyMemory<byte> dat
 static Sdcb.SimdCodecs.ImageCodecs.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
 static Sdcb.SimdCodecs.ImageCodecs.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
 static Sdcb.SimdCodecs.ImageCodecs.TryReadPlanarInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.PlanarInfo info) -> bool
+static Sdcb.SimdCodecs.ImageCodecs.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
+static Sdcb.SimdCodecs.ImageCodecs.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.PixelBuffer!

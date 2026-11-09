@@ -41,19 +41,19 @@ public sealed class ImageDecoder : IDisposable
     /// <summary>Opens an image from <paramref name="stream"/>, positioned at its start.</summary>
     /// <param name="stream">The stream; a non-seekable one is buffered whole.</param>
     /// <param name="leaveOpen">Keep <paramref name="stream"/> open when the session is disposed.</param>
-    /// <exception cref="InvalidDataException">No registered codec recognises the data, or the file is malformed.</exception>
+    /// <exception cref="InvalidDataException">No registered codec recognises the data (the message names the format <see cref="ImageCodecs.DetectFormat"/> detects, as <see cref="ImageCodecs.Decode(ReadOnlySpan{byte}, DecodeOptions?, CancellationToken)"/> does), or the file is malformed (the message gives the codec's reason).</exception>
     public static ImageDecoder Open(Stream stream, bool leaveOpen = false) => Open(ByteSource.FromStream(stream, leaveOpen));
 
     /// <summary>Opens an image held in memory, which the caller keeps unchanged while the session is used.</summary>
-    /// <exception cref="InvalidDataException">No registered codec recognises the data, or the file is malformed.</exception>
+    /// <exception cref="InvalidDataException">No registered codec recognises the data (the message names the format <see cref="ImageCodecs.DetectFormat"/> detects, as <see cref="ImageCodecs.Decode(ReadOnlySpan{byte}, DecodeOptions?, CancellationToken)"/> does), or the file is malformed (the message gives the codec's reason).</exception>
     public static ImageDecoder Open(ReadOnlyMemory<byte> data) => Open(ByteSource.FromMemory(data));
 
     /// <summary>Opens an image file, memory-mapped.</summary>
-    /// <exception cref="InvalidDataException">No registered codec recognises the file, or it is malformed.</exception>
+    /// <exception cref="InvalidDataException">No registered codec recognises the file (the message names the format <see cref="ImageCodecs.DetectFormat"/> detects), or it is malformed (the message gives the codec's reason).</exception>
     public static ImageDecoder Open(string path) => Open(ByteSource.FromFile(path));
 
     /// <summary>Opens an image from any <see cref="IByteSource"/>; the session disposes it.</summary>
-    /// <exception cref="InvalidDataException">No registered codec recognises the data, or the file is malformed.</exception>
+    /// <exception cref="InvalidDataException">No registered codec recognises the data (the message names the format <see cref="ImageCodecs.DetectFormat"/> detects, as <see cref="ImageCodecs.Decode(ReadOnlySpan{byte}, DecodeOptions?, CancellationToken)"/> does), or the file is malformed (the message gives the codec's reason).</exception>
     public static ImageDecoder Open(IByteSource source)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -61,9 +61,13 @@ public sealed class ImageDecoder : IDisposable
         {
             var data = source.GetMemory();
             if (ImageCodecs.Find(data.Span) is not { } codec)
-                throw new InvalidDataException($"No registered codec recognises the data (detected format: {ImageCodecs.DetectFormat(data.Span)}).");
+                throw new InvalidDataException(ImageCodecs.NoCodecMessage(data.Span));
             if (!ImageCodecs.TryOpenFrames(data, out var frames))
-                throw new InvalidDataException($"The {codec.Format} file is malformed.");
+            {
+                // The frame reader gives no reason; the codec's Decode does (only on this failure path).
+                throw ImageCodecs.DecodeFailure(codec, data.Span, null, default,
+                    $"The {ImageCodecs.FormatName(codec.Format)} file is malformed: its frames cannot be read.")!;
+            }
             return new ImageDecoder(source, data, codec, frames);
         }
         catch
@@ -77,7 +81,7 @@ public sealed class ImageDecoder : IDisposable
     /// Opens an image from <paramref name="stream"/>, reading a non-seekable stream (an HTTP request body, a network
     /// stream) asynchronously into memory first.
     /// </summary>
-    /// <exception cref="InvalidDataException">No registered codec recognises the data, or the file is malformed.</exception>
+    /// <exception cref="InvalidDataException">No registered codec recognises the data (the message names the format <see cref="ImageCodecs.DetectFormat"/> detects, as <see cref="ImageCodecs.Decode(ReadOnlySpan{byte}, DecodeOptions?, CancellationToken)"/> does), or the file is malformed (the message gives the codec's reason).</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled while reading.</exception>
     public static async ValueTask<ImageDecoder> OpenAsync(Stream stream, bool leaveOpen = false, CancellationToken cancellationToken = default)
     {
@@ -126,9 +130,19 @@ public sealed class ImageDecoder : IDisposable
         ArgumentOutOfRangeException.ThrowIfNegative(index);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, FrameCount);
         if (!_frames.TryGetFrameInfo(index, out var frame))
-            throw new InvalidDataException($"Frame {index} cannot be read.");
+            throw FrameFailure(index, null, default, $"Frame {index} cannot be read.");
         return new ImageFrame(this, index, frame);
     }
+
+    /// <summary>
+    /// Why frame <paramref name="index"/> fails: for a file of one frame, which is the image the codec's
+    /// <see cref="ImageDecoderRegistration.Decode"/> decodes, its reason (see <c>ImageCodecs.DecodeFailure</c>);
+    /// otherwise, or when that decode succeeds, <paramref name="fallback"/>.
+    /// </summary>
+    internal InvalidDataException FrameFailure(int index, DecodeOptions? options, CancellationToken cancellationToken, string fallback) =>
+        index == 0 && FrameCount == 1
+            ? ImageCodecs.DecodeFailure(_codec, Data, options, cancellationToken, fallback)!
+            : new InvalidDataException(fallback);
 
     internal ReadOnlySpan<byte> Data
     {
@@ -226,7 +240,7 @@ public sealed class ImageFrame
                     "(DecodeOptions.ScaleDenominator, a power of two; one the codec scales to natively, as JPEG does up to 8, " +
                     "never holds the full size, see TryGetClosestSize) or decode a region of it (DecodeOptions.Region).");
             }
-            throw new InvalidDataException($"Frame {_index} could not be decoded.");
+            throw _decoder.FrameFailure(_index, options, cancellationToken, $"Frame {_index} could not be decoded.");
         }
         return image;
     }
@@ -248,6 +262,6 @@ public sealed class ImageFrame
         if (!PixelConverter.TryGetLayout(w, h, format, stride, destination.Length, out _))
             throw new ArgumentException($"The destination does not hold a {w}x{h} {format} image at stride {stride}.", nameof(destination));
         if (!_decoder.Frames.TryDecodeFrameInto(_index, destination, stride, format, effective, cancellationToken))
-            throw new InvalidDataException($"Frame {_index} could not be decoded to {format}.");
+            throw _decoder.FrameFailure(_index, effective, cancellationToken, $"Frame {_index} could not be decoded to {format}.");
     }
 }

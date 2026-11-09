@@ -22,3 +22,4 @@ override Sdcb.SimdCodecs.Jpeg2000.Jp2Channel.GetHashCode() -> int
 override Sdcb.SimdCodecs.Jpeg2000.Jp2Channel.ToString() -> string!
 static Sdcb.SimdCodecs.Jpeg2000.Jp2Channel.operator !=(Sdcb.SimdCodecs.Jpeg2000.Jp2Channel? left, Sdcb.SimdCodecs.Jpeg2000.Jp2Channel? right) -> bool
 static Sdcb.SimdCodecs.Jpeg2000.Jp2Channel.operator ==(Sdcb.SimdCodecs.Jpeg2000.Jp2Channel? left, Sdcb.SimdCodecs.Jpeg2000.Jp2Channel? right) -> bool
+static Sdcb.SimdCodecs.Jpeg2000.Jpeg2000ImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!

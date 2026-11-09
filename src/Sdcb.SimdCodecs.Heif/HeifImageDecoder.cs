@@ -62,6 +62,7 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -137,10 +138,15 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
     /// of 512-pixel tiles with a display size that is a multiple of the factor, untransformed or turned or mirrored).
     /// Otherwise the pixels the boxes cover are decoded first, then box-filtered; the bytes are the same.</remarks>
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
-        DecodeOptions? options = null, CancellationToken cancellationToken = default)
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        ImageDecoderFallback.TryDecode(Decode, data, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>The image <see cref="TryDecode"/> returns.</remarks>
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
-        image = null;
-        if (!TryParse(data, out var container)) return false;
+        var container = Parse(data);
         (int Width, int Height) size;
         int depth;
         try
@@ -148,9 +154,10 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
             size = container.DisplaySize();
             depth = container.TileConfigs[0].ParseSps().BitDepthY;
         }
-        catch (InvalidDataException)
+        catch (Exception e) when (e is ArgumentException or OverflowException)
         {
-            return false;
+            // Not caught here before Decode existed; untrusted input only ever surfaces as InvalidDataException.
+            throw Undecodable(e);
         }
         options?.Validate(size.Width, size.Height);
         var factor = options?.ScaleDenominator ?? 1;
@@ -158,16 +165,7 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
         var wide = depth > 8;
         if (factor > 1)
         {
-            bool native;
-            try
-            {
-                native = HeifDecoder.ScalesNatively(container, factor, region);
-            }
-            catch (InvalidDataException)
-            {
-                return false;
-            }
-            if (native)
+            if (HeifDecoder.ScalesNatively(container, factor, region))
             {
                 // Each tile boxes the pixels it converts straight into the scaled image (HeifCanvas).
                 var (w, h) = options!.GetOutputSize(size.Width, size.Height);
@@ -181,12 +179,11 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
                 catch (Exception e)
                 {
                     scaled.Dispose();
-                    if (e is InvalidDataException or ArgumentException or OverflowException)
-                        return false;
+                    if (e is ArgumentException or OverflowException)
+                        throw Undecodable(e);
                     throw;
                 }
-                image = scaled;
-                return true;
+                return scaled;
             }
             // Grid tiles whose seams do not fall on box edges: the stored pixels the region's boxes cover (all of them
             // without a region) are decoded, then box-filtered.
@@ -206,20 +203,20 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
         catch (Exception e)
         {
             raster.Dispose();
-            if (e is InvalidDataException or ArgumentException or OverflowException)
-                return false;
+            if (e is ArgumentException or OverflowException)
+                throw Undecodable(e);
             throw;
         }
         // The region is decoded natively: only the grid tiles it touches are decoded, only its pixels converted.
         if (factor == 1)
-        {
-            image = raster;
-            return true;
-        }
+            return raster;
         using (raster)
-            image = BoxDownscaler.Downscale(raster, factor, pool: options!.Pool);
-        return true;
+            return BoxDownscaler.Downscale(raster, factor, pool: options!.Pool);
     }
+
+    // A decoder exception other than InvalidDataException (an argument or a size the stream's numbers make invalid) as
+    // the InvalidDataException Decode throws for untrusted input.
+    private static InvalidDataException Undecodable(Exception e) => new($"The HEIF data is invalid: {e.Message}", e);
 
     /// <inheritdoc />
     /// <remarks>
@@ -377,16 +374,33 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
     /// <summary>Parses the container of a still image; false for anything <see cref="HeifDecoder"/> cannot decode.</summary>
     private static bool TryParse(ReadOnlySpan<byte> data, [NotNullWhen(true)] out HeifContainer? container)
     {
-        container = null;
-        if (!CanDecode(data) || IsSequenceBrand(data.Slice(8, 4))) return false;
         try
         {
-            container = HeifContainer.Parse(data);
+            container = Parse(data);
             return true;
         }
-        catch (Exception e) when (e is InvalidDataException or ArgumentException or OverflowException)
+        catch (InvalidDataException)
         {
+            container = null;
             return false;
+        }
+    }
+
+    /// <summary><see cref="TryParse"/> that throws <see cref="InvalidDataException"/> with the reason.</summary>
+    private static HeifContainer Parse(ReadOnlySpan<byte> data)
+    {
+        if (!CanDecode(data))
+            throw new InvalidDataException("The data does not start with an 'ftyp' box listing a HEIF brand.");
+        if (IsSequenceBrand(data.Slice(8, 4)))
+            throw new InvalidDataException(
+                $"The file is a HEIF image sequence (major brand '{System.Text.Encoding.ASCII.GetString(data.Slice(8, 4))}'); only still images are decoded.");
+        try
+        {
+            return HeifContainer.Parse(data);
+        }
+        catch (Exception e) when (e is ArgumentException or OverflowException)
+        {
+            throw Undecodable(e);
         }
     }
 

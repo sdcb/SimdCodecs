@@ -21,6 +21,7 @@ public sealed class PnmImageDecoder : IImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -44,7 +45,12 @@ public sealed class PnmImageDecoder : IImageDecoder
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
         DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
-        PnmAdapter.TryDecode(data, pfm: false, out image, options, cancellationToken);
+        ImageDecoderFallback.TryDecode(Decode, data, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        PnmAdapter.Decode(data, pfm: false, options, cancellationToken);
 
     /// <inheritdoc />
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
@@ -86,6 +92,7 @@ public sealed class PfmImageDecoder : IImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -109,7 +116,12 @@ public sealed class PfmImageDecoder : IImageDecoder
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
         DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
-        PnmAdapter.TryDecode(data, pfm: true, out image, options, cancellationToken);
+        ImageDecoderFallback.TryDecode(Decode, data, out image, options, cancellationToken);
+
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        PnmAdapter.Decode(data, pfm: true, options, cancellationToken);
 
     /// <inheritdoc />
     /// <remarks>Always false: float samples have no integer projection without an explicit tone policy.</remarks>
@@ -158,22 +170,11 @@ internal static class PnmAdapter
         }
     }
 
-    public static bool TryDecode(ReadOnlySpan<byte> data, bool pfm, [NotNullWhen(true)] out IDecodedImage? image,
-        DecodeOptions? options = null, CancellationToken cancellationToken = default)
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, bool pfm, DecodeOptions? options,
+        CancellationToken cancellationToken)
     {
-        image = null;
         cancellationToken.ThrowIfCancellationRequested();
-        PnmInfo info;
-        int offset;
-        try
-        {
-            info = Read(data, pfm, out offset);
-        }
-        catch (InvalidDataException)
-        {
-            return false;
-        }
-
+        var info = Read(data, pfm, out var offset);
         options?.Validate(info.Width, info.Height);
         int bitDepth = pfm ? 32 : (32 - BitOperations.LeadingZeroCount((uint)info.MaxValue));
         var raster = RasterImage.Create(info.Width, info.Height, info.Channels, info.SampleFormat, options?.Pool,
@@ -182,15 +183,12 @@ internal static class PnmAdapter
         {
             PnmPixels.Decode(data, info, offset, raster.WritablePixels, cancellationToken);
         }
-        catch (Exception e)
+        catch
         {
             raster.Dispose();
-            if (e is InvalidDataException)
-                return false;
             throw;
         }
-        image = DecodeOptions.Apply(raster, options);
-        return true;
+        return DecodeOptions.Apply(raster, options);
     }
 
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, bool pfm, Span<byte> destination, int stride, PixelFormat format,

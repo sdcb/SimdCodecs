@@ -30,6 +30,7 @@ public sealed class GainMapImageDecoder : IImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -81,32 +82,57 @@ public sealed class GainMapImageDecoder : IImageDecoder
 
     /// <inheritdoc />
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
-        DecodeOptions? options = null, CancellationToken cancellationToken = default)
-    {
-        image = null;
+        DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
+        ImageDecoderFallback.TryDecode(Decode, data, out image, options, cancellationToken);
 
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
         // Full HDR when the gain map is present and reconstructable; the HDR-base
         // form is not (ReconstructHdr rejects it), so fall through to the SDR base.
-        if (JpegGainMap.TrySplit(data, out _, out _, out var split) && !split.BaseRenditionIsHdr)
+        if (JpegGainMap.TrySplit(data, out var baseRange, out var gainMapRange, out var split) && !split.BaseRenditionIsHdr)
         {
-            if (!JpegImageDecoder.TryReadInfo(data, out var info))
-                return false;
+            // ReadInfo throws the base JPEG header's InvalidDataException, with its reason.
+            var info = JpegDecoder.ReadInfo(data);
             options?.Validate(info.Width, info.Height);
             cancellationToken.ThrowIfCancellationRequested();
             if (!JpegGainMap.TryRead(data, out var gainMap))
-                return false;
+                throw GainMapError(data[baseRange], data[gainMapRange]);
             cancellationToken.ThrowIfCancellationRequested();
             IDecodedImage hdr = new GainMapDecodedImage(gainMap, gainMap.Metadata.HdrCapacityMax, BasePrimaries(data))
             {
                 Metadata = JpegImageDecoder.TryReadMetadata(data, out var blocks) ? blocks : ImageMetadata.Empty,
             };
-            image = DecodeOptions.Apply(hdr, options);
-            return true;
+            return DecodeOptions.Apply(hdr, options);
         }
 
         // Graceful degradation: decode the SDR primary as a plain JPEG. This is the
         // same image a gain-map-unaware viewer sees, so nothing is lost visually.
-        return JpegImageDecoder.TryDecode(data, out image, options, cancellationToken);
+        return JpegImageDecoder.Decode(data, options, cancellationToken);
+    }
+
+    // Why JpegGainMap.TryRead refused a split it located: which of the two embedded JPEGs does not decode, and why.
+    // Only on the failure path, so decoding them again costs nothing a successful decode pays.
+    private static InvalidDataException GainMapError(ReadOnlySpan<byte> baseJpeg, ReadOnlySpan<byte> gainMapJpeg)
+    {
+        try
+        {
+            JpegDecoder.Decode(baseJpeg);
+        }
+        catch (InvalidDataException e)
+        {
+            return new InvalidDataException($"The gain-map JPEG's base image does not decode: {e.Message}", e);
+        }
+        try
+        {
+            JpegDecoder.Decode(gainMapJpeg);
+        }
+        catch (InvalidDataException e)
+        {
+            return new InvalidDataException($"The gain-map JPEG's gain map does not decode: {e.Message}", e);
+        }
+        return new InvalidDataException("The gain-map JPEG's gain map cannot be read.");
     }
 
     /// <inheritdoc />

@@ -50,6 +50,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         TryReadInfo = TryReadInfo,
         TryGetClosestSize = TryGetClosestSize,
         TryDecode = TryDecode,
+        Decode = Decode,
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
@@ -85,6 +86,11 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
     public static bool TryDecode(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? image,
         DecodeOptions? options = null, CancellationToken cancellationToken = default) =>
         TryDecodePage(data, 0, options, cancellationToken, out image);
+
+    /// <inheritdoc />
+    public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
+        CancellationToken cancellationToken = default) =>
+        DecodePage(data, 0, options, cancellationToken);
     /// <inheritdoc />
     /// <remarks>Every page is a frame, with its own size, layout and orientation; a page this adapter
     /// refuses (palette, CMYK, ...) is listed but fails to decode, without stopping the others. Pages are
@@ -300,7 +306,22 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
     internal static bool TryDecodePage(ReadOnlySpan<byte> data, int pageIndex, DecodeOptions? options,
         CancellationToken cancellationToken, [NotNullWhen(true)] out IDecodedImage? image)
     {
-        image = null;
+        try
+        {
+            image = DecodePage(data, pageIndex, options, cancellationToken);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            image = null;
+            return false;
+        }
+    }
+
+    /// <summary>Page <paramref name="pageIndex"/> as <see cref="Decode"/> presents the first.</summary>
+    internal static IDecodedImage DecodePage(ReadOnlySpan<byte> data, int pageIndex, DecodeOptions? options,
+        CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
         TiffPageLayout layout;
@@ -309,12 +330,12 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         {
             layout = TiffReader.ReadLayout(data, pageIndex);
         }
-        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        catch (Exception e) when (e is ArgumentException or NotSupportedException)
         {
-            return false;
+            throw Undecodable(e);
         }
         if (!TiffColor.TryCreate(layout, out plan))
-            return false;
+            throw Unpresentable(layout, pageIndex);
         // Check the options against the page before any strip is decoded (outside the try: they throw).
         options?.Validate(layout.Width, layout.Height);
 
@@ -353,10 +374,10 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
                         target.Slice((y0 - region.Y) * bandStride, rows * bandStride), bandStride);
                 }
             }
-            catch (Exception e) when (e is InvalidDataException or NotSupportedException)
+            catch (NotSupportedException e)
             {
                 result.Dispose();
-                return false;
+                throw Undecodable(e);
             }
             catch
             {
@@ -364,13 +385,9 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
                 throw;
             }
             if (factor == 1)
-            {
-                image = result;
-                return true;
-            }
+                return result;
             using (result)
-                image = BoxDownscaler.Downscale(result, factor, pool: options.Pool);
-            return true;
+                return BoxDownscaler.Downscale(result, factor, pool: options.Pool);
         }
 
         TiffPage page;
@@ -378,9 +395,9 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         {
             page = TiffReader.ReadPage(data, pageIndex, cancellationToken);
         }
-        catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
+        catch (Exception e) when (e is ArgumentException or NotSupportedException)
         {
-            return false;
+            throw Undecodable(e);
         }
 
         byte[] pixels;
@@ -399,9 +416,20 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
 
         var raster = RasterImage.Wrap(page.Width, page.Height, plan.OutChannels, plan.OutFormat, pixels,
             ColorOf(layout), BitDepthOf(layout, plan), metadata);
-        image = DecodeOptions.Apply(raster, options);
-        return true;
+        return DecodeOptions.Apply(raster, options);
     }
+
+    // A reader exception other than InvalidDataException (an argument the file's numbers make invalid, a compression
+    // or layout the reader does not support) as the InvalidDataException Decode throws for untrusted input.
+    private static InvalidDataException Undecodable(Exception e) =>
+        new(e is NotSupportedException ? $"The TIFF uses a feature this decoder does not support: {e.Message}"
+            : $"The TIFF data is invalid: {e.Message}", e);
+
+    // The refusal of TiffColor.TryCreate, named: what the page stores that IDecodedImage has no layout for.
+    private static InvalidDataException Unpresentable(TiffPageLayout layout, int pageIndex) =>
+        new($"Page {pageIndex + 1} stores {layout.SamplesPerPixel} sample(s) per pixel of {layout.BitsPerSample}-bit " +
+            $"{layout.SampleFormat} data as {layout.Photometric}, a layout this decoder does not present (it decodes grey, " +
+            "RGB, palette, CMYK and YCbCr with 8- or 16-bit unsigned samples, and grey or RGB with 16- or 32-bit float samples).");
 
     /// <summary>
     /// Real precision below the output container, or 0 for the container's full width: 1/2/4-bit grey (expanded to

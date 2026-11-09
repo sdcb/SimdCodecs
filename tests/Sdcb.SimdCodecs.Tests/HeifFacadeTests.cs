@@ -134,6 +134,7 @@ public sealed class HeifFacadeTests : IDisposable
             TryReadInfo = HeifImageDecoder.TryReadInfo,
             TryGetClosestSize = HeifImageDecoder.TryGetClosestSize,
             TryDecode = HeifImageDecoder.TryDecode,
+            Decode = HeifImageDecoder.Decode,
             TryDecodeInto = HeifImageDecoder.TryDecodeInto,
             TryReadMetadata = HeifImageDecoder.TryReadMetadata,
             TryDecodeThumbnail = HeifImageDecoder.TryDecodeThumbnail,
