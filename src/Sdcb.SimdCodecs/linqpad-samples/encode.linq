@@ -28,7 +28,7 @@ async Task Main()
 		(ImageFormat.Png, null),
 		(ImageFormat.Jpeg, new JpegEncodeOptions { Quality = 85 }),
 		(ImageFormat.Webp, new WebpLossyEncodeOptions { Quality = 80 }),
-		(ImageFormat.Webp, null),   // lossless
+		(ImageFormat.Webp, new WebpLosslessEncodeOptions()),
 		(ImageFormat.Tiff, null),
 		(ImageFormat.Gif, new GifEncodeOptions { Dither = true }),
 		(ImageFormat.Bmp, null),
@@ -105,7 +105,8 @@ async Task Main()
 	{
 		ArrayBufferWriter<byte> anim = new();
 		int maxFrames;
-		using (IImageEncoderSession session = ImageCodecs.CreateEncoder(format, anim))
+		using (IImageEncoderSession session = ImageCodecs.CreateEncoder(format, anim,
+			format == ImageFormat.Webp ? new WebpLosslessEncodeOptions() : null))
 		{
 			maxFrames = session.MaxFrames;   // 1 for a still-only format
 			const int size = 160, frames = 12;

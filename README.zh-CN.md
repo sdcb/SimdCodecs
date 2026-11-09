@@ -40,7 +40,7 @@ File.WriteAllBytes("photo.jpg", jpeg);
 - `ImageCodecs.TryReadInfo(file, out info)`：只读文件头：格式、存储位深、颜色编码（是不是 PQ / HLG HDR）、分辨率 （DPI）、EXIF 方向（只报告，不旋转像素）、帧数或页数、有没有缩略图。
 - `ImageCodecs.TryReadMetadata(file, out metadata)` / `TryDecodeThumbnail(file, out thumb)`：取出 Exif、XMP、ICC 原始块供转码透传，以及内嵌的预览图（Exif IFD1、HEIF `thmb`）。
 - `ImageDecoder.Open(stream | path | memory)`：WIC 式的会话：`Format`、`FrameCount`，再 `GetFrame(i).Decode(options)` 或 `.CopyPixels(region, format, buffer, stride)`；不可寻址的流用 `OpenAsync`。
-- `ImageCodecs.Encode(image, ImageFormat.Png, stream)` / `CreateEncoder(format, writer)`：编码器抽象：每个编码器都接收 任意 `PixelFormat`（包括 UI 框架的预乘 BGRA），按任意跨度逐行推送，并写入图像的元数据；只能存 8 位的格式会在哪里 降精度，用 `GetClosestInputFormat` 可以先看到。
+- `ImageCodecs.Encode(image, ImageFormat.Png, stream)` / `CreateEncoder(format, writer)`：编码器抽象：每个编码器都接收 任意 `PixelFormat`（包括 UI 框架的预乘 BGRA），按任意跨度逐行推送，并写入图像的元数据；只能存 8 位的格式会在哪里 降精度，用 `GetClosestInputFormat` 可以先看到。options 必须是该格式自己的类型（null 表示默认值），传入其他格式的 options 会抛出 `ArgumentException`。WebP 不传 options 时为有损；要无损请传 `WebpLosslessEncodeOptions`。原始像素用 `ImageCodecs.Encode(pixels, width, height, pixelFormat, format, …)` 输出到 `byte[]`、`Stream` 或 `IBufferWriter<byte>`。
 - `ImageCodecs.TryReadPlanarInfo` / `TryDecodePlanes`：按编码原样输出 YCbCr 平面（HEIF），供视频管线和 GPU 上传使用。
 - `ImageCodecs.DetectFormat(file)`：还能认出不支持解码的格式（AVIF、JPEG XL 等）； `ImageCodecs.IsDecodable(format)` 判断某个格式能否解码。HEIF 在注册它的包之后即可解码。
 - `ImageCodecs.Register(HeifImageDecoder.Registration)`：让上面所有入口都能处理 HEIF / HEIC。HEVC 有专利负担， `Sdcb.SimdCodecs.Heif` 不在门面包里，需要显式安装并注册（本包不授予任何专利许可）。

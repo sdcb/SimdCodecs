@@ -35,10 +35,16 @@ public sealed class GifImageEncoder : IImageEncoder
 
     /// <inheritdoc />
     /// <remarks>
-    /// <paramref name="options"/> is a <see cref="GifEncodeOptions"/> (any other type, or null, means the defaults).
+    /// <paramref name="options"/> is a <see cref="GifEncodeOptions"/> (null means the defaults; any other type throws
+    /// <see cref="ArgumentException"/>).
     /// </remarks>
     public static IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null) =>
-        new Session(output, options as GifEncodeOptions ?? new GifEncodeOptions());
+        new Session(output, options switch
+        {
+            null => new GifEncodeOptions(),
+            GifEncodeOptions o => o,
+            _ => throw new ArgumentException($"GIF encoding takes GifEncodeOptions, not {options.GetType().Name}.", nameof(options)),
+        });
 
     private sealed class Session(IBufferWriter<byte> output, GifEncodeOptions options) : BufferedEncoderSession(output)
     {

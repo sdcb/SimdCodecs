@@ -36,11 +36,16 @@ public sealed class PngImageEncoder : IImageEncoder
     public static PixelFormat GetClosestInputFormat(PixelFormat requested) => Native(requested);
 
     /// <inheritdoc />
-    /// <remarks><paramref name="options"/> is a <see cref="PngWriteOptions"/> (any other type, or null, means the
-    /// defaults). Metadata and colour given to <see cref="IImageEncoderSession.AddFrame"/> override the matching
+    /// <remarks><paramref name="options"/> is a <see cref="PngWriteOptions"/> (null means the defaults; any other type
+    /// throws <see cref="ArgumentException"/>). Metadata and colour given to <see cref="IImageEncoderSession.AddFrame"/> override the matching
     /// options.</remarks>
     public static IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null) =>
-        new Session(output, options as PngWriteOptions ?? new PngWriteOptions());
+        new Session(output, options switch
+        {
+            null => new PngWriteOptions(),
+            PngWriteOptions o => o,
+            _ => throw new ArgumentException($"PNG encoding takes PngWriteOptions, not {options.GetType().Name}.", nameof(options)),
+        });
 
     private static PixelFormat Native(PixelFormat f) => f.Layout switch
     {

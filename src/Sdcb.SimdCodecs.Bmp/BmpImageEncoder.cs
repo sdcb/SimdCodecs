@@ -37,11 +37,16 @@ public sealed class BmpImageEncoder : IImageEncoder
     };
 
     /// <inheritdoc />
-    /// <remarks><paramref name="options"/> is a <see cref="BmpEncodeOptions"/> (any other type, or null, means the
-    /// defaults). An ICC profile given to <see cref="IImageEncoderSession.AddFrame"/> overrides the matching
+    /// <remarks><paramref name="options"/> is a <see cref="BmpEncodeOptions"/> (null means the defaults; any other
+    /// type throws <see cref="ArgumentException"/>). An ICC profile given to <see cref="IImageEncoderSession.AddFrame"/> overrides the matching
     /// option.</remarks>
     public static IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null) =>
-        new Session(output, options as BmpEncodeOptions ?? new BmpEncodeOptions());
+        new Session(output, options switch
+        {
+            null => new BmpEncodeOptions(),
+            BmpEncodeOptions o => o,
+            _ => throw new ArgumentException($"BMP encoding takes BmpEncodeOptions, not {options.GetType().Name}.", nameof(options)),
+        });
 
     private sealed class Session(IBufferWriter<byte> output, BmpEncodeOptions options) : BufferedEncoderSession(output)
     {

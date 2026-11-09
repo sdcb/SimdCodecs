@@ -6,7 +6,8 @@ namespace Sdcb.SimdCodecs.Abstractions;
 
 /// <summary>
 /// Options every encoder takes; each format derives its own (quality, compression level, lossless or lossy, …). A
-/// session given another format's options, or none, uses its format's defaults.
+/// session given none uses its format's defaults; one given another format's options throws
+/// <see cref="ArgumentException"/>.
 /// </summary>
 public abstract record EncodeOptions;
 
@@ -43,6 +44,8 @@ public interface IImageEncoder
     /// <summary>Opens an encoding session writing to <paramref name="output"/>.</summary>
     /// <param name="output">Where the file is written.</param>
     /// <param name="options">The format's options (its own <see cref="EncodeOptions"/> type); null for its defaults.</param>
+    /// <exception cref="ArgumentException"><paramref name="options"/> is not null and not a type this format takes (the
+    /// message names the type received and the types accepted).</exception>
     static abstract IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null);
 }
 

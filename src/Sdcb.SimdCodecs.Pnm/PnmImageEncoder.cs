@@ -30,9 +30,15 @@ public sealed class PnmImageEncoder : IImageEncoder
         PixelFormat.ForChannels(requested.Channels, requested.Sample);
 
     /// <inheritdoc />
-    /// <remarks><paramref name="options"/> is a <see cref="PnmEncodeOptions"/> (any other type, or null, means the defaults).</remarks>
+    /// <remarks><paramref name="options"/> is a <see cref="PnmEncodeOptions"/> (null means the defaults; any other type
+    /// throws <see cref="ArgumentException"/>).</remarks>
     public static IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null) =>
-        new Session(output, options as PnmEncodeOptions ?? new PnmEncodeOptions());
+        new Session(output, options switch
+        {
+            null => new PnmEncodeOptions(),
+            PnmEncodeOptions o => o,
+            _ => throw new ArgumentException($"Netpbm encoding takes PnmEncodeOptions, not {options.GetType().Name}.", nameof(options)),
+        });
 
     private sealed class Session(IBufferWriter<byte> output, PnmEncodeOptions options) : BufferedEncoderSession(output)
     {
