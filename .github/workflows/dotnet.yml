@@ -106,9 +106,12 @@ jobs:
       # oracle harness degrades to a skip so a clean clone stays green, which is
       # right locally and misleading here -- without this, a CI job that stopped
       # installing jbig2dec or building an oracle would look exactly like one
-      # that did. All five external oracles (jbig2dec, OpenJPEG, libjpeg-turbo,
-      # libwebp's dwebp / anim_dump and exiftool) are gated and fetched or built above,
-      # so this run has no silently-absent oracle left.
+      # that did. Five external oracles (jbig2dec, OpenJPEG, libjpeg-turbo,
+      # libwebp's dwebp / anim_dump and exiftool) are gated and fetched above.
+      # ffmpeg (the APNG and HEIF live comparisons, pinned at 8.1.2) is not, to keep
+      # CI short: those comparisons run locally only, and their tests skip here,
+      # as do the HEIF fixture tests (the simd-tiers heif jobs fetch the fixtures and
+      # compare the goldens).
       env:
         REQUIRE_ORACLES: 1
       run: dotnet test SimdCodecs.slnx -c $BUILD_CONF --no-build
@@ -119,20 +122,39 @@ jobs:
         path: '**/*.nupkg'
         retention-days: 5
 
-  jpeg-isa:
-    # The JPEG kernels dispatch Vector256 (AVX2) -> Vector128 -> scalar and must be bit-identical
-    # on every tier; the golden digests in the build job only see the tier its runner dispatches to.
-    # DOTNET_EnableAVX2=0 forces the Vector128 kernels, DOTNET_EnableHWIntrinsic=0 the scalar ones,
-    # and on arm64 Vector128 maps to AdvSimd. The variable is set for the test run only, so the
-    # compiler itself runs at full speed. No external oracles here, so oracle tests skip.
-    name: jpeg-isa (${{ matrix.name }})
+  simd-tiers:
+    # Every vector kernel dispatches Vector256 (AVX2) -> Vector128 -> scalar and must be bit-identical on every tier
+    # (AGENTS.md). Each tier runs the tests of the codecs with vector kernels: DOTNET_EnableAVX2=0 forces the
+    # Vector128 kernels, DOTNET_EnableHWIntrinsic=0 the scalar ones, and on arm64 Vector128 maps to AdvSimd. The
+    # variable is set for the test run only, so the compiler itself runs at full speed. No REQUIRE_ORACLES here: a
+    # live comparison with a tool these runners lack skips, while the committed goldens are still compared.
+    #
+    # Groups run as separate jobs so no tier waits on HEIF:
+    # - core: JPEG, PNG, BMP, ICO, QOI, Netpbm and the box filter behind scaled decodes (BoxDownscaler, Abstractions).
+    # - webp: the VP8 / VP8L kernels; dwebp from apt adds the live comparisons.
+    # - heif: the tier-sensitive HEIF tests: HeifEquivalenceTests (each kernel against its scalar twin) and HeifTests
+    #   (the decoded planes and pixels against the goldens).
+    # - heif-api: the rest of the HEIF suite (scaled, region, adapter, transforms, robustness, fuzz, planar output).
+    #   It checks logic that does not depend on the tier, so it runs once, on the Vector256 tier.
+    # The build job already runs core and webp on Vector256 with every oracle, so this matrix skips them there; it is
+    # the only place HEIF's goldens run on Vector256, because the build job does not fetch the HEIF fixtures.
+    name: simd-tiers (${{ matrix.tier }}, ${{ matrix.group }})
     strategy:
       fail-fast: false
       matrix:
+        tier: [ x64 Vector256, x64 Vector128, x64 scalar, arm64 AdvSimd ]
+        group: [ core, webp, heif, heif-api ]
+        exclude:
+        - { tier: x64 Vector256, group: core }
+        - { tier: x64 Vector256, group: webp }
+        - { tier: x64 Vector128, group: heif-api }
+        - { tier: x64 scalar, group: heif-api }
+        - { tier: arm64 AdvSimd, group: heif-api }
         include:
-        - { name: x64 Vector128, os: ubuntu-latest, isa: DOTNET_EnableAVX2=0 }
-        - { name: x64 scalar, os: ubuntu-latest, isa: DOTNET_EnableHWIntrinsic=0 }
-        - { name: arm64 AdvSimd, os: ubuntu-24.04-arm, isa: '' }
+        - { tier: x64 Vector256, os: ubuntu-latest, isa: '' }
+        - { tier: x64 Vector128, os: ubuntu-latest, isa: DOTNET_EnableAVX2=0 }
+        - { tier: x64 scalar, os: ubuntu-latest, isa: DOTNET_EnableHWIntrinsic=0 }
+        - { tier: arm64 AdvSimd, os: ubuntu-24.04-arm, isa: '' }
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v7
@@ -144,27 +166,25 @@ jobs:
         restore-keys: nuget-${{ runner.os }}-${{ runner.arch }}-
     # Before the build: the test project copies Fixtures/** into its output, where the tests read them.
     - name: Fetch HEIF fixtures
+      if: startsWith(matrix.group, 'heif')
       run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh
+    - name: Install dwebp
+      if: matrix.group == 'webp'
+      run: sudo apt-get update && sudo apt-get install -y webp
     - name: Build tests
       run: dotnet build tests/Sdcb.SimdCodecs.Tests -c Release
-    - name: Test JPEG
-      run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Jpeg"
-    # The PNG RGBA8 row expansion shuffles bytes with SSSE3 / AdvSimd TBL and has a scalar twin;
-    # its tests compare all of them against libpng (Magick.NET), so they run on every tier too.
-    - name: Test PNG
-      run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Png"
-    # BMP's row kernels (byte shuffles, 5-6-5 widening) have scalar twins too, and ICO decodes through them;
-    # so has the box filter behind scaled decodes (BoxDownscaler, in Abstractions).
-    - name: Test BMP, ICO and the box filter
-      run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Bmp|FullyQualifiedName~Ico|FullyQualifiedName~Qoi|FullyQualifiedName~Pnm|FullyQualifiedName~BoxDownscale"
-    # The HEVC / HEIF kernels have scalar twins too. HeifEquivalenceTests compares the tiers on random
-    # blocks and needs nothing; the golden tests need the fixtures (fetched before the build). No
-    # REQUIRE_ORACLES here, so the live ffmpeg comparison skips while the goldens are still compared.
-    - name: Test HEIF
-      run: env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "FullyQualifiedName~Heif"
+    - name: Test
+      run: |
+        case "${{ matrix.group }}" in
+          core)     filter='FullyQualifiedName~Jpeg|FullyQualifiedName~Png|FullyQualifiedName~Bmp|FullyQualifiedName~Ico|FullyQualifiedName~Qoi|FullyQualifiedName~Pnm|FullyQualifiedName~BoxDownscale' ;;
+          webp)     filter='FullyQualifiedName~Webp' ;;
+          heif)     filter='FullyQualifiedName~.HeifTests.|FullyQualifiedName~.HeifEquivalenceTests.' ;;
+          heif-api) filter='(FullyQualifiedName~Heif&FullyQualifiedName!~.HeifTests.&FullyQualifiedName!~.HeifEquivalenceTests.)|FullyQualifiedName~.PlanarTests.' ;;
+        esac
+        env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "$filter"
 
-  jpeg-aot:
-    # NativeAOT picks the vector tier at compile time: its decodes must equal the JIT's.
+  native-aot:
+    # NativeAOT picks the vector tier at compile time: its decodes and facade calls must equal the JIT's.
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
@@ -190,7 +210,7 @@ jobs:
 
   publish-nuget:
     # Every check must pass before a release goes out, not just the build job.
-    needs: [ build, jpeg-isa, jpeg-aot, wasm-aot ]
+    needs: [ build, simd-tiers, native-aot, wasm-aot ]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     permissions:
