@@ -202,10 +202,10 @@ Each package ships runnable samples in `linqpad-samples/`, which LINQPad lists i
 
 | Package | Samples |
 |---|---|
-| `Sdcb.SimdCodecs` | `quick-start`, `all-formats`, `decode-options` (metadata, thumbnail, scaled / region / pooled decode, 16-bit and premultiplied output, `ImageDecoder` sessions), `encode` (`ImageCodecs.Encode` to every format, streamed and animated encoder sessions), `skiasharp`, `opencvsharp` |
+| `Sdcb.SimdCodecs` | `quick-start` (one-call `Decode` to a `PixelFormat`, `ApplyOrientation`, decode into your own buffer, failure reasons), `all-formats`, `decode-options` (metadata, thumbnail, scaled / region / pooled decode, 16-bit and premultiplied output, `ImageDecoder` sessions), `encode` (`ImageCodecs.Encode` to every format, streamed and animated encoder sessions), `skiasharp` (straight into an `SKBitmap` in Skia's premultiplied native layout), `opencvsharp` (straight into a BGR or grey `Mat`) |
 | `Sdcb.SimdCodecs.Jpeg` | `encode` (quality, subsampling, progressive, EXIF/XMP), `scaled-decode` |
 | `Sdcb.SimdCodecs.Jpeg.GainMap` | `ultrahdr` (write and read an Ultra HDR JPEG) |
-| `Sdcb.SimdCodecs.Png` | `read-write` |
+| `Sdcb.SimdCodecs.Png` | `read-write`, `quantize` (lossy palette PNG: size, quality, dithering) |
 | `Sdcb.SimdCodecs.Tiff` | `multi-page` (incl. CCITT Group 4), `float-and-tiles`, `write` |
 | `Sdcb.SimdCodecs.Exif` | `read-exif` |
 | `Sdcb.SimdCodecs.Webp` | `decode`, `animation` |
