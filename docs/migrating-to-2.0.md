@@ -6,6 +6,7 @@
 
 | 1.x | 2.0 |
 |---|---|
+| `SimdCodecs.TryDecode(…)` (the facade class) | `ImageCodecs.TryDecode(…)`: a class named like its namespace segment failed to bind (CS0234) in any project whose namespace contains `SimdCodecs` |
 | `ImagePixelFormat` (enum) | `PixelFormat` (readonly record struct): `PixelFormat.Rgba32`, `.Bgra32`, `.Rgb24`, `.Bgr24`, `.Gray8` are the same layouts |
 | `PixelConverter.BytesPerPixel(format)` | `format.BytesPerPixel` |
 | `new RasterImage(w, h, channels, sample, pixels, icc, color)` | `RasterImage.Wrap(w, h, channels, sample, pixels, color, metadata: new ImageMetadata { Icc = icc })` |
@@ -21,6 +22,8 @@ Code that `switch`ed over `ImagePixelFormat` switches over `format.Layout` (`Cha
 - **`IDecodedImage` is `IDisposable`.** Dispose a decoded image when done; it matters only for pooled memory (`DecodeOptions.Pool`), but `using var image = …` is the habit to adopt. Reading `Pixels` after `Dispose` throws `ObjectDisposedException`.
 - **HEIF Main 10 decodes to 16-bit samples** (`SampleFormat.UInt16`, `BitDepth` 10) instead of 8-bit. `TryDecodeInto` to an 8-bit format is unchanged (the frozen 8-bit conversion from the coded samples), so it can differ by one code value from narrowing the 16-bit image; `TryDecodeInto` to `Rgba64` gives the full precision.
 - **New members on interfaces.** A third-party `IImageDecoder` implements `TryGetClosestSize`, `TryReadMetadata`, `TryDecodeThumbnail` (`ImageDecoderFallback` has one-line implementations for a codec without native support) and the `DecodeOptions?` / `CancellationToken` parameters of `TryDecode` / `TryDecodeInto`, and `Decode`, the throwing form of `TryDecode` (an `InvalidDataException` with the reason; `ImageDecoderFallback.TryDecode` then implements `TryDecode` over it). Set `Decode` in its `ImageDecoderRegistration` too; a registration without it still works, and the facade reports its failures without a reason. The helpers for codec authors (`ImageDecoderFallback`, `BufferedEncoderSession`, `DecodeOptions.Validate` / `Apply`) are in `Sdcb.SimdCodecs.Abstractions.CodecSupport`.
+- **WebP with no encode options is lossy** (`WebpLossyEncodeOptions` defaults), through `WebpImageEncoder` and `ImageCodecs.Encode` / `CreateEncoder`; the 2.0 previews wrote lossless. Pass `new WebpLosslessEncodeOptions()` to keep lossless output.
+- **An encoder given another format's options throws `ArgumentException`** (e.g. `JpegEncodeOptions` to WebP) instead of silently using its defaults. `null` still means the defaults; ICO and QOI take no options and accept only `null`.
 - **Cancellation.** Every decode and encode entry point takes a `CancellationToken`; a cancelled token throws `OperationCanceledException` (it never makes a `Try` method return false).
 - **`ImageInfo` reports more**: `ColorEncoding`, `Resolution`, `HasThumbnail`. Code comparing whole `ImageInfo` values (`info.ShouldBe(new ImageInfo(...))`) sees the resolution a file declares (a TIFF's 96 dpi, a JPEG's JFIF density).
 

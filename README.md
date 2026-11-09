@@ -24,15 +24,19 @@ using Sdcb.SimdCodecs.Jpeg;
 
 byte[] file = File.ReadAllBytes("photo.webp");   // JPEG, PNG, TIFF, WebP, GIF, BMP, ICO, CUR, QOI, Netpbm, JPEG 2000 or JBIG2
 
-// The facade sniffs the format from the magic bytes and decodes into a buffer you own (R G B A).
-if (!ImageCodecs.TryReadInfo(file, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
-byte[] rgba = new byte[info.Width * info.Height * 4];
-ImageCodecs.TryDecodeIntoRgba8(file, rgba);
+// The facade sniffs the format from the magic bytes. One call gives the pixels in the layout you ask for,
+// turned upright by the EXIF orientation; it throws NotSupportedException for a format it does not decode
+// and InvalidDataException with the codec's reason for a damaged file.
+using PixelBuffer image = ImageCodecs.Decode(file, PixelFormat.Rgba32, new DecodeOptions { ApplyOrientation = true });
 
 // Encode it as a JPEG: SIMD, baseline / optimised Huffman / progressive, 4:2:0 or 4:4:4.
-byte[] jpeg = JpegEncoder.Encode(rgba, info.Width, info.Height, channels: 4, new JpegEncodeOptions { Quality = 90 });
-File.WriteAllBytes("photo.jpg", jpeg);
+// Passing image.Metadata keeps the ICC profile and Exif (its Orientation is already reset to 1).
+using FileStream output = File.Create("photo.jpg");
+ImageCodecs.Encode(image.Pixels, image.Width, image.Height, image.Format, ImageFormat.Jpeg, output,
+    stride: image.Stride, options: new JpegEncodeOptions { Quality = 90 }, metadata: image.Metadata);
 ```
+
+`ImageCodecs.TryReadInfo` reads the size from the header first, so a server can refuse an oversized image before allocating its pixels; `TryDecodeInto` then decodes into a buffer you own. An upload goes through `await ImageDecoder.OpenAsync(request.Body)` without copying it to a `byte[]` yourself.
 
 The rest of the facade:
 

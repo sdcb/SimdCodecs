@@ -23,15 +23,18 @@ using Sdcb.SimdCodecs.Jpeg;
 
 byte[] file = File.ReadAllBytes("photo.webp");   // JPEG、PNG、TIFF、WebP、GIF、BMP、ICO、CUR、QOI、Netpbm、JPEG 2000 或 JBIG2
 
-// 门面类根据文件头识别格式，解码到你自己的缓冲区（R G B A）。
-if (!ImageCodecs.TryReadInfo(file, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
-byte[] rgba = new byte[info.Width * info.Height * 4];
-ImageCodecs.TryDecodeIntoRgba8(file, rgba);
+// 门面类根据文件头识别格式。一次调用即可得到指定布局的像素，并按 EXIF 方向转正；
+// 不支持的格式抛 NotSupportedException，文件损坏抛 InvalidDataException，消息带 codec 给出的具体原因。
+using PixelBuffer image = ImageCodecs.Decode(file, PixelFormat.Rgba32, new DecodeOptions { ApplyOrientation = true });
 
 // 编码成 JPEG：SIMD 加速，支持 baseline / 优化 Huffman / progressive，4:2:0 或 4:4:4。
-byte[] jpeg = JpegEncoder.Encode(rgba, info.Width, info.Height, channels: 4, new JpegEncodeOptions { Quality = 90 });
-File.WriteAllBytes("photo.jpg", jpeg);
+// 传入 image.Metadata 可保留 ICC 和 Exif（其中的方向已改写为 1）。
+using FileStream output = File.Create("photo.jpg");
+ImageCodecs.Encode(image.Pixels, image.Width, image.Height, image.Format, ImageFormat.Jpeg, output,
+    stride: image.Stride, options: new JpegEncodeOptions { Quality = 90 }, metadata: image.Metadata);
 ```
+
+`ImageCodecs.TryReadInfo` 先从文件头读出尺寸，服务端可以在分配像素之前拒绝过大的图片；之后用 `TryDecodeInto` 解码到你自己的缓冲区。上传的文件可以直接 `await ImageDecoder.OpenAsync(request.Body)`，不必先自己读进 `byte[]`。
 
 门面的其他入口：
 
