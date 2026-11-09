@@ -83,7 +83,7 @@ public sealed class Jbig2FacadeTests
     public void TryDecodeIntoRgba8_ExpandsGrayAcrossRgbWithOpaqueAlpha()
     {
         var destination = new byte[10 * 5 * 4];
-        ImageCodecs.TryDecodeIntoRgba8(BuildFile(), destination).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(BuildFile(), destination, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         var expected = Jbig2StreamBuilder.FromRows(Glyph);
         for (var i = 0; i < expected.Data.Length; i++)

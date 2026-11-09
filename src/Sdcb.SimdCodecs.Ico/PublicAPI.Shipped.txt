@@ -76,6 +76,7 @@ override Sdcb.SimdCodecs.Ico.IcoInfo.Equals(object? obj) -> bool
 override Sdcb.SimdCodecs.Ico.IcoInfo.GetHashCode() -> int
 override Sdcb.SimdCodecs.Ico.IcoInfo.ToString() -> string!
 static Sdcb.SimdCodecs.Ico.CurImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Ico.CurImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Ico.CurImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Ico.CurImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Ico.CurImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
@@ -98,6 +99,7 @@ static Sdcb.SimdCodecs.Ico.IcoEntry.operator ==(Sdcb.SimdCodecs.Ico.IcoEntry lef
 static Sdcb.SimdCodecs.Ico.IcoFrame.operator !=(Sdcb.SimdCodecs.Ico.IcoFrame left, Sdcb.SimdCodecs.Ico.IcoFrame right) -> bool
 static Sdcb.SimdCodecs.Ico.IcoFrame.operator ==(Sdcb.SimdCodecs.Ico.IcoFrame left, Sdcb.SimdCodecs.Ico.IcoFrame right) -> bool
 static Sdcb.SimdCodecs.Ico.IcoImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Ico.IcoImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Ico.IcoImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Ico.IcoImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Ico.IcoImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool

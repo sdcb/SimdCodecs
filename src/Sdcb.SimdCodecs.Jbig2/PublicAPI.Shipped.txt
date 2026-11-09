@@ -12,9 +12,12 @@ Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.Jbig2ImageDecoder() -> void
 static Sdcb.SimdCodecs.Jbig2.Jbig2Decoder.Decode(System.ReadOnlySpan<byte> embedded, System.ReadOnlySpan<byte> globals, int width, int height, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Jbig2.Jbig2Image!
 static Sdcb.SimdCodecs.Jbig2.Jbig2Decoder.Decode(System.ReadOnlySpan<byte> embedded, int width, int height, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Jbig2.Jbig2Image!
 static Sdcb.SimdCodecs.Jbig2.Jbig2Decoder.DecodeFile(System.ReadOnlySpan<byte> file, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Jbig2.Jbig2Image!
+static Sdcb.SimdCodecs.Jbig2.Jbig2Decoder.DecodeFile(System.ReadOnlySpan<byte> file, int pageNumber, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Jbig2.Jbig2Image!
 static Sdcb.SimdCodecs.Jbig2.Jbig2Decoder.FileSignature.get -> System.ReadOnlySpan<byte>
 static Sdcb.SimdCodecs.Jbig2.Jbig2Decoder.TryReadFileInfo(System.ReadOnlySpan<byte> file, out int width, out int height) -> bool
+static Sdcb.SimdCodecs.Jbig2.Jbig2Decoder.TryReadFileInfo(System.ReadOnlySpan<byte> file, out int width, out int height, out int pages) -> bool
 static Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
@@ -22,5 +25,6 @@ static Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.TryDecodeInto(System.ReadOnlySpan
 static Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.TryDecodeIntoRgba8(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> bool
 static Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
 static Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.TryOpenFrames(System.ReadOnlyMemory<byte> data, out Sdcb.SimdCodecs.Abstractions.IImageFrameReader? reader) -> bool
 static Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
 static Sdcb.SimdCodecs.Jbig2.Jbig2ImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool

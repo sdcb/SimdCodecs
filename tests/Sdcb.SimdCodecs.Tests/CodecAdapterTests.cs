@@ -9,7 +9,7 @@ namespace Sdcb.SimdCodecs.Tests;
 /// High-bit-depth and float TIFF decode through
 /// <see cref="ImageCodecs"/> with correct layout, pixel fidelity, and
 /// <see cref="IDecodedImage.ColorEncoding"/>; float-sample content refuses the
-/// 8-bit display path (<see cref="ImageCodecs.TryDecodeIntoRgba8"/>) instead of
+/// 8-bit display path (<see cref="ImageCodecs.TryDecodeInto"/> to <see cref="PixelFormat.Rgba32"/>) instead of
 /// projecting HDR values wrongly.
 /// </summary>
 public sealed class CodecAdapterTests
@@ -53,7 +53,7 @@ public sealed class CodecAdapterTests
         f[8].ShouldBe(2.5f);    // HDR highlight, unclamped
         f[12].ShouldBe(-0.25f); // negative survives
 
-        ImageCodecs.TryDecodeIntoRgba8(tiff, new byte[2 * 2 * 4]).ShouldBeFalse();
+        ImageCodecs.TryDecodeInto(tiff, new byte[2 * 2 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Fact]

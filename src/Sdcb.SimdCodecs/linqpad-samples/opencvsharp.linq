@@ -38,7 +38,7 @@ static Mat Decode(byte[] data)
 
 	using Mat rgba = new(info.Height, info.Width, MatType.CV_8UC4);
 	// A freshly allocated Mat is continuous, so its memory is one Width * Height * 4 span.
-	if (!ImageCodecs.TryDecodeIntoRgba8(data, rgba.AsSpan<byte>())) throw new InvalidDataException("Decode failed");
+	if (!ImageCodecs.TryDecodeInto(data, rgba.AsSpan<byte>(), 0, PixelFormat.Rgba32)) throw new InvalidDataException("Decode failed");
 
 	Mat bgr = new();
 	Cv2.CvtColor(rgba, bgr, ColorConversionCodes.RGBA2BGR);

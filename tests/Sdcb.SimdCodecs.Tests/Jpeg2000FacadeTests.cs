@@ -88,7 +88,7 @@ public class Jpeg2000FacadeTests
         var expected = Pnm.Read(Path.Combine(FixtureDirectory, "rgb-struct64.ppm"));
         var rgba = new byte[64 * 64 * 4];
 
-        ImageCodecs.TryDecodeIntoRgba8(File("rgb-struct64.j2k"), rgba).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(File("rgb-struct64.j2k"), rgba, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         for (var i = 0; i < 64 * 64; i++)
         {

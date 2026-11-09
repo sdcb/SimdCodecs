@@ -27,6 +27,7 @@ static Sdcb.SimdCodecs.Heif.HeifDecoder.Decode(System.ReadOnlySpan<byte> data) -
 static Sdcb.SimdCodecs.Heif.HeifDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> (int Width, int Height)
 static Sdcb.SimdCodecs.Heif.HeifDecoder.ReadInfo(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Heif.HeifInfo!
 static Sdcb.SimdCodecs.Heif.HeifImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Heif.HeifImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Heif.HeifImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Heif.HeifImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Heif.HeifImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool

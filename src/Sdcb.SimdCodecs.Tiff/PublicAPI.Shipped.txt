@@ -44,6 +44,7 @@ Sdcb.SimdCodecs.Tiff.TiffCompression.CcittT6 = 4 -> Sdcb.SimdCodecs.Tiff.TiffCom
 Sdcb.SimdCodecs.Tiff.TiffCompression.Deflate = 8 -> Sdcb.SimdCodecs.Tiff.TiffCompression
 Sdcb.SimdCodecs.Tiff.TiffCompression.Jpeg = 7 -> Sdcb.SimdCodecs.Tiff.TiffCompression
 Sdcb.SimdCodecs.Tiff.TiffCompression.Lzw = 5 -> Sdcb.SimdCodecs.Tiff.TiffCompression
+Sdcb.SimdCodecs.Tiff.TiffCompression.OldJpeg = 6 -> Sdcb.SimdCodecs.Tiff.TiffCompression
 Sdcb.SimdCodecs.Tiff.TiffCompression.PackBits = 32773 -> Sdcb.SimdCodecs.Tiff.TiffCompression
 Sdcb.SimdCodecs.Tiff.TiffCompression.Uncompressed = 1 -> Sdcb.SimdCodecs.Tiff.TiffCompression
 Sdcb.SimdCodecs.Tiff.TiffCompression.ZlibPkzip = 32946 -> Sdcb.SimdCodecs.Tiff.TiffCompression
@@ -68,10 +69,14 @@ Sdcb.SimdCodecs.Tiff.TiffFieldType.Ascii = 2 -> Sdcb.SimdCodecs.Tiff.TiffFieldTy
 Sdcb.SimdCodecs.Tiff.TiffFieldType.Byte = 1 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
 Sdcb.SimdCodecs.Tiff.TiffFieldType.Double = 12 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
 Sdcb.SimdCodecs.Tiff.TiffFieldType.Float = 11 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.Ifd = 13 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.Ifd8 = 18 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
 Sdcb.SimdCodecs.Tiff.TiffFieldType.Long = 4 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.Long8 = 16 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
 Sdcb.SimdCodecs.Tiff.TiffFieldType.Rational = 5 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
 Sdcb.SimdCodecs.Tiff.TiffFieldType.SByte = 6 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
 Sdcb.SimdCodecs.Tiff.TiffFieldType.SLong = 9 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
+Sdcb.SimdCodecs.Tiff.TiffFieldType.SLong8 = 17 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
 Sdcb.SimdCodecs.Tiff.TiffFieldType.SRational = 10 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
 Sdcb.SimdCodecs.Tiff.TiffFieldType.SShort = 8 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
 Sdcb.SimdCodecs.Tiff.TiffFieldType.Short = 3 -> Sdcb.SimdCodecs.Tiff.TiffFieldType
@@ -101,6 +106,8 @@ Sdcb.SimdCodecs.Tiff.TiffPage.Height.get -> int
 Sdcb.SimdCodecs.Tiff.TiffPage.Height.init -> void
 Sdcb.SimdCodecs.Tiff.TiffPage.IccProfile.get -> byte[]?
 Sdcb.SimdCodecs.Tiff.TiffPage.IccProfile.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPage.IsBigTiff.get -> bool
+Sdcb.SimdCodecs.Tiff.TiffPage.IsBigTiff.init -> void
 Sdcb.SimdCodecs.Tiff.TiffPage.Photometric.get -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
 Sdcb.SimdCodecs.Tiff.TiffPage.Photometric.init -> void
 Sdcb.SimdCodecs.Tiff.TiffPage.Pixels.get -> byte[]!
@@ -130,6 +137,7 @@ Sdcb.SimdCodecs.Tiff.TiffPageLayout.BytesPerPixel.get -> int
 Sdcb.SimdCodecs.Tiff.TiffPageLayout.Compression.get -> Sdcb.SimdCodecs.Tiff.TiffCompression
 Sdcb.SimdCodecs.Tiff.TiffPageLayout.FileIsLittleEndian.get -> bool
 Sdcb.SimdCodecs.Tiff.TiffPageLayout.Height.get -> int
+Sdcb.SimdCodecs.Tiff.TiffPageLayout.IsBigTiff.get -> bool
 Sdcb.SimdCodecs.Tiff.TiffPageLayout.IsPlanar.get -> bool
 Sdcb.SimdCodecs.Tiff.TiffPageLayout.IsTiled.get -> bool
 Sdcb.SimdCodecs.Tiff.TiffPageLayout.Orientation.get -> int
@@ -162,6 +170,8 @@ Sdcb.SimdCodecs.Tiff.TiffPageOptions.DpiX.init -> void
 Sdcb.SimdCodecs.Tiff.TiffPageOptions.DpiY.get -> double
 Sdcb.SimdCodecs.Tiff.TiffPageOptions.DpiY.init -> void
 Sdcb.SimdCodecs.Tiff.TiffPageOptions.Equals(Sdcb.SimdCodecs.Tiff.TiffPageOptions? other) -> bool
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Exif.get -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Exif.init -> void
 Sdcb.SimdCodecs.Tiff.TiffPageOptions.ExtraSamples.get -> Sdcb.SimdCodecs.Tiff.TiffExtraSamples?
 Sdcb.SimdCodecs.Tiff.TiffPageOptions.ExtraSamples.init -> void
 Sdcb.SimdCodecs.Tiff.TiffPageOptions.IccProfile.get -> System.ReadOnlyMemory<byte>
@@ -187,6 +197,8 @@ Sdcb.SimdCodecs.Tiff.TiffPageOptions.TileHeight.get -> int
 Sdcb.SimdCodecs.Tiff.TiffPageOptions.TileHeight.init -> void
 Sdcb.SimdCodecs.Tiff.TiffPageOptions.TileWidth.get -> int
 Sdcb.SimdCodecs.Tiff.TiffPageOptions.TileWidth.init -> void
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Xmp.get -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Tiff.TiffPageOptions.Xmp.init -> void
 Sdcb.SimdCodecs.Tiff.TiffPhotometric
 Sdcb.SimdCodecs.Tiff.TiffPhotometric.CieLab = 8 -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
 Sdcb.SimdCodecs.Tiff.TiffPhotometric.Cmyk = 5 -> Sdcb.SimdCodecs.Tiff.TiffPhotometric
@@ -229,6 +241,7 @@ Sdcb.SimdCodecs.Tiff.TiffWriter.DisposeAsync() -> System.Threading.Tasks.ValueTa
 Sdcb.SimdCodecs.Tiff.TiffWriter.FlushAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 const Sdcb.SimdCodecs.Tiff.TiffTag.Artist = 315 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.BitsPerSample = 258 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.ColorMap = 320 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.Compression = 259 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.ExifIfd = 34665 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.ExtraSamples = 338 -> ushort
@@ -237,11 +250,14 @@ const Sdcb.SimdCodecs.Tiff.TiffTag.GpsInfoIfd = 34853 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.IccProfile = 34675 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.ImageLength = 257 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.ImageWidth = 256 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.InkSet = 332 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.JpegTables = 347 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.Orientation = 274 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.PageNumber = 297 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.PhotometricInterp = 262 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.PlanarConfig = 284 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.Predictor = 317 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.ReferenceBlackWhite = 532 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.ResolutionUnit = 296 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.RowsPerStrip = 278 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.SMaxSampleValue = 341 -> ushort
@@ -260,6 +276,9 @@ const Sdcb.SimdCodecs.Tiff.TiffTag.TileOffsets = 324 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.TileWidth = 322 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.XResolution = 282 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.XmpPacket = 700 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.YCbCrCoefficients = 529 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.YCbCrPositioning = 531 -> ushort
+const Sdcb.SimdCodecs.Tiff.TiffTag.YCbCrSubSampling = 530 -> ushort
 const Sdcb.SimdCodecs.Tiff.TiffTag.YResolution = 283 -> ushort
 override Sdcb.SimdCodecs.Tiff.TiffDocument.Equals(object? obj) -> bool
 override Sdcb.SimdCodecs.Tiff.TiffDocument.GetHashCode() -> int
@@ -282,6 +301,7 @@ static Sdcb.SimdCodecs.Tiff.TiffDocument.operator ==(Sdcb.SimdCodecs.Tiff.TiffDo
 static Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.operator !=(Sdcb.SimdCodecs.Tiff.TiffEncodeOptions? left, Sdcb.SimdCodecs.Tiff.TiffEncodeOptions? right) -> bool
 static Sdcb.SimdCodecs.Tiff.TiffEncodeOptions.operator ==(Sdcb.SimdCodecs.Tiff.TiffEncodeOptions? left, Sdcb.SimdCodecs.Tiff.TiffEncodeOptions? right) -> bool
 static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool

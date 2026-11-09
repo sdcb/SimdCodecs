@@ -67,6 +67,62 @@ Sdcb.SimdCodecs.Png.MdcvChunk.WhitePointX.get -> ushort
 Sdcb.SimdCodecs.Png.MdcvChunk.WhitePointX.init -> void
 Sdcb.SimdCodecs.Png.MdcvChunk.WhitePointY.get -> ushort
 Sdcb.SimdCodecs.Png.MdcvChunk.WhitePointY.init -> void
+Sdcb.SimdCodecs.Png.PngAnimationDecoder
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.BitDepth.get -> int
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.CanvasHeight.get -> int
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.CanvasWidth.get -> int
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.DefaultImageIsFrame.get -> bool
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.FrameCount.get -> int
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.Frames.get -> System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Png.PngFrameInfo>!
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.HasAlpha.get -> bool
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.IsAnimated.get -> bool
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.LoopCount.get -> int
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.NextFrameIndex.get -> int
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.PngAnimationDecoder(System.ReadOnlyMemory<byte> data) -> void
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.Reset() -> void
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.Seek(int frameIndex, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.TryDecodeNextFrame(System.Span<byte> canvasRgba, out Sdcb.SimdCodecs.Png.PngFrameInfo frame, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+Sdcb.SimdCodecs.Png.PngAnimationDecoder.TryDecodeNextFrame(System.Span<ushort> canvasRgba16, out Sdcb.SimdCodecs.Png.PngFrameInfo frame, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+Sdcb.SimdCodecs.Png.PngAnimationEncoder
+Sdcb.SimdCodecs.Png.PngAnimationEncoder.AddFrame(System.ReadOnlySpan<byte> canvas, Sdcb.SimdCodecs.Abstractions.PixelFormat format, System.TimeSpan duration, int stride = 0) -> void
+Sdcb.SimdCodecs.Png.PngAnimationEncoder.Encode() -> byte[]!
+Sdcb.SimdCodecs.Png.PngAnimationEncoder.Encode(System.IO.Stream! output) -> void
+Sdcb.SimdCodecs.Png.PngAnimationEncoder.FrameCount.get -> int
+Sdcb.SimdCodecs.Png.PngAnimationEncoder.PngAnimationEncoder(int canvasWidth, int canvasHeight, Sdcb.SimdCodecs.Png.PngWriteOptions? options = null, bool sixteenBit = false) -> void
+Sdcb.SimdCodecs.Png.PngBlendOp
+Sdcb.SimdCodecs.Png.PngBlendOp.Over = 1 -> Sdcb.SimdCodecs.Png.PngBlendOp
+Sdcb.SimdCodecs.Png.PngBlendOp.Source = 0 -> Sdcb.SimdCodecs.Png.PngBlendOp
+Sdcb.SimdCodecs.Png.PngDisposeOp
+Sdcb.SimdCodecs.Png.PngDisposeOp.Background = 1 -> Sdcb.SimdCodecs.Png.PngDisposeOp
+Sdcb.SimdCodecs.Png.PngDisposeOp.None = 0 -> Sdcb.SimdCodecs.Png.PngDisposeOp
+Sdcb.SimdCodecs.Png.PngDisposeOp.Previous = 2 -> Sdcb.SimdCodecs.Png.PngDisposeOp
+Sdcb.SimdCodecs.Png.PngFrameInfo
+Sdcb.SimdCodecs.Png.PngFrameInfo.Blend.get -> Sdcb.SimdCodecs.Png.PngBlendOp
+Sdcb.SimdCodecs.Png.PngFrameInfo.Blend.init -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.Deconstruct(out int Index, out int X, out int Y, out int Width, out int Height, out int DelayNumerator, out int DelayDenominator, out System.TimeSpan Delay, out Sdcb.SimdCodecs.Png.PngDisposeOp Dispose, out Sdcb.SimdCodecs.Png.PngBlendOp Blend, out bool IsIndependent) -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.Delay.get -> System.TimeSpan
+Sdcb.SimdCodecs.Png.PngFrameInfo.Delay.init -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.DelayDenominator.get -> int
+Sdcb.SimdCodecs.Png.PngFrameInfo.DelayDenominator.init -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.DelayNumerator.get -> int
+Sdcb.SimdCodecs.Png.PngFrameInfo.DelayNumerator.init -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.Dispose.get -> Sdcb.SimdCodecs.Png.PngDisposeOp
+Sdcb.SimdCodecs.Png.PngFrameInfo.Dispose.init -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.Equals(Sdcb.SimdCodecs.Png.PngFrameInfo other) -> bool
+Sdcb.SimdCodecs.Png.PngFrameInfo.Height.get -> int
+Sdcb.SimdCodecs.Png.PngFrameInfo.Height.init -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.Index.get -> int
+Sdcb.SimdCodecs.Png.PngFrameInfo.Index.init -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.IsIndependent.get -> bool
+Sdcb.SimdCodecs.Png.PngFrameInfo.IsIndependent.init -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.PngFrameInfo() -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.PngFrameInfo(int Index, int X, int Y, int Width, int Height, int DelayNumerator, int DelayDenominator, System.TimeSpan Delay, Sdcb.SimdCodecs.Png.PngDisposeOp Dispose, Sdcb.SimdCodecs.Png.PngBlendOp Blend, bool IsIndependent) -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.Width.get -> int
+Sdcb.SimdCodecs.Png.PngFrameInfo.Width.init -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.X.get -> int
+Sdcb.SimdCodecs.Png.PngFrameInfo.X.init -> void
+Sdcb.SimdCodecs.Png.PngFrameInfo.Y.get -> int
+Sdcb.SimdCodecs.Png.PngFrameInfo.Y.init -> void
 Sdcb.SimdCodecs.Png.PngImage
 Sdcb.SimdCodecs.Png.PngImage.<Clone>$() -> Sdcb.SimdCodecs.Png.PngImage!
 Sdcb.SimdCodecs.Png.PngImage.AsUInt16Samples() -> ushort[]!
@@ -136,6 +192,18 @@ Sdcb.SimdCodecs.Png.PngPhysicalDimensions.PngPhysicalDimensions(uint PixelsPerUn
 Sdcb.SimdCodecs.Png.PngPhysicalDimensions.UnitIsMetre.get -> bool
 Sdcb.SimdCodecs.Png.PngPhysicalDimensions.UnitIsMetre.init -> void
 Sdcb.SimdCodecs.Png.PngPredictor
+Sdcb.SimdCodecs.Png.PngQuantizeOptions
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.<Clone>$() -> Sdcb.SimdCodecs.Png.PngQuantizeOptions!
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.Dither.get -> bool
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.Dither.init -> void
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.Equals(Sdcb.SimdCodecs.Png.PngQuantizeOptions? other) -> bool
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.MaxColors.get -> int
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.MaxColors.init -> void
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.MaxQuality.get -> int
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.MaxQuality.init -> void
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.MinQuality.get -> int
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.MinQuality.init -> void
+Sdcb.SimdCodecs.Png.PngQuantizeOptions.PngQuantizeOptions() -> void
 Sdcb.SimdCodecs.Png.PngReader
 Sdcb.SimdCodecs.Png.PngText
 Sdcb.SimdCodecs.Png.PngText.<Clone>$() -> Sdcb.SimdCodecs.Png.PngText!
@@ -166,6 +234,8 @@ Sdcb.SimdCodecs.Png.PngWriteOptions.IccProfile.get -> byte[]?
 Sdcb.SimdCodecs.Png.PngWriteOptions.IccProfile.init -> void
 Sdcb.SimdCodecs.Png.PngWriteOptions.IccProfileName.get -> string!
 Sdcb.SimdCodecs.Png.PngWriteOptions.IccProfileName.init -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.LoopCount.get -> int
+Sdcb.SimdCodecs.Png.PngWriteOptions.LoopCount.init -> void
 Sdcb.SimdCodecs.Png.PngWriteOptions.LosslessReduction.get -> bool
 Sdcb.SimdCodecs.Png.PngWriteOptions.LosslessReduction.init -> void
 Sdcb.SimdCodecs.Png.PngWriteOptions.Mdcv.get -> Sdcb.SimdCodecs.Png.MdcvChunk?
@@ -175,6 +245,8 @@ Sdcb.SimdCodecs.Png.PngWriteOptions.ParallelFragments.init -> void
 Sdcb.SimdCodecs.Png.PngWriteOptions.PhysicalDimensions.get -> Sdcb.SimdCodecs.Png.PngPhysicalDimensions?
 Sdcb.SimdCodecs.Png.PngWriteOptions.PhysicalDimensions.init -> void
 Sdcb.SimdCodecs.Png.PngWriteOptions.PngWriteOptions() -> void
+Sdcb.SimdCodecs.Png.PngWriteOptions.Quantize.get -> Sdcb.SimdCodecs.Png.PngQuantizeOptions?
+Sdcb.SimdCodecs.Png.PngWriteOptions.Quantize.init -> void
 Sdcb.SimdCodecs.Png.PngWriteOptions.SrgbRenderingIntent.get -> byte?
 Sdcb.SimdCodecs.Png.PngWriteOptions.SrgbRenderingIntent.init -> void
 Sdcb.SimdCodecs.Png.PngWriteOptions.Text.get -> System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Png.PngText!>?
@@ -199,12 +271,16 @@ override Sdcb.SimdCodecs.Png.ClliChunk.ToString() -> string!
 override Sdcb.SimdCodecs.Png.MdcvChunk.Equals(object? obj) -> bool
 override Sdcb.SimdCodecs.Png.MdcvChunk.GetHashCode() -> int
 override Sdcb.SimdCodecs.Png.MdcvChunk.ToString() -> string!
+override Sdcb.SimdCodecs.Png.PngFrameInfo.GetHashCode() -> int
 override Sdcb.SimdCodecs.Png.PngImage.Equals(object? obj) -> bool
 override Sdcb.SimdCodecs.Png.PngImage.GetHashCode() -> int
 override Sdcb.SimdCodecs.Png.PngImage.ToString() -> string!
 override Sdcb.SimdCodecs.Png.PngPhysicalDimensions.Equals(object? obj) -> bool
 override Sdcb.SimdCodecs.Png.PngPhysicalDimensions.GetHashCode() -> int
 override Sdcb.SimdCodecs.Png.PngPhysicalDimensions.ToString() -> string!
+override Sdcb.SimdCodecs.Png.PngQuantizeOptions.Equals(object? obj) -> bool
+override Sdcb.SimdCodecs.Png.PngQuantizeOptions.GetHashCode() -> int
+override Sdcb.SimdCodecs.Png.PngQuantizeOptions.ToString() -> string!
 override Sdcb.SimdCodecs.Png.PngText.Equals(object? obj) -> bool
 override Sdcb.SimdCodecs.Png.PngText.GetHashCode() -> int
 override Sdcb.SimdCodecs.Png.PngText.ToString() -> string!
@@ -225,9 +301,12 @@ static Sdcb.SimdCodecs.Png.ClliChunk.operator !=(Sdcb.SimdCodecs.Png.ClliChunk? 
 static Sdcb.SimdCodecs.Png.ClliChunk.operator ==(Sdcb.SimdCodecs.Png.ClliChunk? left, Sdcb.SimdCodecs.Png.ClliChunk? right) -> bool
 static Sdcb.SimdCodecs.Png.MdcvChunk.operator !=(Sdcb.SimdCodecs.Png.MdcvChunk? left, Sdcb.SimdCodecs.Png.MdcvChunk? right) -> bool
 static Sdcb.SimdCodecs.Png.MdcvChunk.operator ==(Sdcb.SimdCodecs.Png.MdcvChunk? left, Sdcb.SimdCodecs.Png.MdcvChunk? right) -> bool
+static Sdcb.SimdCodecs.Png.PngFrameInfo.operator !=(Sdcb.SimdCodecs.Png.PngFrameInfo left, Sdcb.SimdCodecs.Png.PngFrameInfo right) -> bool
+static Sdcb.SimdCodecs.Png.PngFrameInfo.operator ==(Sdcb.SimdCodecs.Png.PngFrameInfo left, Sdcb.SimdCodecs.Png.PngFrameInfo right) -> bool
 static Sdcb.SimdCodecs.Png.PngImage.operator !=(Sdcb.SimdCodecs.Png.PngImage? left, Sdcb.SimdCodecs.Png.PngImage? right) -> bool
 static Sdcb.SimdCodecs.Png.PngImage.operator ==(Sdcb.SimdCodecs.Png.PngImage? left, Sdcb.SimdCodecs.Png.PngImage? right) -> bool
 static Sdcb.SimdCodecs.Png.PngImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Png.PngImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Png.PngImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Png.PngImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
@@ -236,6 +315,7 @@ static Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecodeIntoRgba8(System.ReadOnlySpa
 static Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecodeRgba8(System.ReadOnlySpan<byte> data, out byte[]? rgba, out int width, out int height) -> bool
 static Sdcb.SimdCodecs.Png.PngImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
 static Sdcb.SimdCodecs.Png.PngImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Png.PngImageDecoder.TryOpenFrames(System.ReadOnlyMemory<byte> data, out Sdcb.SimdCodecs.Abstractions.IImageFrameReader? reader) -> bool
 static Sdcb.SimdCodecs.Png.PngImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
 static Sdcb.SimdCodecs.Png.PngImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
 static Sdcb.SimdCodecs.Png.PngImageEncoder.Create(System.Buffers.IBufferWriter<byte>! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
@@ -246,6 +326,8 @@ static Sdcb.SimdCodecs.Png.PngPhysicalDimensions.FromDpi(double dpi) -> Sdcb.Sim
 static Sdcb.SimdCodecs.Png.PngPhysicalDimensions.operator !=(Sdcb.SimdCodecs.Png.PngPhysicalDimensions? left, Sdcb.SimdCodecs.Png.PngPhysicalDimensions? right) -> bool
 static Sdcb.SimdCodecs.Png.PngPhysicalDimensions.operator ==(Sdcb.SimdCodecs.Png.PngPhysicalDimensions? left, Sdcb.SimdCodecs.Png.PngPhysicalDimensions? right) -> bool
 static Sdcb.SimdCodecs.Png.PngPredictor.Unfilter(System.ReadOnlySpan<byte> input, int columns, int bytesPerComponent = 1) -> byte[]!
+static Sdcb.SimdCodecs.Png.PngQuantizeOptions.operator !=(Sdcb.SimdCodecs.Png.PngQuantizeOptions? left, Sdcb.SimdCodecs.Png.PngQuantizeOptions? right) -> bool
+static Sdcb.SimdCodecs.Png.PngQuantizeOptions.operator ==(Sdcb.SimdCodecs.Png.PngQuantizeOptions? left, Sdcb.SimdCodecs.Png.PngQuantizeOptions? right) -> bool
 static Sdcb.SimdCodecs.Png.PngReader.Decode(System.ReadOnlySpan<byte> data, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Png.PngImage!
 static Sdcb.SimdCodecs.Png.PngReader.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Png.PngImage? image, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
 static Sdcb.SimdCodecs.Png.PngText.IsValidKeyword(string! keyword) -> bool
@@ -272,3 +354,5 @@ static Sdcb.SimdCodecs.Png.PngWriter.EncodeRgba16(System.ReadOnlySpan<ushort> rg
 static Sdcb.SimdCodecs.Png.PngWriter.EncodeRgba16(System.ReadOnlySpan<ushort> rgba, int width, int height, System.ReadOnlySpan<byte> iccProfile = default(System.ReadOnlySpan<byte>)) -> byte[]!
 static Sdcb.SimdCodecs.Png.PngWriter.Save(string! path, System.ReadOnlySpan<byte> rgba, int width, int height) -> void
 static Sdcb.SimdCodecs.Png.PngWriter.Save(string! path, System.ReadOnlySpan<byte> rgba, int width, int height, System.ReadOnlySpan<byte> iccProfile) -> void
+~override Sdcb.SimdCodecs.Png.PngFrameInfo.Equals(object obj) -> bool
+~override Sdcb.SimdCodecs.Png.PngFrameInfo.ToString() -> string

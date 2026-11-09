@@ -66,7 +66,7 @@ public class Jpeg2000ChannelDefinitionTests
 
         // Into RGBA: alpha is the last channel and colour is straight.
         var rgba = new byte[37 * 29 * 4];
-        ImageCodecs.TryDecodeIntoRgba8(Alpha(name), rgba).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(Alpha(name), rgba, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         for (var i = 0; i < 37 * 29; i++)
         {
             rgba[i * 4 + 3].ShouldBe((byte)expected.Samples[i * channels + channels - 1]);

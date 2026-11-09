@@ -106,6 +106,7 @@ static Sdcb.SimdCodecs.Bmp.BmpEncoder.Encode(System.ReadOnlySpan<byte> pixels, i
 static Sdcb.SimdCodecs.Bmp.BmpEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, int channels, Sdcb.SimdCodecs.Bmp.BmpEncodeOptions? options = null) -> byte[]!
 static Sdcb.SimdCodecs.Bmp.BmpEncoder.EncodeDib(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Bmp.BmpEncodeOptions? options = null, int stride = 0, bool iconImage = false) -> byte[]!
 static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool

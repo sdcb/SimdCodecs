@@ -143,7 +143,7 @@ public sealed class GainMapFacadeTests
         ImageCodecs.TryReadInfo(ultraHdr, out var info).ShouldBeTrue();
 
         var buffer = new byte[info.Width * info.Height * 4];
-        ImageCodecs.TryDecodeIntoRgba8(ultraHdr, buffer).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(ultraHdr, buffer, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         var sdrBase = JpegDecoder.Decode(ultraHdr);
         buffer.ShouldBe(sdrBase.Pixels.ToArray());
@@ -188,7 +188,7 @@ public sealed class GainMapFacadeTests
         ImageCodecs.TryReadInfo(plain, out var info).ShouldBeTrue();
 
         var buffer = new byte[info.Width * info.Height * 4];
-        ImageCodecs.TryDecodeIntoRgba8(plain, buffer).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(plain, buffer, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         buffer.ShouldBe(JpegDecoder.Decode(plain).Pixels.ToArray());
     }

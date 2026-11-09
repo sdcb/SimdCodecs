@@ -35,6 +35,7 @@ static Sdcb.SimdCodecs.Qoi.QoiDecoder.TryReadInfo(System.ReadOnlySpan<byte> data
 static Sdcb.SimdCodecs.Qoi.QoiEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Qoi.QoiColorSpace colorSpace = Sdcb.SimdCodecs.Qoi.QoiColorSpace.Srgb, int stride = 0) -> byte[]!
 static Sdcb.SimdCodecs.Qoi.QoiEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, System.IO.Stream! output, Sdcb.SimdCodecs.Qoi.QoiColorSpace colorSpace = Sdcb.SimdCodecs.Qoi.QoiColorSpace.Srgb, int stride = 0) -> void
 static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool

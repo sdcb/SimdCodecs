@@ -58,6 +58,7 @@ static Sdcb.SimdCodecs.Gif.GifEncodeOptions.operator ==(Sdcb.SimdCodecs.Gif.GifE
 static Sdcb.SimdCodecs.Gif.GifEncoder.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, int channels, Sdcb.SimdCodecs.Gif.GifEncodeOptions? options = null) -> byte[]!
 static Sdcb.SimdCodecs.Gif.GifEncoder.EncodeAnimation(System.Collections.Generic.IReadOnlyList<Sdcb.SimdCodecs.Gif.GifAnimationFrame>! frames, int width, int height, int channels, Sdcb.SimdCodecs.Gif.GifEncodeOptions? options = null) -> byte[]!
 static Sdcb.SimdCodecs.Gif.GifImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Gif.GifImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Gif.GifImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Gif.GifImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Gif.GifImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool

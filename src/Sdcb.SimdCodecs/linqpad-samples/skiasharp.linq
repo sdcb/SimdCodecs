@@ -38,9 +38,9 @@ static unsafe SKBitmap Decode(byte[] data)
 	if (!ImageCodecs.TryReadInfo(data, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
 
 	SKBitmap bitmap = new(new SKImageInfo(info.Width, info.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul));
-	// RowBytes is Width * 4 for this colour type, which is exactly the layout TryDecodeIntoRgba8 writes.
+	// RowBytes is Width * 4 for this colour type, which is exactly the layout TryDecodeInto writes for PixelFormat.Rgba32 with stride 0.
 	Span<byte> pixels = new((void*)bitmap.GetPixels(), bitmap.RowBytes * bitmap.Height);
-	if (!ImageCodecs.TryDecodeIntoRgba8(data, pixels))
+	if (!ImageCodecs.TryDecodeInto(data, pixels, 0, PixelFormat.Rgba32))
 	{
 		bitmap.Dispose();
 		throw new InvalidDataException("Decode failed");

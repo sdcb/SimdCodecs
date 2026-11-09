@@ -23,7 +23,7 @@ async Task Main()
 	// Decode straight into a buffer you own: 4 bytes per pixel, R G B A.
 	byte[] rgba = new byte[info.Width * info.Height * 4];
 	Stopwatch sw = Stopwatch.StartNew();
-	if (!ImageCodecs.TryDecodeIntoRgba8(data, rgba)) throw new InvalidDataException("Decode failed");
+	if (!ImageCodecs.TryDecodeInto(data, rgba, 0, PixelFormat.Rgba32)) throw new InvalidDataException("Decode failed");
 	$"Decoded {info.Width}x{info.Height} in {sw.Elapsed.TotalMilliseconds:F1} ms".Dump();
 
 	Show(rgba, info.Width, info.Height).Dump("photo.jpg, decoded by Sdcb.SimdCodecs");

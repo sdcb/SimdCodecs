@@ -80,7 +80,7 @@ public sealed class HeifFacadeTests : IDisposable
         }
 
         var rgba = new byte[info.Width * info.Height * 4];
-        ImageCodecs.TryDecodeIntoRgba8(data, rgba).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(data, rgba, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         rgba.ShouldBe(expected.ToRgba8());
 
         ImageCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();

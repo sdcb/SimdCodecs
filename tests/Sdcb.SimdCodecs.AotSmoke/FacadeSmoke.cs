@@ -154,7 +154,7 @@ internal static class FacadeSmoke
         Check(ImageCodecs.TryDecode(data, out var image), label, "TryDecode");
         var rgba = new byte[info.Width * info.Height * 4];
         // Float samples (PFM) have no 8-bit layout without a tone policy: TryDecodeInto says no.
-        Check(ImageCodecs.TryDecodeIntoRgba8(data, rgba) == (info.SampleFormat != SampleFormat.Float32), label, "TryDecodeIntoRgba8");
+        Check(ImageCodecs.TryDecodeInto(data, rgba, 0, PixelFormat.Rgba32) == (info.SampleFormat != SampleFormat.Float32), label, "TryDecodeInto Rgba32");
         // The throwing forms: Decode is TryDecode's image; Decode to a format is TryReadInfo + TryDecodeInto in one call.
         using (var decoded = ImageCodecs.Decode(data))
             Check(Hash(Pixels(decoded)) == Hash(Pixels(image)), label, "Decode");
@@ -235,7 +235,7 @@ internal static class FacadeSmoke
 
         Check(ImageCodecs.TryDecode(pq, out var hdr), "heif-pq", "TryDecode");
         Check(hdr.ColorEncoding.Transfer == TransferFunction.Pq, "heif-pq", "ColorEncoding");
-        Check(!ImageCodecs.TryDecodeIntoRgba8(pq, new byte[640 * 360 * 4]), "heif-pq", "TryDecodeIntoRgba8 refuses PQ");
+        Check(!ImageCodecs.TryDecodeInto(pq, new byte[640 * 360 * 4], 0, PixelFormat.Rgba32), "heif-pq", "TryDecodeInto Rgba32 refuses PQ");
         Console.WriteLine($"facade heif-pq {hdr.Width}x{hdr.Height} {hdr.ColorEncoding.Primaries}/{hdr.ColorEncoding.Transfer}\t{Hash(hdr.ToRgba8())}");
         return 2;
     }

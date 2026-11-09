@@ -40,7 +40,7 @@ public sealed class ImageCodecsTests
         ImageCodecs.TryDecode(garbage, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         img.ShouldBeNull();
         ImageCodecs.TryReadInfo(garbage, out _).ShouldBeFalse();
-        ImageCodecs.TryDecodeIntoRgba8(garbage, new byte[64]).ShouldBeFalse();
+        ImageCodecs.TryDecodeInto(garbage, new byte[64], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     // --- PNG round-trips ---
@@ -118,7 +118,7 @@ public sealed class ImageCodecsTests
         ImageCodecs.TryReadInfo(png, out var info).ShouldBeTrue();
 
         var dst = new byte[info.Width * info.Height * 4];
-        ImageCodecs.TryDecodeIntoRgba8(png, dst).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(png, dst, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         dst.ShouldBe(rgba);
     }
 
@@ -127,7 +127,7 @@ public sealed class ImageCodecsTests
     {
         var png = PngWriter.Encode(new byte[2 * 2 * 4], 2, 2);
 
-        ImageCodecs.TryDecodeIntoRgba8(png, new byte[8]).ShouldBeFalse(); // needs 16
+        ImageCodecs.TryDecodeInto(png, new byte[8], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse(); // needs 16
     }
 
     // --- JPEG (synthetic photo) ---
@@ -158,7 +158,7 @@ public sealed class ImageCodecsTests
         ImageCodecs.TryReadInfo(bytes, out var info).ShouldBeTrue();
 
         var viaFacade = new byte[info.Width * info.Height * 4];
-        ImageCodecs.TryDecodeIntoRgba8(bytes, viaFacade).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(bytes, viaFacade, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         var direct = new byte[info.Width * info.Height * 4];
         JpegDecoder.DecodeTo(bytes, direct);

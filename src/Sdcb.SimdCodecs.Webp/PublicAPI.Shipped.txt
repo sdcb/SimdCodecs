@@ -274,6 +274,7 @@ static Sdcb.SimdCodecs.Webp.WebpFrame.operator ==(Sdcb.SimdCodecs.Webp.WebpFrame
 static Sdcb.SimdCodecs.Webp.WebpFrameInfo.operator !=(Sdcb.SimdCodecs.Webp.WebpFrameInfo left, Sdcb.SimdCodecs.Webp.WebpFrameInfo right) -> bool
 static Sdcb.SimdCodecs.Webp.WebpFrameInfo.operator ==(Sdcb.SimdCodecs.Webp.WebpFrameInfo left, Sdcb.SimdCodecs.Webp.WebpFrameInfo right) -> bool
 static Sdcb.SimdCodecs.Webp.WebpImageDecoder.CanDecode(System.ReadOnlySpan<byte> data) -> bool
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Webp.WebpImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Webp.WebpImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Webp.WebpImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool

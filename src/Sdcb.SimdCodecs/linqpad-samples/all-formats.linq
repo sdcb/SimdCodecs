@@ -47,7 +47,7 @@ async Task Main()
 			// Float samples have no single 8-bit rendering, so the facade will not pick one for you:
 			// take the floats and choose your own stretch (here: min..max of the image).
 			? DecodeFloatStretched(data, rgba)
-			: ImageCodecs.TryDecodeIntoRgba8(data, rgba);
+			: ImageCodecs.TryDecodeInto(data, rgba, 0, PixelFormat.Rgba32);
 		double ms = sw.Elapsed.TotalMilliseconds;
 
 		rows.Add(new

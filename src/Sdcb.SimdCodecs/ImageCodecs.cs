@@ -537,14 +537,6 @@ public static partial class ImageCodecs
         Find(data) is { } entry && entry.TryDecodeInto(data, destination, stride, format, options, cancellationToken);
 
     /// <summary>
-    /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA (row-major, 4 bytes/pixel, R,G,B,A byte
-    /// order). <paramref name="rgbaDestination"/> must be at least <c>Width * Height * 4</c> bytes (size it
-    /// via <see cref="TryReadInfo"/>).
-    /// </summary>
-    public static bool TryDecodeIntoRgba8(ReadOnlySpan<byte> data, Span<byte> rgbaDestination) =>
-        TryDecodeInto(data, rgbaDestination, 0, PixelFormat.Rgba32);
-
-    /// <summary>
     /// Extracts the metadata blocks (Exif, XMP, ICC) of <paramref name="data"/> without decoding pixels — what a
     /// transcoder hands to an encoder. False when no codec recognises the stream or the file is malformed.
     /// </summary>

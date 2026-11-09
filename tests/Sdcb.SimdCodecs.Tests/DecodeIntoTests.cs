@@ -250,7 +250,7 @@ public sealed class DecodeIntoTests
 
         // The RGBA entry point is the Rgba32 layout.
         var direct = new byte[width * height * 4];
-        ImageCodecs.TryDecodeIntoRgba8(data, direct).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(data, direct, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         direct.ShouldBe(rgba);
     }
 

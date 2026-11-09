@@ -31,7 +31,7 @@ foreach (string path in Directory.GetFiles(inDir).Where(p => !p.EndsWith("SHA256
                 rgba[i] = (i & 3) == 3 ? (byte)255 : (byte)Math.Clamp((f[i] - min) / (max - min) * 255f + 0.5f, 0, 255);
         }
     }
-    else ok = Sdcb.SimdCodecs.ImageCodecs.TryDecodeIntoRgba8(data, rgba);
+    else ok = Sdcb.SimdCodecs.ImageCodecs.TryDecodeInto(data, rgba, 0, PixelFormat.Rgba32);
 
     Console.WriteLine($"{name,-24} {info.Width}x{info.Height} {info.SampleFormat} {(ok ? "ok" : "FAILED")}");
     if (ok) File.WriteAllBytes(Path.Combine(outDir, $"{name}.{info.Width}x{info.Height}.rgba"), rgba);

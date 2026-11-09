@@ -80,7 +80,7 @@ public sealed class ColorEncodingTests
         // fidelity path decodes with the tag attached.
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Cicp = CicpChunk.Hdr10Pq });
 
-        ImageCodecs.TryDecodeIntoRgba8(png, new byte[4 * 4 * 4]).ShouldBeFalse();
+        ImageCodecs.TryDecodeInto(png, new byte[4 * 4 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         ImageCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.Transfer.ShouldBe(TransferFunction.Pq);
@@ -90,14 +90,14 @@ public sealed class ColorEncodingTests
     public void Srgb_and_linear_tagged_pngs_keep_the_display_path()
     {
         var untagged = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions());
-        ImageCodecs.TryDecodeIntoRgba8(untagged, new byte[4 * 4 * 4]).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(untagged, new byte[4 * 4 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         var explicitSrgb = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Cicp = CicpChunk.Srgb });
-        ImageCodecs.TryDecodeIntoRgba8(explicitSrgb, new byte[4 * 4 * 4]).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(explicitSrgb, new byte[4 * 4 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         // gAMA 1.0 (linear astro master): monotone code dump stays available.
         var linear = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Gamma = 1.0 });
-        ImageCodecs.TryDecodeIntoRgba8(linear, new byte[4 * 4 * 4]).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(linear, new byte[4 * 4 * 4], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
     }
 
     [Fact]

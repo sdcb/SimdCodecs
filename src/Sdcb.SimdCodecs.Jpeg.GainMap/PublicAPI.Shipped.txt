@@ -84,6 +84,7 @@ override Sdcb.SimdCodecs.Jpeg.MpfSegment.Entry.GetHashCode() -> int
 static Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.operator !=(Sdcb.SimdCodecs.Jpeg.GainMapComputeResult? left, Sdcb.SimdCodecs.Jpeg.GainMapComputeResult? right) -> bool
 static Sdcb.SimdCodecs.Jpeg.GainMapComputeResult.operator ==(Sdcb.SimdCodecs.Jpeg.GainMapComputeResult? left, Sdcb.SimdCodecs.Jpeg.GainMapComputeResult? right) -> bool
 static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Jpeg.GainMapImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool

@@ -1,4 +1,5 @@
 #nullable enable
+Sdcb.SimdCodecs.ImageCodecs
 Sdcb.SimdCodecs.ImageDecoder
 Sdcb.SimdCodecs.ImageDecoder.Dispose() -> void
 Sdcb.SimdCodecs.ImageDecoder.Format.get -> Sdcb.SimdCodecs.Abstractions.ImageFormat
@@ -15,30 +16,32 @@ Sdcb.SimdCodecs.ImageFrame.Info.get -> Sdcb.SimdCodecs.Abstractions.ImageInfo
 Sdcb.SimdCodecs.ImageFrame.Metadata.get -> Sdcb.SimdCodecs.Abstractions.ImageMetadata!
 Sdcb.SimdCodecs.ImageFrame.TryGetClosestSize(int width, int height, out int closestWidth, out int closestHeight, out int scaleDenominator) -> bool
 Sdcb.SimdCodecs.ImageFrame.TryGetThumbnail(out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
-Sdcb.SimdCodecs.SimdCodecs
+static Sdcb.SimdCodecs.ImageCodecs.CanDecode(System.ReadOnlySpan<byte> data) -> bool
+static Sdcb.SimdCodecs.ImageCodecs.CreateEncoder(Sdcb.SimdCodecs.Abstractions.ImageFormat format, System.Buffers.IBufferWriter<byte>! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
+static Sdcb.SimdCodecs.ImageCodecs.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
+static Sdcb.SimdCodecs.ImageCodecs.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.PixelBuffer!
+static Sdcb.SimdCodecs.ImageCodecs.DetectFormat(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Abstractions.ImageFormat
+static Sdcb.SimdCodecs.ImageCodecs.Encode(Sdcb.SimdCodecs.Abstractions.IDecodedImage! image, Sdcb.SimdCodecs.Abstractions.ImageFormat format, System.Buffers.IBufferWriter<byte>! destination, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+static Sdcb.SimdCodecs.ImageCodecs.Encode(Sdcb.SimdCodecs.Abstractions.IDecodedImage! image, Sdcb.SimdCodecs.Abstractions.ImageFormat format, System.IO.Stream! destination, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+static Sdcb.SimdCodecs.ImageCodecs.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat pixelFormat, Sdcb.SimdCodecs.Abstractions.ImageFormat format, System.Buffers.IBufferWriter<byte>! destination, int stride = 0, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null, Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+static Sdcb.SimdCodecs.ImageCodecs.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat pixelFormat, Sdcb.SimdCodecs.Abstractions.ImageFormat format, System.IO.Stream! destination, int stride = 0, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null, Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+static Sdcb.SimdCodecs.ImageCodecs.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat pixelFormat, Sdcb.SimdCodecs.Abstractions.ImageFormat format, int stride = 0, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null, Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> byte[]!
+static Sdcb.SimdCodecs.ImageCodecs.GetClosestInputFormat(Sdcb.SimdCodecs.Abstractions.ImageFormat format, Sdcb.SimdCodecs.Abstractions.PixelFormat requested) -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+static Sdcb.SimdCodecs.ImageCodecs.IsDecodable(Sdcb.SimdCodecs.Abstractions.ImageFormat format) -> bool
+static Sdcb.SimdCodecs.ImageCodecs.IsEncodable(Sdcb.SimdCodecs.Abstractions.ImageFormat format) -> bool
+static Sdcb.SimdCodecs.ImageCodecs.Register(Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration! registration) -> void
+static Sdcb.SimdCodecs.ImageCodecs.RegisterEncoder(Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration! registration) -> void
+static Sdcb.SimdCodecs.ImageCodecs.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.ImageCodecs.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.ImageCodecs.TryDecodePlanes(System.ReadOnlySpan<byte> data, System.Span<ushort> y, System.Span<ushort> cb, System.Span<ushort> cr, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
+static Sdcb.SimdCodecs.ImageCodecs.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
+static Sdcb.SimdCodecs.ImageCodecs.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.ImageCodecs.TryOpenFrames(System.ReadOnlyMemory<byte> data, out Sdcb.SimdCodecs.Abstractions.IImageFrameReader? reader) -> bool
+static Sdcb.SimdCodecs.ImageCodecs.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
+static Sdcb.SimdCodecs.ImageCodecs.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
+static Sdcb.SimdCodecs.ImageCodecs.TryReadPlanarInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.PlanarInfo info) -> bool
 static Sdcb.SimdCodecs.ImageDecoder.Open(Sdcb.SimdCodecs.Abstractions.IByteSource! source) -> Sdcb.SimdCodecs.ImageDecoder!
 static Sdcb.SimdCodecs.ImageDecoder.Open(System.IO.Stream! stream, bool leaveOpen = false) -> Sdcb.SimdCodecs.ImageDecoder!
 static Sdcb.SimdCodecs.ImageDecoder.Open(System.ReadOnlyMemory<byte> data) -> Sdcb.SimdCodecs.ImageDecoder!
 static Sdcb.SimdCodecs.ImageDecoder.Open(string! path) -> Sdcb.SimdCodecs.ImageDecoder!
 static Sdcb.SimdCodecs.ImageDecoder.OpenAsync(System.IO.Stream! stream, bool leaveOpen = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Sdcb.SimdCodecs.ImageDecoder!>
-static Sdcb.SimdCodecs.SimdCodecs.CanDecode(System.ReadOnlySpan<byte> data) -> bool
-static Sdcb.SimdCodecs.SimdCodecs.CreateEncoder(Sdcb.SimdCodecs.Abstractions.ImageFormat format, System.Buffers.IBufferWriter<byte>! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
-static Sdcb.SimdCodecs.SimdCodecs.DetectFormat(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Abstractions.ImageFormat
-static Sdcb.SimdCodecs.SimdCodecs.Encode(Sdcb.SimdCodecs.Abstractions.IDecodedImage! image, Sdcb.SimdCodecs.Abstractions.ImageFormat format, System.Buffers.IBufferWriter<byte>! destination, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
-static Sdcb.SimdCodecs.SimdCodecs.Encode(Sdcb.SimdCodecs.Abstractions.IDecodedImage! image, Sdcb.SimdCodecs.Abstractions.ImageFormat format, System.IO.Stream! destination, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
-static Sdcb.SimdCodecs.SimdCodecs.Encode(System.ReadOnlySpan<byte> pixels, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat pixelFormat, Sdcb.SimdCodecs.Abstractions.ImageFormat format, int stride = 0, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null, Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> byte[]!
-static Sdcb.SimdCodecs.SimdCodecs.GetClosestInputFormat(Sdcb.SimdCodecs.Abstractions.ImageFormat format, Sdcb.SimdCodecs.Abstractions.PixelFormat requested) -> Sdcb.SimdCodecs.Abstractions.PixelFormat
-static Sdcb.SimdCodecs.SimdCodecs.IsDecodable(Sdcb.SimdCodecs.Abstractions.ImageFormat format) -> bool
-static Sdcb.SimdCodecs.SimdCodecs.IsEncodable(Sdcb.SimdCodecs.Abstractions.ImageFormat format) -> bool
-static Sdcb.SimdCodecs.SimdCodecs.Register(Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration! registration) -> void
-static Sdcb.SimdCodecs.SimdCodecs.RegisterEncoder(Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration! registration) -> void
-static Sdcb.SimdCodecs.SimdCodecs.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
-static Sdcb.SimdCodecs.SimdCodecs.TryDecodeInto(System.ReadOnlySpan<byte> data, System.Span<byte> destination, int stride, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
-static Sdcb.SimdCodecs.SimdCodecs.TryDecodeIntoRgba8(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> bool
-static Sdcb.SimdCodecs.SimdCodecs.TryDecodePlanes(System.ReadOnlySpan<byte> data, System.Span<ushort> y, System.Span<ushort> cb, System.Span<ushort> cr, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
-static Sdcb.SimdCodecs.SimdCodecs.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
-static Sdcb.SimdCodecs.SimdCodecs.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
-static Sdcb.SimdCodecs.SimdCodecs.TryOpenFrames(System.ReadOnlyMemory<byte> data, out Sdcb.SimdCodecs.Abstractions.IImageFrameReader? reader) -> bool
-static Sdcb.SimdCodecs.SimdCodecs.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
-static Sdcb.SimdCodecs.SimdCodecs.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
-static Sdcb.SimdCodecs.SimdCodecs.TryReadPlanarInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.PlanarInfo info) -> bool

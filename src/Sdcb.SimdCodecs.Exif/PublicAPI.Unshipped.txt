@@ -1,3 +1,1 @@
 #nullable enable
-static Sdcb.SimdCodecs.Exif.ExifReader.FromHeif(System.ReadOnlySpan<byte> heif) -> Sdcb.SimdCodecs.Exif.ExifMetadata?
-static Sdcb.SimdCodecs.Exif.ExifWriter.ResetOrientation(System.ReadOnlySpan<byte> exif) -> byte[]!

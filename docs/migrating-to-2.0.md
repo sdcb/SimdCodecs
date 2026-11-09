@@ -7,6 +7,7 @@
 | 1.x | 2.0 |
 |---|---|
 | `SimdCodecs.TryDecode(…)` (the facade class) | `ImageCodecs.TryDecode(…)`: a class named like its namespace segment failed to bind (CS0234) in any project whose namespace contains `SimdCodecs` |
+| `SimdCodecs.TryDecodeIntoRgba8(data, rgba)` | `ImageCodecs.TryDecodeInto(data, rgba, 0, PixelFormat.Rgba32)`: the RGBA-only shortcut is gone from the facade; the per-codec `XxxImageDecoder.TryDecodeIntoRgba8` methods stay |
 | `ImagePixelFormat` (enum) | `PixelFormat` (readonly record struct): `PixelFormat.Rgba32`, `.Bgra32`, `.Rgb24`, `.Bgr24`, `.Gray8` are the same layouts |
 | `PixelConverter.BytesPerPixel(format)` | `format.BytesPerPixel` |
 | `new RasterImage(w, h, channels, sample, pixels, icc, color)` | `RasterImage.Wrap(w, h, channels, sample, pixels, color, metadata: new ImageMetadata { Icc = icc })` |

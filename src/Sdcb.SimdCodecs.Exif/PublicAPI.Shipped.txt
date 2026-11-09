@@ -120,6 +120,7 @@ override Sdcb.SimdCodecs.Exif.SRational.ToString() -> string!
 static Sdcb.SimdCodecs.Exif.ExifMetadata.operator !=(Sdcb.SimdCodecs.Exif.ExifMetadata? left, Sdcb.SimdCodecs.Exif.ExifMetadata? right) -> bool
 static Sdcb.SimdCodecs.Exif.ExifMetadata.operator ==(Sdcb.SimdCodecs.Exif.ExifMetadata? left, Sdcb.SimdCodecs.Exif.ExifMetadata? right) -> bool
 static Sdcb.SimdCodecs.Exif.ExifReader.FromBytes(System.ReadOnlySpan<byte> bytes) -> Sdcb.SimdCodecs.Exif.ExifMetadata?
+static Sdcb.SimdCodecs.Exif.ExifReader.FromHeif(System.ReadOnlySpan<byte> heif) -> Sdcb.SimdCodecs.Exif.ExifMetadata?
 static Sdcb.SimdCodecs.Exif.ExifReader.FromIfd(System.ReadOnlySpan<byte> tiff, int ifdOffset, bool fileIsLittleEndian) -> Sdcb.SimdCodecs.Exif.ExifMetadata!
 static Sdcb.SimdCodecs.Exif.ExifReader.FromJpeg(System.ReadOnlySpan<byte> jpeg) -> Sdcb.SimdCodecs.Exif.ExifMetadata?
 static Sdcb.SimdCodecs.Exif.ExifReader.FromPng(System.ReadOnlySpan<byte> png) -> Sdcb.SimdCodecs.Exif.ExifMetadata?
@@ -131,6 +132,7 @@ static Sdcb.SimdCodecs.Exif.ExifWriteData.operator !=(Sdcb.SimdCodecs.Exif.ExifW
 static Sdcb.SimdCodecs.Exif.ExifWriteData.operator ==(Sdcb.SimdCodecs.Exif.ExifWriteData? left, Sdcb.SimdCodecs.Exif.ExifWriteData? right) -> bool
 static Sdcb.SimdCodecs.Exif.ExifWriter.AsciiCharacterCode.get -> System.ReadOnlySpan<byte>
 static Sdcb.SimdCodecs.Exif.ExifWriter.Build(Sdcb.SimdCodecs.Exif.ExifWriteData! data) -> byte[]!
+static Sdcb.SimdCodecs.Exif.ExifWriter.ResetOrientation(System.ReadOnlySpan<byte> exif) -> byte[]!
 static Sdcb.SimdCodecs.Exif.ExifWriter.UnicodeCharacterCode.get -> System.ReadOnlySpan<byte>
 static Sdcb.SimdCodecs.Exif.GpsCoordinates.operator !=(Sdcb.SimdCodecs.Exif.GpsCoordinates? left, Sdcb.SimdCodecs.Exif.GpsCoordinates? right) -> bool
 static Sdcb.SimdCodecs.Exif.GpsCoordinates.operator ==(Sdcb.SimdCodecs.Exif.GpsCoordinates? left, Sdcb.SimdCodecs.Exif.GpsCoordinates? right) -> bool

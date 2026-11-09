@@ -62,6 +62,7 @@ override Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.ToString() -> string!
 override Sdcb.SimdCodecs.Pnm.PnmInfo.GetHashCode() -> int
 override sealed Sdcb.SimdCodecs.Pnm.PnmEncodeOptions.Equals(Sdcb.SimdCodecs.Abstractions.EncodeOptions? other) -> bool
 static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Pnm.PfmImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
@@ -84,6 +85,7 @@ static Sdcb.SimdCodecs.Pnm.PnmEncoder.Encode(System.ReadOnlySpan<ushort> samples
 static Sdcb.SimdCodecs.Pnm.PnmEncoder.EncodePfm(System.ReadOnlySpan<float> samples, int width, int height, int channels) -> byte[]!
 static Sdcb.SimdCodecs.Pnm.PnmEncoder.EncodePfm(System.ReadOnlySpan<float> samples, int width, int height, int channels, System.IO.Stream! output) -> void
 static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.CanDecode(System.ReadOnlySpan<byte> header) -> bool
+static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.Decode(System.ReadOnlySpan<byte> data, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IDecodedImage!
 static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.Registration.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration!
 static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.SignatureLength.get -> int
 static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.TryDecode(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? image, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
