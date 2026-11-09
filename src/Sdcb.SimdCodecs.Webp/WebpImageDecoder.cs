@@ -91,6 +91,8 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
     public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        if (options is { ApplyOrientation: true })
+            return ImageDecoderFallback.DecodeOriented(Decode, TryReadInfo, data, options, cancellationToken);
         WebpContainer container;
         try
         {
@@ -192,6 +194,8 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
+        if (options is { ApplyOrientation: true })
+            return ImageDecoderFallback.TryDecodeIntoOriented(TryDecodeInto, TryReadInfo, data, destination, stride, format, options, cancellationToken);
         if (options is { IsFullImage: false })
             return TryDecodeRegionInto(data, destination, stride, format, options, cancellationToken);
 

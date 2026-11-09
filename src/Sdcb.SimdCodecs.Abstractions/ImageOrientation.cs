@@ -3,8 +3,9 @@ namespace Sdcb.SimdCodecs.Abstractions;
 /// <summary>
 /// How an image's stored rows and columns map onto the picture as it should be shown: the EXIF / TIFF
 /// Orientation tag (0x0112, TIFF 6.0 p.36), whose values these are. A camera writes it instead of
-/// rotating the pixels. Decoders report it (<see cref="ImageInfo.Orientation"/>) and never apply it —
-/// decoded pixels are always in stored order — so a viewer applies the transform each member names.
+/// rotating the pixels. Decoders report it (<see cref="ImageInfo.Orientation"/>) and return the stored pixels, unless
+/// <see cref="DecodeOptions.ApplyOrientation"/> asks for them as displayed; <see cref="PixelTransform.Orient(IDecodedImage, ImageOrientation, System.Buffers.ArrayPool{byte})"/>
+/// applies the transform each member names to pixels already decoded.
 /// </summary>
 public enum ImageOrientation : byte
 {

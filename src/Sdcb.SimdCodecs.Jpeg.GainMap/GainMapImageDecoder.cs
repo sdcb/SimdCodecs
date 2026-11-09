@@ -89,6 +89,8 @@ public sealed class GainMapImageDecoder : IImageDecoder
     public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        if (options is { ApplyOrientation: true })
+            return ImageDecoderFallback.DecodeOriented(Decode, TryReadInfo, data, options, cancellationToken);
         // Full HDR when the gain map is present and reconstructable; the HDR-base
         // form is not (ReconstructHdr rejects it), so fall through to the SDR base.
         if (JpegGainMap.TrySplit(data, out var baseRange, out var gainMapRange, out var split) && !split.BaseRenditionIsHdr)

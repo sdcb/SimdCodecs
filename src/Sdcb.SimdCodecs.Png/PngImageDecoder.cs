@@ -152,6 +152,8 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
     public static IDecodedImage Decode(ReadOnlySpan<byte> data, DecodeOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        if (options is { ApplyOrientation: true })
+            return ImageDecoderFallback.DecodeOriented(Decode, TryReadInfo, data, options, cancellationToken);
         if (options is not null)
         {
             // Outside any catch: a scale or a region that does not fit throws on purpose.
@@ -252,6 +254,8 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
         DecodeOptions? options = null, CancellationToken cancellationToken = default)
     {
+        if (options is { ApplyOrientation: true })
+            return ImageDecoderFallback.TryDecodeIntoOriented(TryDecodeInto, TryReadInfo, data, destination, stride, format, options, cancellationToken);
         if (options is { IsFullImage: false })
             return TryDecodeWindowInto(data, destination, stride, format, options, cancellationToken);
         if (!format.IsBasic8)

@@ -65,6 +65,8 @@ internal static class FacadeSmoke
         var crop = new byte[5 * 5 * 3];
         session.GetFrame(0).CopyPixels(new PixelRect(1, 1, 5, 5), PixelFormat.Bgr24, crop, 0);
 
+        var oriented = Oriented(rgb, w, h);
+
         var encoded = new List<string>();
         foreach (var format in new[] { ImageFormat.Png, ImageFormat.Jpeg, ImageFormat.Tiff, ImageFormat.Webp, ImageFormat.Gif,
                      ImageFormat.Bmp, ImageFormat.Ico, ImageFormat.Qoi, ImageFormat.Pnm })
@@ -101,7 +103,48 @@ internal static class FacadeSmoke
         Console.WriteLine($"facade v2 closest={cw}x{ch}/{scale} scaled={scaled.Width}x{scaled.Height} region={region.Width}x{region.Height}" +
             $"	{Hash(Pixels(scaled))} {Hash(Pixels(region))} {Hash(wide)} {Hash(pre)} {Hash(Pixels(frame))} {Hash(crop)}");
         Console.WriteLine($"facade v2-encode	{string.Join(' ', encoded)}");
+        Console.WriteLine($"facade v2-orient	{oriented}");
         return 1;
+    }
+
+    /// <summary>
+    /// <see cref="DecodeOptions.ApplyOrientation"/> on a PNG and a JPEG whose Exif says Rotate90 (6), through TryDecode,
+    /// TryDecodeInto, Decode to a format and the session API: every result is the stored decode turned by
+    /// <see cref="PixelTransform"/>, at the swapped size.
+    /// </summary>
+    private static string Oriented(byte[] rgb, int w, int h)
+    {
+        // A little-endian TIFF header and an IFD0 of one entry: Orientation (0x0112), SHORT, count 1, value 6.
+        byte[] exif = [(byte)'I', (byte)'I', 42, 0, 8, 0, 0, 0, 1, 0, 0x12, 0x01, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0];
+        var hashes = new List<string>();
+        foreach (var format in new[] { ImageFormat.Png, ImageFormat.Jpeg })
+        {
+            var label = $"orient {format}";
+            var file = ImageCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, format, metadata: new ImageMetadata { Exif = exif });
+            Check(ImageCodecs.TryReadInfo(file, out var info) && info.Orientation == ImageOrientation.Rotate90, label, "TryReadInfo");
+            var options = new DecodeOptions { ApplyOrientation = true };
+            Check(options.GetOutputSize(info) == (h, w), label, "GetOutputSize");
+
+            Check(ImageCodecs.TryDecode(file, out var stored), label, "TryDecode stored");
+            using var expected = PixelTransform.Orient(stored, info.Orientation);
+            stored.Dispose();
+            Check(ImageCodecs.TryDecode(file, out var image, options), label, "TryDecode oriented");
+            using (image)
+                Check(image.Width == h && image.Height == w && image.Pixels.SequenceEqual(expected.Pixels), label, "TryDecode oriented pixels");
+
+            var rgbOut = new byte[w * h * 3];
+            Check(ImageCodecs.TryDecodeInto(file, rgbOut, 0, PixelFormat.Rgb24, options), label, "TryDecodeInto oriented");
+            Check(rgbOut.AsSpan().SequenceEqual(expected.Pixels), label, "TryDecodeInto oriented pixels");
+            using (var buffer = ImageCodecs.Decode(file, PixelFormat.Rgb24, options))
+                Check(buffer.Width == h && buffer.Pixels.SequenceEqual(expected.Pixels), label, "Decode Rgb24 oriented");
+            using (var session = ImageDecoder.Open(file))
+            using (var frame = session.GetFrame(0).Decode(options))
+                Check(frame.Pixels.SequenceEqual(expected.Pixels), label, "ImageFrame.Decode oriented");
+            using (var region = ImageCodecs.Decode(file, options with { Region = new PixelRect(2, 3, 5, 4) }))
+                Check(region.Width == 5 && region.Height == 4, label, "Decode oriented region");
+            hashes.Add($"{format}={Hash(expected.Pixels.ToArray())}");
+        }
+        return string.Join(' ', hashes);
     }
 
     private static void Exercise(string label, byte[] data)

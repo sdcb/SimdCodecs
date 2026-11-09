@@ -71,6 +71,13 @@ namespace Sdcb.SimdCodecs;
 /// float path is HDR and the 8-bit path is the graceful SDR fallback. Plain JPEGs
 /// are unaffected.
 /// </para>
+/// <para>
+/// Pixels come back as stored; <see cref="ImageInfo.Orientation"/> says how to turn them for display (the EXIF / TIFF
+/// Orientation of a JPEG, PNG, WebP or TIFF). Set <see cref="DecodeOptions.ApplyOrientation"/> to have every entry
+/// point here, and every frame of <see cref="ImageDecoder"/>, return them turned instead, with the Exif Orientation
+/// reset to 1; <see cref="TryReadInfo"/> still reports the stored size, and
+/// <see cref="DecodeOptions.GetOutputSize(in ImageInfo)"/> the size such a decode produces.
+/// </para>
 /// </summary>
 public static partial class ImageCodecs
 {
@@ -299,7 +306,7 @@ public static partial class ImageCodecs
     /// browser canvas or an ML tensor, <see cref="PixelFormat.Bgr24"/> for an OpenCV <c>Mat</c>,
     /// <see cref="PixelFormat.Gray8"/> for OCR — with the file's <see cref="PixelBuffer.Metadata"/> and
     /// <see cref="PixelBuffer.ColorEncoding"/>. It is <see cref="TryReadInfo"/>, a buffer of
-    /// <see cref="DecodeOptions.GetOutputSize"/> (rented from <see cref="DecodeOptions.Pool"/> when set), and
+    /// <see cref="DecodeOptions.GetOutputSize(in ImageInfo)"/> (rented from <see cref="DecodeOptions.Pool"/> when set), and
     /// <see cref="TryDecodeInto"/>, so the pixels are exactly that path's and a codec's native writer (JPEG's colour
     /// conversion, PNG's row expansion) fills the buffer without an intermediate image. Dispose the result when done with
     /// it.
@@ -330,8 +337,8 @@ public static partial class ImageCodecs
         var entry = Find(data) ?? throw new NotSupportedException(NoCodecMessage(data));
         if (!entry.TryReadInfo(data, out var info))
             throw DecodeFailure(entry, data, options, cancellationToken, $"The {FormatName(entry.Format)} header cannot be read.")!;
-        options?.Validate(info.Width, info.Height);
-        var (width, height) = (options ?? DecodeOptions.Default).GetOutputSize(info.Width, info.Height);
+        options?.Validate(info);
+        var (width, height) = (options ?? DecodeOptions.Default).GetOutputSize(info);
         var bytes = (long)width * height * format.BytesPerPixel;
         if (bytes > Array.MaxLength)
         {
@@ -343,6 +350,13 @@ public static partial class ImageCodecs
 
         // Metadata is a header walk (no pixels), cheap beside the decode; the codec does the same walk for TryDecode.
         var metadata = entry.TryReadMetadata(data, out var blocks) ? blocks : ImageMetadata.Empty;
+        if (options is { ApplyOrientation: true } && info.Orientation != ImageOrientation.Normal && !metadata.Exif.IsEmpty)
+        {
+            // The codec turns the pixels for display; the Exif block must not say to turn them again.
+            var exif = metadata.Exif.ToArray();
+            if (ExifOrientation.TryReset(exif))
+                metadata = metadata with { Exif = exif };
+        }
         var buffer = PixelBuffer.Create(width, height, format, options?.Pool, ProjectionEncoding(info), metadata);
         try
         {
@@ -511,7 +525,7 @@ public static partial class ImageCodecs
     /// UI surface (<see cref="PixelFormat.Bgra32"/>, or <see cref="PixelFormat.Bgra32Premultiplied"/> for WPF,
     /// Direct2D and most compositors), an OpenCV <c>Mat</c> (<see cref="PixelFormat.Bgr24"/>), an OCR input
     /// (<see cref="PixelFormat.Gray8"/>) or a 16-bit pipeline (<see cref="PixelFormat.Rgba64"/>).
-    /// Size the destination via <see cref="TryReadInfo"/> (and <see cref="DecodeOptions.GetOutputSize"/> with options)
+    /// Size the destination via <see cref="TryReadInfo"/> (and <see cref="DecodeOptions.GetOutputSize(in ImageInfo)"/> with options)
     /// and <see cref="PixelConverter.TryGetLayout"/>. See <see cref="IImageDecoder.TryDecodeInto"/> for what the
     /// pixels are. Returns false when no codec recognises the stream, the destination does not fit, or the payload is
     /// undecodable.

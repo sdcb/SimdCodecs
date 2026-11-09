@@ -31,6 +31,24 @@ public static class DecodeOptionsChecks
         }
 
         /// <summary>
+        /// Checks the options against the image <paramref name="info"/> describes: as <c>Validate(width, height)</c>,
+        /// except that with <see cref="DecodeOptions.ApplyOrientation"/> set the <see cref="DecodeOptions.Region"/> must
+        /// lie inside the displayed image (width and height exchanged for <see cref="ImageInfo.SwapsDimensions"/>).
+        /// </summary>
+        /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the image.</exception>
+        public void Validate(in ImageInfo info)
+        {
+            if (options.Region is { } r)
+            {
+                var (w, h) = options.GetScaledSize(info.Width, info.Height);
+                if (options.ApplyOrientation && info.SwapsDimensions)
+                    (w, h) = (h, w);
+                if (!r.FitsIn(w, h))
+                    throw new ArgumentException($"The region {r} does not lie inside the {w}x{h} image.", nameof(options.Region));
+            }
+        }
+
+        /// <summary>
         /// The scale to decode at natively, for a decoder that scales natively by every power of two up to
         /// <paramref name="maxNativeScaleDenominator"/> (1: it does not scale): the largest power of two that is at most
         /// both that and <see cref="DecodeOptions.ScaleDenominator"/>. Pass the decode at it to

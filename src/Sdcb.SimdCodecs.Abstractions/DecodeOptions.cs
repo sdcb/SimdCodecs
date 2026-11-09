@@ -64,12 +64,33 @@ public sealed record DecodeOptions
     }
 
     /// <summary>
-    /// Decode only these pixels, in stored coordinates (before <see cref="ImageInfo.Orientation"/> is applied) of the
-    /// image at the requested scale. Null decodes the whole image. It must lie inside that image, or the decode
-    /// throws <see cref="ArgumentException"/>: size it from <see cref="IImageDecoder.TryReadInfo"/> and
-    /// <see cref="GetOutputSize"/>.
+    /// Decode only these pixels of the image at the requested scale: in stored coordinates (before
+    /// <see cref="ImageInfo.Orientation"/> is applied), or in displayed coordinates when <see cref="ApplyOrientation"/>
+    /// is set. Null decodes the whole image. It must lie inside that image, or the decode throws
+    /// <see cref="ArgumentException"/>: size it from <see cref="IImageDecoder.TryReadInfo"/> and
+    /// <see cref="GetOutputSize(in ImageInfo)"/>.
     /// </summary>
     public PixelRect? Region { get; init; }
+
+    /// <summary>
+    /// Return the pixels as the picture is shown: the decode applies <see cref="ImageInfo.Orientation"/> (the EXIF /
+    /// TIFF Orientation tag) with <see cref="PixelTransform"/>, so orientations 5..8 exchange width and height
+    /// (<see cref="ImageInfo.SwapsDimensions"/>), and the image's <see cref="ImageMetadata.Exif"/> is a copy with its
+    /// Orientation set to 1 (the rest of the block byte for byte). False, the default, returns the stored pixels as
+    /// every decoder always has.
+    /// <para>
+    /// The decode scales first, in stored orientation, then turns the result: the partial boxes of the box filter
+    /// (<see cref="ScaleDenominator"/>) lie at the stored right and bottom edges, wherever those end up.
+    /// <see cref="Region"/> is in the displayed coordinates of the scaled image; the decoder maps it back to the stored
+    /// rectangle, decodes that, and turns it. <see cref="ImageInfo"/> from <see cref="IImageDecoder.TryReadInfo"/> stays
+    /// the stored size, since it describes the file: size a <c>TryDecodeInto</c> destination with
+    /// <see cref="GetOutputSize(in ImageInfo)"/>. An image whose orientation is <see cref="ImageOrientation.Normal"/>
+    /// (and every format without the tag) decodes exactly as without the option; HEIF already applies its
+    /// <c>irot</c> / <c>imir</c> and reports Normal, so the option changes nothing there. Every decoder that reports an
+    /// orientation honours it (JPEG, gain-map JPEG, PNG, WebP, TIFF), through its still and frame paths alike.
+    /// </para>
+    /// </summary>
+    public bool ApplyOrientation { get; init; }
 
     /// <summary>
     /// The pool to rent the decoded image's pixel buffer from (<see cref="RasterImage.Rent"/>); dispose the image to
@@ -79,7 +100,8 @@ public sealed record DecodeOptions
     /// </summary>
     public ArrayPool<byte>? Pool { get; init; }
 
-    /// <summary>True when the options ask for nothing but the whole image at full size.</summary>
+    /// <summary>True when the options ask for nothing but the whole image at full size (whatever
+    /// <see cref="ApplyOrientation"/> says, which a decoder honours apart).</summary>
     public bool IsFullImage => _scale == 1 && Region is null;
 
     /// <summary>The size of the image at <see cref="ScaleDenominator"/>: <c>⌈width / d⌉ × ⌈height / d⌉</c>.</summary>
@@ -87,7 +109,20 @@ public sealed record DecodeOptions
         ((int)(((long)width + _scale - 1) / _scale), (int)(((long)height + _scale - 1) / _scale));
 
     /// <summary>The size of what a decode with these options produces from a stored <paramref name="width"/> ×
-    /// <paramref name="height"/> image: the region's size, or the scaled size.</summary>
+    /// <paramref name="height"/> image: the region's size, or the scaled size. It ignores orientation; with
+    /// <see cref="ApplyOrientation"/> set, use <see cref="GetOutputSize(in ImageInfo)"/>.</summary>
     public (int Width, int Height) GetOutputSize(int width, int height) =>
         Region is { } r ? (r.Width, r.Height) : GetScaledSize(width, height);
+
+    /// <summary>The size of what a decode with these options produces from the image <paramref name="info"/> describes
+    /// (<see cref="IImageDecoder.TryReadInfo"/>): the region's size, or the scaled size, with width and height
+    /// exchanged when <see cref="ApplyOrientation"/> is set and the orientation turns the image a quarter
+    /// (<see cref="ImageInfo.SwapsDimensions"/>). What a <c>TryDecodeInto</c> destination holds.</summary>
+    public (int Width, int Height) GetOutputSize(in ImageInfo info)
+    {
+        if (Region is { } r)
+            return (r.Width, r.Height);
+        var (w, h) = GetScaledSize(info.Width, info.Height);
+        return ApplyOrientation && info.SwapsDimensions ? (h, w) : (w, h);
+    }
 }
