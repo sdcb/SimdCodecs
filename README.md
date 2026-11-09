@@ -7,7 +7,7 @@
 Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, GIF, BMP, ICO / CUR, QOI, Netpbm, JPEG 2000 and JBIG2, plus EXIF and ICC, and HEIF / HEIC decoding as an opt-in package.
 
 - **No native dependencies.** Runs wherever .NET does, including NativeAOT and browser-wasm, with identical output on every target.
-- **As fast as the native libraries.** SIMD (AVX2, SSE, AdvSimd) with a scalar fallback: JPEG decode is 0.82× libjpeg-turbo's time, PNG decode 0.18–0.46× libpng's, WebP decode 0.53–0.88× libwebp's (see [Performance](#performance)).
+- **As fast as the native libraries.** SIMD (AVX2, SSE, AdvSimd) with a scalar fallback: JPEG decode is 0.82× libjpeg-turbo's time, PNG decode 0.88× libpng's on photos, WebP decode 0.53–0.88× libwebp's (see [Performance](#performance)).
 - **Exact.** WebP decode is byte-identical to libwebp, HEIF's HEVC planes to ffmpeg, PNG and lossless JPEG 2000 are bit-exact; the JPEG decoder is about 1 dB more accurate than libjpeg-turbo's default where chroma is upsampled.
 - **Low memory.** Decode straight into your own buffer in any pixel layout; JPEG decode allocates 0 bytes of managed memory.
 
@@ -152,7 +152,7 @@ Single-threaded except where noted, AMD Ryzen 7 5800X, .NET 10. Time relative to
 | Operation | Compared with | Sdcb.SimdCodecs | ImageSharp 3.1.12 |
 |---|---|---:|---:|
 | [JPEG decode to RGBA, 446 files](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md) | libjpeg-turbo 3.2.0 | **0.82×**, 0 B allocated | 1.77× |
-| [PNG decode to RGBA, photo / screen](benchmarks/Sdcb.SimdCodecs.Png.Benchmarks/results/m4-trns-reduction-2026-10-28-amd-ryzen-7-5800x.md) | libpng 1.6.39 | **0.46× / 0.18×** | |
+| [PNG decode to RGBA, 1080p 8-bit RGB / RGBA photo](benchmarks/Sdcb.SimdCodecs.Png.Benchmarks/results/decode-2026-11-09-amd-ryzen-7-5800x.md) | libpng 1.6.39 | **0.88×** | 0.91× |
 | [WebP decode, 1080p lossy / lossy + alpha / lossless](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md) | libwebp 1.6.0 | **0.88× / 0.53× / 0.72×** | |
 | [HEIF decode to RGBA, 8 cores](benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md) | libheif 1.23.1 | **0.20–0.32×**, 75 MB peak (libheif 80 MB) | |
 | [BMP decode / encode, 1080p](benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/m1-tuned-2026-10-30-amd-ryzen-7-5800x.md) | WIC | **0.20× / 0.05–0.08×** | 1.62× / 0.06× |

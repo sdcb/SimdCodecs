@@ -7,7 +7,7 @@
 纯托管的 .NET 10 图像编解码库：JPEG、PNG、TIFF、WebP、GIF、BMP、ICO / CUR、QOI、Netpbm、JPEG 2000、JBIG2，外加 EXIF 和 ICC；HEIF / HEIC 解码是需要自行启用的独立包。
 
 - **没有原生依赖。** .NET 能跑的地方都能跑，包括 NativeAOT 和 browser-wasm，各平台输出完全一致。
-- **和原生库一样快。** SIMD（AVX2、SSE、AdvSimd）加速，带标量回退：JPEG 解码耗时是 libjpeg-turbo 的 0.82×，PNG 解码是 libpng 的 0.18–0.46×，WebP 解码是 libwebp 的 0.53–0.88×（见[性能](#性能)）。
+- **和原生库一样快。** SIMD（AVX2、SSE、AdvSimd）加速，带标量回退：JPEG 解码耗时是 libjpeg-turbo 的 0.82×，PNG 解码照片是 libpng 的 0.88×，WebP 解码是 libwebp 的 0.53–0.88×（见[性能](#性能)）。
 - **结果精确。** WebP 解码与 libwebp 逐字节一致，HEIF 的 HEVC 平面与 ffmpeg 一致，PNG 和无损 JPEG 2000 逐位一致；在需要色度上采样的图上，JPEG 解码比 libjpeg-turbo 默认设置的精度高约 1 dB。
 - **内存占用低。** 可以按任意像素布局直接解进你自己的缓冲区；JPEG 解码不分配托管内存。
 
@@ -151,7 +151,7 @@ Sdcb.SimdCodecs 只负责读写图像，不做缩放、绘制和滤镜。这些�
 | 操作 | 对比对象 | Sdcb.SimdCodecs | ImageSharp 3.1.12 |
 |---|---|---:|---:|
 | [JPEG 解码到 RGBA，446 个文件](benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/results/2026-10-24-amd-ryzen-7-5800x-full-m5.md) | libjpeg-turbo 3.2.0 | **0.82×**，分配 0 B | 1.77× |
-| [PNG 解码到 RGBA，照片 / 屏幕图](benchmarks/Sdcb.SimdCodecs.Png.Benchmarks/results/m4-trns-reduction-2026-10-28-amd-ryzen-7-5800x.md) | libpng 1.6.39 | **0.46× / 0.18×** | |
+| [PNG 解码到 RGBA，1080p 8 位 RGB / RGBA 照片](benchmarks/Sdcb.SimdCodecs.Png.Benchmarks/results/decode-2026-11-09-amd-ryzen-7-5800x.md) | libpng 1.6.39 | **0.88×** | 0.91× |
 | [WebP 解码，1080p 有损 / 有损 + alpha / 无损](benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/optimization/m4-final-2026-10-25-amd-ryzen-7-5800x.md) | libwebp 1.6.0 | **0.88× / 0.53× / 0.72×** | |
 | [HEIF 解码到 RGBA，8 核](benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/results/2026-11-04-amd-ryzen-7-5800x-m3.md) | libheif 1.23.1 | **0.20–0.32×**，峰值内存 75 MB（libheif 80 MB） | |
 | [BMP 解码 / 编码，1080p](benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/results/m1-tuned-2026-10-30-amd-ryzen-7-5800x.md) | WIC | **0.20× / 0.05–0.08×** | 1.62× / 0.06× |
