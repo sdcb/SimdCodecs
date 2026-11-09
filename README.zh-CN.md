@@ -77,30 +77,6 @@ ImageCodecs.Register(HeifImageDecoder.Registration);
 
 从 1.x 升级：见 [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md)。
 
-## 从 ImageSharp 迁移
-
-Sdcb.SimdCodecs 只负责读写图像，不做缩放、绘制和滤镜。这些操作可以把图解进 `SKBitmap` 或 OpenCV 的 `Mat` 再做（见 `skiasharp`、`opencvsharp` 样例），也可以继续用 ImageSharp 做处理，只把编解码换成本库。
-
-| ImageSharp | Sdcb.SimdCodecs |
-|---|---|
-| `Image.Load<Rgba32>(bytes)` | `ImageCodecs.Decode(bytes, PixelFormat.Rgba32)`，返回 `PixelBuffer`（`Pixels`、`Width`、`Height`、`Stride`） |
-| `image.CopyPixelDataTo(span)` | `ImageCodecs.TryDecodeInto(bytes, span, 0, PixelFormat.Rgba32)`：不经过中间图像 |
-| `image.ProcessPixelRows(…)` / `image[x, y]` | `buffer.Pixels` / `buffer.WritablePixels`，行与行相隔 `buffer.Stride` 字节 |
-| `Image.Identify(bytes)` | `ImageCodecs.TryReadInfo(bytes, out ImageInfo info)` |
-| `Image.DetectFormat(bytes)` | `ImageCodecs.DetectFormat(bytes)` |
-| `Image.LoadAsync(stream)` | `await ImageDecoder.OpenAsync(stream)`，再 `decoder.GetFrame(0).Decode()` |
-| `image.Mutate(x => x.AutoOrient())` | `new DecodeOptions { ApplyOrientation = true }`，或事后用 `PixelTransform.Orient` |
-| `image.Mutate(x => x.Crop(rect))` | `new DecodeOptions { Region = new PixelRect(x, y, width, height) }`：只转换区域内的像素 |
-| `new DecoderOptions { TargetSize = … }` | `new DecodeOptions { ScaleDenominator = 2 / 4 / 8 }`；按目标尺寸选分母用 `ImageCodecs.TryGetClosestSize` |
-| `image.SaveAsJpeg(stream, new JpegEncoder { Quality = 90 })` | `ImageCodecs.Encode(image, ImageFormat.Jpeg, stream, new JpegEncodeOptions { Quality = 90 })` |
-| `image.SaveAsPng(stream)` | `ImageCodecs.Encode(image, ImageFormat.Png, stream)`；要 pngquant 那样的调色板 PNG，传 `PngWriteOptions { Quantize = new() }` |
-| `new WebpEncoder { FileFormat = WebpFileFormatType.Lossless }` | `new WebpLosslessEncodeOptions()`（不传 options 时 WebP 为有损） |
-| `image.Metadata.ExifProfile` | `image.Metadata.Exif`（原始块）；用 `Sdcb.SimdCodecs.Exif` 包的 `ExifReader.FromBytes(…)` 解析 |
-| `image.Frames[i]`（GIF、WebP、APNG、TIFF 多页） | `ImageDecoder.Open(bytes).GetFrame(i)`，或 `ImageCodecs.TryOpenFrames` |
-| `Configuration.MemoryAllocator` | `new DecodeOptions { Pool = ArrayPool<byte>.Shared }` |
-
-表中 `Encode` 几行的 `image` 是 `ImageCodecs.Decode(bytes)` 返回的 `IDecodedImage`；`PixelBuffer` 用 `ImageCodecs.Encode(buffer.Pixels, buffer.Width, buffer.Height, buffer.Format, format, stream, stride: buffer.Stride)` 编码。两者都是 `IDisposable`，和 ImageSharp 的 `Image` 一样。有两点行为不同：不设 `ApplyOrientation` 时像素按存储方向输出；16 位或 HDR 图像转 8 位 `PixelFormat` 只是普通转换，不做色调映射（浮点或 PQ / HLG 图像直接拒绝 8 位布局，不去猜）。
-
 ## 支持的格式
 
 | 格式 | 包 | 解码 | 编码 | 特性 |
@@ -160,6 +136,30 @@ Sdcb.SimdCodecs 只负责读写图像，不做缩放、绘制和滤镜。这些�
 | [JPEG 2000 解码，1600×1200 无损 / 有损](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md) | libopenjp2 2.5.4 | 1.96× / 2.03× | |
 
 每一行都链到完整结果、语料和测量方法。JPEG 2000 是唯一一个单核仍慢于原生参考库的 codec；全核时是开了多线程的 libopenjp2 的 1.15–1.75×（[记录](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-11-05-amd-ryzen-7-5800x-parallel.md)）。怎样测量、每次改动遵守的规则见 [benchmarks/README.md](benchmarks/README.md)。
+
+## 从 ImageSharp 迁移
+
+Sdcb.SimdCodecs 只负责读写图像，不做缩放、绘制和滤镜。这些操作可以把图解进 `SKBitmap` 或 OpenCV 的 `Mat` 再做（见 `skiasharp`、`opencvsharp` 样例），也可以继续用 ImageSharp 做处理，只把编解码换成本库。
+
+| ImageSharp | Sdcb.SimdCodecs |
+|---|---|
+| `Image.Load<Rgba32>(bytes)` | `ImageCodecs.Decode(bytes, PixelFormat.Rgba32)`，返回 `PixelBuffer`（`Pixels`、`Width`、`Height`、`Stride`） |
+| `image.CopyPixelDataTo(span)` | `ImageCodecs.TryDecodeInto(bytes, span, 0, PixelFormat.Rgba32)`：不经过中间图像 |
+| `image.ProcessPixelRows(…)` / `image[x, y]` | `buffer.Pixels` / `buffer.WritablePixels`，行与行相隔 `buffer.Stride` 字节 |
+| `Image.Identify(bytes)` | `ImageCodecs.TryReadInfo(bytes, out ImageInfo info)` |
+| `Image.DetectFormat(bytes)` | `ImageCodecs.DetectFormat(bytes)` |
+| `Image.LoadAsync(stream)` | `await ImageDecoder.OpenAsync(stream)`，再 `decoder.GetFrame(0).Decode()` |
+| `image.Mutate(x => x.AutoOrient())` | `new DecodeOptions { ApplyOrientation = true }`，或事后用 `PixelTransform.Orient` |
+| `image.Mutate(x => x.Crop(rect))` | `new DecodeOptions { Region = new PixelRect(x, y, width, height) }`：只转换区域内的像素 |
+| `new DecoderOptions { TargetSize = … }` | `new DecodeOptions { ScaleDenominator = 2 / 4 / 8 }`；按目标尺寸选分母用 `ImageCodecs.TryGetClosestSize` |
+| `image.SaveAsJpeg(stream, new JpegEncoder { Quality = 90 })` | `ImageCodecs.Encode(image, ImageFormat.Jpeg, stream, new JpegEncodeOptions { Quality = 90 })` |
+| `image.SaveAsPng(stream)` | `ImageCodecs.Encode(image, ImageFormat.Png, stream)`；要 pngquant 那样的调色板 PNG，传 `PngWriteOptions { Quantize = new() }` |
+| `new WebpEncoder { FileFormat = WebpFileFormatType.Lossless }` | `new WebpLosslessEncodeOptions()`（不传 options 时 WebP 为有损） |
+| `image.Metadata.ExifProfile` | `image.Metadata.Exif`（原始块）；用 `Sdcb.SimdCodecs.Exif` 包的 `ExifReader.FromBytes(…)` 解析 |
+| `image.Frames[i]`（GIF、WebP、APNG、TIFF 多页） | `ImageDecoder.Open(bytes).GetFrame(i)`，或 `ImageCodecs.TryOpenFrames` |
+| `Configuration.MemoryAllocator` | `new DecodeOptions { Pool = ArrayPool<byte>.Shared }` |
+
+表中 `Encode` 几行的 `image` 是 `ImageCodecs.Decode(bytes)` 返回的 `IDecodedImage`；`PixelBuffer` 用 `ImageCodecs.Encode(buffer.Pixels, buffer.Width, buffer.Height, buffer.Format, format, stream, stride: buffer.Stride)` 编码。两者都是 `IDisposable`，和 ImageSharp 的 `Image` 一样。有两点行为不同：不设 `ApplyOrientation` 时像素按存储方向输出；16 位或 HDR 图像转 8 位 `PixelFormat` 只是普通转换，不做色调映射（浮点或 PQ / HLG 图像直接拒绝 8 位布局，不去猜）。
 
 ## LINQPad 样例
 
@@ -228,7 +228,7 @@ MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BM
 
 ## 交流
 
-![微信群二维码](https://io.starworks.cc:88/cv-public/2026/ocr-wxg-qr.png?1027)
+![微信群二维码](https://io.starworks.cc:88/cv-public/2026/ocr-wxg-qr.png?1109)
 
 如果微信群满了或二维码过期了，请加入 QQ 群 [C#/.NET计算机视觉技术交流 579060605](https://qm.qq.com/q/bPw5jAK4qk)。
 

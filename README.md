@@ -78,30 +78,6 @@ The facade covers what every format has in common. Each format package has a ric
 
 Upgrading from 1.x: [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md).
 
-## Migrating from ImageSharp
-
-Sdcb.SimdCodecs reads and writes images; it does not resize, draw or filter them. Decode into an `SKBitmap` or an OpenCV `Mat` for that (the `skiasharp` and `opencvsharp` samples), or keep ImageSharp for processing and use this library for the codecs.
-
-| ImageSharp | Sdcb.SimdCodecs |
-|---|---|
-| `Image.Load<Rgba32>(bytes)` | `ImageCodecs.Decode(bytes, PixelFormat.Rgba32)` returns a `PixelBuffer` (`Pixels`, `Width`, `Height`, `Stride`) |
-| `image.CopyPixelDataTo(span)` | `ImageCodecs.TryDecodeInto(bytes, span, 0, PixelFormat.Rgba32)`: no intermediate image |
-| `image.ProcessPixelRows(…)` / `image[x, y]` | `buffer.Pixels` / `buffer.WritablePixels`, rows `buffer.Stride` bytes apart |
-| `Image.Identify(bytes)` | `ImageCodecs.TryReadInfo(bytes, out ImageInfo info)` |
-| `Image.DetectFormat(bytes)` | `ImageCodecs.DetectFormat(bytes)` |
-| `Image.LoadAsync(stream)` | `await ImageDecoder.OpenAsync(stream)`, then `decoder.GetFrame(0).Decode()` |
-| `image.Mutate(x => x.AutoOrient())` | `new DecodeOptions { ApplyOrientation = true }`, or `PixelTransform.Orient` afterwards |
-| `image.Mutate(x => x.Crop(rect))` | `new DecodeOptions { Region = new PixelRect(x, y, width, height) }`: only the region is converted |
-| `new DecoderOptions { TargetSize = … }` | `new DecodeOptions { ScaleDenominator = 2 / 4 / 8 }`; `ImageCodecs.TryGetClosestSize` picks one for a target size |
-| `image.SaveAsJpeg(stream, new JpegEncoder { Quality = 90 })` | `ImageCodecs.Encode(image, ImageFormat.Jpeg, stream, new JpegEncodeOptions { Quality = 90 })` |
-| `image.SaveAsPng(stream)` | `ImageCodecs.Encode(image, ImageFormat.Png, stream)`; `PngWriteOptions { Quantize = new() }` for a pngquant-style palette PNG |
-| `new WebpEncoder { FileFormat = WebpFileFormatType.Lossless }` | `new WebpLosslessEncodeOptions()` (with no options WebP is lossy) |
-| `image.Metadata.ExifProfile` | `image.Metadata.Exif` (the raw block); `ExifReader.FromBytes(…)` from `Sdcb.SimdCodecs.Exif` parses it |
-| `image.Frames[i]` (GIF, WebP, APNG, TIFF pages) | `ImageDecoder.Open(bytes).GetFrame(i)`, or `ImageCodecs.TryOpenFrames` |
-| `Configuration.MemoryAllocator` | `new DecodeOptions { Pool = ArrayPool<byte>.Shared }` |
-
-In the `Encode` rows `image` is an `IDecodedImage` from `ImageCodecs.Decode(bytes)`; a `PixelBuffer` is encoded with `ImageCodecs.Encode(buffer.Pixels, buffer.Width, buffer.Height, buffer.Format, format, stream, stride: buffer.Stride)`. Both are `IDisposable`, like an ImageSharp `Image`. Two things work differently: pixels come out as stored unless `ApplyOrientation` is set, and an 8-bit `PixelFormat` from a 16-bit or HDR source is a plain conversion, not tone mapping (a float or PQ / HLG image refuses the 8-bit layouts rather than guessing).
-
 ## Formats
 
 | Format | Package | Decode | Encode | Highlights |
@@ -161,6 +137,30 @@ Single-threaded except where noted, AMD Ryzen 7 5800X, .NET 10. Time relative to
 | [JPEG 2000 decode, 1600×1200 lossless / lossy](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-10-30-amd-ryzen-7-5800x-baseline.md) | libopenjp2 2.5.4 | 1.96× / 2.03× | |
 
 Each row links to its full results, corpus and method. JPEG 2000 is the one codec still slower than its native reference on one core; on all cores it is 1.15–1.75× libopenjp2 with its own threads on ([record](benchmarks/Sdcb.SimdCodecs.Jpeg2000.Benchmarks/results/2026-11-05-amd-ryzen-7-5800x-parallel.md)). How to measure, and the rules every change follows: [benchmarks/README.md](benchmarks/README.md).
+
+## Migrating from ImageSharp
+
+Sdcb.SimdCodecs reads and writes images; it does not resize, draw or filter them. Decode into an `SKBitmap` or an OpenCV `Mat` for that (the `skiasharp` and `opencvsharp` samples), or keep ImageSharp for processing and use this library for the codecs.
+
+| ImageSharp | Sdcb.SimdCodecs |
+|---|---|
+| `Image.Load<Rgba32>(bytes)` | `ImageCodecs.Decode(bytes, PixelFormat.Rgba32)` returns a `PixelBuffer` (`Pixels`, `Width`, `Height`, `Stride`) |
+| `image.CopyPixelDataTo(span)` | `ImageCodecs.TryDecodeInto(bytes, span, 0, PixelFormat.Rgba32)`: no intermediate image |
+| `image.ProcessPixelRows(…)` / `image[x, y]` | `buffer.Pixels` / `buffer.WritablePixels`, rows `buffer.Stride` bytes apart |
+| `Image.Identify(bytes)` | `ImageCodecs.TryReadInfo(bytes, out ImageInfo info)` |
+| `Image.DetectFormat(bytes)` | `ImageCodecs.DetectFormat(bytes)` |
+| `Image.LoadAsync(stream)` | `await ImageDecoder.OpenAsync(stream)`, then `decoder.GetFrame(0).Decode()` |
+| `image.Mutate(x => x.AutoOrient())` | `new DecodeOptions { ApplyOrientation = true }`, or `PixelTransform.Orient` afterwards |
+| `image.Mutate(x => x.Crop(rect))` | `new DecodeOptions { Region = new PixelRect(x, y, width, height) }`: only the region is converted |
+| `new DecoderOptions { TargetSize = … }` | `new DecodeOptions { ScaleDenominator = 2 / 4 / 8 }`; `ImageCodecs.TryGetClosestSize` picks one for a target size |
+| `image.SaveAsJpeg(stream, new JpegEncoder { Quality = 90 })` | `ImageCodecs.Encode(image, ImageFormat.Jpeg, stream, new JpegEncodeOptions { Quality = 90 })` |
+| `image.SaveAsPng(stream)` | `ImageCodecs.Encode(image, ImageFormat.Png, stream)`; `PngWriteOptions { Quantize = new() }` for a pngquant-style palette PNG |
+| `new WebpEncoder { FileFormat = WebpFileFormatType.Lossless }` | `new WebpLosslessEncodeOptions()` (with no options WebP is lossy) |
+| `image.Metadata.ExifProfile` | `image.Metadata.Exif` (the raw block); `ExifReader.FromBytes(…)` from `Sdcb.SimdCodecs.Exif` parses it |
+| `image.Frames[i]` (GIF, WebP, APNG, TIFF pages) | `ImageDecoder.Open(bytes).GetFrame(i)`, or `ImageCodecs.TryOpenFrames` |
+| `Configuration.MemoryAllocator` | `new DecodeOptions { Pool = ArrayPool<byte>.Shared }` |
+
+In the `Encode` rows `image` is an `IDecodedImage` from `ImageCodecs.Decode(bytes)`; a `PixelBuffer` is encoded with `ImageCodecs.Encode(buffer.Pixels, buffer.Width, buffer.Height, buffer.Format, format, stream, stride: buffer.Stride)`. Both are `IDisposable`, like an ImageSharp `Image`. Two things work differently: pixels come out as stored unless `ApplyOrientation` is set, and an 8-bit `PixelFormat` from a 16-bit or HDR source is a plain conversion, not tone mapping (a float or PQ / HLG image refuses the 8-bit layouts rather than guessing).
 
 ## LINQPad samples
 
@@ -229,7 +229,7 @@ The MQ arithmetic decoder (JBIG2, JPEG 2000), the T.4 fax code tables (JBIG2, TI
 
 ## Contact
 
-![WeChat group QR code](https://io.starworks.cc:88/cv-public/2026/ocr-wxg-qr.png?1027)
+![WeChat group QR code](https://io.starworks.cc:88/cv-public/2026/ocr-wxg-qr.png?1109)
 
 If the WeChat group is full or the QR code has expired, join the QQ group [C#/.NET Computer Vision 579060605](https://qm.qq.com/q/bPw5jAK4qk).
 
