@@ -1475,8 +1475,9 @@ internal static class Vp8LDecoder
             return Sse2.SumAbsoluteDifferences(a, b).AsInt32();
         }
 
+        // The sum of four byte distances reaches 1020: add across into 16 bits (AddAcross on bytes wraps at 256).
         Vector128<byte> difference = AdvSimd.AbsoluteDifference(a, b);
-        return Vector128.CreateScalarUnsafe((int)AdvSimd.Arm64.AddAcross(difference.GetLower()).ToScalar());
+        return Vector128.CreateScalar((int)AdvSimd.Arm64.AddAcrossWidening(difference.GetLower()).ToScalar());
     }
 
     private static void AddAbove(Span<int> pixels, int index, int count, int offset)
