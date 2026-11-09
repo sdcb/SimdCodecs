@@ -32,7 +32,7 @@ internal static class FacadeSmoke
             count++;
         }
 
-        Check(!SimdCodecs.CanDecode("not an image"u8), "garbage", "CanDecode");
+        Check(!ImageCodecs.CanDecode("not an image"u8), "garbage", "CanDecode");
         return count + Heif() + V2();
     }
 
@@ -44,21 +44,21 @@ internal static class FacadeSmoke
     {
         const int w = 37, h = 23;
         var rgb = Program.Pattern(w, h);
-        var png = SimdCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, ImageFormat.Png,
+        var png = ImageCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, ImageFormat.Png,
             metadata: new ImageMetadata { Icc = new byte[] { 1, 2, 3 } });
-        var jpeg = SimdCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, ImageFormat.Jpeg);
+        var jpeg = ImageCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, ImageFormat.Jpeg);
 
-        Check(SimdCodecs.TryGetClosestSize(jpeg, 10, 6, out var cw, out var ch, out var scale), "v2", "TryGetClosestSize");
-        Check(SimdCodecs.TryReadMetadata(png, out var metadata) && metadata.Icc.Length == 3, "v2", "TryReadMetadata");
-        Check(!SimdCodecs.TryDecodeThumbnail(png, out _), "v2", "TryDecodeThumbnail");
-        Check(!SimdCodecs.TryReadPlanarInfo(png, out _), "v2", "TryReadPlanarInfo");
+        Check(ImageCodecs.TryGetClosestSize(jpeg, 10, 6, out var cw, out var ch, out var scale), "v2", "TryGetClosestSize");
+        Check(ImageCodecs.TryReadMetadata(png, out var metadata) && metadata.Icc.Length == 3, "v2", "TryReadMetadata");
+        Check(!ImageCodecs.TryDecodeThumbnail(png, out _), "v2", "TryDecodeThumbnail");
+        Check(!ImageCodecs.TryReadPlanarInfo(png, out _), "v2", "TryReadPlanarInfo");
 
-        Check(SimdCodecs.TryDecode(jpeg, out var scaled, new DecodeOptions { ScaleDenominator = scale }), "v2", "TryDecode scaled");
-        Check(SimdCodecs.TryDecode(png, out var region, new DecodeOptions { Region = new PixelRect(3, 4, 10, 7) }), "v2", "TryDecode region");
+        Check(ImageCodecs.TryDecode(jpeg, out var scaled, new DecodeOptions { ScaleDenominator = scale }), "v2", "TryDecode scaled");
+        Check(ImageCodecs.TryDecode(png, out var region, new DecodeOptions { Region = new PixelRect(3, 4, 10, 7) }), "v2", "TryDecode region");
         var wide = new byte[w * h * 8];
-        Check(SimdCodecs.TryDecodeInto(png, wide, 0, PixelFormat.Rgba64), "v2", "TryDecodeInto Rgba64");
+        Check(ImageCodecs.TryDecodeInto(png, wide, 0, PixelFormat.Rgba64), "v2", "TryDecodeInto Rgba64");
         var pre = new byte[w * h * 4];
-        Check(SimdCodecs.TryDecodeInto(png, pre, 0, PixelFormat.Bgra32Premultiplied), "v2", "TryDecodeInto Bgra32Premultiplied");
+        Check(ImageCodecs.TryDecodeInto(png, pre, 0, PixelFormat.Bgra32Premultiplied), "v2", "TryDecodeInto Bgra32Premultiplied");
 
         using var session = ImageDecoder.Open(new MemoryStream(png));
         using var frame = session.GetFrame(0).Decode();
@@ -69,15 +69,15 @@ internal static class FacadeSmoke
         foreach (var format in new[] { ImageFormat.Png, ImageFormat.Jpeg, ImageFormat.Tiff, ImageFormat.Webp, ImageFormat.Gif,
                      ImageFormat.Bmp, ImageFormat.Ico, ImageFormat.Qoi, ImageFormat.Pnm })
         {
-            Check(SimdCodecs.IsEncodable(format), "v2", $"IsEncodable {format}");
-            var file = SimdCodecs.Encode(rgb, w, h, PixelFormat.Bgr24, format);
-            Check(SimdCodecs.DetectFormat(file) == format, "v2", $"Encode {format}");
-            encoded.Add($"{format}={Hash(file)}/{SimdCodecs.GetClosestInputFormat(format, PixelFormat.Rgba64)}");
+            Check(ImageCodecs.IsEncodable(format), "v2", $"IsEncodable {format}");
+            var file = ImageCodecs.Encode(rgb, w, h, PixelFormat.Bgr24, format);
+            Check(ImageCodecs.DetectFormat(file) == format, "v2", $"Encode {format}");
+            encoded.Add($"{format}={Hash(file)}/{ImageCodecs.GetClosestInputFormat(format, PixelFormat.Rgba64)}");
         }
 
         // Several frames to the PNG encoder through the session: an APNG, opened again through the facade.
         var apng = new System.Buffers.ArrayBufferWriter<byte>();
-        using (var animation = SimdCodecs.CreateEncoder(ImageFormat.Png, apng, new PngWriteOptions { LoopCount = 3 }))
+        using (var animation = ImageCodecs.CreateEncoder(ImageFormat.Png, apng, new PngWriteOptions { LoopCount = 3 }))
         {
             for (var f = 0; f < 3; f++)
             {
@@ -87,7 +87,7 @@ internal static class FacadeSmoke
             }
             animation.Commit();
         }
-        Check(SimdCodecs.TryOpenFrames(apng.WrittenMemory, out var apngFrames), "v2", "TryOpenFrames (APNG session)");
+        Check(ImageCodecs.TryOpenFrames(apng.WrittenMemory, out var apngFrames), "v2", "TryOpenFrames (APNG session)");
         using (apngFrames)
             Check(apngFrames.FrameCount == 3 && apngFrames.LoopCount == 3, "v2", "APNG frames");
         encoded.Add($"apng-session={Hash(apng.WrittenSpan.ToArray())}");
@@ -99,32 +99,32 @@ internal static class FacadeSmoke
 
     private static void Exercise(string label, byte[] data)
     {
-        Check(SimdCodecs.CanDecode(data), label, "CanDecode");
-        Check(SimdCodecs.TryReadInfo(data, out var info), label, "TryReadInfo");
-        Check(SimdCodecs.TryDecode(data, out var image), label, "TryDecode");
+        Check(ImageCodecs.CanDecode(data), label, "CanDecode");
+        Check(ImageCodecs.TryReadInfo(data, out var info), label, "TryReadInfo");
+        Check(ImageCodecs.TryDecode(data, out var image), label, "TryDecode");
         var rgba = new byte[info.Width * info.Height * 4];
         // Float samples (PFM) have no 8-bit layout without a tone policy: TryDecodeInto says no.
-        Check(SimdCodecs.TryDecodeIntoRgba8(data, rgba) == (info.SampleFormat != SampleFormat.Float32), label, "TryDecodeIntoRgba8");
+        Check(ImageCodecs.TryDecodeIntoRgba8(data, rgba) == (info.SampleFormat != SampleFormat.Float32), label, "TryDecodeIntoRgba8");
         // A scale past every codec's native ones: the box filter (BoxDownscaler's vector kernels), whole and a region.
         var sixteenth = new DecodeOptions { ScaleDenominator = 16 };
-        Check(SimdCodecs.TryDecode(data, out var small, sixteenth), label, "TryDecode 1/16");
-        Check(SimdCodecs.TryDecode(data, out var smallRegion, sixteenth with { Region = new PixelRect(small.Width / 2, 0, small.Width - small.Width / 2, small.Height) }),
+        Check(ImageCodecs.TryDecode(data, out var small, sixteenth), label, "TryDecode 1/16");
+        Check(ImageCodecs.TryDecode(data, out var smallRegion, sixteenth with { Region = new PixelRect(small.Width / 2, 0, small.Width - small.Width / 2, small.Height) }),
             label, "TryDecode 1/16 region");
-        Check(SimdCodecs.TryOpenFrames(data, out var reader), label, "TryOpenFrames");
+        Check(ImageCodecs.TryOpenFrames(data, out var reader), label, "TryOpenFrames");
         using (reader)
         {
             var last = reader.FrameCount - 1;
             Check(reader.TryDecodeFrame(last, out var frame), label, "TryDecodeFrame");
             Check(reader.TryDecodeFrame(last, out var smallFrame, new DecodeOptions { ScaleDenominator = 2 }), label, "TryDecodeFrame 1/2");
             Console.WriteLine(
-                $"facade {label} {SimdCodecs.DetectFormat(data)}/{info.Format} {info.Width}x{info.Height}x{info.Channels} {info.SampleFormat} frames={reader.FrameCount}" +
+                $"facade {label} {ImageCodecs.DetectFormat(data)}/{info.Format} {info.Width}x{info.Height}x{info.Channels} {info.SampleFormat} frames={reader.FrameCount}" +
                 $"\t{Hash(Pixels(image))} {Hash(rgba)} {Hash(Pixels(frame))} {Hash(Pixels(small))} {Hash(Pixels(smallRegion))} {Hash(Pixels(smallFrame))}");
         }
     }
 
     /// <summary>
     /// HEIF is not built in (HEVC patents): the facade recognises it, decodes none of it until
-    /// <c>SimdCodecs.Register(HeifImageDecoder.Registration)</c>, then serves every entry point. The
+    /// <c>ImageCodecs.Register(HeifImageDecoder.Registration)</c>, then serves every entry point. The
     /// registration's delegates are bound by method group in the HEIF package, which is what Mono AOT
     /// must compile correctly. The fixtures are downloaded by Oracle/heif/fetch.sh (run.sh calls it).
     /// </summary>
@@ -133,40 +133,40 @@ internal static class FacadeSmoke
         var heic = Fixture("synth-screen-testsrc2-1280x720-main8.heic");
         var pq = Fixture("synth-screen-testsrc2-640x360-pq-vui.heic");
 
-        Check(SimdCodecs.DetectFormat(heic) == ImageFormat.Heif, "heif", "DetectFormat (unregistered)");
-        Check(!SimdCodecs.IsDecodable(ImageFormat.Heif), "heif", "IsDecodable (unregistered)");
-        Check(!SimdCodecs.CanDecode(heic), "heif", "CanDecode (unregistered)");
-        Check(!SimdCodecs.TryReadInfo(heic, out _), "heif", "TryReadInfo (unregistered)");
-        Check(!SimdCodecs.TryDecode(heic, out _), "heif", "TryDecode (unregistered)");
-        Check(!SimdCodecs.TryOpenFrames(heic, out _), "heif", "TryOpenFrames (unregistered)");
+        Check(ImageCodecs.DetectFormat(heic) == ImageFormat.Heif, "heif", "DetectFormat (unregistered)");
+        Check(!ImageCodecs.IsDecodable(ImageFormat.Heif), "heif", "IsDecodable (unregistered)");
+        Check(!ImageCodecs.CanDecode(heic), "heif", "CanDecode (unregistered)");
+        Check(!ImageCodecs.TryReadInfo(heic, out _), "heif", "TryReadInfo (unregistered)");
+        Check(!ImageCodecs.TryDecode(heic, out _), "heif", "TryDecode (unregistered)");
+        Check(!ImageCodecs.TryOpenFrames(heic, out _), "heif", "TryOpenFrames (unregistered)");
 
-        SimdCodecs.Register(HeifImageDecoder.Registration);
-        SimdCodecs.Register(HeifImageDecoder.Registration); // idempotent
-        Check(SimdCodecs.IsDecodable(ImageFormat.Heif), "heif", "IsDecodable");
+        ImageCodecs.Register(HeifImageDecoder.Registration);
+        ImageCodecs.Register(HeifImageDecoder.Registration); // idempotent
+        Check(ImageCodecs.IsDecodable(ImageFormat.Heif), "heif", "IsDecodable");
         Exercise("heif", heic);
 
-        Check(SimdCodecs.TryReadInfo(heic, out var info), "heif", "TryReadInfo");
+        Check(ImageCodecs.TryReadInfo(heic, out var info), "heif", "TryReadInfo");
         var formats = new List<string>();
         foreach (var format in new[] { PixelFormat.Rgba32, PixelFormat.Bgra32, PixelFormat.Rgb24, PixelFormat.Bgr24, PixelFormat.Gray8 })
         {
             var bpp = format.BytesPerPixel;
             var stride = info.Width * bpp + 3; // padded rows: the stride path
             var pixels = new byte[stride * info.Height];
-            Check(SimdCodecs.TryDecodeInto(heic, pixels, stride, format), "heif", $"TryDecodeInto {format}");
+            Check(ImageCodecs.TryDecodeInto(heic, pixels, stride, format), "heif", $"TryDecodeInto {format}");
             formats.Add($"{format}={Hash(pixels)}");
         }
         // Scaled into a padded destination: each tile boxes its pixels and converts the boxes straight into it.
         var quarter = new DecodeOptions { ScaleDenominator = 4 };
         var (qw, qh) = quarter.GetScaledSize(info.Width, info.Height);
         var boxed = new byte[(qw * 4 + 3) * qh];
-        Check(SimdCodecs.TryDecodeInto(heic, boxed, qw * 4 + 3, PixelFormat.Bgra32, quarter), "heif", "TryDecodeInto Bgra32 1/4");
+        Check(ImageCodecs.TryDecodeInto(heic, boxed, qw * 4 + 3, PixelFormat.Bgra32, quarter), "heif", "TryDecodeInto Bgra32 1/4");
         formats.Add($"Bgra32/4={Hash(boxed)}");
 
         Console.WriteLine($"facade heif-layouts\t{string.Join(' ', formats)}");
 
-        Check(SimdCodecs.TryDecode(pq, out var hdr), "heif-pq", "TryDecode");
+        Check(ImageCodecs.TryDecode(pq, out var hdr), "heif-pq", "TryDecode");
         Check(hdr.ColorEncoding.Transfer == TransferFunction.Pq, "heif-pq", "ColorEncoding");
-        Check(!SimdCodecs.TryDecodeIntoRgba8(pq, new byte[640 * 360 * 4]), "heif-pq", "TryDecodeIntoRgba8 refuses PQ");
+        Check(!ImageCodecs.TryDecodeIntoRgba8(pq, new byte[640 * 360 * 4]), "heif-pq", "TryDecodeIntoRgba8 refuses PQ");
         Console.WriteLine($"facade heif-pq {hdr.Width}x{hdr.Height} {hdr.ColorEncoding.Primaries}/{hdr.ColorEncoding.Transfer}\t{Hash(hdr.ToRgba8())}");
         return 2;
     }

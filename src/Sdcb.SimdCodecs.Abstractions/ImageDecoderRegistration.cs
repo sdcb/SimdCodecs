@@ -8,7 +8,7 @@ namespace Sdcb.SimdCodecs.Abstractions;
 /// A codec's entry in the <c>Sdcb.SimdCodecs</c> facade's registry: its <see cref="IImageDecoder"/> members as
 /// delegates, plus the <see cref="ImageFormat"/> it decodes. A codec package that the facade does not reference
 /// (e.g. <c>Sdcb.SimdCodecs.Heif</c>, kept out for patent reasons) exposes one as a static property, built from
-/// its own members, and a consumer enables the codec once, at start-up, with <c>SimdCodecs.Register</c>.
+/// its own members, and a consumer enables the codec once, at start-up, with <c>ImageCodecs.Register</c>.
 /// <para>
 /// Build it with an object initializer over the concrete type's method groups — <c>new() { Format = ImageFormat.Heif, CanDecode = HeifImageDecoder.CanDecode, … }</c> —
 /// never inside a generic method over <c>T : IImageDecoder</c>: Mono AOT (browser-wasm, iOS, Android) compiles a
@@ -53,7 +53,7 @@ public sealed class ImageDecoderRegistration
         CancellationToken cancellationToken);
 
 
-    /// <summary>The format the codec decodes (what <c>SimdCodecs.DetectFormat</c> reports for it).</summary>
+    /// <summary>The format the codec decodes (what <c>ImageCodecs.DetectFormat</c> reports for it).</summary>
     /// <exception cref="ArgumentOutOfRangeException">Set to <see cref="ImageFormat.Unknown"/> or an undefined value.</exception>
     public required ImageFormat Format
     {

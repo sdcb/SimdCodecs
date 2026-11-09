@@ -119,7 +119,7 @@ public sealed class PixelStretchTests
     public void Srgb_encoding_brightens_a_reconstructed_gain_map_hdr()
     {
         // The reconstructed HDR is linear light: stretched as is, its mid-tones sit far below the SDR base's.
-        SimdCodecs.TryDecode(GainMapFacadeTests.BuildUltraHdr(out _), out var hdr, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(GainMapFacadeTests.BuildUltraHdr(out _), out var hdr, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         hdr.ColorEncoding.Transfer.ShouldBe(TransferFunction.Linear);
 
         var plain = PixelConverter.StretchToRgba8(hdr);

@@ -45,7 +45,7 @@ HEIF 解码也已调优（M3），基准项目是 `Sdcb.SimdCodecs.Heif.Benchmar
 
 ### 门面与公共接口
 
-- **HEIF 要显式注册。** HEVC 有专利负担，`Sdcb.SimdCodecs.Heif` 不在元包里，门面也不引用它；安装后调用一次 `SimdCodecs.Register(HeifImageDecoder.Registration)`，门面的全部入口才会处理 HEIF。注册前 `DetectFormat` 仍报 `ImageFormat.Heif`，但 `IsDecodable` 为 `false`、`Try*` 返回 `false`。注册是进程级的：幂等、线程安全、 不能撤销；注册的编解码器排在内置的之后嗅探。没有反注册、优先级、按名字查找，这是有意保持最小。
+- **HEIF 要显式注册。** HEVC 有专利负担，`Sdcb.SimdCodecs.Heif` 不在元包里，门面也不引用它；安装后调用一次 `ImageCodecs.Register(HeifImageDecoder.Registration)`，门面的全部入口才会处理 HEIF。注册前 `DetectFormat` 仍报 `ImageFormat.Heif`，但 `IsDecodable` 为 `false`、`Try*` 返回 `false`。注册是进程级的：幂等、线程安全、 不能撤销；注册的编解码器排在内置的之后嗅探。没有反注册、优先级、按名字查找，这是有意保持最小。
 - **编码器抽象（2.0 起）的流式程度不一。** `IImageEncoder` 的会话可以逐行推送像素，但目前每个编码器都在会话里 缓冲整幅图，`Commit` 时一次编码（`BufferedEncoderSession`）：契约不变，只是没有内存收益。PNG、BMP、QOI、PNM 天然逐行，以后可以改成真正流式。
 - **所有 codec 都接受任意 2 的幂作为 `DecodeOptions.ScaleDenominator`，但只有部分是原生的。** JPEG 原生支持 2、4、8（DCT 域缩放）；JPEG 2000 原生支持不超过 2 的分解级数次方的任意 2 的幂（略去高分辨率级别，与 `opj_decompress -r` 一致），但 SIZ 原点不为 0 的图没有原生缩减。超出原生范围的分母先按最大的原生分母解码，再用冻结的 box 滤波缩小（见 [API 设计](api-design.md)）。PNG（非隔行）、WebP 有损静态图和 HEIF（tile 边界与 box 对齐时）边解码边缩小，不持有整帧，峰值内存约为输出加几行，但每个像素仍要解码，耗时与整幅解码相近。其他 codec 整幅解码后再缩小，结果相同，没有加速。`TryGetClosestSize` 只报告原生尺寸（JPEG、JPEG 2000 之外报告原尺寸）。
 - **区域解码只在部分格式上按需。** `DecodeOptions.Region` 对所有 codec 都可用，按需读取的有：HEIF（只解码与区域相交的网格 tile，只转换区域内的像素）、TIFF（只读与区域相交的条带或分块）、JPEG、PNG（非隔行）和 WebP 有损静态图；其他格式是整幅解码后裁剪，语义一致，没有性能收益。JPEG 只持有 MCU 行条带和区域本身，只对区域内的行做上采样和色彩转换，所以超过 2 GB 的大图也能取区域；但每个 MCU 仍要熵解码和 IDCT（baseline 码流没有可跳转的索引），耗时接近整幅解码，按 restart 间隔跳过熵解码留给 2.x。PNG 和 WebP 解到区域需要的最后一行就停：区域上方的行仍要解压，区域下方的数据不读也不校验，所以一个文件取区域成功、整幅解码却可能失败。

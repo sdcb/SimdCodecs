@@ -290,7 +290,7 @@ public sealed class RasterImageV2Tests
         // Crop takes the interface: here an image a decoder made.
         var rgba = new byte[8 * 6 * 4];
         new Random(1).NextBytes(rgba);
-        SimdCodecs.TryDecode(Qoi.QoiEncoder.Encode(rgba, 8, 6, PixelFormat.Rgba32), out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(Qoi.QoiEncoder.Encode(rgba, 8, 6, PixelFormat.Rgba32), out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (decoded)
         using (var crop = RasterImage.Crop(decoded, new PixelRect(1, 1, 2, 2)))
         {

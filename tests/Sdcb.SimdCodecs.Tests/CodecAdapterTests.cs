@@ -7,9 +7,9 @@ namespace Sdcb.SimdCodecs.Tests;
 
 /// <summary>
 /// High-bit-depth and float TIFF decode through
-/// <see cref="SimdCodecs"/> with correct layout, pixel fidelity, and
+/// <see cref="ImageCodecs"/> with correct layout, pixel fidelity, and
 /// <see cref="IDecodedImage.ColorEncoding"/>; float-sample content refuses the
-/// 8-bit display path (<see cref="SimdCodecs.TryDecodeIntoRgba8"/>) instead of
+/// 8-bit display path (<see cref="ImageCodecs.TryDecodeIntoRgba8"/>) instead of
 /// projecting HDR values wrongly.
 /// </summary>
 public sealed class CodecAdapterTests
@@ -22,12 +22,12 @@ public sealed class CodecAdapterTests
         int[] y = [0, 1000, 30000, 65535];
         var tiff = HdrTiff.Uint16Gray(2, 2, y);
 
-        SimdCodecs.CanDecode(tiff).ShouldBeTrue();
-        SimdCodecs.TryReadInfo(tiff, out var info).ShouldBeTrue();
+        ImageCodecs.CanDecode(tiff).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(tiff, out var info).ShouldBeTrue();
         // The test file writes the TIFF 6.0 baseline resolution, 96 dpi, which 2.0 reports.
         info.ShouldBe(new ImageInfo(2, 2, 1, SampleFormat.UInt16) { Format = ImageFormat.Tiff, Resolution = Resolution.FromDpi(96, 96) });
 
-        SimdCodecs.TryDecode(tiff, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(tiff, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.ShouldBe(ColorEncoding.AssumedSrgb);
         var f = img.ToFloats();
@@ -42,7 +42,7 @@ public sealed class CodecAdapterTests
         float[] y = [0f, 0.5f, 2.5f, -0.25f];
         var tiff = HdrTiff.Float32Gray(2, 2, y);
 
-        SimdCodecs.TryDecode(tiff, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(tiff, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.SampleFormat.ShouldBe(SampleFormat.Float32);
         img.ColorEncoding.Transfer.ShouldBe(TransferFunction.Linear);
@@ -53,7 +53,7 @@ public sealed class CodecAdapterTests
         f[8].ShouldBe(2.5f);    // HDR highlight, unclamped
         f[12].ShouldBe(-0.25f); // negative survives
 
-        SimdCodecs.TryDecodeIntoRgba8(tiff, new byte[2 * 2 * 4]).ShouldBeFalse();
+        ImageCodecs.TryDecodeIntoRgba8(tiff, new byte[2 * 2 * 4]).ShouldBeFalse();
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public sealed class CodecAdapterTests
         Half[] y = [(Half)0.5f, (Half)1.5f, (Half)(-2f), (Half)0f];
         var tiff = HdrTiff.HalfGray(2, 2, y);
 
-        SimdCodecs.TryDecode(tiff, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(tiff, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.SampleFormat.ShouldBe(SampleFormat.Float32);
 

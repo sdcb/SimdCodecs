@@ -35,12 +35,12 @@ async Task Main()
 /// <summary>Decodes any format Sdcb.SimdCodecs knows into an RGBA8888 (unpremultiplied) SKBitmap.</summary>
 static unsafe SKBitmap Decode(byte[] data)
 {
-	if (!SimdCodecs.TryReadInfo(data, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
+	if (!ImageCodecs.TryReadInfo(data, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
 
 	SKBitmap bitmap = new(new SKImageInfo(info.Width, info.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul));
 	// RowBytes is Width * 4 for this colour type, which is exactly the layout TryDecodeIntoRgba8 writes.
 	Span<byte> pixels = new((void*)bitmap.GetPixels(), bitmap.RowBytes * bitmap.Height);
-	if (!SimdCodecs.TryDecodeIntoRgba8(data, pixels))
+	if (!ImageCodecs.TryDecodeIntoRgba8(data, pixels))
 	{
 		bitmap.Dispose();
 		throw new InvalidDataException("Decode failed");

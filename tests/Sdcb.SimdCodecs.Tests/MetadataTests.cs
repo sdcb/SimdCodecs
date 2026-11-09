@@ -12,7 +12,7 @@ namespace Sdcb.SimdCodecs.Tests;
 
 /// <summary>
 /// Metadata through the facade: Exif, XMP and ICC bytes written by the encoders come back from
-/// <see cref="SimdCodecs.TryReadMetadata"/> and from a decoded image's <c>Metadata</c> exactly; <see cref="ImageInfo"/> reports
+/// <see cref="ImageCodecs.TryReadMetadata"/> and from a decoded image's <c>Metadata</c> exactly; <see cref="ImageInfo"/> reports
 /// resolution (PNG pHYs, JFIF density, Exif resolution tags, BMP pixels per metre), colour encoding (cICP), orientation and
 /// the Exif thumbnail; and a malformed Exif block never makes a reader throw.
 /// </summary>
@@ -118,14 +118,14 @@ public sealed class MetadataTests
         var icc = IccProfiles.SRgbV4.ToArray();
         var data = JpegWith(exif, xmp, icc);
 
-        SimdCodecs.TryReadMetadata(data, out var metadata).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(data, out var metadata).ShouldBeTrue();
         metadata.Exif.ToArray().ShouldBe(exif);
         metadata.Exif.Span[..4].ToArray().ShouldBe("II*\0"u8.ToArray());
         metadata.Xmp.ToArray().ShouldBe(xmp.BuildPacket());
         metadata.Icc.ToArray().ShouldBe(icc);
         metadata.IsEmpty.ShouldBeFalse();
 
-        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (image)
         {
             image.Metadata.Exif.ToArray().ShouldBe(exif);
@@ -142,7 +142,7 @@ public sealed class MetadataTests
     public void JpegBigEndianExifIsKeptByteForByte()
     {
         var exif = ExifBlock(littleEndian: false, orientation: 3);
-        SimdCodecs.TryReadMetadata(JpegWith(exif), out var metadata).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(JpegWith(exif), out var metadata).ShouldBeTrue();
         metadata.Exif.ToArray().ShouldBe(exif);
         metadata.Xmp.IsEmpty.ShouldBeTrue();
         metadata.Icc.IsEmpty.ShouldBeTrue();
@@ -153,9 +153,9 @@ public sealed class MetadataTests
     {
         var icc = FakeProfile(2 * JpegEncodeOptions.MaxIccChunkBytes + 17, 5);
         var data = JpegWith(icc: icc);
-        SimdCodecs.TryReadMetadata(data, out var metadata).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(data, out var metadata).ShouldBeTrue();
         metadata.Icc.ToArray().ShouldBe(icc);
-        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (image)
             image.Metadata.Icc.ToArray().ShouldBe(icc);
     }
@@ -164,9 +164,9 @@ public sealed class MetadataTests
     public void AJpegWithoutMetadataHasNone()
     {
         var data = JpegWith();
-        SimdCodecs.TryReadMetadata(data, out var metadata).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(data, out var metadata).ShouldBeTrue();
         metadata.IsEmpty.ShouldBeTrue();
-        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (image)
         {
             image.Metadata.IsEmpty.ShouldBeTrue();
@@ -189,12 +189,12 @@ public sealed class MetadataTests
             Text = [new PngText("XML:com.adobe.xmp", Encoding.UTF8.GetString(packet))],
         });
 
-        SimdCodecs.TryReadMetadata(data, out var metadata).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(data, out var metadata).ShouldBeTrue();
         metadata.Exif.ToArray().ShouldBe(exif);
         metadata.Xmp.ToArray().ShouldBe(packet);
         metadata.Icc.ToArray().ShouldBe(icc);
 
-        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (image)
         {
             image.Metadata.Exif.ToArray().ShouldBe(exif);
@@ -209,14 +209,14 @@ public sealed class MetadataTests
     {
         var packet = new JpegXmp { Description = string.Concat(Enumerable.Range(0, 3000).Select(i => (char)('a' + i * 7 % 26))) }.BuildPacket();
         var data = PngWriter.Encode(Rgba(), W, H, new PngWriteOptions { Text = [new PngText("XML:com.adobe.xmp", Encoding.UTF8.GetString(packet))] });
-        SimdCodecs.TryReadMetadata(data, out var metadata).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(data, out var metadata).ShouldBeTrue();
         metadata.Xmp.ToArray().ShouldBe(packet);
     }
 
     [Fact]
     public void APngWithoutMetadataHasNone()
     {
-        SimdCodecs.TryReadMetadata(PngWriter.Encode(Rgba(), W, H), out var metadata).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(PngWriter.Encode(Rgba(), W, H), out var metadata).ShouldBeTrue();
         metadata.IsEmpty.ShouldBeTrue();
     }
 
@@ -230,12 +230,12 @@ public sealed class MetadataTests
         var icc = IccProfiles.SRgbV4.ToArray();
         var data = WebpEncoder.EncodeLossless(Rgba(), W, H, PixelFormat.Rgba32, new WebpLosslessEncodeOptions { Exif = exif, Xmp = packet, IccProfile = icc });
 
-        SimdCodecs.TryReadMetadata(data, out var metadata).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(data, out var metadata).ShouldBeTrue();
         metadata.Exif.ToArray().ShouldBe(exif);
         metadata.Xmp.ToArray().ShouldBe(packet);
         metadata.Icc.ToArray().ShouldBe(icc);
 
-        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (image)
         {
             image.Metadata.Exif.ToArray().ShouldBe(exif);
@@ -249,12 +249,12 @@ public sealed class MetadataTests
     public void WebpWithOnlyOneKindOfMetadataHasOnlyThat()
     {
         var packet = Xmp().BuildPacket();
-        SimdCodecs.TryReadMetadata(WebpEncoder.EncodeLossless(Rgba(), W, H, PixelFormat.Rgba32, new WebpLosslessEncodeOptions { Xmp = packet }), out var metadata).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(WebpEncoder.EncodeLossless(Rgba(), W, H, PixelFormat.Rgba32, new WebpLosslessEncodeOptions { Xmp = packet }), out var metadata).ShouldBeTrue();
         metadata.Xmp.ToArray().ShouldBe(packet);
         metadata.Exif.IsEmpty.ShouldBeTrue();
         metadata.Icc.IsEmpty.ShouldBeTrue();
 
-        SimdCodecs.TryReadMetadata(WebpEncoder.EncodeLossless(Rgba(), W, H, PixelFormat.Rgba32), out var none).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(WebpEncoder.EncodeLossless(Rgba(), W, H, PixelFormat.Rgba32), out var none).ShouldBeTrue();
         none.IsEmpty.ShouldBeTrue();
     }
 
@@ -264,13 +264,13 @@ public sealed class MetadataTests
     public void PngPhysicalDimensionsAreResolutionPerMeter()
     {
         var data = PngWriter.Encode(Rgba(), W, H, new PngWriteOptions { PhysicalDimensions = new PngPhysicalDimensions(11811, 5906, true) });
-        SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
         info.Resolution.ShouldBe(new Resolution(11811, 5906, ResolutionUnit.PerMeter));
         info.Resolution!.Value.DpiX.ShouldBe(11811 * 0.0254);
         info.Resolution!.Value.DpiY.ShouldBe(5906 * 0.0254);
 
         var fromDpi = PngWriter.Encode(Rgba(), W, H, new PngWriteOptions { PhysicalDimensions = PngPhysicalDimensions.FromDpi(300) });
-        SimdCodecs.TryReadInfo(fromDpi, out var dpiInfo).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(fromDpi, out var dpiInfo).ShouldBeTrue();
         dpiInfo.Resolution.ShouldBe(new Resolution(11811, 11811, ResolutionUnit.PerMeter));
     }
 
@@ -278,7 +278,7 @@ public sealed class MetadataTests
     public void PngPhysicalDimensionsWithoutAUnitAreAnAspectRatio()
     {
         var data = PngWriter.Encode(Rgba(), W, H, new PngWriteOptions { PhysicalDimensions = new PngPhysicalDimensions(2, 1, false) });
-        SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
         info.Resolution.ShouldBe(new Resolution(2, 1, ResolutionUnit.AspectRatio));
         info.Resolution!.Value.DpiX.ShouldBeNull();
         info.Resolution!.Value.DpiY.ShouldBeNull();
@@ -287,7 +287,7 @@ public sealed class MetadataTests
     [Fact]
     public void APngWithoutPhysChunkHasNoResolution()
     {
-        SimdCodecs.TryReadInfo(PngWriter.Encode(Rgba(), W, H), out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(PngWriter.Encode(Rgba(), W, H), out var info).ShouldBeTrue();
         info.Resolution.ShouldBeNull();
     }
 
@@ -302,28 +302,28 @@ public sealed class MetadataTests
     public void JfifDensityIsTheResolution()
     {
         var jpeg = JpegWith();
-        SimdCodecs.TryReadInfo(WithJfifDensity(jpeg, 1, 300, 150), out var inch).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(WithJfifDensity(jpeg, 1, 300, 150), out var inch).ShouldBeTrue();
         inch.Resolution.ShouldBe(new Resolution(300, 150, ResolutionUnit.PerInch));
         inch.Resolution!.Value.DpiX.ShouldBe(300);
         inch.Resolution!.Value.DpiY.ShouldBe(150);
 
-        SimdCodecs.TryReadInfo(WithJfifDensity(jpeg, 2, 118, 118), out var cm).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(WithJfifDensity(jpeg, 2, 118, 118), out var cm).ShouldBeTrue();
         cm.Resolution.ShouldBe(new Resolution(118, 118, ResolutionUnit.PerCentimeter));
         cm.Resolution!.Value.DpiX.ShouldBe(118 * 2.54);
 
-        SimdCodecs.TryReadInfo(WithJfifDensity(jpeg, 0, 4, 3), out var ratio).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(WithJfifDensity(jpeg, 0, 4, 3), out var ratio).ShouldBeTrue();
         ratio.Resolution.ShouldBe(new Resolution(4, 3, ResolutionUnit.AspectRatio));
         ratio.Resolution!.Value.DpiX.ShouldBeNull();
 
         // Pixel aspect 1:1 with no unit says nothing; so does a zero density.
-        SimdCodecs.TryReadInfo(WithJfifDensity(jpeg, 0, 1, 1), out var square).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(WithJfifDensity(jpeg, 0, 1, 1), out var square).ShouldBeTrue();
         square.Resolution.ShouldBeNull();
-        SimdCodecs.TryReadInfo(WithJfifDensity(jpeg, 1, 0, 300), out var zero).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(WithJfifDensity(jpeg, 1, 0, 300), out var zero).ShouldBeTrue();
         zero.Resolution.ShouldBeNull();
 
         // The image still decodes the same.
-        SimdCodecs.TryDecode(WithJfifDensity(jpeg, 1, 300, 150), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
-        SimdCodecs.TryDecode(jpeg, out var plain, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(WithJfifDensity(jpeg, 1, 300, 150), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(jpeg, out var plain, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (image)
         using (plain)
             image.Pixels.ToArray().ShouldBe(plain.Pixels.ToArray());
@@ -333,13 +333,13 @@ public sealed class MetadataTests
     public void ExifResolutionTagsAreTheResolutionWhenJfifSaysNothing()
     {
         // The encoder's own JFIF header carries no real density, so the Exif tags decide.
-        SimdCodecs.TryReadInfo(JpegWith(ExifBlock(resolution: (72, 96, 2))), out var inch).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(JpegWith(ExifBlock(resolution: (72, 96, 2))), out var inch).ShouldBeTrue();
         inch.Resolution.ShouldBe(new Resolution(72, 96, ResolutionUnit.PerInch));
 
-        SimdCodecs.TryReadInfo(JpegWith(ExifBlock(littleEndian: false, resolution: (118, 118, 3))), out var cm).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(JpegWith(ExifBlock(littleEndian: false, resolution: (118, 118, 3))), out var cm).ShouldBeTrue();
         cm.Resolution.ShouldBe(new Resolution(118, 118, ResolutionUnit.PerCentimeter));
 
-        SimdCodecs.TryReadInfo(JpegWith(ExifBlock(orientation: 1)), out var none).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(JpegWith(ExifBlock(orientation: 1)), out var none).ShouldBeTrue();
         none.Resolution.ShouldBeNull();
     }
 
@@ -347,7 +347,7 @@ public sealed class MetadataTests
     public void JfifTakesPrecedenceOverExif()
     {
         var jpeg = WithJfifDensity(JpegWith(ExifBlock(resolution: (72, 72, 2))), 1, 300, 300);
-        SimdCodecs.TryReadInfo(jpeg, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(jpeg, out var info).ShouldBeTrue();
         info.Resolution.ShouldBe(new Resolution(300, 300, ResolutionUnit.PerInch));
     }
 
@@ -355,15 +355,15 @@ public sealed class MetadataTests
     public void BmpPixelsPerMeterAreTheResolution()
     {
         var data = Bmp.BmpEncoder.Encode(Rgba(), W, H, PixelFormat.Rgba32, new Bmp.BmpEncodeOptions { PixelsPerMeterX = 3780, PixelsPerMeterY = 7560 });
-        SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
         info.Resolution.ShouldBe(new Resolution(3780, 7560, ResolutionUnit.PerMeter));
 
-        SimdCodecs.TryReadInfo(Bmp.BmpEncoder.Encode(Rgba(), W, H, PixelFormat.Rgba32), out var defaults).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(Bmp.BmpEncoder.Encode(Rgba(), W, H, PixelFormat.Rgba32), out var defaults).ShouldBeTrue();
         defaults.Resolution.ShouldBe(new Resolution(2835, 2835, ResolutionUnit.PerMeter));
         defaults.Resolution!.Value.DpiX.ShouldBe(2835 * 0.0254);
 
         var unset = Bmp.BmpEncoder.Encode(Rgba(), W, H, PixelFormat.Rgba32, new Bmp.BmpEncodeOptions { PixelsPerMeterX = 0, PixelsPerMeterY = 0 });
-        SimdCodecs.TryReadInfo(unset, out var none).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(unset, out var none).ShouldBeTrue();
         none.Resolution.ShouldBeNull();
     }
 
@@ -380,9 +380,9 @@ public sealed class MetadataTests
         foreach (var littleEndian in new[] { true, false })
         {
             var exif = ExifBlock(littleEndian, orientation: exifValue);
-            SimdCodecs.TryReadInfo(JpegWith(exif), out var jpeg).ShouldBeTrue();
+            ImageCodecs.TryReadInfo(JpegWith(exif), out var jpeg).ShouldBeTrue();
             jpeg.Orientation.ShouldBe(expected);
-            SimdCodecs.TryReadInfo(PngWriter.Encode(Rgba(), W, H, new PngWriteOptions { Exif = exif }), out var png).ShouldBeTrue();
+            ImageCodecs.TryReadInfo(PngWriter.Encode(Rgba(), W, H, new PngWriteOptions { Exif = exif }), out var png).ShouldBeTrue();
             png.Orientation.ShouldBe(expected);
             jpeg.SwapsDimensions.ShouldBe(expected >= ImageOrientation.Transpose);
         }
@@ -395,9 +395,9 @@ public sealed class MetadataTests
     public void AnOutOfRangeExifOrientationIsNormal(int exifValue)
     {
         var exif = ExifBlock(orientation: exifValue);
-        SimdCodecs.TryReadInfo(JpegWith(exif), out var jpeg).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(JpegWith(exif), out var jpeg).ShouldBeTrue();
         jpeg.Orientation.ShouldBe(ImageOrientation.Normal);
-        SimdCodecs.TryReadInfo(PngWriter.Encode(Rgba(), W, H, new PngWriteOptions { Exif = exif }), out var png).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(PngWriter.Encode(Rgba(), W, H, new PngWriteOptions { Exif = exif }), out var png).ShouldBeTrue();
         png.Orientation.ShouldBe(ImageOrientation.Normal);
     }
 
@@ -417,8 +417,8 @@ public sealed class MetadataTests
             new Random(3).NextBytes(System.Runtime.InteropServices.MemoryMarshal.AsBytes(samples.AsSpan()));
             var data = PngWriter.EncodeRgba16(samples, W, H, new PngWriteOptions { Cicp = chunk });
 
-            SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
-            SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+            ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+            ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
             using (image)
             {
                 info.ColorEncoding.ShouldBe(image.ColorEncoding, $"{transfer}");
@@ -433,9 +433,9 @@ public sealed class MetadataTests
     public void AnUntaggedPngIsAssumedSrgbInBoth()
     {
         var data = PngWriter.Encode(Rgba(), W, H);
-        SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
         info.ColorEncoding.ShouldBe(ColorEncoding.AssumedSrgb);
-        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (image)
             image.ColorEncoding.ShouldBe(info.ColorEncoding);
     }
@@ -452,12 +452,12 @@ public sealed class MetadataTests
         {
             var data = JpegWith(ExifBlock(littleEndian, orientation: 1, thumbnail: thumbJpeg));
 
-            SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+            ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
             info.HasThumbnail.ShouldBeTrue();
             (info.Width, info.Height).ShouldBe((W, H));
 
-            SimdCodecs.TryDecodeThumbnail(data, out var thumbnail).ShouldBeTrue();
-            SimdCodecs.TryDecode(thumbJpeg, out var expected, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+            ImageCodecs.TryDecodeThumbnail(data, out var thumbnail).ShouldBeTrue();
+            ImageCodecs.TryDecode(thumbJpeg, out var expected, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
             using (thumbnail)
             using (expected)
             {
@@ -467,7 +467,7 @@ public sealed class MetadataTests
             }
 
             // The thumbnail does not disturb the main image.
-            SimdCodecs.TryDecode(data, out var main, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+            ImageCodecs.TryDecode(data, out var main, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
             using (main)
                 (main.Width, main.Height).ShouldBe((W, H));
         }
@@ -478,17 +478,17 @@ public sealed class MetadataTests
     {
         foreach (var data in new[] { JpegWith(), JpegWith(ExifBlock(orientation: 6)), JpegWith(ExifBlock(resolution: (72, 72, 2))) })
         {
-            SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+            ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
             info.HasThumbnail.ShouldBeFalse();
-            SimdCodecs.TryDecodeThumbnail(data, out var thumbnail).ShouldBeFalse();
+            ImageCodecs.TryDecodeThumbnail(data, out var thumbnail).ShouldBeFalse();
             thumbnail.ShouldBeNull();
         }
 
         var png = PngWriter.Encode(Rgba(), W, H);
-        SimdCodecs.TryReadInfo(png, out var pngInfo).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(png, out var pngInfo).ShouldBeTrue();
         pngInfo.HasThumbnail.ShouldBeFalse();
-        SimdCodecs.TryDecodeThumbnail(png, out _).ShouldBeFalse();
-        SimdCodecs.TryDecodeThumbnail(new byte[40], out _).ShouldBeFalse();
+        ImageCodecs.TryDecodeThumbnail(png, out _).ShouldBeFalse();
+        ImageCodecs.TryDecodeThumbnail(new byte[40], out _).ShouldBeFalse();
     }
 
     [Fact]
@@ -497,14 +497,14 @@ public sealed class MetadataTests
         var notJpeg = new byte[64];
         notJpeg.AsSpan().Fill(0x42);
         var data = JpegWith(ExifBlock(thumbnail: notJpeg));
-        SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
         info.HasThumbnail.ShouldBeFalse();
-        SimdCodecs.TryDecodeThumbnail(data, out _).ShouldBeFalse();
+        ImageCodecs.TryDecodeThumbnail(data, out _).ShouldBeFalse();
 
         // A JPEG-looking thumbnail that does not decode: reported, but decoding it fails cleanly.
         byte[] stub = [0xFF, 0xD8, 0xFF, 0xD9];
         var broken = JpegWith(ExifBlock(thumbnail: stub));
-        Should.NotThrow(() => SimdCodecs.TryDecodeThumbnail(broken, out _));
+        Should.NotThrow(() => ImageCodecs.TryDecodeThumbnail(broken, out _));
     }
 
     // ---- malformed Exif never throws ---------------------------------------------------------------------------
@@ -515,13 +515,13 @@ public sealed class MetadataTests
         {
             Should.NotThrow(() =>
             {
-                SimdCodecs.TryReadInfo(data, out _);
-                SimdCodecs.TryReadMetadata(data, out _);
-                if (SimdCodecs.TryDecodeThumbnail(data, out var thumbnail))
+                ImageCodecs.TryReadInfo(data, out _);
+                ImageCodecs.TryReadMetadata(data, out _);
+                if (ImageCodecs.TryDecodeThumbnail(data, out var thumbnail))
                     thumbnail.Dispose();
-                if (SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken))
+                if (ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken))
                     image.Dispose();
-                SimdCodecs.TryOpenFrames(data, out var frames);
+                ImageCodecs.TryOpenFrames(data, out var frames);
                 frames?.Dispose();
             }, $"{name}: {what}");
         }
@@ -535,7 +535,7 @@ public sealed class MetadataTests
         ReadEverything(jpeg, png, webp, what);
 
         // The block itself is delivered as it was written.
-        SimdCodecs.TryReadMetadata(jpeg, out var metadata).ShouldBeTrue(what);
+        ImageCodecs.TryReadMetadata(jpeg, out var metadata).ShouldBeTrue(what);
         metadata.Exif.ToArray().ShouldBe(exif, what);
     }
 
@@ -610,9 +610,9 @@ public sealed class MetadataTests
             BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(offsetField), offset);
             BinaryPrimitives.WriteUInt32LittleEndian(blob.AsSpan(lengthField), length);
             var jpeg = JpegWith(blob);
-            SimdCodecs.TryReadInfo(jpeg, out var info).ShouldBeTrue($"{offset}/{length}");
+            ImageCodecs.TryReadInfo(jpeg, out var info).ShouldBeTrue($"{offset}/{length}");
             info.HasThumbnail.ShouldBeFalse($"{offset}/{length}");
-            SimdCodecs.TryDecodeThumbnail(jpeg, out _).ShouldBeFalse($"{offset}/{length}");
+            ImageCodecs.TryDecodeThumbnail(jpeg, out _).ShouldBeFalse($"{offset}/{length}");
             ReadMalformed(blob, $"thumbnail {offset}/{length}");
         }
     }
@@ -634,7 +634,7 @@ public sealed class MetadataTests
         var ifd0Loop = (byte[])valid.Clone();                   // IFD0's next is IFD0
         BinaryPrimitives.WriteUInt32LittleEndian(ifd0Loop.AsSpan(10), 8);
         ReadMalformed(ifd0Loop, "ifd0 next is ifd0");
-        SimdCodecs.TryReadInfo(JpegWith(ifd0Loop), out var loopInfo).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(JpegWith(ifd0Loop), out var loopInfo).ShouldBeTrue();
         loopInfo.HasThumbnail.ShouldBeFalse();
 
         var huge = (byte[])valid.Clone();                       // IFD1 claims 65535 entries
@@ -677,9 +677,9 @@ public sealed class MetadataTests
     [Fact]
     public void NonMetadataInputsAreRefusedNotThrown()
     {
-        SimdCodecs.TryReadMetadata(new byte[50], out var metadata).ShouldBeFalse();
+        ImageCodecs.TryReadMetadata(new byte[50], out var metadata).ShouldBeFalse();
         metadata.ShouldBeNull();
-        SimdCodecs.TryReadMetadata(JpegWith()[..3], out _).ShouldBeFalse();
-        SimdCodecs.TryReadMetadata(PngWriter.Encode(Rgba(), W, H)[..20], out _).ShouldBeFalse();
+        ImageCodecs.TryReadMetadata(JpegWith()[..3], out _).ShouldBeFalse();
+        ImageCodecs.TryReadMetadata(PngWriter.Encode(Rgba(), W, H)[..20], out _).ShouldBeFalse();
     }
 }

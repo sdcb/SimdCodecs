@@ -52,7 +52,7 @@ public sealed class TiffMetadataTests
     private static byte[] Encode(IDecodedImage image, EncodeOptions? options = null)
     {
         using var stream = new MemoryStream();
-        SimdCodecs.Encode(image, ImageFormat.Tiff, stream, options);
+        ImageCodecs.Encode(image, ImageFormat.Tiff, stream, options);
         return stream.ToArray();
     }
 
@@ -89,7 +89,7 @@ public sealed class TiffMetadataTests
     public void Libtiff_reads_the_exif_xmp_and_icc_of_the_source()
     {
         var jpeg = MagickJpeg();
-        SimdCodecs.TryDecode(jpeg, out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(jpeg, out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         byte[] tiff;
         using (decoded)
         {
@@ -159,7 +159,7 @@ public sealed class TiffMetadataTests
     public void Facade_transcode_keeps_exif_xmp_and_icc()
     {
         var jpeg = MagickJpeg();
-        SimdCodecs.TryDecode(jpeg, out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(jpeg, out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         ImageMetadata original;
         byte[] tiff;
         using (decoded)
@@ -168,7 +168,7 @@ public sealed class TiffMetadataTests
             tiff = Encode(decoded);
         }
 
-        SimdCodecs.TryReadMetadata(tiff, out var back).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(tiff, out var back).ShouldBeTrue();
         back.Exif.IsEmpty.ShouldBeFalse();
         back.Xmp.ToArray().ShouldBe(original.Xmp.ToArray());
         back.Icc.ToArray().ShouldBe(original.Icc.ToArray());
@@ -187,7 +187,7 @@ public sealed class TiffMetadataTests
         actual.Gps.ShouldNotBeNull();
 
         // The decoded image carries the same blocks.
-        SimdCodecs.TryDecode(tiff, out var again, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(tiff, out var again, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (again)
         {
             again.Metadata.Exif.ToArray().ShouldBe(back.Exif.ToArray());
@@ -436,7 +436,7 @@ public sealed class TiffMetadataTests
     public void Damaged_blocks_write_or_throw_invalid_data()
     {
         var jpeg = MagickJpeg();
-        SimdCodecs.TryReadMetadata(jpeg, out var m).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(jpeg, out var m).ShouldBeTrue();
         var original = m.Exif.ToArray();
         var random = new Random(20261104);
         var iterations = int.TryParse(Environment.GetEnvironmentVariable("TIFF_EXIF_FUZZ_ITERATIONS"), out var n) ? n : 2000;

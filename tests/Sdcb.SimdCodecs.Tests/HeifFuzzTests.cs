@@ -61,8 +61,8 @@ public sealed class HeifFuzzTests
         var iterations = Iterations;
         var budget = TimeSpan.FromSeconds(Math.Max(120, iterations / 10));
         var current = "";
-        var builtIn = SimdCodecs.RegistrySnapshot;
-        SimdCodecs.Register(HeifImageDecoder.Registration);
+        var builtIn = ImageCodecs.RegistrySnapshot;
+        ImageCodecs.Register(HeifImageDecoder.Registration);
         try
         {
             var run = Task.Run(() =>
@@ -83,7 +83,7 @@ public sealed class HeifFuzzTests
         }
         finally
         {
-            SimdCodecs.ExchangeRegistry(builtIn);
+            ImageCodecs.ExchangeRegistry(builtIn);
         }
     }
 
@@ -105,15 +105,15 @@ public sealed class HeifFuzzTests
             "delete" => [.. data[..offset], .. data[(offset + int.Parse(argument))..]],
             _ => throw new ArgumentException(operation),
         };
-        var builtIn = SimdCodecs.RegistrySnapshot;
-        SimdCodecs.Register(HeifImageDecoder.Registration);
+        var builtIn = ImageCodecs.RegistrySnapshot;
+        ImageCodecs.Register(HeifImageDecoder.Registration);
         try
         {
             for (var layout = 0; layout < 5; layout++) DecodeOne(data, $"{fixture} {operation} {offset} {argument}", layout);
         }
         finally
         {
-            SimdCodecs.ExchangeRegistry(builtIn);
+            ImageCodecs.ExchangeRegistry(builtIn);
         }
 
         static byte[] Patch(byte[] data, int offset, byte[] bytes)
@@ -166,18 +166,18 @@ public sealed class HeifFuzzTests
         timer.Restart();
         try
         {
-            if (SimdCodecs.TryReadInfo(data, out var info))
+            if (ImageCodecs.TryReadInfo(data, out var info))
             {
                 info.Format.ShouldBe(ImageFormat.Heif, context);
                 var format = PixelConverterTests.Formats[layout];
                 var destination = new byte[(long)info.Width * info.Height * format.BytesPerPixel];
-                if (SimdCodecs.TryDecodeInto(data, destination, 0, format) && SimdCodecs.TryDecode(data, out var decoded))
+                if (ImageCodecs.TryDecodeInto(data, destination, 0, format) && ImageCodecs.TryDecode(data, out var decoded))
                 {
                     (decoded.Width, decoded.Height).ShouldBe((info.Width, info.Height), context);
                     // The scaled path (tiles boxed as they are written, or the fallback), into the same format.
                     var scale = new DecodeOptions { ScaleDenominator = 2 << layout % 3 };
                     var (sw, sh) = scale.GetScaledSize(info.Width, info.Height);
-                    if (SimdCodecs.TryDecodeInto(data, destination, 0, format, scale) && SimdCodecs.TryDecode(data, out var scaled, scale))
+                    if (ImageCodecs.TryDecodeInto(data, destination, 0, format, scale) && ImageCodecs.TryDecode(data, out var scaled, scale))
                     {
                         using (scaled)
                             (scaled.Width, scaled.Height).ShouldBe((sw, sh), context);
@@ -186,7 +186,7 @@ public sealed class HeifFuzzTests
             }
             else
             {
-                SimdCodecs.TryDecode(data, out _);
+                ImageCodecs.TryDecode(data, out _);
             }
         }
         catch (Exception e) when (e is not ShouldAssertException)

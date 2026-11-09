@@ -111,7 +111,7 @@ public sealed class WebpContainerTests
         Should.Throw<InvalidDataException>(() => WebpDecoder.ReadInfo(data));
         Should.Throw<InvalidDataException>(() => WebpDecoder.Decode(data));
         WebpDecoder.TryReadInfo(data, out _).ShouldBeFalse();
-        SimdCodecs.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecode(data, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Theory]

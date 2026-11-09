@@ -238,7 +238,7 @@ public sealed class ApngRobustnessTests
 
         try
         {
-            if (SimdCodecs.TryOpenFrames(data, out var reader))
+            if (ImageCodecs.TryOpenFrames(data, out var reader))
             {
                 using (reader)
                 {

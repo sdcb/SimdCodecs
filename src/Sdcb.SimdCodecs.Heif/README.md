@@ -10,18 +10,18 @@ This package is **not** included in the `Sdcb.SimdCodecs` meta-package, and the 
 using Sdcb.SimdCodecs;
 using Sdcb.SimdCodecs.Heif;
 
-SimdCodecs.Register(HeifImageDecoder.Registration);
+ImageCodecs.Register(HeifImageDecoder.Registration);
 
 // From here on every facade entry point handles HEIF / HEIC like any built-in format.
 byte[] data = File.ReadAllBytes("photo.heic");
-if (SimdCodecs.TryReadInfo(data, out var info))
+if (ImageCodecs.TryReadInfo(data, out var info))
 {
     var bgra = new byte[info.Width * info.Height * 4];
-    SimdCodecs.TryDecodeInto(data, bgra, 0, PixelFormat.Bgra32);
+    ImageCodecs.TryDecodeInto(data, bgra, 0, PixelFormat.Bgra32);
 }
 ```
 
-Registering is idempotent and thread-safe, and cannot be undone. A registered codec is sniffed after the built-in ones. Before registration, `SimdCodecs.DetectFormat` still reports `ImageFormat.Heif` (so an application can tell the user what it cannot open) while `IsDecodable(ImageFormat.Heif)`, `CanDecode` and the `Try*` methods return false.
+Registering is idempotent and thread-safe, and cannot be undone. A registered codec is sniffed after the built-in ones. Before registration, `ImageCodecs.DetectFormat` still reports `ImageFormat.Heif` (so an application can tell the user what it cannot open) while `IsDecodable(ImageFormat.Heif)`, `CanDecode` and the `Try*` methods return false.
 
 `HeifImageDecoder` is the `IImageDecoder` adapter behind the registration; it can also be called directly without the facade. So can the codec's own API:
 
@@ -59,7 +59,7 @@ AVX2 / Vector128 (SSE, AdvSimd) / scalar kernels for the inverse transform, intr
 The package ships two runnable samples in `linqpad-samples/`:
 
 - `decode`: the codec's own API on real phone photos (a 12.6 MP 48-tile grid, the same in Main 10) and a single item with a `clap` crop — `ReadInfo`, `Decode`, `DecodeTo` into a reused buffer, timing and thumbnails.
-- `facade`: what `SimdCodecs.Register(HeifImageDecoder.Registration)` changes, then `TryDecodeInto` as BGRA with a padded stride and as Gray8, and `TryDecode`'s ICC and colour encoding.
+- `facade`: what `ImageCodecs.Register(HeifImageDecoder.Registration)` changes, then `TryDecodeInto` as BGRA with a padded stride and as Gray8, and `TryDecode`'s ICC and colour encoding.
 
 ## What is supported
 

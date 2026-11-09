@@ -17,7 +17,7 @@ async Task Main()
 {
 	using HttpClient http = new();
 	byte[] png = await http.GetByteArrayAsync("https://cv-public.sdcb.ai/simdcodecs/samples/v1/fuji-16bit.png");
-	if (!SimdCodecs.TryDecode(png, out IDecodedImage? decodedPng)) throw new InvalidDataException("Decode failed");
+	if (!ImageCodecs.TryDecode(png, out IDecodedImage? decodedPng)) throw new InvalidDataException("Decode failed");
 	using IDecodedImage source = decodedPng;
 	int w = source.Width, h = source.Height;
 
@@ -52,7 +52,7 @@ async Task Main()
 
 	// 3. Read back. The facade treats it as a normal JPEG for 8-bit output (the SDR base, which is
 	//    what an HDR-unaware viewer shows) and returns the reconstructed HDR as floats.
-	if (!SimdCodecs.TryDecode(ultraHdr, out IDecodedImage? decodedHdr)) throw new InvalidDataException("Decode failed");
+	if (!ImageCodecs.TryDecode(ultraHdr, out IDecodedImage? decodedHdr)) throw new InvalidDataException("Decode failed");
 	using IDecodedImage decoded = decodedHdr;
 	decoded.ColorEncoding.Dump("Facade: ColorEncoding of the float path");
 	float[] hdrBack = decoded.ToFloats();

@@ -9,7 +9,7 @@ namespace Sdcb.SimdCodecs.Heif;
 /// <see cref="IImageDecoder"/> adapter for HEIF / HEIC, bridging <see cref="HeifDecoder"/> into the
 /// <c>Sdcb.SimdCodecs</c> facade. The facade does not reference this package (HEVC is patent-encumbered and
 /// this package conveys no patent licence), so a consumer that installs it enables it explicitly, once, at
-/// start-up: <c>SimdCodecs.Register(HeifImageDecoder.Registration)</c>.
+/// start-up: <c>ImageCodecs.Register(HeifImageDecoder.Registration)</c>.
 /// <para>
 /// The primary image is decoded to RGB, display-oriented: the clean aperture (<c>clap</c>), rotation
 /// (<c>irot</c>) and mirror (<c>imir</c>) properties are applied, so <see cref="ImageInfo.Width"/> /
@@ -51,7 +51,7 @@ namespace Sdcb.SimdCodecs.Heif;
 public sealed class HeifImageDecoder : IPlanarImageDecoder
 {
     /// <summary>
-    /// This codec's entry for <c>SimdCodecs.Register</c> — its members bound by method group, as the facade's
+    /// This codec's entry for <c>ImageCodecs.Register</c> — its members bound by method group, as the facade's
     /// registry requires (see <see cref="ImageDecoderRegistration"/>). Still images only: the facade presents one
     /// as a single frame.
     /// </summary>
@@ -75,7 +75,7 @@ public sealed class HeifImageDecoder : IPlanarImageDecoder
     /// <summary>
     /// True for an ISO-BMFF file whose <c>ftyp</c> box lists a HEIF brand (<c>heic</c>, <c>heix</c>, <c>heim</c>,
     /// <c>heis</c>, <c>hevc</c>, <c>hevx</c>, <c>mif1</c>, <c>msf1</c>) and no AVIF brand (<c>avif</c>, <c>avis</c>):
-    /// AVIF files commonly list <c>mif1</c> too, and are not HEVC. The same test as <c>SimdCodecs.DetectFormat</c>.
+    /// AVIF files commonly list <c>mif1</c> too, and are not HEVC. The same test as <c>ImageCodecs.DetectFormat</c>.
     /// </summary>
     public static bool CanDecode(ReadOnlySpan<byte> header)
     {

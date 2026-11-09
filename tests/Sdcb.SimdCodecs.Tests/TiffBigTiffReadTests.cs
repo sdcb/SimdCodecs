@@ -178,8 +178,8 @@ public sealed class TiffBigTiffReadTests
         TiffImageDecoder.CanDecode(big).ShouldBeTrue();
         TiffImageDecoder.CanDecode(new B(littleEndian: false, bigTiff: true)
             .AddPage(B.Basic(1, 1, 1, 8, TiffCompression.Uncompressed, TiffPhotometric.MinIsBlack), [[7]]).Build()).ShouldBeTrue();
-        SimdCodecs.DetectFormat(big).ShouldBe(ImageFormat.Tiff);
-        SimdCodecs.TryDecode(big, out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.DetectFormat(big).ShouldBe(ImageFormat.Tiff);
+        ImageCodecs.TryDecode(big, out var decoded, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         decoded!.Width.ShouldBe(W);
     }
 

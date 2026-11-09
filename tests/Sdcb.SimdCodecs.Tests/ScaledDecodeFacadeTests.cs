@@ -6,7 +6,7 @@ namespace Sdcb.SimdCodecs.Tests;
 
 /// <summary>
 /// Every codec accepts every power-of-two <see cref="DecodeOptions.ScaleDenominator"/>: the decode at the codec's largest
-/// native scale n that does not exceed d (<see cref="SimdCodecs.TryGetClosestSize"/> reports the largest), box-filtered by
+/// native scale n that does not exceed d (<see cref="ImageCodecs.TryGetClosestSize"/> reports the largest), box-filtered by
 /// d / n (<see cref="BoxDownscaleTests.Reference"/>), then cropped to the region; and <c>TryDecodeInto</c> is that image
 /// converted (<see cref="PixelConverterTests.ReferenceConvert"/>). One or more fixtures of every format.
 /// </summary>
@@ -64,7 +64,7 @@ public sealed class ScaledDecodeFacadeTests
         Func<DecodeOptions, IDecodedImage> decode, int maxNative = 0)
     {
         if (maxNative == 0)
-            SimdCodecs.TryGetClosestSize(data, 1, 1, out _, out _, out maxNative).ShouldBeTrue();
+            ImageCodecs.TryGetClosestSize(data, 1, 1, out _, out _, out maxNative).ShouldBeTrue();
         var n = Math.Min(d, maxNative);
         var native = decode(new DecodeOptions { ScaleDenominator = n });
         var factor = d / n;
@@ -80,12 +80,12 @@ public sealed class ScaledDecodeFacadeTests
     {
         var data = CorpusCache.Value[name];
         var ct = TestContext.Current.CancellationToken;
-        SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue(name);
+        ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue(name);
         foreach (var d in Scales)
         {
             var (expected, w, h, native) = Expected(data, d, options =>
             {
-                SimdCodecs.TryDecode(data, out var image, options, ct).ShouldBeTrue($"{name} native");
+                ImageCodecs.TryDecode(data, out var image, options, ct).ShouldBeTrue($"{name} native");
                 return image;
             });
             using (native)
@@ -98,7 +98,7 @@ public sealed class ScaledDecodeFacadeTests
                     var options = new DecodeOptions { ScaleDenominator = d, Region = region };
                     var r = region ?? new PixelRect(0, 0, w, h);
                     var wanted = region is null ? expected : Crop(expected, w, bpp, r);
-                    SimdCodecs.TryDecode(data, out var image, options, ct).ShouldBeTrue(label);
+                    ImageCodecs.TryDecode(data, out var image, options, ct).ShouldBeTrue(label);
                     using (image)
                     {
                         (image.Width, image.Height, image.Channels, image.SampleFormat, image.BitDepth)
@@ -123,7 +123,7 @@ public sealed class ScaledDecodeFacadeTests
                     foreach (var format in new[] { PixelFormat.Rgba32, PixelFormat.Bgra64Premultiplied })
                     {
                         var into = new byte[r.Width * r.Height * format.BytesPerPixel];
-                        var decoded = SimdCodecs.TryDecodeInto(data, into, 0, format, options, ct);
+                        var decoded = ImageCodecs.TryDecodeInto(data, into, 0, format, options, ct);
                         if (native.SampleFormat == SampleFormat.Float32 && name != "jpeg gain map")
                         {
                             decoded.ShouldBeFalse(label);
@@ -146,7 +146,7 @@ public sealed class ScaledDecodeFacadeTests
     {
         var data = CorpusCache.Value[name];
         var ct = TestContext.Current.CancellationToken;
-        SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue(name);
+        ImageCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue(name);
         using (reader)
         {
             reader.FrameCount.ShouldBeGreaterThan(1);

@@ -12,7 +12,7 @@ foreach (string path in Directory.GetFiles(inDir).Where(p => !p.EndsWith("SHA256
 {
     byte[] data = File.ReadAllBytes(path);
     string name = Path.GetFileName(path);
-    if (!Sdcb.SimdCodecs.SimdCodecs.TryReadInfo(data, out ImageInfo info))
+    if (!Sdcb.SimdCodecs.ImageCodecs.TryReadInfo(data, out ImageInfo info))
     {
         Console.WriteLine($"{name,-24} not recognised");
         continue;
@@ -22,7 +22,7 @@ foreach (string path in Directory.GetFiles(inDir).Where(p => !p.EndsWith("SHA256
     bool ok;
     if (info.SampleFormat == SampleFormat.Float32)
     {
-        ok = Sdcb.SimdCodecs.SimdCodecs.TryDecode(data, out IDecodedImage? image);
+        ok = Sdcb.SimdCodecs.ImageCodecs.TryDecode(data, out IDecodedImage? image);
         if (ok)
         {
             float[] f = image!.ToFloats();
@@ -31,7 +31,7 @@ foreach (string path in Directory.GetFiles(inDir).Where(p => !p.EndsWith("SHA256
                 rgba[i] = (i & 3) == 3 ? (byte)255 : (byte)Math.Clamp((f[i] - min) / (max - min) * 255f + 0.5f, 0, 255);
         }
     }
-    else ok = Sdcb.SimdCodecs.SimdCodecs.TryDecodeIntoRgba8(data, rgba);
+    else ok = Sdcb.SimdCodecs.ImageCodecs.TryDecodeIntoRgba8(data, rgba);
 
     Console.WriteLine($"{name,-24} {info.Width}x{info.Height} {info.SampleFormat} {(ok ? "ok" : "FAILED")}");
     if (ok) File.WriteAllBytes(Path.Combine(outDir, $"{name}.{info.Width}x{info.Height}.rgba"), rgba);

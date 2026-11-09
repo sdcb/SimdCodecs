@@ -5,16 +5,16 @@ using Shouldly;
 namespace Sdcb.SimdCodecs.Tests;
 
 /// <summary>
-/// The planar entry points of the facade: <see cref="SimdCodecs.TryReadPlanarInfo"/> and
-/// <see cref="SimdCodecs.TryDecodePlanes"/> dispatch to a codec that offers its coded Y / Cb / Cr planes (HEIF, once registered),
+/// The planar entry points of the facade: <see cref="ImageCodecs.TryReadPlanarInfo"/> and
+/// <see cref="ImageCodecs.TryDecodePlanes"/> dispatch to a codec that offers its coded Y / Cb / Cr planes (HEIF, once registered),
 /// and say no for every codec that does not, and for a HEIF image with a transformative property.
 /// </summary>
 [Collection(FacadeRegistryCollection.Name)]
 public sealed class PlanarTests : IDisposable
 {
-    private readonly ImageDecoderRegistration[] _builtIn = SimdCodecs.RegistrySnapshot;
+    private readonly ImageDecoderRegistration[] _builtIn = ImageCodecs.RegistrySnapshot;
 
-    public void Dispose() => SimdCodecs.ExchangeRegistry(_builtIn);
+    public void Dispose() => ImageCodecs.ExchangeRegistry(_builtIn);
 
     // Single-item or grid images without clap / irot / imir, small enough to decode in a moment.
     public static TheoryData<string> PlanarFixtures() =>
@@ -29,11 +29,11 @@ public sealed class PlanarTests : IDisposable
     public void HeifPlanesAreTheDecodersCanvasPlanes(string fixture)
     {
         var data = HeifTests.ReadFixture(fixture);
-        SimdCodecs.Register(HeifImageDecoder.Registration);
+        ImageCodecs.Register(HeifImageDecoder.Registration);
 
         var (y, cb, cr, width, height, bitDepth) = HeifDecoder.DecodeYuv(data);
 
-        SimdCodecs.TryReadPlanarInfo(data, out var info).ShouldBeTrue(fixture);
+        ImageCodecs.TryReadPlanarInfo(data, out var info).ShouldBeTrue(fixture);
         (info.Width, info.Height).ShouldBe((width, height), fixture);
         (info.ChromaSubsamplingX, info.ChromaSubsamplingY).ShouldBe((2, 2), fixture);
         info.BitDepth.ShouldBe(bitDepth, fixture);
@@ -43,7 +43,7 @@ public sealed class PlanarTests : IDisposable
         info.ChromaLength.ShouldBe(info.ChromaWidth * info.ChromaHeight);
         Enum.IsDefined(info.ChromaLocation).ShouldBeTrue(fixture);
         // Deterministic: the same answer twice.
-        SimdCodecs.TryReadPlanarInfo(data, out var again).ShouldBeTrue();
+        ImageCodecs.TryReadPlanarInfo(data, out var again).ShouldBeTrue();
         again.ShouldBe(info);
         // The adapter's own answer is the facade's.
         HeifImageDecoder.TryReadPlanarInfo(data, out var direct).ShouldBeTrue();
@@ -52,7 +52,7 @@ public sealed class PlanarTests : IDisposable
         var oy = new ushort[info.LumaLength];
         var ocb = new ushort[info.ChromaLength];
         var ocr = new ushort[info.ChromaLength];
-        SimdCodecs.TryDecodePlanes(data, oy, ocb, ocr, TestContext.Current.CancellationToken).ShouldBeTrue(fixture);
+        ImageCodecs.TryDecodePlanes(data, oy, ocb, ocr, TestContext.Current.CancellationToken).ShouldBeTrue(fixture);
         oy.ShouldBe(y.AsSpan(0, info.LumaLength).ToArray(), fixture);
         ocb.ShouldBe(cb.AsSpan(0, info.ChromaLength).ToArray(), fixture);
         ocr.ShouldBe(cr.AsSpan(0, info.ChromaLength).ToArray(), fixture);
@@ -70,7 +70,7 @@ public sealed class PlanarTests : IDisposable
         Array.Fill(by, (ushort)0xBEEF);
         Array.Fill(bcb, (ushort)0xBEEF);
         Array.Fill(bcr, (ushort)0xBEEF);
-        SimdCodecs.TryDecodePlanes(data, by, bcb, bcr, TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecodePlanes(data, by, bcb, bcr, TestContext.Current.CancellationToken).ShouldBeTrue();
         by.AsSpan(0, info.LumaLength).ToArray().ShouldBe(oy);
         by.AsSpan(info.LumaLength).ToArray().ShouldAllBe(v => v == 0xBEEF);
         bcb.AsSpan(info.ChromaLength).ToArray().ShouldAllBe(v => v == 0xBEEF);
@@ -81,23 +81,23 @@ public sealed class PlanarTests : IDisposable
     public void ABufferThatIsTooSmallIsRefused()
     {
         var data = HeifTests.ReadFixture("synth-screen-testsrc2-1280x720-main8.heic");
-        SimdCodecs.Register(HeifImageDecoder.Registration);
-        SimdCodecs.TryReadPlanarInfo(data, out var info).ShouldBeTrue();
+        ImageCodecs.Register(HeifImageDecoder.Registration);
+        ImageCodecs.TryReadPlanarInfo(data, out var info).ShouldBeTrue();
         var token = TestContext.Current.CancellationToken;
 
-        SimdCodecs.TryDecodePlanes(data, new ushort[info.LumaLength - 1], new ushort[info.ChromaLength], new ushort[info.ChromaLength], token).ShouldBeFalse();
-        SimdCodecs.TryDecodePlanes(data, new ushort[info.LumaLength], new ushort[info.ChromaLength - 1], new ushort[info.ChromaLength], token).ShouldBeFalse();
-        SimdCodecs.TryDecodePlanes(data, new ushort[info.LumaLength], new ushort[info.ChromaLength], new ushort[info.ChromaLength - 1], token).ShouldBeFalse();
-        SimdCodecs.TryDecodePlanes(data, [], [], [], token).ShouldBeFalse();
+        ImageCodecs.TryDecodePlanes(data, new ushort[info.LumaLength - 1], new ushort[info.ChromaLength], new ushort[info.ChromaLength], token).ShouldBeFalse();
+        ImageCodecs.TryDecodePlanes(data, new ushort[info.LumaLength], new ushort[info.ChromaLength - 1], new ushort[info.ChromaLength], token).ShouldBeFalse();
+        ImageCodecs.TryDecodePlanes(data, new ushort[info.LumaLength], new ushort[info.ChromaLength], new ushort[info.ChromaLength - 1], token).ShouldBeFalse();
+        ImageCodecs.TryDecodePlanes(data, [], [], [], token).ShouldBeFalse();
     }
 
     [Fact]
     public void ACancelledTokenStopsPlanarDecoding()
     {
         var data = HeifTests.ReadFixture("synth-screen-testsrc2-1280x720-main8.heic");
-        SimdCodecs.Register(HeifImageDecoder.Registration);
-        SimdCodecs.TryReadPlanarInfo(data, out var info).ShouldBeTrue();
-        Should.Throw<OperationCanceledException>(() => SimdCodecs.TryDecodePlanes(data,
+        ImageCodecs.Register(HeifImageDecoder.Registration);
+        ImageCodecs.TryReadPlanarInfo(data, out var info).ShouldBeTrue();
+        Should.Throw<OperationCanceledException>(() => ImageCodecs.TryDecodePlanes(data,
             new ushort[info.LumaLength], new ushort[info.ChromaLength], new ushort[info.ChromaLength], new CancellationToken(canceled: true)));
     }
 
@@ -106,13 +106,13 @@ public sealed class PlanarTests : IDisposable
     {
         // This fixture has a clap clean aperture: the planes would not be the displayed image.
         var data = HeifTests.ReadFixture("synth-photo-mangrove-1599x1199-main8.heic");
-        SimdCodecs.Register(HeifImageDecoder.Registration);
+        ImageCodecs.Register(HeifImageDecoder.Registration);
 
-        SimdCodecs.TryReadPlanarInfo(data, out var info).ShouldBeFalse();
+        ImageCodecs.TryReadPlanarInfo(data, out var info).ShouldBeFalse();
         info.ShouldBe(default);
-        SimdCodecs.TryDecodePlanes(data, new ushort[1599 * 1199], new ushort[800 * 600], new ushort[800 * 600], TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecodePlanes(data, new ushort[1599 * 1199], new ushort[800 * 600], new ushort[800 * 600], TestContext.Current.CancellationToken).ShouldBeFalse();
         // It still decodes as an image.
-        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.Dispose();
     }
 
@@ -120,9 +120,9 @@ public sealed class PlanarTests : IDisposable
     public void WithoutRegistrationHeifHasNoPlanes()
     {
         var data = HeifTests.ReadFixture("synth-screen-testsrc2-1280x720-main8.heic");
-        SimdCodecs.TryReadPlanarInfo(data, out var info).ShouldBeFalse();
+        ImageCodecs.TryReadPlanarInfo(data, out var info).ShouldBeFalse();
         info.ShouldBe(default);
-        SimdCodecs.TryDecodePlanes(data, new ushort[1280 * 720], new ushort[640 * 360], new ushort[640 * 360], TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecodePlanes(data, new ushort[1280 * 720], new ushort[640 * 360], new ushort[640 * 360], TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     private static byte[] Rgba()
@@ -151,11 +151,11 @@ public sealed class PlanarTests : IDisposable
             _ => new byte[100],
         };
         if (name != "garbage")
-            SimdCodecs.CanDecode(data).ShouldBeTrue(name);
+            ImageCodecs.CanDecode(data).ShouldBeTrue(name);
 
-        SimdCodecs.TryReadPlanarInfo(data, out var info).ShouldBeFalse(name);
+        ImageCodecs.TryReadPlanarInfo(data, out var info).ShouldBeFalse(name);
         info.ShouldBe(default, name);
-        SimdCodecs.TryDecodePlanes(data, new ushort[32 * 32], new ushort[16 * 16], new ushort[16 * 16], TestContext.Current.CancellationToken).ShouldBeFalse(name);
-        SimdCodecs.TryDecodePlanes(data, new ushort[1 << 20], new ushort[1 << 20], new ushort[1 << 20], TestContext.Current.CancellationToken).ShouldBeFalse(name);
+        ImageCodecs.TryDecodePlanes(data, new ushort[32 * 32], new ushort[16 * 16], new ushort[16 * 16], TestContext.Current.CancellationToken).ShouldBeFalse(name);
+        ImageCodecs.TryDecodePlanes(data, new ushort[1 << 20], new ushort[1 << 20], new ushort[1 << 20], TestContext.Current.CancellationToken).ShouldBeFalse(name);
     }
 }

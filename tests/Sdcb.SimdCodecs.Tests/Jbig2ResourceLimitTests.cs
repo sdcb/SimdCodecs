@@ -194,7 +194,7 @@ public sealed class Jbig2ResourceLimitTests
 
     /// <summary>
     /// A <c>bool</c>-returning <c>Try</c> method must answer <c>false</c> on
-    /// hostile input, never throw: <c>SimdCodecs.TryDecode</c> delegates to these
+    /// hostile input, never throw: <c>ImageCodecs.TryDecode</c> delegates to these
     /// without a catch of its own, so anything escaping here escapes the facade and
     /// contradicts its documented "returns false when the payload is undecodable".
     /// </summary>
@@ -214,7 +214,7 @@ public sealed class Jbig2ResourceLimitTests
         Jbig2ImageDecoder.TryDecodeIntoRgba8(file, new byte[64]).ShouldBeFalse();
 
         // And through the facade, which is where a consumer actually meets it.
-        SimdCodecs.TryDecode(file, out var viaFacade, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecode(file, out var viaFacade, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         viaFacade.ShouldBeNull();
     }
 
@@ -224,7 +224,7 @@ public sealed class Jbig2ResourceLimitTests
         var file = FileWithRegion(pageWidth: 32, pageHeight: 16, regionWidth: 46340, regionHeight: 46340);
 
         Jbig2ImageDecoder.TryDecode(file, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
-        SimdCodecs.TryDecode(file, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecode(file, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     // ---- the budget's own arithmetic ----------------------------------------

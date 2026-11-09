@@ -5,7 +5,7 @@ using Shouldly;
 namespace Sdcb.SimdCodecs.Tests;
 
 /// <summary>
-/// <see cref="SimdCodecs.TryOpenFrames"/> and the <see cref="IImageFrameReader"/> it returns. Animated
+/// <see cref="ImageCodecs.TryOpenFrames"/> and the <see cref="IImageFrameReader"/> it returns. Animated
 /// WebP frames are checked against anim_dump 1.6.0's renderings (the golden manifest of
 /// <see cref="WebpAnimationOracleTests"/>), read in reverse so every frame but the last is a seek;
 /// multi-page TIFF pages against ImageMagick's own pixels. Every frame keeps the still-image contract:
@@ -25,10 +25,10 @@ public sealed class FrameReaderTests
     public void AnimatedWebpFramesAreLibwebpsInAnyOrder(string fixture)
     {
         var data = File.ReadAllBytes(WebpFixture(fixture));
-        SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
         using (reader)
         {
-            SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+            ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
             reader.FrameCount.ShouldBe(info.FrameCount);
             reader.FrameCount.ShouldBeGreaterThan(1);
             reader.LoopCount.ShouldBe(Webp.WebpDecoder.DecodeAnimation(data).LoopCount);
@@ -53,8 +53,8 @@ public sealed class FrameReaderTests
         foreach (var fixture in Directory.GetFiles(Path.GetDirectoryName(WebpFixture("x"))!, "anim-*.webp"))
         {
             var data = File.ReadAllBytes(fixture);
-            SimdCodecs.TryDecode(data, out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
-            SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
+            ImageCodecs.TryDecode(data, out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+            ImageCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
             using (reader)
             {
                 reader.TryDecodeFrame(0, out var first, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
@@ -74,7 +74,7 @@ public sealed class FrameReaderTests
     public void AnimatedWebpFramesKeepTheStillContract(string fixture)
     {
         var data = File.ReadAllBytes(WebpFixture(fixture));
-        SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
         using (reader)
         {
             // Every other frame, so the reader is asked to skip ahead as well as step.
@@ -90,7 +90,7 @@ public sealed class FrameReaderTests
     public void AnimatedGifFramesKeepTheStillContract(string kind)
     {
         var data = GifDecoderTests.Animation(kind);
-        SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
         using (reader)
         {
             for (var index = reader.FrameCount - 1; index >= 0; index--)
@@ -162,7 +162,7 @@ public sealed class FrameReaderTests
     public void TiffPagesAreImageMagicksPixelsInAnyOrder()
     {
         var tiff = ThreePageTiff(out var pages);
-        SimdCodecs.TryOpenFrames(tiff, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(tiff, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.FrameCount.ShouldBe(3);
@@ -192,7 +192,7 @@ public sealed class FrameReaderTests
         collection.Add(new MagickImage(MagickColors.Green, 2, 5));
         var tiff = collection.ToByteArray(MagickFormat.Tiff);
 
-        SimdCodecs.TryOpenFrames(tiff, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(tiff, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.FrameCount.ShouldBe(3);
@@ -220,8 +220,8 @@ public sealed class FrameReaderTests
             "gif" => new MagickImage(MagickColors.Orange, 5, 3).ToByteArray(MagickFormat.Gif),
             _ => new MagickImage(MagickColors.Teal, 6, 2).ToByteArray(MagickFormat.Tiff),
         };
-        SimdCodecs.TryDecode(data, out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
-        SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.FrameCount.ShouldBe(1);
@@ -247,10 +247,10 @@ public sealed class FrameReaderTests
         PngRgba8ExpansionTests.Chunk(apng, "acTL"u8, acTL);
         apng.Write(png, 33, png.Length - 33);
 
-        SimdCodecs.TryReadInfo(apng.ToArray(), out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(apng.ToArray(), out var info).ShouldBeTrue();
         info.FrameCount.ShouldBe(3);
-        SimdCodecs.TryOpenFrames(apng.ToArray(), out _).ShouldBeFalse();
-        SimdCodecs.TryDecode(apng.ToArray(), out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(apng.ToArray(), out _).ShouldBeFalse();
+        ImageCodecs.TryDecode(apng.ToArray(), out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         still.Width.ShouldBe(4);
     }
 
@@ -259,7 +259,7 @@ public sealed class FrameReaderTests
     public void EnumeratingPlaysLibwebpsFramesThroughOneBuffer(string fixture)
     {
         var data = File.ReadAllBytes(WebpFixture(fixture));
-        SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.TryGetFrameInfo(0, out var first).ShouldBeTrue();
@@ -285,7 +285,7 @@ public sealed class FrameReaderTests
     public void EnumeratingPagesWritesEachPageAtItsOwnWidth()
     {
         var tiff = ThreePageTiff(out var pages);
-        SimdCodecs.TryOpenFrames(tiff, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(tiff, out var reader).ShouldBeTrue();
         using (reader)
         {
             var largest = pages.Max(p => p.Width * p.Height * 3);
@@ -323,7 +323,7 @@ public sealed class FrameReaderTests
         var lab = new MagickImage(MagickColors.Blue, 3, 3);
         lab.ColorSpace = ColorSpace.Lab;
         collection.Add(lab);
-        SimdCodecs.TryOpenFrames(collection.ToByteArray(MagickFormat.Tiff), out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(collection.ToByteArray(MagickFormat.Tiff), out var reader).ShouldBeTrue();
         using (reader)
         {
             var played = new List<int>();
@@ -336,7 +336,7 @@ public sealed class FrameReaderTests
         }
 
         // Float pages have no 8-bit projection.
-        SimdCodecs.TryOpenFrames(HdrTiff.Float32Gray(3, 2, new float[6]), out var floats).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(HdrTiff.Float32Gray(3, 2, new float[6]), out var floats).ShouldBeTrue();
         using (floats)
             Should.Throw<NotSupportedException>(() => floats.EnumerateFramesInto(new byte[64], 0, PixelFormat.Gray8).ToList());
     }
@@ -344,7 +344,7 @@ public sealed class FrameReaderTests
     [Fact]
     public void EnumerationArgumentsAreCheckedOnTheCall()
     {
-        SimdCodecs.TryOpenFrames(ThreePageTiff(out _), out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(ThreePageTiff(out _), out var reader).ShouldBeTrue();
         using (reader)
         {
             // Thrown by the call itself, before anything is enumerated.
@@ -358,7 +358,7 @@ public sealed class FrameReaderTests
     {
         foreach (var data in new[] { ThreePageTiff(out _), File.ReadAllBytes(WebpFixture("anim-img2webp-lossy.webp")), Png.PngWriter.EncodeGray8(new byte[4], 2, 2) })
         {
-            SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
+            ImageCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
             Should.Throw<ArgumentOutOfRangeException>(() => reader.TryDecodeFrame(-1, out _));
             Should.Throw<ArgumentOutOfRangeException>(() => reader.TryGetFrameInfo(reader.FrameCount, out _));
             reader.Dispose();
@@ -366,9 +366,9 @@ public sealed class FrameReaderTests
             Should.Throw<ObjectDisposedException>(() => reader.TryDecodeFrameInto(0, new byte[64], 0, PixelFormat.Gray8));
         }
 
-        SimdCodecs.TryOpenFrames(new byte[64], out _).ShouldBeFalse();
+        ImageCodecs.TryOpenFrames(new byte[64], out _).ShouldBeFalse();
         var webp = File.ReadAllBytes(WebpFixture("anim-img2webp-lossy.webp"));
-        SimdCodecs.TryOpenFrames(webp.AsMemory(0, 40), out _).ShouldBeFalse();
-        SimdCodecs.TryOpenFrames("II*\0\0\0\0\0"u8.ToArray(), out _).ShouldBeFalse(); // a TIFF with no pages
+        ImageCodecs.TryOpenFrames(webp.AsMemory(0, 40), out _).ShouldBeFalse();
+        ImageCodecs.TryOpenFrames("II*\0\0\0\0\0"u8.ToArray(), out _).ShouldBeFalse(); // a TIFF with no pages
     }
 }

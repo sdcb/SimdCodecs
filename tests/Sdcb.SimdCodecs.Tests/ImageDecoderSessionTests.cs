@@ -37,7 +37,7 @@ internal sealed class NonSeekableStream(byte[] data) : Stream
 
 /// <summary>
 /// <see cref="ImageDecoder"/>, the session API: every way to open it, its frames against the facade's
-/// <see cref="SimdCodecs.TryDecode"/> and <see cref="SimdCodecs.TryOpenFrames"/>, <c>CopyPixels</c> against a crop of the converted
+/// <see cref="ImageCodecs.TryDecode"/> and <see cref="ImageCodecs.TryOpenFrames"/>, <c>CopyPixels</c> against a crop of the converted
 /// image, stream ownership and disposal.
 /// </summary>
 public sealed class ImageDecoderSessionTests : IDisposable
@@ -83,7 +83,7 @@ public sealed class ImageDecoderSessionTests : IDisposable
 
     private static byte[] DecodedPixels(byte[] data, out int width, out int height, out PixelFormat native)
     {
-        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (image)
         {
             (width, height) = (image.Width, image.Height);
@@ -428,7 +428,7 @@ public sealed class ImageDecoderSessionTests : IDisposable
     {
         using var decoder = ImageDecoder.Open(JpegData.AsMemory());
         var options = new DecodeOptions { ScaleDenominator = 4, Region = new PixelRect(1, 1, 4, 3) };
-        SimdCodecs.TryDecode(JpegData, out var expected, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(JpegData, out var expected, options, TestContext.Current.CancellationToken).ShouldBeTrue();
         using (expected)
         using (var actual = decoder.GetFrame(0).Decode(options, TestContext.Current.CancellationToken))
         {
@@ -445,7 +445,7 @@ public sealed class ImageDecoderSessionTests : IDisposable
         foreach (var (w, h) in new[] { (1, 1), (8, 5), (16, 10), (W, H), (200, 200) })
         {
             frame.TryGetClosestSize(w, h, out var width, out var height, out var scale).ShouldBeTrue();
-            SimdCodecs.TryGetClosestSize(JpegData, w, h, out var ew, out var eh, out var es).ShouldBeTrue();
+            ImageCodecs.TryGetClosestSize(JpegData, w, h, out var ew, out var eh, out var es).ShouldBeTrue();
             (width, height, scale).ShouldBe((ew, eh, es));
         }
 
@@ -470,7 +470,7 @@ public sealed class ImageDecoderSessionTests : IDisposable
         decoder.Metadata.ShouldBeSameAs(decoder.Metadata);
         decoder.GetFrame(0).Metadata.ShouldBeSameAs(decoder.Metadata);
 
-        SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
         decoder.GetFrame(0).Info.ShouldBe(info);
         decoder.GetFrame(0).Info.Orientation.ShouldBe(ImageOrientation.Rotate90);
 
@@ -487,7 +487,7 @@ public sealed class ImageDecoderSessionTests : IDisposable
         var frame = decoder.GetFrame(0);
         frame.Info.HasThumbnail.ShouldBeTrue();
         frame.TryGetThumbnail(out var thumbnail).ShouldBeTrue();
-        SimdCodecs.TryDecode(thumbJpeg, out var expected, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(thumbJpeg, out var expected, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (thumbnail)
         using (expected)
             thumbnail.Pixels.ToArray().ShouldBe(expected.Pixels.ToArray());
@@ -530,7 +530,7 @@ public sealed class ImageDecoderSessionTests : IDisposable
     public void AnimatedFramesAreTheFrameReadersFrames(string name)
     {
         var data = Animation(name);
-        SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.FrameCount.ShouldBeGreaterThan(1);
@@ -539,7 +539,7 @@ public sealed class ImageDecoderSessionTests : IDisposable
             decoder.LoopCount.ShouldBe(reader.LoopCount);
             decoder.Format.ShouldBe(name.StartsWith("gif", StringComparison.Ordinal) ? ImageFormat.Gif : ImageFormat.Webp);
 
-            SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+            ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
             info.FrameCount.ShouldBe(decoder.FrameCount);
 
             // Last to first, so a frame is not just "the next one".

@@ -82,8 +82,8 @@ public sealed class IcoTests
         info.Kind.ShouldBe(IcoKind.Cursor);
         (info.Entries[0].HotspotX, info.Entries[0].HotspotY).ShouldBe((5, 7));
 
-        SimdCodecs.DetectFormat(cur).ShouldBe(ImageFormat.Cur);
-        SimdCodecs.TryReadInfo(cur, out var image).ShouldBeTrue();
+        ImageCodecs.DetectFormat(cur).ShouldBe(ImageFormat.Cur);
+        ImageCodecs.TryReadInfo(cur, out var image).ShouldBeTrue();
         (image.Format, image.Width, image.Channels).ShouldBe((ImageFormat.Cur, 16, 4));
         IcoImageDecoder.CanDecode(cur).ShouldBeFalse();
         CurImageDecoder.TryReadInfo(Directory(1, (dib, 16, 16, 1, 1)), out _).ShouldBeFalse();
@@ -200,7 +200,7 @@ public sealed class IcoTests
             info.Best.ShouldBe(2);
             if (cursor) info.Entries.Select(e => (e.HotspotX, e.HotspotY)).ShouldBe([(1, 2), (47, 31), (128, 0)]);
 
-            SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
+            ImageCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
             using (reader)
             {
                 reader.FrameCount.ShouldBe(3);
@@ -304,8 +304,8 @@ public sealed class IcoTests
                 if ((long)info.Entries[i].Width * info.Entries[i].Height > 1 << 22) continue;
                 IcoDecoder.Decode(data, i);
             }
-            SimdCodecs.TryDecode(data, out _);
-            if (SimdCodecs.TryOpenFrames(data, out var reader))
+            ImageCodecs.TryDecode(data, out _);
+            if (ImageCodecs.TryOpenFrames(data, out var reader))
             {
                 using (reader)
                 {

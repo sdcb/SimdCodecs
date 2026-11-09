@@ -62,7 +62,7 @@ internal static class Stages
         [
             () =>
             {
-                if (!SimdCodecs.TryOpenFrames(memory, out var frames))
+                if (!ImageCodecs.TryOpenFrames(memory, out var frames))
                     throw new InvalidOperationException("not openable");
                 using (frames)
                 {

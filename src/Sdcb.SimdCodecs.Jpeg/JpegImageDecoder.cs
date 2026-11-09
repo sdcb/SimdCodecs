@@ -27,7 +27,7 @@ public sealed class JpegImageDecoder : IImageDecoder
 {
     private static ReadOnlySpan<byte> Signature => [0xFF, 0xD8, 0xFF];
 
-    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    /// <summary>The registration for <c>ImageCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
     {
         Format = ImageFormat.Jpeg,

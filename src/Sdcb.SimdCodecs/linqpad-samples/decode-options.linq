@@ -22,16 +22,16 @@ async Task Main()
 
 	// 1. The header: besides size and layout, the colour encoding, the declared resolution and whether the file
 	//    embeds a preview.
-	if (!SimdCodecs.TryReadInfo(jpeg, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
+	if (!ImageCodecs.TryReadInfo(jpeg, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
 	new { info.Width, info.Height, info.Orientation, info.ColorEncoding, info.Resolution, info.HasThumbnail }.Dump("TryReadInfo");
 
 	// 2. The metadata blocks, raw (parse the Exif with Sdcb.SimdCodecs.Exif), without decoding a pixel.
-	if (SimdCodecs.TryReadMetadata(jpeg, out ImageMetadata? metadata))
+	if (ImageCodecs.TryReadMetadata(jpeg, out ImageMetadata? metadata))
 		new { ExifBytes = metadata.Exif.Length, XmpBytes = metadata.Xmp.Length, IccBytes = metadata.Icc.Length }.Dump("TryReadMetadata");
 
 	// 3. The preview a camera embeds (Exif IFD1): a gallery thumbnail for the cost of a tiny JPEG. This photo was
 	//    downscaled and lost its preview, so HasThumbnail is false; then fall back to a scaled decode (step 4).
-	if (info.HasThumbnail && SimdCodecs.TryDecodeThumbnail(jpeg, out IDecodedImage? thumbnail))
+	if (info.HasThumbnail && ImageCodecs.TryDecodeThumbnail(jpeg, out IDecodedImage? thumbnail))
 		using (thumbnail)
 			Show(thumbnail).Dump($"TryDecodeThumbnail: {thumbnail.Width}x{thumbnail.Height}");
 	else
@@ -40,19 +40,19 @@ async Task Main()
 	// 4. Size negotiation, as in WIC: ask what the codec decodes to natively near the size you want, then ask for
 	//    exactly that (the closest size not smaller than the request). JPEG scales in the DCT domain (1/2 .. 1/8),
 	//    so a small preview costs a fraction of a full decode.
-	SimdCodecs.TryGetClosestSize(jpeg, 400, 260, out int w, out int h, out int denominator);
+	ImageCodecs.TryGetClosestSize(jpeg, 400, 260, out int w, out int h, out int denominator);
 	DecodeOptions scaled = new() { ScaleDenominator = denominator };
 	new
 	{
 		Requested = "400x260",
 		Native = $"{w}x{h} (1/{denominator})",
-		FullMs = Fastest(() => SimdCodecs.TryDecode(jpeg, out IDecodedImage? i) && Dispose(i)),
-		ScaledMs = Fastest(() => SimdCodecs.TryDecode(jpeg, out IDecodedImage? i, scaled) && Dispose(i)),
+		FullMs = Fastest(() => ImageCodecs.TryDecode(jpeg, out IDecodedImage? i) && Dispose(i)),
+		ScaledMs = Fastest(() => ImageCodecs.TryDecode(jpeg, out IDecodedImage? i, scaled) && Dispose(i)),
 	}.Dump("TryGetClosestSize + DecodeOptions.ScaleDenominator");
 
 	// 5. A region, in stored coordinates of the image at the requested scale: here a 400x300 crop at full size.
 	DecodeOptions crop = new() { Region = new PixelRect(info.Width / 2 - 200, info.Height / 2 - 150, 400, 300) };
-	if (SimdCodecs.TryDecode(jpeg, out IDecodedImage? cropped, crop))
+	if (ImageCodecs.TryDecode(jpeg, out IDecodedImage? cropped, crop))
 		using (cropped)
 			Show(cropped).Dump("DecodeOptions.Region: the centre at full resolution");
 
@@ -61,25 +61,25 @@ async Task Main()
 	DecodeOptions pooled = new() { Pool = ArrayPool<byte>.Shared };
 	new
 	{
-		AllocatedPerDecodeKB = AllocatedKB(() => SimdCodecs.TryDecode(jpeg, out IDecodedImage? i) && Dispose(i)),
-		PooledPerDecodeKB = AllocatedKB(() => SimdCodecs.TryDecode(jpeg, out IDecodedImage? i, pooled) && Dispose(i)),
+		AllocatedPerDecodeKB = AllocatedKB(() => ImageCodecs.TryDecode(jpeg, out IDecodedImage? i) && Dispose(i)),
+		PooledPerDecodeKB = AllocatedKB(() => ImageCodecs.TryDecode(jpeg, out IDecodedImage? i, pooled) && Dispose(i)),
 	}.Dump("DecodeOptions.Pool (dispose the image to return its buffer)");
 
 	// 7. Any PixelFormat into your own buffer: 16 bits per sample from a 16-bit PNG, premultiplied BGRA (what WPF,
 	//    Direct2D and most compositors want) from a WebP with a soft alpha edge.
 	byte[] png16 = await http.GetByteArrayAsync(Base + "fuji-16bit.png");
-	SimdCodecs.TryReadInfo(png16, out ImageInfo pngInfo);
+	ImageCodecs.TryReadInfo(png16, out ImageInfo pngInfo);
 	byte[] rgba64 = new byte[pngInfo.Width * pngInfo.Height * PixelFormat.Rgba64.BytesPerPixel];
-	SimdCodecs.TryDecodeInto(png16, rgba64, 0, PixelFormat.Rgba64);
+	ImageCodecs.TryDecodeInto(png16, rgba64, 0, PixelFormat.Rgba64);
 	ushort[] first = MemoryMarshal.Cast<byte, ushort>(rgba64.AsSpan(0, 8)).ToArray();
 	new { pngInfo.BitDepth, FirstPixelRgba64 = string.Join(", ", first) }.Dump("PixelFormat.Rgba64: all 16 bits kept");
 
 	byte[] webp = await http.GetByteArrayAsync(Base + "cutout-lossless.webp");
-	SimdCodecs.TryReadInfo(webp, out ImageInfo webpInfo);
+	ImageCodecs.TryReadInfo(webp, out ImageInfo webpInfo);
 	int stride = webpInfo.Width * 4;
 	byte[] straight = new byte[stride * webpInfo.Height], premultiplied = new byte[stride * webpInfo.Height];
-	SimdCodecs.TryDecodeInto(webp, straight, stride, PixelFormat.Bgra32);
-	SimdCodecs.TryDecodeInto(webp, premultiplied, stride, PixelFormat.Bgra32Premultiplied);
+	ImageCodecs.TryDecodeInto(webp, straight, stride, PixelFormat.Bgra32);
+	ImageCodecs.TryDecodeInto(webp, premultiplied, stride, PixelFormat.Bgra32Premultiplied);
 	int edge = FirstHalfTransparent(straight);   // a pixel on the soft edge of the mask
 	new
 	{
@@ -156,5 +156,5 @@ static int FirstHalfTransparent(byte[] bgra)
 static object Show(IDecodedImage image) => Show(image.ToRgba8(), PixelFormat.Rgba32, image.Width, image.Height);
 
 static object Show(byte[] pixels, PixelFormat format, int width, int height) =>
-	Util.Image(SimdCodecs.Encode(pixels, width, height, format, ImageFormat.Png,
+	Util.Image(ImageCodecs.Encode(pixels, width, height, format, ImageFormat.Png,
 		options: new PngWriteOptions { CompressionLevel = CompressionLevel.Fastest }));

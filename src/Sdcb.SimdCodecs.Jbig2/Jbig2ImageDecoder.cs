@@ -30,7 +30,7 @@ namespace Sdcb.SimdCodecs.Jbig2;
 /// </summary>
 public sealed class Jbig2ImageDecoder : IMultiFrameImageDecoder
 {
-    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    /// <summary>The registration for <c>ImageCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
     {
         Format = ImageFormat.Jbig2,
@@ -211,7 +211,7 @@ public sealed class Jbig2ImageDecoder : IMultiFrameImageDecoder
     /// in the list because dimension arithmetic on attacker-chosen numbers used to
     /// reach both, and a <c>Try</c> method that throws on hostile input is a
     /// contract break the facade cannot paper over —
-    /// <c>SimdCodecs.TryDecode</c> delegates here without a catch of its own.
+    /// <c>ImageCodecs.TryDecode</c> delegates here without a catch of its own.
     /// <see cref="Jbig2Limits"/> should now make both unreachable from geometry, so
     /// this is the belt to that braces: a 256 MiB bitmap can still fail to allocate
     /// on a small device, and <c>false</c> is the honest answer there too.

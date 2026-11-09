@@ -315,7 +315,7 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
     public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail) =>
         ImageDecoderFallback.NoThumbnail(out thumbnail);
 
-    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    /// <summary>The registration for <c>ImageCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
     {
         Format = ImageFormat.Webp,

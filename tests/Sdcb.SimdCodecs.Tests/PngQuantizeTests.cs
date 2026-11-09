@@ -140,7 +140,7 @@ public sealed class PngQuantizeTests
     {
         const int width = 80, height = 60;
         var source = Sticker(width, height);
-        var png = SimdCodecs.Encode(source, width, height, PixelFormat.Rgba32, ImageFormat.Png,
+        var png = ImageCodecs.Encode(source, width, height, PixelFormat.Rgba32, ImageFormat.Png,
             options: new PngWriteOptions { Quantize = new PngQuantizeOptions { MaxColors = 16 } },
             cancellationToken: TestContext.Current.CancellationToken);
         png[25].ShouldBe((byte)3);

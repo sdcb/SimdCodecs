@@ -15,7 +15,7 @@ public sealed class QoiImageDecoder : IImageDecoder
 {
     private static readonly ColorEncoding LinearSrgb = new() { Transfer = TransferFunction.Linear };
 
-    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    /// <summary>The registration for <c>ImageCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
     {
         Format = ImageFormat.Qoi,

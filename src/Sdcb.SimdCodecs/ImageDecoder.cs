@@ -60,9 +60,9 @@ public sealed class ImageDecoder : IDisposable
         try
         {
             var data = source.GetMemory();
-            if (SimdCodecs.Find(data.Span) is not { } codec)
-                throw new InvalidDataException($"No registered codec recognises the data (detected format: {SimdCodecs.DetectFormat(data.Span)}).");
-            if (!SimdCodecs.TryOpenFrames(data, out var frames))
+            if (ImageCodecs.Find(data.Span) is not { } codec)
+                throw new InvalidDataException($"No registered codec recognises the data (detected format: {ImageCodecs.DetectFormat(data.Span)}).");
+            if (!ImageCodecs.TryOpenFrames(data, out var frames))
                 throw new InvalidDataException($"The {codec.Format} file is malformed.");
             return new ImageDecoder(source, data, codec, frames);
         }

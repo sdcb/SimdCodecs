@@ -24,9 +24,9 @@ using Sdcb.SimdCodecs.Jpeg;
 byte[] file = File.ReadAllBytes("photo.webp");   // JPEG、PNG、TIFF、WebP、GIF、BMP、ICO、CUR、QOI、Netpbm、JPEG 2000 或 JBIG2
 
 // 门面类根据文件头识别格式，解码到你自己的缓冲区（R G B A）。
-if (!SimdCodecs.TryReadInfo(file, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
+if (!ImageCodecs.TryReadInfo(file, out ImageInfo info)) throw new InvalidDataException("Not a supported image");
 byte[] rgba = new byte[info.Width * info.Height * 4];
-SimdCodecs.TryDecodeIntoRgba8(file, rgba);
+ImageCodecs.TryDecodeIntoRgba8(file, rgba);
 
 // 编码成 JPEG：SIMD 加速，支持 baseline / 优化 Huffman / progressive，4:2:0 或 4:4:4。
 byte[] jpeg = JpegEncoder.Encode(rgba, info.Width, info.Height, channels: 4, new JpegEncodeOptions { Quality = 90 });
@@ -35,16 +35,16 @@ File.WriteAllBytes("photo.jpg", jpeg);
 
 门面的其他入口：
 
-- `SimdCodecs.TryDecodeInto(file, buffer, stride, format)`：按任意行跨度，把任意 `PixelFormat` 直接写进你的缓冲区： BGRA（Windows / Skia）、`Bgra32Premultiplied`（WPF、Direct2D、合成器）、RGB、BGR（OpenCV）、灰度（OCR），以及 它们的 16 位版本（`Rgba64`、`Gray16` 等），16 位 PNG、10 位 HEIC 的精度不会丢失。JPEG 和 PNG 原生输出 8 位布局， 不经过 RGBA 整帧；彩色 JPEG 的灰度就是它的 Y 平面。
-- `SimdCodecs.TryDecode(file, out image, options, cancellationToken)`：保留原始布局：通道数、8/16 位或浮点采样、 真实位深、ICC、Exif / XMP（`image.Metadata`）。`DecodeOptions` 可以只解一个区域、缩放解码（每个 codec 都接受任意 2 的幂：JPEG 在 DCT 域 1/2 到 1/8、JPEG 2000 按分辨率级别是原生的，其余整幅解码后用 box 滤波缩小；`TryGetClosestSize` 告诉你 codec 原生能做到什么）或使用池化内存（释放图像即归还）。所有入口都接受 `CancellationToken`。
-- `SimdCodecs.TryReadInfo(file, out info)`：只读文件头：格式、存储位深、颜色编码（是不是 PQ / HLG HDR）、分辨率 （DPI）、EXIF 方向（只报告，不旋转像素）、帧数或页数、有没有缩略图。
-- `SimdCodecs.TryReadMetadata(file, out metadata)` / `TryDecodeThumbnail(file, out thumb)`：取出 Exif、XMP、ICC 原始块供转码透传，以及内嵌的预览图（Exif IFD1、HEIF `thmb`）。
+- `ImageCodecs.TryDecodeInto(file, buffer, stride, format)`：按任意行跨度，把任意 `PixelFormat` 直接写进你的缓冲区： BGRA（Windows / Skia）、`Bgra32Premultiplied`（WPF、Direct2D、合成器）、RGB、BGR（OpenCV）、灰度（OCR），以及 它们的 16 位版本（`Rgba64`、`Gray16` 等），16 位 PNG、10 位 HEIC 的精度不会丢失。JPEG 和 PNG 原生输出 8 位布局， 不经过 RGBA 整帧；彩色 JPEG 的灰度就是它的 Y 平面。
+- `ImageCodecs.TryDecode(file, out image, options, cancellationToken)`：保留原始布局：通道数、8/16 位或浮点采样、 真实位深、ICC、Exif / XMP（`image.Metadata`）。`DecodeOptions` 可以只解一个区域、缩放解码（每个 codec 都接受任意 2 的幂：JPEG 在 DCT 域 1/2 到 1/8、JPEG 2000 按分辨率级别是原生的，其余整幅解码后用 box 滤波缩小；`TryGetClosestSize` 告诉你 codec 原生能做到什么）或使用池化内存（释放图像即归还）。所有入口都接受 `CancellationToken`。
+- `ImageCodecs.TryReadInfo(file, out info)`：只读文件头：格式、存储位深、颜色编码（是不是 PQ / HLG HDR）、分辨率 （DPI）、EXIF 方向（只报告，不旋转像素）、帧数或页数、有没有缩略图。
+- `ImageCodecs.TryReadMetadata(file, out metadata)` / `TryDecodeThumbnail(file, out thumb)`：取出 Exif、XMP、ICC 原始块供转码透传，以及内嵌的预览图（Exif IFD1、HEIF `thmb`）。
 - `ImageDecoder.Open(stream | path | memory)`：WIC 式的会话：`Format`、`FrameCount`，再 `GetFrame(i).Decode(options)` 或 `.CopyPixels(region, format, buffer, stride)`；不可寻址的流用 `OpenAsync`。
-- `SimdCodecs.Encode(image, ImageFormat.Png, stream)` / `CreateEncoder(format, writer)`：编码器抽象：每个编码器都接收 任意 `PixelFormat`（包括 UI 框架的预乘 BGRA），按任意跨度逐行推送，并写入图像的元数据；只能存 8 位的格式会在哪里 降精度，用 `GetClosestInputFormat` 可以先看到。
-- `SimdCodecs.TryReadPlanarInfo` / `TryDecodePlanes`：按编码原样输出 YCbCr 平面（HEIF），供视频管线和 GPU 上传使用。
-- `SimdCodecs.DetectFormat(file)`：还能认出不支持解码的格式（AVIF、JPEG XL 等）； `SimdCodecs.IsDecodable(format)` 判断某个格式能否解码。HEIF 在注册它的包之后即可解码。
-- `SimdCodecs.Register(HeifImageDecoder.Registration)`：让上面所有入口都能处理 HEIF / HEIC。HEVC 有专利负担， `Sdcb.SimdCodecs.Heif` 不在门面包里，需要显式安装并注册（本包不授予任何专利许可）。
-- `SimdCodecs.TryOpenFrames(file, out reader)`：按索引、以任意布局逐帧解码：动画 WebP / GIF 是合成好的帧 及其时长，多页 TIFF 和 JBIG2 是各页，图标是其中的每张图（其他图片就是一帧）；`reader.EnumerateFramesInto(buffer, stride, format)` 用同一块缓冲区按顺序播放。
+- `ImageCodecs.Encode(image, ImageFormat.Png, stream)` / `CreateEncoder(format, writer)`：编码器抽象：每个编码器都接收 任意 `PixelFormat`（包括 UI 框架的预乘 BGRA），按任意跨度逐行推送，并写入图像的元数据；只能存 8 位的格式会在哪里 降精度，用 `GetClosestInputFormat` 可以先看到。
+- `ImageCodecs.TryReadPlanarInfo` / `TryDecodePlanes`：按编码原样输出 YCbCr 平面（HEIF），供视频管线和 GPU 上传使用。
+- `ImageCodecs.DetectFormat(file)`：还能认出不支持解码的格式（AVIF、JPEG XL 等）； `ImageCodecs.IsDecodable(format)` 判断某个格式能否解码。HEIF 在注册它的包之后即可解码。
+- `ImageCodecs.Register(HeifImageDecoder.Registration)`：让上面所有入口都能处理 HEIF / HEIC。HEVC 有专利负担， `Sdcb.SimdCodecs.Heif` 不在门面包里，需要显式安装并注册（本包不授予任何专利许可）。
+- `ImageCodecs.TryOpenFrames(file, out reader)`：按索引、以任意布局逐帧解码：动画 WebP / GIF 是合成好的帧 及其时长，多页 TIFF 和 JBIG2 是各页，图标是其中的每张图（其他图片就是一帧）；`reader.EnumerateFramesInto(buffer, stride, format)` 用同一块缓冲区按顺序播放。
 
 从 1.x 升级：见 [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md)。
 
@@ -135,7 +135,7 @@ JPEG 解码的精度也不低于 libjpeg-turbo 的默认设置（对色度做插
 | `Sdcb.SimdCodecs.Pnm` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Pnm.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Pnm) | Netpbm（PBM、PGM、PPM、PAM、PFM）解码器和编码器 |
 | `Sdcb.SimdCodecs.Jpeg2000` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jpeg2000.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jpeg2000) | JPEG 2000 解码器 |
 | `Sdcb.SimdCodecs.Jbig2` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Jbig2.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Jbig2) | JBIG2 解码器 |
-| `Sdcb.SimdCodecs.Heif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Heif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Heif) | HEIF / HEIC 解码器（HEVC）。`Sdcb.SimdCodecs` 不引用它：安装后调用 `SimdCodecs.Register(HeifImageDecoder.Registration)`。不授予 HEVC 专利许可 |
+| `Sdcb.SimdCodecs.Heif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Heif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Heif) | HEIF / HEIC 解码器（HEVC）。`Sdcb.SimdCodecs` 不引用它：安装后调用 `ImageCodecs.Register(HeifImageDecoder.Registration)`。不授予 HEVC 专利许可 |
 | `Sdcb.SimdCodecs.Exif` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Exif.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Exif) | EXIF 读写 |
 | `Sdcb.SimdCodecs.Color.Icc` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Color.Icc.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Color.Icc) | sRGB v4 ICC 配置文件、`cicp` 标签注入 |
 | `Sdcb.SimdCodecs.Abstractions` | [![NuGet](https://img.shields.io/nuget/v/Sdcb.SimdCodecs.Abstractions.svg)](https://www.nuget.org/packages/Sdcb.SimdCodecs.Abstractions) | 公共类型：`IImageDecoder` / `IImageEncoder`、`IDecodedImage` / `RasterImage`、`PixelFormat` / `PixelConverter`、`DecodeOptions`、`ImageMetadata`、`IPlanarImageDecoder`、`IImageFrameReader`（帧与页）、H.273 色彩描述 |
@@ -197,7 +197,7 @@ MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BM
 
 | 包 | 样例 |
 |---|---|
-| `Sdcb.SimdCodecs` | `quick-start`、`all-formats`、`decode-options`（元数据、内嵌缩略图、缩放 / 区域 / 池化解码、16 位和预乘输出、`ImageDecoder` 会话）、`encode`（`SimdCodecs.Encode` 编码到各格式，按行带流式写入和动画的编码会话）、`skiasharp`、`opencvsharp` |
+| `Sdcb.SimdCodecs` | `quick-start`、`all-formats`、`decode-options`（元数据、内嵌缩略图、缩放 / 区域 / 池化解码、16 位和预乘输出、`ImageDecoder` 会话）、`encode`（`ImageCodecs.Encode` 编码到各格式，按行带流式写入和动画的编码会话）、`skiasharp`、`opencvsharp` |
 | `Sdcb.SimdCodecs.Jpeg` | `encode`（质量、采样、progressive、EXIF/XMP）、`scaled-decode` |
 | `Sdcb.SimdCodecs.Jpeg.GainMap` | `ultrahdr`（写入并读取 Ultra HDR JPEG） |
 | `Sdcb.SimdCodecs.Png` | `read-write` |

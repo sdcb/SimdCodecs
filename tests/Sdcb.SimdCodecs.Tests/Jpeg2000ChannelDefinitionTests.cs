@@ -57,16 +57,16 @@ public class Jpeg2000ChannelDefinitionTests
     {
         var expected = Expected(name);
 
-        SimdCodecs.TryReadInfo(Alpha(name), out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(Alpha(name), out var info).ShouldBeTrue();
         (info.Width, info.Height, info.Channels, info.SampleFormat).ShouldBe((37, 29, channels, SampleFormat.UInt8));
 
-        SimdCodecs.TryDecode(Alpha(name), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(Alpha(name), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.Channels.ShouldBe(channels);
         image.Pixels.ToArray().ShouldBe(expected.Samples.Select(s => (byte)s).ToArray());
 
         // Into RGBA: alpha is the last channel and colour is straight.
         var rgba = new byte[37 * 29 * 4];
-        SimdCodecs.TryDecodeIntoRgba8(Alpha(name), rgba).ShouldBeTrue();
+        ImageCodecs.TryDecodeIntoRgba8(Alpha(name), rgba).ShouldBeTrue();
         for (var i = 0; i < 37 * 29; i++)
         {
             rgba[i * 4 + 3].ShouldBe((byte)expected.Samples[i * channels + channels - 1]);
@@ -83,7 +83,7 @@ public class Jpeg2000ChannelDefinitionTests
         OpenJpegOracle.RequireOrSkip();
         var oracle = OpenJpegOracle.DecodeFile(Alpha(name), ".jp2", ".pnm");
 
-        SimdCodecs.TryDecode(Alpha(name), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(Alpha(name), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         oracle.Components.ShouldBe(image.Channels);
         image.Pixels.ToArray().ShouldBe(oracle.Samples.Select(s => (byte)s).ToArray());
@@ -105,7 +105,7 @@ public class Jpeg2000ChannelDefinitionTests
         decoded.Samples.ShouldBe(Reverse(source.Samples, 3));
         decoded.Channels!.Select(c => c.Association).ShouldBe([1, 2, 3]);
 
-        SimdCodecs.TryDecode(wrapped, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(wrapped, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image.Pixels.ToArray().ShouldBe(Reverse(source.Samples, 3).Select(s => (byte)s).ToArray());
 
         OpenJpegOracle.RequireOrSkip();
@@ -161,7 +161,7 @@ public class Jpeg2000ChannelDefinitionTests
         decoded.Samples.ShouldBe(source.Samples);
         decoded.Channels![3].Type.ShouldBe(Jp2ChannelType.PremultipliedOpacity);
 
-        SimdCodecs.TryDecode(jp2, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(jp2, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         var pixels = image.Pixels.ToArray();
         var sawZero = false;
         var sawClamp = false;
@@ -182,7 +182,7 @@ public class Jpeg2000ChannelDefinitionTests
         sawZero.ShouldBeTrue("no pixel had alpha 0");
         sawClamp.ShouldBeTrue("no pixel exercised the clamp");
         // Decoding the same file again must not see the first decode's rewritten samples.
-        SimdCodecs.TryDecode(jp2, out var again, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(jp2, out var again, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         again.Pixels.ToArray().ShouldBe(pixels);
     }
 
@@ -207,8 +207,8 @@ public class Jpeg2000ChannelDefinitionTests
         };
         var jp2 = ReplaceCdef(Alpha("rgba-struct37x29"), Cdef(entries));
 
-        SimdCodecs.TryDecode(jp2, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
-        SimdCodecs.TryReadInfo(jp2, out _).ShouldBeFalse();
+        ImageCodecs.TryDecode(jp2, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryReadInfo(jp2, out _).ShouldBeFalse();
         Jpeg2000Decoder.Decode(jp2, cancellationToken: TestContext.Current.CancellationToken).Components.ShouldBe(4);
     }
 
@@ -230,12 +230,12 @@ public class Jpeg2000ChannelDefinitionTests
     public void FourComponents_StayRefusedWithoutAnAlphaDefinition()
     {
         var cmyk = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "jpeg2000-raw", "cmyk16.j2k"));
-        SimdCodecs.TryDecode(cmyk, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecode(cmyk, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
 
         var fourColours = Jp2(
             Header(ImageHeader(), EnumeratedColour(16), Cdef((0, 0, 1), (1, 0, 2), (2, 0, 3), (3, 0, 4))),
             Box("jp2c", cmyk));
-        SimdCodecs.TryDecode(fourColours, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecode(fourColours, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         Jpeg2000Decoder.Decode(fourColours, cancellationToken: TestContext.Current.CancellationToken).Components.ShouldBe(4);
     }
 
@@ -247,7 +247,7 @@ public class Jpeg2000ChannelDefinitionTests
             Header(ImageHeader(), EnumeratedColour(17), Cdef((0, 0, 1), (1, 0, 2), (2, 0, 3))),
             Box("jp2c", File.ReadAllBytes(Path.Combine(FixtureDirectory, "rgb-struct64.j2k"))));
 
-        SimdCodecs.TryDecode(wrapped, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecode(wrapped, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     /// <summary>A box that contradicts itself or the image is invalid data, never a wrong picture.</summary>
@@ -281,7 +281,7 @@ public class Jpeg2000ChannelDefinitionTests
 
         Should.Throw<InvalidDataException>(() => Jpeg2000Decoder.Decode(wrapped));
         Should.Throw<InvalidDataException>(() => Jpeg2000Decoder.ReadInfo(wrapped));
-        SimdCodecs.TryDecode(wrapped, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecode(wrapped, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     /// <summary>The facade's alpha survives a scaled decode (reduce), sample for sample against the decoder at the same reduction.</summary>
@@ -291,7 +291,7 @@ public class Jpeg2000ChannelDefinitionTests
         var bytes = Alpha("rgba-struct37x29");
         var reduced = Jpeg2000Decoder.Decode(bytes, 1, TestContext.Current.CancellationToken);
 
-        SimdCodecs.TryDecode(bytes, out var image, new DecodeOptions { ScaleDenominator = 2 }, TestContext.Current.CancellationToken)
+        ImageCodecs.TryDecode(bytes, out var image, new DecodeOptions { ScaleDenominator = 2 }, TestContext.Current.CancellationToken)
             .ShouldBeTrue();
 
         (image.Width, image.Height, image.Channels).ShouldBe((reduced.Width, reduced.Height, 4));

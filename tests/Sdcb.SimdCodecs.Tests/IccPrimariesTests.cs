@@ -92,7 +92,7 @@ public sealed class IccPrimariesTests
             ultraHdr = JpegIccInjector.EmbedIccProfile(ultraHdr, icc);
         }
 
-        SimdCodecs.TryDecode(ultraHdr, out var image).ShouldBeTrue();
+        ImageCodecs.TryDecode(ultraHdr, out var image).ShouldBeTrue();
         image.SampleFormat.ShouldBe(SampleFormat.Float32);
         image.ColorEncoding.Transfer.ShouldBe(TransferFunction.Linear);
         return image.ColorEncoding.Primaries;

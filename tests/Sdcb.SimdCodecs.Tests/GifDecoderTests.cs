@@ -62,10 +62,10 @@ public sealed class GifDecoderTests
     // Every frame through the facade's reader, in order, as RGBA.
     internal static List<byte[]> OurFrames(byte[] gif)
     {
-        SimdCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
         using (reader)
         {
-            SimdCodecs.TryReadInfo(gif, out var info).ShouldBeTrue();
+            ImageCodecs.TryReadInfo(gif, out var info).ShouldBeTrue();
             var frames = new List<byte[]>();
             for (var i = 0; i < reader.FrameCount; i++)
             {
@@ -105,7 +105,7 @@ public sealed class GifDecoderTests
         var ours = OurFrames(gif).Single();
         ShouldMatch(ours, expected, "still");
 
-        SimdCodecs.TryReadInfo(gif, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(gif, out var info).ShouldBeTrue();
         (info.Width, info.Height, info.FrameCount, info.BitDepth).ShouldBe((width, height, 1, 8));
         info.Channels.ShouldBe(container.Frames[0].TransparentIndex >= 0 ? 4 : 3);
         GifDecoder.Decode(gif).Rgba.ShouldBe(ours);
@@ -177,7 +177,7 @@ public sealed class GifDecoderTests
     {
         var gif = Animation(kind);
         var inOrder = OurFrames(gif);
-        SimdCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
         using (reader)
         {
             foreach (var i in Enumerable.Range(0, reader.FrameCount).Reverse().Concat([1, 1, 0, reader.FrameCount - 1]))
@@ -194,7 +194,7 @@ public sealed class GifDecoderTests
     {
         var gif = Animation("mixed");
         using var magick = new MagickImageCollection(gif);
-        SimdCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
         using (reader)
         {
             // Written as AnimationIterations 3: stored as 2 repetitions, which is 3 plays.

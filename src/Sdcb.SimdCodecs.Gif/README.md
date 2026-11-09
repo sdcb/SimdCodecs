@@ -16,7 +16,7 @@ Every frame, by index or in order, through the `Sdcb.SimdCodecs` frame reader:
 using Sdcb.SimdCodecs;
 using Sdcb.SimdCodecs.Abstractions;
 
-if (SimdCodecs.TryOpenFrames(data, out IImageFrameReader? reader))
+if (ImageCodecs.TryOpenFrames(data, out IImageFrameReader? reader))
 using (reader)
 {
     var buffer = new byte[info.Width * info.Height * 4];

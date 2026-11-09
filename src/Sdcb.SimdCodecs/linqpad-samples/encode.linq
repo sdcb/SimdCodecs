@@ -10,13 +10,13 @@
   <Namespace>System.Threading.Tasks</Namespace>
 </Query>
 
-// Every encoder through one API: SimdCodecs.Encode for a decoded image or raw pixels in any PixelFormat, and an
+// Every encoder through one API: ImageCodecs.Encode for a decoded image or raw pixels in any PixelFormat, and an
 // encoder session (CreateEncoder) that takes rows band by band and several frames for an animation.
 async Task Main()
 {
 	using HttpClient http = new();
 	byte[] jpeg = await http.GetByteArrayAsync("https://cv-public.sdcb.ai/simdcodecs/samples/v1/photo.jpg");
-	if (!SimdCodecs.TryDecode(jpeg, out IDecodedImage? decoded)) throw new InvalidDataException("Decode failed");
+	if (!ImageCodecs.TryDecode(jpeg, out IDecodedImage? decoded)) throw new InvalidDataException("Decode failed");
 	using IDecodedImage photo = decoded;
 
 	// 1. Transcode a decoded image to every built-in encoder. Its Exif, XMP and ICC go along wherever the format
@@ -40,22 +40,22 @@ async Task Main()
 	{
 		using MemoryStream file = new();
 		long t = Stopwatch.GetTimestamp();
-		SimdCodecs.Encode(photo, format, file, options);
+		ImageCodecs.Encode(photo, format, file, options);
 		double ms = Stopwatch.GetElapsedTime(t).TotalMilliseconds;
 		byte[] bytes = file.ToArray();
-		SimdCodecs.TryReadMetadata(bytes, out ImageMetadata? kept);
+		ImageCodecs.TryReadMetadata(bytes, out ImageMetadata? kept);
 		rows.Add(new
 		{
 			Format = format.ToString(),
 			Options = options?.GetType().Name ?? "(defaults)",
 			KB = bytes.Length / 1024,
 			EncodeMs = Math.Round(ms, 1),
-			Rgba64StoredAs = SimdCodecs.GetClosestInputFormat(format, PixelFormat.Rgba64).ToString(),
+			Rgba64StoredAs = ImageCodecs.GetClosestInputFormat(format, PixelFormat.Rgba64).ToString(),
 			ExifKept = kept?.Exif.Length > 0,
-			ReadsBack = SimdCodecs.TryReadInfo(bytes, out ImageInfo back) && back.Width == photo.Width,
+			ReadsBack = ImageCodecs.TryReadInfo(bytes, out ImageInfo back) && back.Width == photo.Width,
 		});
 	}
-	rows.Dump($"SimdCodecs.Encode(image, format, stream): {photo.Width}x{photo.Height} photo, Exif {photo.Metadata.Exif.Length} bytes");
+	rows.Dump($"ImageCodecs.Encode(image, format, stream): {photo.Width}x{photo.Height} photo, Exif {photo.Metadata.Exif.Length} bytes");
 
 	// 2. Raw pixels in any PixelFormat, rows any stride apart: here straight-alpha BGRA with an alpha ramp,
 	//    as a UI surface holds it. The encoder converts; there is no need for an RGBA copy first.
@@ -70,13 +70,13 @@ async Task Main()
 		bgra[i + 2] = (byte)(255 - x / 2); // R
 		bgra[i + 3] = (byte)(255 * x / (w - 1));
 	}
-	byte[] png = SimdCodecs.Encode(bgra, w, h, PixelFormat.Bgra32, ImageFormat.Png);
-	Util.Image(png).Dump($"SimdCodecs.Encode(Bgra32 pixels, ImageFormat.Png): {png.Length / 1024} KB");
+	byte[] png = ImageCodecs.Encode(bgra, w, h, PixelFormat.Bgra32, ImageFormat.Png);
+	Util.Image(png).Dump($"ImageCodecs.Encode(Bgra32 pixels, ImageFormat.Png): {png.Length / 1024} KB");
 
 	// 3. A session takes the image in bands, so a producer (a renderer, a scanner, a tiled source) never holds
 	//    the whole frame: AddFrame declares it, WriteRows streams it, Commit finishes the file.
 	ArrayBufferWriter<byte> output = new();
-	using (IImageEncoderSession session = SimdCodecs.CreateEncoder(ImageFormat.Jpeg, output, new JpegEncodeOptions { Quality = 90 }))
+	using (IImageEncoderSession session = ImageCodecs.CreateEncoder(ImageFormat.Jpeg, output, new JpegEncodeOptions { Quality = 90 }))
 	{
 		const int bw = 1024, bh = 768, band = 64;
 		IImageFrameEncoder frame = session.AddFrame(bw, bh, PixelFormat.Rgb24);
@@ -105,7 +105,7 @@ async Task Main()
 	{
 		ArrayBufferWriter<byte> anim = new();
 		int maxFrames;
-		using (IImageEncoderSession session = SimdCodecs.CreateEncoder(format, anim))
+		using (IImageEncoderSession session = ImageCodecs.CreateEncoder(format, anim))
 		{
 			maxFrames = session.MaxFrames;   // 1 for a still-only format
 			const int size = 160, frames = 12;

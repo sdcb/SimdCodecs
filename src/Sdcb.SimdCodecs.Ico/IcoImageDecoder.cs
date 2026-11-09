@@ -12,7 +12,7 @@ namespace Sdcb.SimdCodecs.Ico;
 /// </summary>
 public sealed class IcoImageDecoder : IMultiFrameImageDecoder
 {
-    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    /// <summary>The registration for <c>ImageCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
     {
         Format = ImageFormat.Ico,
@@ -74,7 +74,7 @@ public sealed class IcoImageDecoder : IMultiFrameImageDecoder
 /// </summary>
 public sealed class CurImageDecoder : IMultiFrameImageDecoder
 {
-    /// <summary>The registration for <c>SimdCodecs.Register</c>, built from this type's method groups.</summary>
+    /// <summary>The registration for <c>ImageCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
     {
         Format = ImageFormat.Cur,

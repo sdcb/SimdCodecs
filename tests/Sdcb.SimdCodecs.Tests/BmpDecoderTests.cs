@@ -109,7 +109,7 @@ public sealed class BmpDecoderTests
                 throw new ShouldAssertException($"{because}, {format}: byte {at} (row {at / stride}) is {actual[at]:X2}, expected {expected[at]:X2}");
             }
         }
-        SimdCodecs.TryDecode(bmp, out var viaFacade).ShouldBeTrue(because);
+        ImageCodecs.TryDecode(bmp, out var viaFacade).ShouldBeTrue(because);
         viaFacade!.ToRgba8().ShouldBe(image.ToRgba8(), because);
     }
 

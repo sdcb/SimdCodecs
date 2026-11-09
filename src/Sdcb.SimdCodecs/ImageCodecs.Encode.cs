@@ -15,7 +15,7 @@ using Sdcb.SimdCodecs.Webp;
 
 namespace Sdcb.SimdCodecs;
 
-public static partial class SimdCodecs
+public static partial class ImageCodecs
 {
     // The built-in encoders, bound through each codec's Registration property (method groups bound in the codec,
     // never in a generic method: see the decoder registry). RegisterEncoder replaces copy-on-write.
@@ -35,7 +35,7 @@ public static partial class SimdCodecs
 
     /// <summary>
     /// Enables encoding to a format the facade does not encode out of the box, or replaces the encoder for one
-    /// (<c>SimdCodecs.RegisterEncoder(MyEncoder.Registration)</c>). PNG, JPEG, TIFF, WebP, GIF, BMP, ICO, QOI and Netpbm
+    /// (<c>ImageCodecs.RegisterEncoder(MyEncoder.Registration)</c>). PNG, JPEG, TIFF, WebP, GIF, BMP, ICO, QOI and Netpbm
     /// are built in. Registering the same encoder again does nothing; a later registration for a format replaces
     /// the earlier one.
     /// </summary>

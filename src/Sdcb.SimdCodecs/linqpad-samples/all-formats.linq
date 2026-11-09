@@ -35,7 +35,7 @@ async Task Main()
 	foreach (string name in files)
 	{
 		byte[] data = await http.GetByteArrayAsync($"https://cv-public.sdcb.ai/simdcodecs/samples/v1/{name}");
-		if (!SimdCodecs.TryReadInfo(data, out ImageInfo info))
+		if (!ImageCodecs.TryReadInfo(data, out ImageInfo info))
 		{
 			rows.Add(new { File = name, Error = "not recognised" });
 			continue;
@@ -47,7 +47,7 @@ async Task Main()
 			// Float samples have no single 8-bit rendering, so the facade will not pick one for you:
 			// take the floats and choose your own stretch (here: min..max of the image).
 			? DecodeFloatStretched(data, rgba)
-			: SimdCodecs.TryDecodeIntoRgba8(data, rgba);
+			: ImageCodecs.TryDecodeIntoRgba8(data, rgba);
 		double ms = sw.Elapsed.TotalMilliseconds;
 
 		rows.Add(new
@@ -66,7 +66,7 @@ async Task Main()
 
 static bool DecodeFloatStretched(byte[] data, byte[] rgba)
 {
-	if (!SimdCodecs.TryDecode(data, out IDecodedImage? decoded)) return false;
+	if (!ImageCodecs.TryDecode(data, out IDecodedImage? decoded)) return false;
 	using IDecodedImage image = decoded;
 	float[] f = image.ToFloats();   // RGBA floats, alpha = 1
 	float min = float.MaxValue, max = float.MinValue;

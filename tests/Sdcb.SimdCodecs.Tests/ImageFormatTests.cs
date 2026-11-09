@@ -16,7 +16,7 @@ using Shouldly;
 namespace Sdcb.SimdCodecs.Tests;
 
 /// <summary>
-/// <see cref="ImageInfo.Format"/> from every codec, and <see cref="SimdCodecs.DetectFormat"/> on the
+/// <see cref="ImageInfo.Format"/> from every codec, and <see cref="ImageCodecs.DetectFormat"/> on the
 /// decodable formats and on the signatures it only recognises.
 /// </summary>
 [Collection(FacadeRegistryCollection.Name)]
@@ -90,10 +90,10 @@ public sealed class ImageFormatTests
     {
         var data = Sample(kind);
 
-        SimdCodecs.DetectFormat(data).ShouldBe(format);
-        SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+        ImageCodecs.DetectFormat(data).ShouldBe(format);
+        ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
         info.Format.ShouldBe(format);
-        SimdCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(data, out var reader).ShouldBeTrue();
         using (reader)
         {
             for (var i = 0; i < reader.FrameCount; i++)
@@ -135,8 +135,8 @@ public sealed class ImageFormatTests
     [MemberData(nameof(Recognised))]
     public void Recognises_formats_it_does_not_decode(byte[] header, ImageFormat format)
     {
-        SimdCodecs.DetectFormat(header).ShouldBe(format);
-        SimdCodecs.CanDecode(header).ShouldBeFalse();
+        ImageCodecs.DetectFormat(header).ShouldBe(format);
+        ImageCodecs.CanDecode(header).ShouldBeFalse();
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public sealed class ImageFormatTests
             [ImageFormat.Png, ImageFormat.Jpeg, ImageFormat.Tiff, ImageFormat.Jbig2, ImageFormat.Jpeg2000, ImageFormat.Webp, ImageFormat.Gif,
              ImageFormat.Bmp, ImageFormat.Ico, ImageFormat.Cur, ImageFormat.Qoi, ImageFormat.Pnm, ImageFormat.Pfm];
         foreach (var format in Enum.GetValues<ImageFormat>())
-            SimdCodecs.IsDecodable(format).ShouldBe(decodable.Contains(format), format.ToString());
+            ImageCodecs.IsDecodable(format).ShouldBe(decodable.Contains(format), format.ToString());
     }
 
     [Fact]

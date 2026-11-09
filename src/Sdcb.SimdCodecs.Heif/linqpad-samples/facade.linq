@@ -21,39 +21,39 @@ async Task Main()
 	// Before registration the facade recognises HEIF (so you can tell the user what it cannot open) but does not decode it.
 	new
 	{
-		Detected = SimdCodecs.DetectFormat(heic),
-		IsDecodable = SimdCodecs.IsDecodable(ImageFormat.Heif),
-		TryReadInfo = SimdCodecs.TryReadInfo(heic, out _),
-	}.Dump("Before SimdCodecs.Register");
+		Detected = ImageCodecs.DetectFormat(heic),
+		IsDecodable = ImageCodecs.IsDecodable(ImageFormat.Heif),
+		TryReadInfo = ImageCodecs.TryReadInfo(heic, out _),
+	}.Dump("Before ImageCodecs.Register");
 
-	SimdCodecs.Register(HeifImageDecoder.Registration); // idempotent and thread-safe; cannot be undone
+	ImageCodecs.Register(HeifImageDecoder.Registration); // idempotent and thread-safe; cannot be undone
 
 	// From here on every facade entry point handles HEIF like a built-in format.
-	if (!SimdCodecs.TryReadInfo(heic, out ImageInfo info)) throw new InvalidDataException("Not a decodable HEIF file");
-	info.Dump("After SimdCodecs.Register: TryReadInfo (display size; 3 channels, 8-bit)");
+	if (!ImageCodecs.TryReadInfo(heic, out ImageInfo info)) throw new InvalidDataException("Not a decodable HEIF file");
+	info.Dump("After ImageCodecs.Register: TryReadInfo (display size; 3 channels, 8-bit)");
 
 	// Any 8-bit layout, any stride, straight into your buffer: each tile is converted into it as soon as it is
 	// decoded, so no full-size intermediate frame exists. Here BGRA (Windows / WPF / Skia surfaces) with 64 bytes
 	// of padding after every row, as a sub-rectangle of a wider surface would have.
 	int stride = info.Width * 4 + 64;
 	byte[] bgra = new byte[stride * info.Height];
-	if (!SimdCodecs.TryDecodeInto(heic, bgra, stride, PixelFormat.Bgra32)) throw new InvalidDataException("Decode failed");
-	$"Bgra32, stride {stride}: {Fastest(() => SimdCodecs.TryDecodeInto(heic, bgra, stride, PixelFormat.Bgra32)):F1} ms".Dump();
+	if (!ImageCodecs.TryDecodeInto(heic, bgra, stride, PixelFormat.Bgra32)) throw new InvalidDataException("Decode failed");
+	$"Bgra32, stride {stride}: {Fastest(() => ImageCodecs.TryDecodeInto(heic, bgra, stride, PixelFormat.Bgra32)):F1} ms".Dump();
 
 	// Gray8 is the stored luma (Y), range-mapped to 8 bits: chroma is never converted.
 	byte[] gray = new byte[info.Width * info.Height];
-	SimdCodecs.TryDecodeInto(heic, gray, 0, PixelFormat.Gray8);
-	$"Gray8: {Fastest(() => SimdCodecs.TryDecodeInto(heic, gray, 0, PixelFormat.Gray8)):F1} ms".Dump();
+	ImageCodecs.TryDecodeInto(heic, gray, 0, PixelFormat.Gray8);
+	$"Gray8: {Fastest(() => ImageCodecs.TryDecodeInto(heic, gray, 0, PixelFormat.Gray8)):F1} ms".Dump();
 
 	ShowBgra(bgra, stride, info.Width, info.Height).Dump("Bgra32 (thumbnail)");
 	ShowGray(gray, info.Width, info.Height).Dump("Gray8 (thumbnail)");
 
 	// The fidelity view: 8-bit RGB with the ICC profile passed through and the colour encoding from the file.
-	if (SimdCodecs.TryDecode(heic, out IDecodedImage? image))
+	if (ImageCodecs.TryDecode(heic, out IDecodedImage? image))
 	{
 		using (image)
 			new { image.Width, image.Height, image.Channels, image.SampleFormat, IccBytes = image.Metadata.Icc.Length, image.ColorEncoding }
-				.Dump("SimdCodecs.TryDecode");
+				.Dump("ImageCodecs.TryDecode");
 	}
 }
 

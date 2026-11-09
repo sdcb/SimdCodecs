@@ -27,7 +27,7 @@ public class Jpeg2000FacadeTests
     [InlineData("jp2-rgb-struct64.jp2")]
     public void TheFacade_RecognisesBothForms(string file)
     {
-        SimdCodecs.CanDecode(File(file)).ShouldBeTrue();
+        ImageCodecs.CanDecode(File(file)).ShouldBeTrue();
     }
 
     [Theory]
@@ -36,7 +36,7 @@ public class Jpeg2000FacadeTests
     [InlineData("deep12-ramp64.j2k", 1, SampleFormat.UInt16)]
     public void TryReadInfo_ReportsWhatTheDecodeWillHold(string file, int channels, SampleFormat format)
     {
-        SimdCodecs.TryReadInfo(File(file), out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(File(file), out var info).ShouldBeTrue();
 
         info.Width.ShouldBe(64);
         info.Height.ShouldBe(64);
@@ -53,7 +53,7 @@ public class Jpeg2000FacadeTests
     {
         var expected = Pnm.Read(Path.Combine(FixtureDirectory, source));
 
-        SimdCodecs.TryDecode(File(file), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(File(file), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         image.Channels.ShouldBe(expected.Components);
         image.SampleFormat.ShouldBe(SampleFormat.UInt8);
@@ -71,7 +71,7 @@ public class Jpeg2000FacadeTests
         var expected = Pnm.Read(Path.Combine(FixtureDirectory, "deep12-ramp64.pgm"));
         expected.MaxValue.ShouldBe(4095);
 
-        SimdCodecs.TryDecode(File("deep12-ramp64.j2k"), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(File("deep12-ramp64.j2k"), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         var samples = MemoryMarshal.Cast<byte, ushort>(image.Pixels).ToArray();
         samples.Length.ShouldBe(expected.Samples.Length);
@@ -88,7 +88,7 @@ public class Jpeg2000FacadeTests
         var expected = Pnm.Read(Path.Combine(FixtureDirectory, "rgb-struct64.ppm"));
         var rgba = new byte[64 * 64 * 4];
 
-        SimdCodecs.TryDecodeIntoRgba8(File("rgb-struct64.j2k"), rgba).ShouldBeTrue();
+        ImageCodecs.TryDecodeIntoRgba8(File("rgb-struct64.j2k"), rgba).ShouldBeTrue();
 
         for (var i = 0; i < 64 * 64; i++)
         {
@@ -106,7 +106,7 @@ public class Jpeg2000FacadeTests
         byte[] profile = [0x10, 0x20, 0x30, 0x40];
         var jp2 = WithColour(File("jp2-rgb-struct64.jp2"), [2, 0, 0, .. profile]);
 
-        SimdCodecs.TryDecode(jp2, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(jp2, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         image.Metadata.Icc.Span.ToArray().ShouldBe(profile);
     }
@@ -120,8 +120,8 @@ public class Jpeg2000FacadeTests
     {
         var sycc = WithColour(File("jp2-rgb-struct64.jp2"), [1, 0, 0, 0, 0, 0, 18]);
 
-        SimdCodecs.TryDecode(sycc, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
-        SimdCodecs.TryReadInfo(sycc, out _).ShouldBeFalse();
+        ImageCodecs.TryDecode(sycc, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryReadInfo(sycc, out _).ShouldBeFalse();
         Jpeg2000Decoder.Decode(sycc, cancellationToken: TestContext.Current.CancellationToken).Colour!.EnumeratedColourSpace.ShouldBe(Jp2EnumeratedColourSpace.Sycc);
     }
 
@@ -137,8 +137,8 @@ public class Jpeg2000FacadeTests
         var codestream = System.IO.File.ReadAllBytes(Path.Combine(directory, "cmyk16.j2k"));
         var planar = System.IO.File.ReadAllBytes(Path.Combine(directory, "cmyk16.raw"));
 
-        SimdCodecs.CanDecode(codestream).ShouldBeTrue();
-        SimdCodecs.TryDecode(codestream, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.CanDecode(codestream).ShouldBeTrue();
+        ImageCodecs.TryDecode(codestream, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
 
         var decoded = Jpeg2000Decoder.Decode(codestream, cancellationToken: TestContext.Current.CancellationToken);
         decoded.Components.ShouldBe(4);
@@ -165,13 +165,13 @@ public class Jpeg2000FacadeTests
         var bytes = File(file);
         var expected = OpenJpegOracle.Decode(bytes, extension, "-r", int.Log2(denominator).ToString());
 
-        SimdCodecs.TryDecode(bytes, out var image, new DecodeOptions { ScaleDenominator = denominator },
+        ImageCodecs.TryDecode(bytes, out var image, new DecodeOptions { ScaleDenominator = denominator },
             TestContext.Current.CancellationToken).ShouldBeTrue();
 
         image.Width.ShouldBe(expected.Width);
         image.Height.ShouldBe(expected.Height);
         image.Pixels.ToArray().ShouldBe(expected.Samples.Select(s => (byte)s).ToArray());
-        SimdCodecs.TryReadInfo(bytes, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(bytes, out var info).ShouldBeTrue();
         new DecodeOptions { ScaleDenominator = denominator }.GetScaledSize(info.Width, info.Height)
             .ShouldBe((image.Width, image.Height));
     }
@@ -184,7 +184,7 @@ public class Jpeg2000FacadeTests
         var bytes = System.IO.File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "jpeg2000-lossy", "lossy97-rgb-struct64.j2k"));
         var expected = OpenJpegOracle.Decode(bytes, ".ppm", "-r", "2");
 
-        SimdCodecs.TryDecode(bytes, out var image, new DecodeOptions { ScaleDenominator = 4 },
+        ImageCodecs.TryDecode(bytes, out var image, new DecodeOptions { ScaleDenominator = 4 },
             TestContext.Current.CancellationToken).ShouldBeTrue();
 
         image.Width.ShouldBe(expected.Width);
@@ -215,11 +215,11 @@ public class Jpeg2000FacadeTests
     {
         var bytes = File("dwt5-struct64.j2k");
 
-        SimdCodecs.TryGetClosestSize(bytes, requestedWidth, requestedHeight, out var width, out var height, out var denominator)
+        ImageCodecs.TryGetClosestSize(bytes, requestedWidth, requestedHeight, out var width, out var height, out var denominator)
             .ShouldBeTrue();
 
         (width, height, denominator).ShouldBe((expectedSize, expectedSize, expectedDenominator));
-        SimdCodecs.TryDecode(bytes, out var image, new DecodeOptions { ScaleDenominator = denominator },
+        ImageCodecs.TryDecode(bytes, out var image, new DecodeOptions { ScaleDenominator = denominator },
             TestContext.Current.CancellationToken).ShouldBeTrue();
         (image.Width, image.Height).ShouldBe((width, height));
     }
@@ -229,24 +229,24 @@ public class Jpeg2000FacadeTests
     [Fact]
     public void ClosestSize_RoundsUpAndNeverExceedsTheLevels()
     {
-        SimdCodecs.TryGetClosestSize(File("odd37x23.j2k"), 1, 1, out var w, out var h, out var d).ShouldBeTrue();
+        ImageCodecs.TryGetClosestSize(File("odd37x23.j2k"), 1, 1, out var w, out var h, out var d).ShouldBeTrue();
         (w, h, d).ShouldBe((10, 6, 4)); // two levels: 37x23 -> 19x12 -> 10x6
 
-        SimdCodecs.TryGetClosestSize(File("nodwt-struct32.j2k"), 1, 1, out w, out h, out d).ShouldBeTrue();
+        ImageCodecs.TryGetClosestSize(File("nodwt-struct32.j2k"), 1, 1, out w, out h, out d).ShouldBeTrue();
         (w, h, d).ShouldBe((32, 32, 1));
 
         foreach (var (file, k, native) in new[] { ("odd37x23.j2k", 8, 4), ("odd37x23.j2k", 32, 4), ("nodwt-struct32.j2k", 2, 1) })
         {
             var ct = TestContext.Current.CancellationToken;
-            SimdCodecs.TryDecode(File(file), out var reduced, new DecodeOptions { ScaleDenominator = native }, ct).ShouldBeTrue();
+            ImageCodecs.TryDecode(File(file), out var reduced, new DecodeOptions { ScaleDenominator = native }, ct).ShouldBeTrue();
             using (reduced)
             {
                 var expected = BoxDownscaleTests.Reference(reduced.Pixels, reduced.Width, reduced.Height, reduced.Channels,
                     reduced.SampleFormat, k / native);
-                SimdCodecs.TryDecode(File(file), out var scaled, new DecodeOptions { ScaleDenominator = k }, ct).ShouldBeTrue();
+                ImageCodecs.TryDecode(File(file), out var scaled, new DecodeOptions { ScaleDenominator = k }, ct).ShouldBeTrue();
                 using (scaled)
                 {
-                    SimdCodecs.TryReadInfo(File(file), out var info).ShouldBeTrue();
+                    ImageCodecs.TryReadInfo(File(file), out var info).ShouldBeTrue();
                     (scaled.Width, scaled.Height).ShouldBe(new DecodeOptions { ScaleDenominator = k }.GetScaledSize(info.Width, info.Height));
                     scaled.Pixels.ToArray().ShouldBe(expected, $"{file} d{k}");
                 }
@@ -260,11 +260,11 @@ public class Jpeg2000FacadeTests
     {
         var bytes = File("rgb-layers2-struct64.j2k");
         var scaled = new DecodeOptions { ScaleDenominator = 4 };
-        SimdCodecs.TryDecode(bytes, out var whole, scaled, TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(bytes, out var whole, scaled, TestContext.Current.CancellationToken).ShouldBeTrue();
         whole.Width.ShouldBe(16);
 
         var region = new PixelRect(3, 2, 9, 5);
-        SimdCodecs.TryDecode(bytes, out var part, scaled with { Region = region }, TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(bytes, out var part, scaled with { Region = region }, TestContext.Current.CancellationToken).ShouldBeTrue();
 
         (part.Width, part.Height).ShouldBe((9, 5));
         var expected = new List<byte>();
@@ -273,7 +273,7 @@ public class Jpeg2000FacadeTests
         part.Pixels.ToArray().ShouldBe(expected.ToArray());
 
         // Outside the scaled image (but inside the stored one): refused.
-        Should.Throw<ArgumentException>(() => SimdCodecs.TryDecode(bytes, out _,
+        Should.Throw<ArgumentException>(() => ImageCodecs.TryDecode(bytes, out _,
             scaled with { Region = new PixelRect(10, 10, 20, 20) }, TestContext.Current.CancellationToken));
     }
 

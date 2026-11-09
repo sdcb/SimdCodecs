@@ -35,12 +35,12 @@ public sealed class ImageInfoTests
         using (var check = new MagickImage(file))
             ((int)check.Orientation).ShouldBe((int)orientation);
 
-        SimdCodecs.TryReadInfo(file, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(file, out var info).ShouldBeTrue();
         info.Orientation.ShouldBe(orientation);
         info.SwapsDimensions.ShouldBe(orientation >= ImageOrientation.Transpose);
         // Stored dimensions, stored pixels: nothing is turned.
         (info.Width, info.Height).ShouldBe((12, 5));
-        SimdCodecs.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         (image.Width, image.Height).ShouldBe((12, 5));
     }
 
@@ -165,7 +165,7 @@ public sealed class ImageInfoTests
         var tiff = App1Exif(Exif(false, (0x0112, 3, 1, 8)));
         var grey = new byte[4 * 3];
         var png = PngWriter.EncodeGray8(grey, 4, 3, new PngWriteOptions { Exif = tiff });
-        SimdCodecs.TryReadInfo(png, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(png, out var info).ShouldBeTrue();
         info.Orientation.ShouldBe(ImageOrientation.Rotate270);
     }
 
@@ -186,7 +186,7 @@ public sealed class ImageInfoTests
         var after = reordered.ToArray();
         PngChunks(after).Select(c => c.Type).ShouldBe(["IHDR", "IDAT", "eXIf", "IEND"]);
 
-        SimdCodecs.TryReadInfo(after, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(after, out var info).ShouldBeTrue();
         info.Orientation.ShouldBe(ImageOrientation.Transpose);
     }
 
@@ -215,16 +215,16 @@ public sealed class ImageInfoTests
         apng.Write(png, 33, png.Length - 33);
         var bytes = apng.ToArray();
 
-        SimdCodecs.TryReadInfo(bytes, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(bytes, out var info).ShouldBeTrue();
         info.FrameCount.ShouldBe(3);
-        SimdCodecs.TryDecode(bytes, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(bytes, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         // An acTL after the image data is not an APNG's.
         var late = new MemoryStream();
         late.Write(png, 0, png.Length - 12);
         PngRgba8ExpansionTests.Chunk(late, "acTL"u8, acTL);
         late.Write(png, png.Length - 12, 12);
-        SimdCodecs.TryReadInfo(late.ToArray(), out info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(late.ToArray(), out info).ShouldBeTrue();
         info.FrameCount.ShouldBe(1);
     }
 
@@ -236,7 +236,7 @@ public sealed class ImageInfoTests
             pages.Add(new MagickImage(MagickColors.Gray, 7, (uint)(4 + i)));
         var tiff = pages.ToByteArray(MagickFormat.Tiff);
 
-        SimdCodecs.TryReadInfo(tiff, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(tiff, out var info).ShouldBeTrue();
         info.FrameCount.ShouldBe(3);
         (info.Width, info.Height).ShouldBe((7, 4)); // the first page, which TryDecode returns
     }
@@ -252,7 +252,7 @@ public sealed class ImageInfoTests
         var entries = BinaryPrimitives.ReadUInt16LittleEndian(tiff.AsSpan(ifd0));
         BinaryPrimitives.WriteInt32LittleEndian(tiff.AsSpan(ifd0 + 2 + entries * 12), ifd0);
 
-        SimdCodecs.TryReadInfo(tiff, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(tiff, out var info).ShouldBeTrue();
         info.FrameCount.ShouldBe(1);
     }
 
@@ -262,12 +262,12 @@ public sealed class ImageInfoTests
         using var bilevel = new MagickImage(MagickColors.White, 9, 2);
         bilevel.ColorType = ColorType.Bilevel;
         bilevel.Depth = 1;
-        SimdCodecs.TryReadInfo(bilevel.ToByteArray(MagickFormat.Tiff), out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(bilevel.ToByteArray(MagickFormat.Tiff), out var info).ShouldBeTrue();
         (info.SampleFormat, info.BitDepth).ShouldBe((SampleFormat.UInt8, 1));
 
-        SimdCodecs.TryReadInfo(HdrTiff.HalfGray(3, 2, new Half[6]), out info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(HdrTiff.HalfGray(3, 2, new Half[6]), out info).ShouldBeTrue();
         (info.SampleFormat, info.BitDepth).ShouldBe((SampleFormat.Float32, 16));
-        SimdCodecs.TryReadInfo(HdrTiff.Float32Gray(3, 2, new float[6]), out info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(HdrTiff.Float32Gray(3, 2, new float[6]), out info).ShouldBeTrue();
         (info.SampleFormat, info.BitDepth).ShouldBe((SampleFormat.Float32, 32));
     }
 
@@ -284,9 +284,9 @@ public sealed class ImageInfoTests
             Jbig2StreamBuilder.Segment(5, SegmentType.EndOfPage, 2, []),
             Jbig2StreamBuilder.Segment(6, SegmentType.EndOfFile, 0, []));
 
-        SimdCodecs.TryReadInfo(file, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(file, out var info).ShouldBeTrue();
         (info.FrameCount, info.BitDepth).ShouldBe((2, 1));
-        SimdCodecs.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         (image.Width, image.Height).ShouldBe((page.Width, page.Height));
     }
 

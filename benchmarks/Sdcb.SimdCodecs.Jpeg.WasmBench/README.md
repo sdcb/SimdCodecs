@@ -18,7 +18,7 @@ Needs the `wasm-tools` workload and Node.js. Not in `SimdCodecs.slnx` (the wasm 
 
 | column | what runs |
 |---|---|
-| facade | `SimdCodecs.TryOpenFrames` + `TryDecodeFrame(0)` (the public path) |
+| facade | `ImageCodecs.TryOpenFrames` + `TryDecodeFrame(0)` (the public path) |
 | rgba | `JpegDiagnostics.DecodeTo(…, None)`: full-scale decode to RGBA |
 | entropy | `SkipBlockSink`: headers and entropy decoding only |
 | idct | rgba − `SkipIdct` |

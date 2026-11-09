@@ -53,7 +53,7 @@ public class LocalJpeg2000ChannelDefinitionCorpusTests
             if (info.Channels is null) continue;
             withCdef++;
 
-            if (!SimdCodecs.TryDecode(bytes, out var image, cancellationToken: TestContext.Current.CancellationToken))
+            if (!ImageCodecs.TryDecode(bytes, out var image, cancellationToken: TestContext.Current.CancellationToken))
             {
                 refused++;
                 output.WriteLine($"refused      {Path.GetFileName(file)}: {info.Components} channels {string.Join(",", info.Channels.Select(c => c.Type))}, colour {info.Colour?.EnumeratedColourSpace}");

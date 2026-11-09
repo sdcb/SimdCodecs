@@ -52,14 +52,14 @@ public sealed class PremultipliedOutputTests
         {
             var step = stride == 0 ? W * 4 : stride;
             var destination = new byte[step * (H - 1) + W * 4];
-            SimdCodecs.TryDecodeInto(png, destination, stride, PixelFormat.Bgra32Premultiplied, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+            ImageCodecs.TryDecodeInto(png, destination, stride, PixelFormat.Bgra32Premultiplied, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
             var expected = PixelConverterTests.ReferenceConvert(rgba, PixelFormat.Rgba32, PixelFormat.Bgra32Premultiplied, W * H);
             for (var y = 0; y < H; y++)
                 destination.AsSpan(y * step, W * 4).ToArray().ShouldBe(expected.AsSpan(y * W * 4, W * 4).ToArray(), $"stride {stride} row {y}");
         }
 
         // The decoded image's own TryCopyTo is the same thing.
-        SimdCodecs.TryDecode(png, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(png, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (image)
         {
             var copy = new byte[W * H * 4];
@@ -74,12 +74,12 @@ public sealed class PremultipliedOutputTests
         var samples = Rgba16(2);
         var png = Png.PngWriter.EncodeRgba16(samples, W, H);
         var destination = new byte[W * H * 8];
-        SimdCodecs.TryDecodeInto(png, destination, 0, PixelFormat.Rgba64Premultiplied, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(png, destination, 0, PixelFormat.Rgba64Premultiplied, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         destination.ShouldBe(PixelConverterTests.ReferenceConvert(MemoryMarshal.AsBytes(samples.AsSpan()), PixelFormat.Rgba64, PixelFormat.Rgba64Premultiplied, W * H));
 
         // The file's samples survive a trip to straight 16-bit untouched.
         var straight = new ushort[W * H * 4];
-        SimdCodecs.TryDecodeInto(png, MemoryMarshal.AsBytes(straight.AsSpan()), 0, PixelFormat.Rgba64, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(png, MemoryMarshal.AsBytes(straight.AsSpan()), 0, PixelFormat.Rgba64, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         straight.ShouldBe(samples);
     }
 
@@ -100,7 +100,7 @@ public sealed class PremultipliedOutputTests
         foreach (var format in Premultiplied)
         {
             var destination = new byte[W * H * format.BytesPerPixel];
-            SimdCodecs.TryDecodeInto(data, destination, 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue($"{name} {format}");
+            ImageCodecs.TryDecodeInto(data, destination, 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue($"{name} {format}");
             destination.ShouldBe(PixelConverterTests.ReferenceConvert(pixels, native, format, W * H), $"{name} {format}");
         }
     }
@@ -113,17 +113,17 @@ public sealed class PremultipliedOutputTests
         byte[] rgba = [200, 100, 50, 128, 17, 34, 51, 0, 1, 2, 3, 255, 255, 255, 255, 1];
         var png = Png.PngWriter.Encode(rgba, 4, 1);
         var bgra = new byte[16];
-        SimdCodecs.TryDecodeInto(png, bgra, 0, PixelFormat.Bgra32Premultiplied, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(png, bgra, 0, PixelFormat.Bgra32Premultiplied, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         bgra.ShouldBe([25, 50, 100, 128, 0, 0, 0, 0, 3, 2, 1, 255, 1, 1, 1, 1]);
         var rgbaPremultiplied = new byte[16];
-        SimdCodecs.TryDecodeInto(png, rgbaPremultiplied, 0, PixelFormat.Rgba32Premultiplied, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(png, rgbaPremultiplied, 0, PixelFormat.Rgba32Premultiplied, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         rgbaPremultiplied.ShouldBe([100, 50, 25, 128, 0, 0, 0, 0, 1, 2, 3, 255, 1, 1, 1, 1]);
 
         // 16-bit: (c * a + 32767) / 65535 (the denominator is odd, so there are no halves).
         ushort[] samples = [60000, 30000, 10000, 32768, 65535, 65535, 65535, 0, 1000, 2000, 3000, 65535, 65535, 40000, 1, 2];
         var png16 = Png.PngWriter.EncodeRgba16(samples, 4, 1);
         var premultiplied = new ushort[16];
-        SimdCodecs.TryDecodeInto(png16, MemoryMarshal.AsBytes(premultiplied.AsSpan()), 0, PixelFormat.Rgba64Premultiplied, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(png16, MemoryMarshal.AsBytes(premultiplied.AsSpan()), 0, PixelFormat.Rgba64Premultiplied, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         for (var p = 0; p < 4; p++)
         {
             var a = samples[p * 4 + 3];
@@ -143,8 +143,8 @@ public sealed class PremultipliedOutputTests
         var png = Png.PngWriter.EncodeRgb8(rgb, W, H);
         var straight = new byte[W * H * 4];
         var premultiplied = new byte[W * H * 4];
-        SimdCodecs.TryDecodeInto(png, straight, 0, PixelFormat.Bgra32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
-        SimdCodecs.TryDecodeInto(png, premultiplied, 0, PixelFormat.Bgra32Premultiplied, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(png, straight, 0, PixelFormat.Bgra32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(png, premultiplied, 0, PixelFormat.Bgra32Premultiplied, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         premultiplied.ShouldBe(straight);
     }
 
@@ -228,7 +228,7 @@ public sealed class PremultipliedOutputTests
         })
         {
             var decoded = new byte[W * H * 4];
-            SimdCodecs.TryDecodeInto(data, decoded, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+            ImageCodecs.TryDecodeInto(data, decoded, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
             decoded.ShouldBe(straight);
         }
     }

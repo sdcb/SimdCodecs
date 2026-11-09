@@ -325,7 +325,7 @@ public sealed class HeifImageDecoderTests
     [MemberData(nameof(FtypHeaders))]
     public void CanDecode_AgreesWithDetectFormat(byte[] header)
     {
-        bool heif = SimdCodecs.DetectFormat(header) == ImageFormat.Heif;
+        bool heif = ImageCodecs.DetectFormat(header) == ImageFormat.Heif;
         HeifImageDecoder.CanDecode(header).ShouldBe(heif);
     }
 

@@ -7,7 +7,7 @@ namespace Sdcb.SimdCodecs.Tests;
 /// <summary>
 /// The <see cref="IImageDecoder.TryDecodeInto"/> contract, through the facade, for every codec: in every
 /// <see cref="PixelFormat"/>, at a padded stride and tightly packed, the pixels are
-/// <see cref="IDecodedImage.ToRgba8"/> of <see cref="SimdCodecs.TryDecode"/>'s image converted by
+/// <see cref="IDecodedImage.ToRgba8"/> of <see cref="ImageCodecs.TryDecode"/>'s image converted by
 /// <see cref="PixelConverterTests.Reference"/> (and, for integer images, the same as converting
 /// <see cref="IDecodedImage.Pixels"/> directly), and the bytes between and after rows are untouched.
 /// The native paths (JPEG writing BGR from its colour conversion, PNG converting a row at a time, WebP
@@ -186,12 +186,12 @@ public sealed class DecodeIntoTests
     public void EveryFormatIsTheConvertedImage(string name)
     {
         var data = Corpus()[name];
-        if (!SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken))
+        if (!ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken))
         {
             // Not every fixture is a still the facade presents (a broken or unsupported one): then the
             // display path refuses it too.
             foreach (var format in PixelConverterTests.Formats)
-                SimdCodecs.TryDecodeInto(data, new byte[1 << 20], 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+                ImageCodecs.TryDecodeInto(data, new byte[1 << 20], 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
             return;
         }
 
@@ -231,7 +231,7 @@ public sealed class DecodeIntoTests
                 var destination = new byte[step * (height - 1) + rowBytes + 13];
                 Array.Fill(destination, Sentinel);
 
-                SimdCodecs.TryDecodeInto(data, destination, stride, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue($"{format} stride {stride}");
+                ImageCodecs.TryDecodeInto(data, destination, stride, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue($"{format} stride {stride}");
 
                 for (var y = 0; y < height; y++)
                 {
@@ -245,12 +245,12 @@ public sealed class DecodeIntoTests
 
             // One byte short is refused, not written past.
             var tight = new byte[width * height * format.BytesPerPixel - 1];
-            SimdCodecs.TryDecodeInto(data, tight, 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse($"{format} short destination");
+            ImageCodecs.TryDecodeInto(data, tight, 0, format, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse($"{format} short destination");
         }
 
         // The RGBA entry point is the Rgba32 layout.
         var direct = new byte[width * height * 4];
-        SimdCodecs.TryDecodeIntoRgba8(data, direct).ShouldBeTrue();
+        ImageCodecs.TryDecodeIntoRgba8(data, direct).ShouldBeTrue();
         direct.ShouldBe(rgba);
     }
 
@@ -259,10 +259,10 @@ public sealed class DecodeIntoTests
     public void InfoDescribesTheDecodedImage(string name)
     {
         var data = Corpus()[name];
-        if (!SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken))
+        if (!ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken))
             return;
 
-        SimdCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
         (info.Width, info.Height, info.Channels, info.SampleFormat)
             .ShouldBe((image.Width, image.Height, image.Channels, image.SampleFormat));
         info.BitDepth.ShouldBe(ExpectedBitDepth(name));
@@ -310,7 +310,7 @@ public sealed class DecodeIntoTests
     {
         // The theory above checks a refusal for an input that does not decode; this keeps it from
         // passing because everything was refused.
-        var refused = Corpus().Where(c => !SimdCodecs.TryDecode(c.Value, out _)).Select(c => c.Key).ToArray();
+        var refused = Corpus().Where(c => !ImageCodecs.TryDecode(c.Value, out _)).Select(c => c.Key).ToArray();
         refused.Where(name => !name.StartsWith("webp ", StringComparison.Ordinal)).ShouldBeEmpty();
         refused.Length.ShouldBeLessThan(Corpus().Count(c => c.Key.StartsWith("webp ", StringComparison.Ordinal)) / 2);
     }
@@ -319,7 +319,7 @@ public sealed class DecodeIntoTests
     public void AStrideShorterThanARowIsRefused()
     {
         var data = Corpus()["jpeg 4:2:0 37x19"];
-        SimdCodecs.TryDecodeInto(data, new byte[1 << 16], 37 * 3 - 1, PixelFormat.Bgr24, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
-        SimdCodecs.TryDecodeInto(data, new byte[1 << 16], -1, PixelFormat.Bgr24, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecodeInto(data, new byte[1 << 16], 37 * 3 - 1, PixelFormat.Bgr24, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecodeInto(data, new byte[1 << 16], -1, PixelFormat.Bgr24, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 }

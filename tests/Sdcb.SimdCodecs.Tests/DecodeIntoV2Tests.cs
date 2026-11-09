@@ -6,7 +6,7 @@ using Shouldly;
 namespace Sdcb.SimdCodecs.Tests;
 
 /// <summary>
-/// <see cref="SimdCodecs.TryDecodeInto"/> in every one of the sixteen <see cref="PixelFormat"/>s, for a small corpus
+/// <see cref="ImageCodecs.TryDecodeInto"/> in every one of the sixteen <see cref="PixelFormat"/>s, for a small corpus
 /// over the codecs: the pixels are the codec's own decoded samples converted by
 /// <see cref="PixelConverterTests.ReferenceConvert"/> (the documented mapping, per pixel), tightly packed and at a padded
 /// stride with the padding untouched. One exception the contract makes: <see cref="PixelFormat.Gray8"/> from a YCbCr
@@ -99,7 +99,7 @@ public sealed class DecodeIntoV2Tests
     public void EveryFormatIsTheConvertedImage(string name)
     {
         var data = CorpusCache.Value[name];
-        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue(name);
+        ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue(name);
         using (image)
         {
             int width = image.Width, height = image.Height;
@@ -119,7 +119,7 @@ public sealed class DecodeIntoV2Tests
                     var destination = new byte[step * (height - 1) + rowBytes + 13];
                     Array.Fill(destination, Sentinel);
 
-                    SimdCodecs.TryDecodeInto(data, destination, stride, format, cancellationToken: TestContext.Current.CancellationToken)
+                    ImageCodecs.TryDecodeInto(data, destination, stride, format, cancellationToken: TestContext.Current.CancellationToken)
                         .ShouldBeTrue($"{name} -> {format} stride {stride}");
 
                     for (var y = 0; y < height; y++)
@@ -133,7 +133,7 @@ public sealed class DecodeIntoV2Tests
                 }
 
                 // One byte short of a tight image is refused, not written past.
-                SimdCodecs.TryDecodeInto(data, new byte[width * height * format.BytesPerPixel - 1], 0, format,
+                ImageCodecs.TryDecodeInto(data, new byte[width * height * format.BytesPerPixel - 1], 0, format,
                     cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse($"{name} -> {format} short destination");
             }
         }
@@ -146,13 +146,13 @@ public sealed class DecodeIntoV2Tests
         var data = CorpusCache.Value["png rgba16"];
 
         var destination = new ushort[W * H * 4];
-        SimdCodecs.TryDecodeInto(data, MemoryMarshal.AsBytes(destination.AsSpan()), 0, PixelFormat.Rgba64,
+        ImageCodecs.TryDecodeInto(data, MemoryMarshal.AsBytes(destination.AsSpan()), 0, PixelFormat.Rgba64,
             cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         destination.ShouldBe(samples);
 
         // Bgra64 is the same samples with red and blue swapped.
         var bgra = new ushort[W * H * 4];
-        SimdCodecs.TryDecodeInto(data, MemoryMarshal.AsBytes(bgra.AsSpan()), 0, PixelFormat.Bgra64,
+        ImageCodecs.TryDecodeInto(data, MemoryMarshal.AsBytes(bgra.AsSpan()), 0, PixelFormat.Bgra64,
             cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         for (var p = 0; p < W * H; p++)
         {
@@ -164,7 +164,7 @@ public sealed class DecodeIntoV2Tests
 
         // And 8 bits keeps the high byte.
         var eight = new byte[W * H * 4];
-        SimdCodecs.TryDecodeInto(data, eight, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(data, eight, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         eight.ShouldBe(samples.Select(s => (byte)(s >> 8)).ToArray());
     }
 
@@ -173,7 +173,7 @@ public sealed class DecodeIntoV2Tests
     {
         var samples = Rgba16(W, H, 14).AsSpan(0, W * H * 3).ToArray();
         var destination = new ushort[W * H * 3];
-        SimdCodecs.TryDecodeInto(CorpusCache.Value["pnm ppm 16-bit"], MemoryMarshal.AsBytes(destination.AsSpan()), 0, PixelFormat.Rgb48,
+        ImageCodecs.TryDecodeInto(CorpusCache.Value["pnm ppm 16-bit"], MemoryMarshal.AsBytes(destination.AsSpan()), 0, PixelFormat.Rgb48,
             cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         destination.ShouldBe(samples);
     }
@@ -183,7 +183,7 @@ public sealed class DecodeIntoV2Tests
     {
         var data = CorpusCache.Value["tiff rgb16"];
         var destination = new ushort[W * H * 3];
-        SimdCodecs.TryDecodeInto(data, MemoryMarshal.AsBytes(destination.AsSpan()), 0, PixelFormat.Rgb48,
+        ImageCodecs.TryDecodeInto(data, MemoryMarshal.AsBytes(destination.AsSpan()), 0, PixelFormat.Rgb48,
             cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         for (var i = 0; i < W * H; i++)
         {
@@ -197,14 +197,14 @@ public sealed class DecodeIntoV2Tests
     public void AStrideShorterThanARowIsRefused()
     {
         var data = CorpusCache.Value["png rgba8"];
-        SimdCodecs.TryDecodeInto(data, new byte[1 << 16], W * 4 - 1, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
-        SimdCodecs.TryDecodeInto(data, new byte[1 << 16], -1, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecodeInto(data, new byte[1 << 16], W * 4 - 1, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecodeInto(data, new byte[1 << 16], -1, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Fact]
     public void UnknownDataIsRefused()
     {
-        SimdCodecs.TryDecodeInto(new byte[64], new byte[1 << 12], 0, PixelFormat.Rgba64Premultiplied,
+        ImageCodecs.TryDecodeInto(new byte[64], new byte[1 << 12], 0, PixelFormat.Rgba64Premultiplied,
             cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 }

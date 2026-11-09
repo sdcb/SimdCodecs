@@ -34,7 +34,7 @@ internal sealed class CountingArrayPool : ArrayPool<byte>
 
 /// <summary>
 /// <see cref="DecodeOptions"/> through the facade: the JPEG scale denominators against <see cref="JpegDecoder"/>'s own scaled
-/// decode, <see cref="SimdCodecs.TryGetClosestSize"/>, the codecs that do not scale, regions against a crop of the full
+/// decode, <see cref="ImageCodecs.TryGetClosestSize"/>, the codecs that do not scale, regions against a crop of the full
 /// decode, and the pool.
 /// </summary>
 public sealed class DecodeOptionsTests
@@ -96,7 +96,7 @@ public sealed class DecodeOptionsTests
         expected.Height.ShouldBe((H + denominator - 1) / denominator);
 
         var options = new DecodeOptions { ScaleDenominator = denominator };
-        SimdCodecs.TryDecode(data, out var image, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var image, options, TestContext.Current.CancellationToken).ShouldBeTrue();
         using (image)
         {
             (image.Width, image.Height).ShouldBe((expected.Width, expected.Height));
@@ -104,7 +104,7 @@ public sealed class DecodeOptionsTests
         }
 
         var into = new byte[expected.Width * expected.Height * 4];
-        SimdCodecs.TryDecodeInto(data, into, 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(data, into, 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken).ShouldBeTrue();
         into.ShouldBe(expected.Pixels);
     }
 
@@ -129,7 +129,7 @@ public sealed class DecodeOptionsTests
         ];
         foreach (var (wantedWidth, wantedHeight) in requests)
         {
-            SimdCodecs.TryGetClosestSize(data, wantedWidth, wantedHeight, out var width, out var height, out var scale).ShouldBeTrue();
+            ImageCodecs.TryGetClosestSize(data, wantedWidth, wantedHeight, out var width, out var height, out var scale).ShouldBeTrue();
             var d = ExpectedScale(W, H, wantedWidth, wantedHeight);
             scale.ShouldBe(d, $"{wantedWidth}x{wantedHeight}");
             (width, height).ShouldBe(((W + d - 1) / d, (H + d - 1) / d), $"{wantedWidth}x{wantedHeight}");
@@ -142,7 +142,7 @@ public sealed class DecodeOptionsTests
             }
 
             // And that is the size a decode at that denominator produces.
-            SimdCodecs.TryDecode(data, out var image, new DecodeOptions { ScaleDenominator = scale }, TestContext.Current.CancellationToken).ShouldBeTrue();
+            ImageCodecs.TryDecode(data, out var image, new DecodeOptions { ScaleDenominator = scale }, TestContext.Current.CancellationToken).ShouldBeTrue();
             using (image)
                 (image.Width, image.Height).ShouldBe((width, height));
         }
@@ -151,16 +151,16 @@ public sealed class DecodeOptionsTests
     [Fact]
     public void TryGetClosestSizeRefusesWhatIsNotAnImage()
     {
-        SimdCodecs.TryGetClosestSize(new byte[40], 8, 8, out _, out _, out var scale).ShouldBeFalse();
+        ImageCodecs.TryGetClosestSize(new byte[40], 8, 8, out _, out _, out var scale).ShouldBeFalse();
         scale.ShouldBe(1);
-        SimdCodecs.TryGetClosestSize(ColourJpeg().AsSpan(0, 3), 8, 8, out _, out _, out _).ShouldBeFalse();
+        ImageCodecs.TryGetClosestSize(ColourJpeg().AsSpan(0, 3), 8, 8, out _, out _, out _).ShouldBeFalse();
     }
 
     [Fact]
     public void AnUnscalingCodecBoxFiltersAScaleAndReportsItsStoredSize()
     {
         var png = Stills["png"];
-        SimdCodecs.TryDecode(png, out var full, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(png, out var full, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (full)
         {
             foreach (var d in new[] { 2, 4, 8, 16 })
@@ -168,21 +168,21 @@ public sealed class DecodeOptionsTests
                 var options = new DecodeOptions { ScaleDenominator = d };
                 var expected = BoxDownscaleTests.Reference(full.Pixels, W, H, 4, SampleFormat.UInt8, d);
                 var (w, h) = options.GetScaledSize(W, H);
-                SimdCodecs.TryDecode(png, out var scaled, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+                ImageCodecs.TryDecode(png, out var scaled, options, TestContext.Current.CancellationToken).ShouldBeTrue();
                 using (scaled)
                 {
                     (scaled.Width, scaled.Height).ShouldBe((w, h));
                     scaled.Pixels.ToArray().ShouldBe(expected);
                 }
                 var into = new byte[w * h * 4];
-                SimdCodecs.TryDecodeInto(png, into, 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+                ImageCodecs.TryDecodeInto(png, into, 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken).ShouldBeTrue();
                 into.ShouldBe(expected);
             }
         }
 
         foreach (var (wantedWidth, wantedHeight) in new[] { (1, 1), (W / 2, H / 2), (W, H), (W * 3, H * 3) })
         {
-            SimdCodecs.TryGetClosestSize(png, wantedWidth, wantedHeight, out var width, out var height, out var scale).ShouldBeTrue();
+            ImageCodecs.TryGetClosestSize(png, wantedWidth, wantedHeight, out var width, out var height, out var scale).ShouldBeTrue();
             (width, height, scale).ShouldBe((W, H, 1));
         }
     }
@@ -191,8 +191,8 @@ public sealed class DecodeOptionsTests
     public void ScaleOneIsTheFullImage()
     {
         var data = ColourJpeg();
-        SimdCodecs.TryDecode(data, out var plain, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
-        SimdCodecs.TryDecode(data, out var scaled, new DecodeOptions { ScaleDenominator = 1 }, TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var plain, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var scaled, new DecodeOptions { ScaleDenominator = 1 }, TestContext.Current.CancellationToken).ShouldBeTrue();
         using (plain)
         using (scaled)
             scaled.Pixels.ToArray().ShouldBe(plain.Pixels.ToArray());
@@ -218,14 +218,14 @@ public sealed class DecodeOptionsTests
     public void ARegionIsACropOfTheFullDecode(string name)
     {
         var data = Stills[name];
-        SimdCodecs.TryDecode(data, out var full, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var full, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (full)
         {
             var bpp = full.Channels * full.SampleFormat switch { SampleFormat.UInt16 => 2, _ => 1 };
             foreach (var region in Regions)
             {
                 var expected = Crop(full.Pixels, full.Width, bpp, region);
-                SimdCodecs.TryDecode(data, out var cropped, new DecodeOptions { Region = region }, TestContext.Current.CancellationToken)
+                ImageCodecs.TryDecode(data, out var cropped, new DecodeOptions { Region = region }, TestContext.Current.CancellationToken)
                     .ShouldBeTrue($"{name} {region}");
                 using (cropped)
                 {
@@ -239,12 +239,12 @@ public sealed class DecodeOptionsTests
                 var format = PixelFormat.Bgra64Premultiplied;
                 var wanted = PixelConverterTests.ReferenceConvert(expected, native, format, region.Width * region.Height);
                 var into = new byte[wanted.Length];
-                SimdCodecs.TryDecodeInto(data, into, 0, format, new DecodeOptions { Region = region }, TestContext.Current.CancellationToken)
+                ImageCodecs.TryDecodeInto(data, into, 0, format, new DecodeOptions { Region = region }, TestContext.Current.CancellationToken)
                     .ShouldBeTrue($"{name} {region} into");
                 into.ShouldBe(wanted, $"{name} {region} into");
 
                 var rgba = new byte[region.Width * region.Height * 4];
-                SimdCodecs.TryDecodeInto(data, rgba, 0, PixelFormat.Rgba32, new DecodeOptions { Region = region }, TestContext.Current.CancellationToken)
+                ImageCodecs.TryDecodeInto(data, rgba, 0, PixelFormat.Rgba32, new DecodeOptions { Region = region }, TestContext.Current.CancellationToken)
                     .ShouldBeTrue($"{name} {region} into rgba");
                 rgba.ShouldBe(PixelConverterTests.ReferenceConvert(expected, native, PixelFormat.Rgba32, region.Width * region.Height), $"{name} {region} into rgba");
             }
@@ -257,7 +257,7 @@ public sealed class DecodeOptionsTests
         var data = ColourJpeg();
         var scaled = JpegDecoder.Decode(data, JpegScale.Quarter); // 17 x 12
         var region = new PixelRect(4, 3, 9, 6);
-        SimdCodecs.TryDecode(data, out var image, new DecodeOptions { ScaleDenominator = 4, Region = region }, TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var image, new DecodeOptions { ScaleDenominator = 4, Region = region }, TestContext.Current.CancellationToken).ShouldBeTrue();
         using (image)
         {
             (image.Width, image.Height).ShouldBe((9, 6));
@@ -265,7 +265,7 @@ public sealed class DecodeOptionsTests
         }
 
         // The full-resolution coordinates of the same rectangle do not fit the scaled image.
-        Should.Throw<ArgumentException>(() => SimdCodecs.TryDecode(data, out _,
+        Should.Throw<ArgumentException>(() => ImageCodecs.TryDecode(data, out _,
             new DecodeOptions { ScaleDenominator = 4, Region = new PixelRect(40, 30, 9, 6) }, TestContext.Current.CancellationToken));
     }
 
@@ -293,9 +293,9 @@ public sealed class DecodeOptionsTests
     {
         var data = Stills[name];
         var options = new DecodeOptions { Region = new PixelRect(x, y, width, height) };
-        Should.Throw<ArgumentException>(() => SimdCodecs.TryDecode(data, out _, options, TestContext.Current.CancellationToken));
+        Should.Throw<ArgumentException>(() => ImageCodecs.TryDecode(data, out _, options, TestContext.Current.CancellationToken));
         Should.Throw<ArgumentException>(() =>
-            SimdCodecs.TryDecodeInto(data, new byte[W * H * 4], 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken));
+            ImageCodecs.TryDecodeInto(data, new byte[W * H * 4], 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken));
     }
 
     // ---- pool ----------------------------------------------------------------------------------------------------
@@ -317,14 +317,14 @@ public sealed class DecodeOptionsTests
     public void APoolMakesTheImageRentedAndDisposeReturnsIt(string name)
     {
         var pool = new CountingArrayPool();
-        SimdCodecs.TryDecode(RentingCodecs[name], out var image, new DecodeOptions { Pool = pool }, TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(RentingCodecs[name], out var image, new DecodeOptions { Pool = pool }, TestContext.Current.CancellationToken).ShouldBeTrue();
 
         pool.Rents.ShouldBeGreaterThan(0, name);
         pool.Returns.ShouldBe(pool.Rents - 1, $"{name}: exactly the image's buffer is outstanding");
         image.Pixels.Length.ShouldBe(image.Width * image.Height * image.Channels, $"{name}: the pool's slack is not part of the pixels");
 
         // The pixels are the same as an unpooled decode's.
-        SimdCodecs.TryDecode(RentingCodecs[name], out var plain, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(RentingCodecs[name], out var plain, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         using (plain)
             image.Pixels.ToArray().ShouldBe(plain.Pixels.ToArray(), name);
 
@@ -341,7 +341,7 @@ public sealed class DecodeOptionsTests
     {
         // PNG decodes into its own buffer; the crop is what the pool serves.
         var pool = new CountingArrayPool();
-        SimdCodecs.TryDecode(Stills["png"], out var image, new DecodeOptions { Pool = pool, Region = new PixelRect(2, 3, 11, 5) },
+        ImageCodecs.TryDecode(Stills["png"], out var image, new DecodeOptions { Pool = pool, Region = new PixelRect(2, 3, 11, 5) },
             TestContext.Current.CancellationToken).ShouldBeTrue();
         pool.Rents.ShouldBe(1);
         pool.Returns.ShouldBe(0);
@@ -356,7 +356,7 @@ public sealed class DecodeOptionsTests
     {
         // QOI decodes the whole image, then crops it.
         var pool = new CountingArrayPool();
-        SimdCodecs.TryDecode(RentingCodecs["qoi"], out var image, new DecodeOptions { Pool = pool, Region = new PixelRect(2, 3, 11, 5) },
+        ImageCodecs.TryDecode(RentingCodecs["qoi"], out var image, new DecodeOptions { Pool = pool, Region = new PixelRect(2, 3, 11, 5) },
             TestContext.Current.CancellationToken).ShouldBeTrue();
         pool.Rents.ShouldBe(2); // the full decode and the crop
         pool.Returns.ShouldBe(1); // the full decode, disposed once cropped
@@ -369,7 +369,7 @@ public sealed class DecodeOptionsTests
     {
         // JPEG decodes a region natively: no whole-image intermediate.
         var pool = new CountingArrayPool();
-        SimdCodecs.TryDecode(RentingCodecs["jpeg"], out var image, new DecodeOptions { Pool = pool, Region = new PixelRect(2, 3, 11, 5) },
+        ImageCodecs.TryDecode(RentingCodecs["jpeg"], out var image, new DecodeOptions { Pool = pool, Region = new PixelRect(2, 3, 11, 5) },
             TestContext.Current.CancellationToken).ShouldBeTrue();
         pool.Rents.ShouldBe(1);
         pool.Returns.ShouldBe(0);
@@ -385,7 +385,7 @@ public sealed class DecodeOptionsTests
         foreach (var (name, data) in RentingCodecs)
         {
             var destination = new byte[W * H * 4];
-            SimdCodecs.TryDecodeInto(data, destination, 0, PixelFormat.Bgra64Premultiplied.To8Bit(), new DecodeOptions { Pool = pool },
+            ImageCodecs.TryDecodeInto(data, destination, 0, PixelFormat.Bgra64Premultiplied.To8Bit(), new DecodeOptions { Pool = pool },
                 TestContext.Current.CancellationToken).ShouldBeTrue(name);
         }
         pool.Rents.ShouldBe(0);
@@ -420,16 +420,16 @@ public sealed class DecodeOptionsTests
         var jpeg = ColourJpeg();
         var eighth = JpegDecoder.Decode(jpeg, JpegScale.Eighth);
         var expected = BoxDownscaleTests.Reference(eighth.Pixels, eighth.Width, eighth.Height, 4, SampleFormat.UInt8, denominator / 8);
-        SimdCodecs.TryDecode(jpeg, out var image, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(jpeg, out var image, options, TestContext.Current.CancellationToken).ShouldBeTrue();
         using (image)
         {
             (image.Width, image.Height).ShouldBe((w, h));
             image.ToRgba8().ShouldBe(expected);
         }
         var into = new byte[w * h * 4];
-        SimdCodecs.TryDecodeInto(jpeg, into, 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecodeInto(jpeg, into, 0, PixelFormat.Rgba32, options, TestContext.Current.CancellationToken).ShouldBeTrue();
         into.ShouldBe(expected);
-        SimdCodecs.TryDecode(Stills["png"], out var png, options, TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(Stills["png"], out var png, options, TestContext.Current.CancellationToken).ShouldBeTrue();
         using (png)
             (png.Width, png.Height).ShouldBe((w, h));
     }

@@ -119,7 +119,7 @@ public sealed class Jbig2EncoderFixtureTests
     [Fact]
     public void Facade_DecodesAJbigEncStandaloneFile()
     {
-        SimdCodecs.TryDecode(Fixture("s.jb2"), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(Fixture("s.jb2"), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         image!.Width.ShouldBe(32);
         image.Height.ShouldBe(16);

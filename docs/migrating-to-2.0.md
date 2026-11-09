@@ -30,7 +30,7 @@ Code that `switch`ed over `ImagePixelFormat` switches over `format.Layout` (`Cha
 - `DecodeOptions`: region, scaled decode (any power of two for every codec: JPEG 1/2–1/8 and JPEG 2000 resolution levels natively, the rest by a frozen box filter after the native decode), pooled memory; `TryGetClosestSize` negotiation (native sizes only).
 - Metadata: `TryReadMetadata` (Exif, XMP, ICC as raw blocks), `TryDecodeThumbnail`, `IDecodedImage.Metadata`. A JPEG's XMP has its Extended XMP (the part of a packet over 64 KB that sits in further APP1 segments) joined into the standard packet: the extended `rdf:RDF` content is inserted before the standard packet's `</rdf:RDF>`, and the standard packet comes back unchanged when the extension is incomplete or fails its MD5.
 - `ImageDecoder` / `ImageFrame`: a session over a `Stream`, a file (memory-mapped) or memory, with `OpenAsync`.
-- `IImageEncoder` and `SimdCodecs.Encode` / `CreateEncoder`: every encoder through one API, every `PixelFormat` in.
+- `IImageEncoder` and `ImageCodecs.Encode` / `CreateEncoder`: every encoder through one API, every `PixelFormat` in.
 - `IPlanarImageDecoder`: YCbCr planes as coded (HEIF).
 
 The design and its reasons are in [api-design.md](api-design.md).

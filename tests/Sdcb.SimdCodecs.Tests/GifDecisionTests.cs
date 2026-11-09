@@ -179,7 +179,7 @@ public sealed class GifDecisionTests
     // Every frame of a GIF, as RGBA pixels read as little-endian uints (R in the low byte).
     private static uint[][] Frames(byte[] gif)
     {
-        SimdCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.TryGetFrameInfo(0, out var info).ShouldBeTrue();
@@ -324,7 +324,7 @@ public sealed class GifDecisionTests
         var codes = Literals(indices.AsSpan(0, 4), 2, end: false); // clear + 4 codes: 16 bits exactly
         codes.Length.ShouldBe(2);
         var gif = new GifStream(4, 2, Palette(4)).Image(0, 0, 4, 2, indices, minCodeSize: 2, codes: codes).NoTrailer();
-        SimdCodecs.TryReadInfo(gif, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(gif, out var info).ShouldBeTrue();
         info.Channels.ShouldBe(3);
         Frames(gif).Single().ShouldBe([Rgba(1), Rgba(2), Rgba(3), Rgba(0), OpaqueBlack, OpaqueBlack, OpaqueBlack, OpaqueBlack]);
     }
@@ -367,7 +367,7 @@ public sealed class GifDecisionTests
             .Image(0, 0, 2, 1, [3, 3], minCodeSize: 2).Trailer();
         GifDecoder.ReadInfo(unknown).FrameCount.ShouldBe(1);
         // Without an image the file is refused.
-        SimdCodecs.TryReadInfo(new GifStream(2, 1, Palette(4)).Trailer(), out _).ShouldBeFalse();
+        ImageCodecs.TryReadInfo(new GifStream(2, 1, Palette(4)).Trailer(), out _).ShouldBeFalse();
     }
 
     [Fact]
@@ -378,7 +378,7 @@ public sealed class GifDecisionTests
             .Control(delay: 77, transparent: 1).PlainText()          // the plain text consumes this control
             .Image(0, 0, 1, 1, [1], minCodeSize: 2)                  // so this image has none
             .Trailer();
-        SimdCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.FrameCount.ShouldBe(2);
@@ -400,7 +400,7 @@ public sealed class GifDecisionTests
         var gif = new GifStream(1, 1, Palette(4)).Loop(stored)
             .Image(0, 0, 1, 1, [1], minCodeSize: 2).Image(0, 0, 1, 1, [2], minCodeSize: 2).Trailer();
         GifDecoder.ReadInfo(gif).LoopCount.ShouldBe(stored);
-        SimdCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
         using (reader)
             reader.LoopCount.ShouldBe(plays);
     }
@@ -411,17 +411,17 @@ public sealed class GifDecisionTests
     public void AMinimumCodeSizeNoTableHoldsIsRefused(int minCodeSize)
     {
         var gif = new GifStream(1, 1, Palette(4)).Image(0, 0, 1, 1, [], minCodeSize: minCodeSize, codes: [0, 0]).Trailer();
-        SimdCodecs.TryReadInfo(gif, out _).ShouldBeTrue(); // the structure is fine
-        SimdCodecs.TryDecode(gif, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
-        SimdCodecs.TryDecodeInto(gif, new byte[16], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryReadInfo(gif, out _).ShouldBeTrue(); // the structure is fine
+        ImageCodecs.TryDecode(gif, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecodeInto(gif, new byte[16], 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Fact]
     public void CanvasesAndImagesPastTheLimitAreRefused()
     {
-        SimdCodecs.TryReadInfo(new GifStream(8193, 8193, Palette(4)).Image(0, 0, 1, 1, [1], minCodeSize: 2).Trailer(), out _).ShouldBeFalse();
-        SimdCodecs.TryReadInfo(new GifStream(4, 4, Palette(4)).Image(0, 0, 65535, 65535, [1], minCodeSize: 2).Trailer(), out _).ShouldBeFalse();
-        SimdCodecs.TryReadInfo(new GifStream(8192, 8192, Palette(4)).Image(0, 0, 1, 1, [1], minCodeSize: 2).Trailer(), out _).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(new GifStream(8193, 8193, Palette(4)).Image(0, 0, 1, 1, [1], minCodeSize: 2).Trailer(), out _).ShouldBeFalse();
+        ImageCodecs.TryReadInfo(new GifStream(4, 4, Palette(4)).Image(0, 0, 65535, 65535, [1], minCodeSize: 2).Trailer(), out _).ShouldBeFalse();
+        ImageCodecs.TryReadInfo(new GifStream(8192, 8192, Palette(4)).Image(0, 0, 1, 1, [1], minCodeSize: 2).Trailer(), out _).ShouldBeTrue();
     }
 
     [Theory]
@@ -465,9 +465,9 @@ public sealed class GifDecisionTests
 
         static void Exercise(byte[] data)
         {
-            SimdCodecs.TryReadInfo(data, out _);
-            SimdCodecs.TryDecode(data, out _);
-            if (!SimdCodecs.TryOpenFrames(data, out var reader)) return;
+            ImageCodecs.TryReadInfo(data, out _);
+            ImageCodecs.TryDecode(data, out _);
+            if (!ImageCodecs.TryOpenFrames(data, out var reader)) return;
             using (reader)
             {
                 reader.TryGetFrameInfo(0, out var info).ShouldBeTrue();

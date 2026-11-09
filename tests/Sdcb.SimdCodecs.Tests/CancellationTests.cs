@@ -6,8 +6,8 @@ namespace Sdcb.SimdCodecs.Tests;
 
 /// <summary>
 /// A token that is already cancelled makes the facade throw <see cref="OperationCanceledException"/> (never return
-/// <c>false</c>, which means "not decodable") from <see cref="SimdCodecs.TryDecode"/> and
-/// <see cref="SimdCodecs.TryDecodeInto"/>, for every codec; a live token changes nothing.
+/// <c>false</c>, which means "not decodable") from <see cref="ImageCodecs.TryDecode"/> and
+/// <see cref="ImageCodecs.TryDecodeInto"/>, for every codec; a live token changes nothing.
 /// </summary>
 [Collection(FacadeRegistryCollection.Name)]
 public sealed class CancellationTests : IDisposable
@@ -17,9 +17,9 @@ public sealed class CancellationTests : IDisposable
 
     private static readonly CancellationToken Cancelled = new(canceled: true);
 
-    private readonly ImageDecoderRegistration[] _builtIn = SimdCodecs.RegistrySnapshot;
+    private readonly ImageDecoderRegistration[] _builtIn = ImageCodecs.RegistrySnapshot;
 
-    public void Dispose() => SimdCodecs.ExchangeRegistry(_builtIn);
+    public void Dispose() => ImageCodecs.ExchangeRegistry(_builtIn);
 
     private static byte[] Rgba()
     {
@@ -60,8 +60,8 @@ public sealed class CancellationTests : IDisposable
     public void AnAlreadyCancelledTokenMakesTryDecodeThrow(string name)
     {
         var data = Corpus.Value[name];
-        Should.Throw<OperationCanceledException>(() => SimdCodecs.TryDecode(data, out _, cancellationToken: Cancelled));
-        Should.Throw<OperationCanceledException>(() => SimdCodecs.TryDecode(data, out _, DecodeOptions.Default, Cancelled));
+        Should.Throw<OperationCanceledException>(() => ImageCodecs.TryDecode(data, out _, cancellationToken: Cancelled));
+        Should.Throw<OperationCanceledException>(() => ImageCodecs.TryDecode(data, out _, DecodeOptions.Default, Cancelled));
     }
 
     [Theory]
@@ -74,7 +74,7 @@ public sealed class CancellationTests : IDisposable
         {
             var destination = new byte[W * H * format.BytesPerPixel];
             Should.Throw<OperationCanceledException>(
-                () => SimdCodecs.TryDecodeInto(data, destination, 0, format, cancellationToken: Cancelled), $"{name} {format}");
+                () => ImageCodecs.TryDecodeInto(data, destination, 0, format, cancellationToken: Cancelled), $"{name} {format}");
         }
     }
 
@@ -83,8 +83,8 @@ public sealed class CancellationTests : IDisposable
     public void ALiveTokenChangesNothing(string name)
     {
         var data = Corpus.Value[name];
-        SimdCodecs.TryDecode(data, out var plain, cancellationToken: CancellationToken.None).ShouldBeTrue(name);
-        SimdCodecs.TryDecode(data, out var withToken, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue(name);
+        ImageCodecs.TryDecode(data, out var plain, cancellationToken: CancellationToken.None).ShouldBeTrue(name);
+        ImageCodecs.TryDecode(data, out var withToken, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue(name);
         using (plain)
         using (withToken)
         {
@@ -95,8 +95,8 @@ public sealed class CancellationTests : IDisposable
 
         var a = new byte[W * H * 4];
         var b = new byte[W * H * 4];
-        SimdCodecs.TryDecodeInto(data, a, 0, PixelFormat.Rgba32, cancellationToken: CancellationToken.None).ShouldBeTrue(name);
-        SimdCodecs.TryDecodeInto(data, b, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue(name);
+        ImageCodecs.TryDecodeInto(data, a, 0, PixelFormat.Rgba32, cancellationToken: CancellationToken.None).ShouldBeTrue(name);
+        ImageCodecs.TryDecodeInto(data, b, 0, PixelFormat.Rgba32, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue(name);
         b.ShouldBe(a, name);
     }
 
@@ -104,8 +104,8 @@ public sealed class CancellationTests : IDisposable
     public void ACancelledTokenDoesNotMakeGarbageLookDecodable()
     {
         // Not an image: the answer is "no", with or without a cancelled token (nothing to cancel).
-        SimdCodecs.TryDecode(new byte[100], out _, cancellationToken: Cancelled).ShouldBeFalse();
-        SimdCodecs.TryDecodeInto(new byte[100], new byte[1000], 0, PixelFormat.Rgba32, cancellationToken: Cancelled).ShouldBeFalse();
+        ImageCodecs.TryDecode(new byte[100], out _, cancellationToken: Cancelled).ShouldBeFalse();
+        ImageCodecs.TryDecodeInto(new byte[100], new byte[1000], 0, PixelFormat.Rgba32, cancellationToken: Cancelled).ShouldBeFalse();
     }
 
     [Fact]
@@ -114,7 +114,7 @@ public sealed class CancellationTests : IDisposable
         var animation = Webp.WebpEncoder.EncodeAnimation(
             [new Webp.WebpAnimationCanvasFrame(Rgba(), TimeSpan.FromMilliseconds(40)), new Webp.WebpAnimationCanvasFrame(Rgba().Select(v => (byte)~v).ToArray(), TimeSpan.FromMilliseconds(40))],
             W, H, PixelFormat.Rgba32, new Webp.WebpAnimationEncodeOptions { Mode = Webp.WebpAnimationMode.Lossless });
-        SimdCodecs.TryOpenFrames(animation, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(animation, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.FrameCount.ShouldBe(2);
@@ -128,16 +128,16 @@ public sealed class CancellationTests : IDisposable
     public void HeifAnAlreadyCancelledTokenThrows()
     {
         var data = HeifTests.ReadFixture(HeifFixture);
-        SimdCodecs.Register(HeifImageDecoder.Registration);
+        ImageCodecs.Register(HeifImageDecoder.Registration);
 
-        Should.Throw<OperationCanceledException>(() => SimdCodecs.TryDecode(data, out _, cancellationToken: Cancelled));
+        Should.Throw<OperationCanceledException>(() => ImageCodecs.TryDecode(data, out _, cancellationToken: Cancelled));
         Should.Throw<OperationCanceledException>(() =>
-            SimdCodecs.TryDecodeInto(data, new byte[1599 * 1199 * 4], 0, PixelFormat.Rgba32, cancellationToken: Cancelled));
+            ImageCodecs.TryDecodeInto(data, new byte[1599 * 1199 * 4], 0, PixelFormat.Rgba32, cancellationToken: Cancelled));
         Should.Throw<OperationCanceledException>(() =>
-            SimdCodecs.TryDecodeInto(data, new byte[1599 * 1199 * 8], 0, PixelFormat.Bgra64Premultiplied, cancellationToken: Cancelled));
+            ImageCodecs.TryDecodeInto(data, new byte[1599 * 1199 * 8], 0, PixelFormat.Bgra64Premultiplied, cancellationToken: Cancelled));
 
         // A live token still decodes.
-        SimdCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(data, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         (image.Width, image.Height).ShouldBe((1599, 1199));
         image.Dispose();
     }

@@ -81,7 +81,7 @@ public sealed class TiffIfdLoopTests
             Should.Throw<ArgumentOutOfRangeException>(() => TiffReader.ReadLayout(tiff, page));
         }
 
-        SimdCodecs.TryReadInfo(tiff, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(tiff, out var info).ShouldBeTrue();
         info.FrameCount.ShouldBe(expected);
     }
 

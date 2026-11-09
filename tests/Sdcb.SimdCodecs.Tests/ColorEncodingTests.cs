@@ -8,7 +8,7 @@ namespace Sdcb.SimdCodecs.Tests;
 /// <summary>
 /// <see cref="IDecodedImage.ColorEncoding"/> — the meaning tier beside the
 /// container tier. The key property under test: PNG-3 colour signalling (cICP,
-/// gAMA 1.0) survives the codec-neutral <see cref="SimdCodecs"/> facade instead
+/// gAMA 1.0) survives the codec-neutral <see cref="ImageCodecs"/> facade instead
 /// of being dropped at the adapter boundary, and untagged content lands on the
 /// same sRGB assumption consumers already baked in.
 /// </summary>
@@ -42,7 +42,7 @@ public sealed class ColorEncodingTests
     {
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Cicp = CicpChunk.Hdr10Pq });
 
-        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.Primaries.ShouldBe(ColorPrimaries.BT2020);
         img.ColorEncoding.Transfer.ShouldBe(TransferFunction.Pq);
@@ -54,7 +54,7 @@ public sealed class ColorEncodingTests
     {
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions());
 
-        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.ShouldBe(ColorEncoding.AssumedSrgb);
     }
@@ -66,7 +66,7 @@ public sealed class ColorEncodingTests
         // linear-light astro master stored as 16-bit PNG).
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Gamma = 1.0 });
 
-        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.Transfer.ShouldBe(TransferFunction.Linear);
         img.ColorEncoding.Primaries.ShouldBe(ColorPrimaries.BT709);
@@ -80,8 +80,8 @@ public sealed class ColorEncodingTests
         // fidelity path decodes with the tag attached.
         var png = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Cicp = CicpChunk.Hdr10Pq });
 
-        SimdCodecs.TryDecodeIntoRgba8(png, new byte[4 * 4 * 4]).ShouldBeFalse();
-        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecodeIntoRgba8(png, new byte[4 * 4 * 4]).ShouldBeFalse();
+        ImageCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.Transfer.ShouldBe(TransferFunction.Pq);
     }
@@ -90,14 +90,14 @@ public sealed class ColorEncodingTests
     public void Srgb_and_linear_tagged_pngs_keep_the_display_path()
     {
         var untagged = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions());
-        SimdCodecs.TryDecodeIntoRgba8(untagged, new byte[4 * 4 * 4]).ShouldBeTrue();
+        ImageCodecs.TryDecodeIntoRgba8(untagged, new byte[4 * 4 * 4]).ShouldBeTrue();
 
         var explicitSrgb = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Cicp = CicpChunk.Srgb });
-        SimdCodecs.TryDecodeIntoRgba8(explicitSrgb, new byte[4 * 4 * 4]).ShouldBeTrue();
+        ImageCodecs.TryDecodeIntoRgba8(explicitSrgb, new byte[4 * 4 * 4]).ShouldBeTrue();
 
         // gAMA 1.0 (linear astro master): monotone code dump stays available.
         var linear = PngWriter.Encode(TinyRgba, 4, 4, new PngWriteOptions { Gamma = 1.0 });
-        SimdCodecs.TryDecodeIntoRgba8(linear, new byte[4 * 4 * 4]).ShouldBeTrue();
+        ImageCodecs.TryDecodeIntoRgba8(linear, new byte[4 * 4 * 4]).ShouldBeTrue();
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public sealed class ColorEncodingTests
             Gamma = 1.0,
         });
 
-        SimdCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(png, out var img, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         img.ShouldNotBeNull();
         img.ColorEncoding.Transfer.ShouldBe(TransferFunction.Hlg);
         img.ColorEncoding.Primaries.ShouldBe(ColorPrimaries.BT2020);

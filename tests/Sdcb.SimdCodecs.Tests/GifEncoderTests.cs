@@ -71,7 +71,7 @@ public sealed class GifEncoderTests
         var rgba = PaletteRgba(width, height, colours, seed: width + height + colours, transparent);
         var gif = GifEncoder.Encode(rgba, width, height, 4);
         BothDecodersShouldSee(gif, [AsGifSees(rgba)], $"{width}x{height}, {colours} colours");
-        SimdCodecs.TryReadInfo(gif, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(gif, out var info).ShouldBeTrue();
         info.Channels.ShouldBe(AsGifSees(rgba).Where((_, i) => i % 4 == 3).Any(a => a == 0) ? 4 : 3);
     }
 
@@ -303,7 +303,7 @@ public sealed class GifEncoderTests
             [.. frames.Select((f, i) => new GifAnimationFrame(f, TimeSpan.FromMilliseconds(milliseconds[i])))], 24, 16, 4,
             new GifEncodeOptions { LoopCount = plays });
 
-        SimdCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(gif, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.LoopCount.ShouldBe(plays);
@@ -324,7 +324,7 @@ public sealed class GifEncoderTests
         // Decode an ImageMagick animation with our reader, encode the frames, read them back: the same.
         var source = GifDecoderTests.Animation("mixed");
         var frames = GifDecoderTests.OurFrames(source);
-        SimdCodecs.TryOpenFrames(source, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(source, out var reader).ShouldBeTrue();
         var durations = new List<TimeSpan>();
         using (reader)
         {

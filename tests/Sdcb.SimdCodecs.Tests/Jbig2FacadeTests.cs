@@ -9,7 +9,7 @@ namespace Sdcb.SimdCodecs.Tests;
 /// <c>.jb2</c> files that actually have a header to sniff. The format's real use
 /// (PDF's <c>/JBIG2Decode</c>) cannot come through the facade at all, and that
 /// asymmetry is asserted here too: an embedded stream has no signature, so
-/// <see cref="SimdCodecs.CanDecode"/> must not claim it.
+/// <see cref="ImageCodecs.CanDecode"/> must not claim it.
 /// </summary>
 public sealed class Jbig2FacadeTests
 {
@@ -36,7 +36,7 @@ public sealed class Jbig2FacadeTests
     [Fact]
     public void CanDecode_RecognisesTheJb2FileSignature()
     {
-        SimdCodecs.CanDecode(BuildFile()).ShouldBeTrue();
+        ImageCodecs.CanDecode(BuildFile()).ShouldBeTrue();
         Jbig2ImageDecoder.CanDecode(Jbig2Decoder.FileSignature).ShouldBeTrue();
     }
 
@@ -56,7 +56,7 @@ public sealed class Jbig2FacadeTests
     [Fact]
     public void TryReadInfo_ReportsGrayEightBit()
     {
-        SimdCodecs.TryReadInfo(BuildFile(), out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(BuildFile(), out var info).ShouldBeTrue();
 
         info.Width.ShouldBe(10);
         info.Height.ShouldBe(5);
@@ -67,7 +67,7 @@ public sealed class Jbig2FacadeTests
     [Fact]
     public void TryDecode_ProducesTheGrayFidelityRaster()
     {
-        SimdCodecs.TryDecode(BuildFile(), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(BuildFile(), out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         image!.Width.ShouldBe(10);
         image.Height.ShouldBe(5);
@@ -83,7 +83,7 @@ public sealed class Jbig2FacadeTests
     public void TryDecodeIntoRgba8_ExpandsGrayAcrossRgbWithOpaqueAlpha()
     {
         var destination = new byte[10 * 5 * 4];
-        SimdCodecs.TryDecodeIntoRgba8(BuildFile(), destination).ShouldBeTrue();
+        ImageCodecs.TryDecodeIntoRgba8(BuildFile(), destination).ShouldBeTrue();
 
         var expected = Jbig2StreamBuilder.FromRows(Glyph);
         for (var i = 0; i < expected.Data.Length; i++)
@@ -113,8 +113,8 @@ public sealed class Jbig2FacadeTests
     {
         var file = File.ReadAllBytes(Path.Combine(Jbig2SymbolFixtureTests.FixtureDirectory, "sym.jb2"));
 
-        SimdCodecs.CanDecode(file).ShouldBeTrue();
-        SimdCodecs.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.CanDecode(file).ShouldBeTrue();
+        ImageCodecs.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
 
         var direct = Jbig2Decoder.DecodeFile(file, cancellationToken: TestContext.Current.CancellationToken);
         image!.Width.ShouldBe(direct.Width);
@@ -134,7 +134,7 @@ public sealed class Jbig2FacadeTests
         var file = Jbig2StreamBuilder.SequentialFile([.. segments,
             Jbig2StreamBuilder.Segment(9, SegmentType.EndOfFile, 0, [])]);
 
-        SimdCodecs.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         image!.Width.ShouldBe(expected.Width);
         image.Pixels.ToArray().ShouldBe(new Jbig2Image(expected.Width, expected.Height, expected.Data).ToGray8());
     }
@@ -155,7 +155,7 @@ public sealed class Jbig2FacadeTests
 
         Jbig2ImageDecoder.TryDecode(file, out var image, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
         image.ShouldBeNull();
-        SimdCodecs.TryDecode(file, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        ImageCodecs.TryDecode(file, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
     }
 
     [Fact]
@@ -185,10 +185,10 @@ public sealed class Jbig2FacadeTests
         ];
         var file = Jbig2ExtendedOracleTests.MultiPageFile(sources);
 
-        SimdCodecs.TryReadInfo(file, out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(file, out var info).ShouldBeTrue();
         (info.Width, info.Height, info.FrameCount).ShouldBe((30, 20, 3));
 
-        SimdCodecs.TryOpenFrames(file, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(file, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.FrameCount.ShouldBe(3);
@@ -254,7 +254,7 @@ public sealed class Jbig2FacadeTests
         // 0x97 leads nothing else in the family, but the registry is order-
         // sensitive, so assert the sniff actually reaches JBIG2 rather than being
         // swallowed by a codec registered ahead of it.
-        SimdCodecs.TryReadInfo(BuildFile(), out var info).ShouldBeTrue();
+        ImageCodecs.TryReadInfo(BuildFile(), out var info).ShouldBeTrue();
         info.Channels.ShouldBe(1);
         info.SampleFormat.ShouldBe(SampleFormat.UInt8);
     }

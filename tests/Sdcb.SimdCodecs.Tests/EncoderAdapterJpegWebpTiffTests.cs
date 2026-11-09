@@ -115,7 +115,7 @@ public sealed class EncoderAdapterJpegWebpTiffTests
             Push(session, pixels, PixelFormat.Rgb24, new ImageMetadata { Exif = exif, Icc = icc });
             session.Commit(TestContext.Current.CancellationToken);
         }
-        SimdCodecs.TryReadMetadata(output.WrittenSpan, out var metadata).ShouldBeTrue();
+        ImageCodecs.TryReadMetadata(output.WrittenSpan, out var metadata).ShouldBeTrue();
         metadata.ShouldNotBeNull();
         metadata.Exif.ToArray().ShouldBe(exif);
         metadata.Icc.ToArray().ShouldBe(icc);
@@ -215,7 +215,7 @@ public sealed class EncoderAdapterJpegWebpTiffTests
                 Push(session, RandomImage(PixelFormat.Rgb24, 8), PixelFormat.Rgb24, new ImageMetadata { Exif = exif, Icc = icc });
                 session.Commit(TestContext.Current.CancellationToken);
             }
-            SimdCodecs.TryReadMetadata(output.WrittenSpan, out var metadata).ShouldBeTrue();
+            ImageCodecs.TryReadMetadata(output.WrittenSpan, out var metadata).ShouldBeTrue();
             metadata.ShouldNotBeNull();
             metadata.Exif.ToArray().ShouldBe(exif);
             metadata.Icc.ToArray().ShouldBe(icc);

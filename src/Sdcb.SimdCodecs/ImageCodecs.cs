@@ -71,7 +71,7 @@ namespace Sdcb.SimdCodecs;
 /// are unaffected.
 /// </para>
 /// </summary>
-public static partial class SimdCodecs
+public static partial class ImageCodecs
 {
     // Explicit registry: IImageDecoder's static-abstract members are not enumerable
     // and reflection-scanning for implementors is not AOT-safe, so each codec is
@@ -135,7 +135,7 @@ public static partial class SimdCodecs
     /// <summary>
     /// Enables a codec this package does not reference — today <c>Sdcb.SimdCodecs.Heif</c>, kept out of the
     /// meta-package because HEVC is patent-encumbered: install it, then call
-    /// <c>SimdCodecs.Register(HeifImageDecoder.Registration)</c> once at start-up. Every entry point —
+    /// <c>ImageCodecs.Register(HeifImageDecoder.Registration)</c> once at start-up. Every entry point —
     /// <see cref="CanDecode"/>, <see cref="DetectFormat"/>, <see cref="IsDecodable"/>, <see cref="TryReadInfo"/>,
     /// <see cref="TryDecode"/>, <see cref="TryDecodeInto"/>, <see cref="TryOpenFrames"/> — then dispatches to it.
     /// <para>

@@ -281,16 +281,16 @@ public sealed class PngApngDecoderTests
         decoder.IsAnimated.ShouldBeTrue();
         // The default image, as every PNG reader sees it, is the IDAT picture.
         PngReader.Decode(file, TestContext.Current.CancellationToken).ToRgba8().Select(b => (int)b).ToArray().ShouldBe(Enumerable.Range(0, W * H).SelectMany(i => s.Rgba(99, i % W, i / W)).ToArray());
-        SimdCodecs.TryDecode(file, out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(file, out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         still.Width.ShouldBe(W);
         ShouldEqualModel(DecodeAll(file, s), Model(s, frames), "fdAT frames");
 
-        SimdCodecs.TryOpenFrames(file, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(file, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.FrameCount.ShouldBe(2);
             reader.LoopCount.ShouldBe(0);
-            SimdCodecs.TryReadInfo(file, out var info).ShouldBeTrue();
+            ImageCodecs.TryReadInfo(file, out var info).ShouldBeTrue();
             info.FrameCount.ShouldBe(2);
         }
     }
@@ -339,7 +339,7 @@ public sealed class PngApngDecoderTests
         ShouldEqualModel(DecodeAll(file, s), Model(s, frames), name);
 
         // Through the facade reader, at the file's depth: 8-bit RGBA bytes, or 16-bit RGBA samples.
-        SimdCodecs.TryOpenFrames(file, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(file, out var reader).ShouldBeTrue();
         using (reader)
         {
             var expected = Model(s, frames);
@@ -456,7 +456,7 @@ public sealed class PngApngDecoderTests
     {
         var file = Build(kind);
         Should.Throw<InvalidDataException>(() => new PngAnimationDecoder(file), kind);
-        SimdCodecs.TryOpenFrames(file, out _).ShouldBeFalse(kind);
+        ImageCodecs.TryOpenFrames(file, out _).ShouldBeFalse(kind);
     }
 
     [Fact]
@@ -469,7 +469,7 @@ public sealed class PngApngDecoderTests
         Next(decoder, false);
         Should.Throw<InvalidDataException>(() => decoder.TryDecodeNextFrame(new byte[W * H * 4], out _));
 
-        SimdCodecs.TryOpenFrames(file, out var reader).ShouldBeTrue();
+        ImageCodecs.TryOpenFrames(file, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.TryDecodeFrame(0, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();

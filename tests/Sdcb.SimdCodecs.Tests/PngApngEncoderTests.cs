@@ -181,7 +181,7 @@ public sealed class PngApngEncoderTests
         var input = PngApngOracleTests.Sequence(W, H, 5, true);
         var file = EncodeFrames(input, false);
         PngReader.Decode(file, TestContext.Current.CancellationToken).ToRgba8().ShouldBe(input[0]);
-        SimdCodecs.TryDecode(file, out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
+        ImageCodecs.TryDecode(file, out var still, cancellationToken: TestContext.Current.CancellationToken).ShouldBeTrue();
         still.ToRgba8().ShouldBe(input[0]);
     }
 
@@ -346,7 +346,7 @@ public sealed class PngApngEncoderTests
         int width = W, int height = H)
     {
         var writer = new ArrayBufferWriter<byte>();
-        using (var session = SimdCodecs.CreateEncoder(ImageFormat.Png, writer, options))
+        using (var session = ImageCodecs.CreateEncoder(ImageFormat.Png, writer, options))
         {
             foreach (var (pixels, format, duration) in frames)
             {
@@ -364,8 +364,8 @@ public sealed class PngApngEncoderTests
         var input = PngApngOracleTests.Sequence(W, H, 4, false);
         var file = Session([.. input.Select((f, i) => (f, PixelFormat.Rgba32, (TimeSpan?)TimeSpan.FromMilliseconds(30 + 10 * i)))],
             new PngWriteOptions { LoopCount = 2 });
-        SimdCodecs.DetectFormat(file).ShouldBe(ImageFormat.Png);
-        SimdCodecs.TryOpenFrames(file, out var reader).ShouldBeTrue();
+        ImageCodecs.DetectFormat(file).ShouldBe(ImageFormat.Png);
+        ImageCodecs.TryOpenFrames(file, out var reader).ShouldBeTrue();
         using (reader)
         {
             reader.FrameCount.ShouldBe(4);
@@ -419,7 +419,7 @@ public sealed class PngApngEncoderTests
     public void ASessionWhoseFramesDifferInSizeIsRefused()
     {
         var writer = new ArrayBufferWriter<byte>();
-        using var session = SimdCodecs.CreateEncoder(ImageFormat.Png, writer);
+        using var session = ImageCodecs.CreateEncoder(ImageFormat.Png, writer);
         session.AddFrame(4, 4, PixelFormat.Rgba32).WriteRows(new byte[64], 4, 0, TestContext.Current.CancellationToken);
         session.AddFrame(5, 4, PixelFormat.Rgba32).WriteRows(new byte[80], 4, 0, TestContext.Current.CancellationToken);
         Should.Throw<ArgumentException>(() => session.Commit(TestContext.Current.CancellationToken));
