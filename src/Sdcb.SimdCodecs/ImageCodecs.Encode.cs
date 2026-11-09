@@ -70,6 +70,8 @@ public static partial class ImageCodecs
 
     /// <summary>Opens an encoding session for <paramref name="format"/> writing to <paramref name="output"/>.</summary>
     /// <exception cref="NotSupportedException">No registered encoder writes <paramref name="format"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="options"/> is not null and not an options type
+    /// <paramref name="format"/>'s encoder takes (e.g. <c>JpegEncodeOptions</c> for WebP).</exception>
     public static IImageEncoderSession CreateEncoder(ImageFormat format, IBufferWriter<byte> output, EncodeOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(output);
@@ -84,6 +86,7 @@ public static partial class ImageCodecs
     /// </summary>
     /// <exception cref="NotSupportedException">No registered encoder writes <paramref name="format"/>, or the image has
     /// float samples.</exception>
+    /// <exception cref="ArgumentException"><paramref name="options"/> is of a type <paramref name="format"/>'s encoder does not take.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public static void Encode(IDecodedImage image, ImageFormat format, Stream destination, EncodeOptions? options = null,
         CancellationToken cancellationToken = default)
@@ -116,16 +119,45 @@ public static partial class ImageCodecs
     /// <paramref name="format"/> and returns the file: the one-call form of a session with one frame.
     /// </summary>
     /// <exception cref="NotSupportedException">No registered encoder writes <paramref name="format"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="options"/> is of a type <paramref name="format"/>'s encoder does not take.</exception>
     public static byte[] Encode(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat pixelFormat, ImageFormat format,
         int stride = 0, EncodeOptions? options = null, ImageMetadata? metadata = null, CancellationToken cancellationToken = default)
     {
         var buffer = new ArrayBufferWriter<byte>();
-        using (var session = CreateEncoder(format, buffer, options))
-        {
-            session.AddFrame(width, height, pixelFormat, null, metadata).WriteRows(pixels, height, stride, cancellationToken);
-            session.Commit(cancellationToken);
-        }
+        Encode(pixels, width, height, pixelFormat, format, buffer, stride, options, metadata, cancellationToken);
         return buffer.WrittenSpan.ToArray();
+    }
+
+    /// <summary>
+    /// <see cref="Encode(ReadOnlySpan{byte}, int, int, PixelFormat, ImageFormat, int, EncodeOptions?, ImageMetadata?, CancellationToken)"/>
+    /// writing the file into <paramref name="destination"/> (for a <c>Stream</c> with no copy: <c>PipeWriter.Create(stream)</c>).
+    /// </summary>
+    /// <exception cref="NotSupportedException">No registered encoder writes <paramref name="format"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="options"/> is of a type <paramref name="format"/>'s encoder does not take.</exception>
+    public static void Encode(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat pixelFormat, ImageFormat format,
+        IBufferWriter<byte> destination, int stride = 0, EncodeOptions? options = null, ImageMetadata? metadata = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        using var session = CreateEncoder(format, destination, options);
+        session.AddFrame(width, height, pixelFormat, null, metadata).WriteRows(pixels, height, stride, cancellationToken);
+        session.Commit(cancellationToken);
+    }
+
+    /// <summary>
+    /// <see cref="Encode(ReadOnlySpan{byte}, int, int, PixelFormat, ImageFormat, int, EncodeOptions?, ImageMetadata?, CancellationToken)"/>
+    /// writing the file to <paramref name="destination"/> (buffered, then written in one call).
+    /// </summary>
+    /// <exception cref="NotSupportedException">No registered encoder writes <paramref name="format"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="options"/> is of a type <paramref name="format"/>'s encoder does not take.</exception>
+    public static void Encode(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat pixelFormat, ImageFormat format,
+        Stream destination, int stride = 0, EncodeOptions? options = null, ImageMetadata? metadata = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        var buffer = new ArrayBufferWriter<byte>();
+        Encode(pixels, width, height, pixelFormat, format, buffer, stride, options, metadata, cancellationToken);
+        destination.Write(buffer.WrittenSpan);
     }
 
     private static ImageEncoderRegistration? FindEncoder(ImageFormat format)

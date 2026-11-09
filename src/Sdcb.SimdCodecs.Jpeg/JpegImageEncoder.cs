@@ -39,9 +39,15 @@ public sealed class JpegImageEncoder : IImageEncoder
     public static PixelFormat GetClosestInputFormat(PixelFormat requested) => Native(requested);
 
     /// <inheritdoc />
-    /// <remarks><paramref name="options"/> is a <see cref="JpegEncodeOptions"/> (any other type, or null, means the defaults).</remarks>
+    /// <remarks><paramref name="options"/> is a <see cref="JpegEncodeOptions"/> (null means the defaults; any other type
+    /// throws <see cref="ArgumentException"/>).</remarks>
     public static IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null) =>
-        new Session(output, options as JpegEncodeOptions ?? new JpegEncodeOptions());
+        new Session(output, options switch
+        {
+            null => new JpegEncodeOptions(),
+            JpegEncodeOptions o => o,
+            _ => throw new ArgumentException($"JPEG encoding takes JpegEncodeOptions, not {options.GetType().Name}.", nameof(options)),
+        });
 
     private static PixelFormat Native(PixelFormat f) => f.Layout switch
     {

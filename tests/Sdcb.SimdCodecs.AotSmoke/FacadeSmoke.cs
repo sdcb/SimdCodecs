@@ -72,6 +72,13 @@ internal static class FacadeSmoke
             Check(ImageCodecs.IsEncodable(format), "v2", $"IsEncodable {format}");
             var file = ImageCodecs.Encode(rgb, w, h, PixelFormat.Bgr24, format);
             Check(ImageCodecs.DetectFormat(file) == format, "v2", $"Encode {format}");
+            // The raw-pixel overloads into a buffer writer and into a stream write the bytes the byte[] one returns.
+            var writer = new System.Buffers.ArrayBufferWriter<byte>();
+            ImageCodecs.Encode(rgb, w, h, PixelFormat.Bgr24, format, writer);
+            Check(writer.WrittenSpan.SequenceEqual(file), "v2", $"Encode {format} to IBufferWriter");
+            using var sink = new MemoryStream();
+            ImageCodecs.Encode(rgb, w, h, PixelFormat.Bgr24, format, sink, stride: w * 3);
+            Check(sink.ToArray().AsSpan().SequenceEqual(file), "v2", $"Encode {format} to Stream");
             encoded.Add($"{format}={Hash(file)}/{ImageCodecs.GetClosestInputFormat(format, PixelFormat.Rgba64)}");
         }
 

@@ -39,9 +39,11 @@ public sealed class IcoImageEncoder : IImageEncoder
     };
 
     /// <inheritdoc />
-    /// <remarks><paramref name="options"/> is unused: icons carry no encoder-level options.</remarks>
+    /// <remarks>Icons carry no encoder-level options: pass null. Any options object throws <see cref="ArgumentException"/>.</remarks>
     public static IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null) =>
-        new Session(output);
+        options is null
+            ? new Session(output)
+            : throw new ArgumentException($"ICO encoding takes no options (pass null), not {options.GetType().Name}.", nameof(options));
 
     private sealed class Session(IBufferWriter<byte> output) : BufferedEncoderSession(output)
     {

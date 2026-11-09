@@ -145,10 +145,12 @@ public sealed class EncoderAdapterJpegWebpTiffTests
             var expected = WebpEncoder.EncodeLossless(converted, W, H, native, options);
             Session(o => WebpImageEncoder.Create(o, options), pixels, format).ShouldBe(expected, format.ToString());
         }
-        // No options at all is lossless defaults.
+        // Lossless defaults need the lossless options type: no options at all is lossy.
         var rgb = RandomImage(PixelFormat.Rgb24, 4);
-        Session(o => WebpImageEncoder.Create(o), rgb, PixelFormat.Rgb24)
+        Session(o => WebpImageEncoder.Create(o, new WebpLosslessEncodeOptions()), rgb, PixelFormat.Rgb24)
             .ShouldBe(WebpEncoder.EncodeLossless(rgb, W, H, PixelFormat.Rgb24));
+        Session(o => WebpImageEncoder.Create(o), rgb, PixelFormat.Rgb24)
+            .ShouldBe(WebpEncoder.EncodeLossy(rgb, W, H, PixelFormat.Rgb24, new WebpLossyEncodeOptions()));
     }
 
     [Fact]

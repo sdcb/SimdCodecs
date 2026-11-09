@@ -10,7 +10,7 @@ namespace Sdcb.SimdCodecs.Qoi;
 /// <see cref="IImageEncoder"/> for QOI: the encoder abstraction's adapter over <see cref="QoiEncoder"/>.
 /// QOI stores 8-bit RGB or RGBA, so <see cref="GetClosestInputFormat"/> maps any input with alpha to
 /// <see cref="PixelFormat.Rgba32"/> and any without to <see cref="PixelFormat.Rgb24"/>.
-/// QOI has no options record: <see cref="Create"/> accepts null.
+/// QOI has no options record: <see cref="Create"/> accepts null only.
 /// The colour space byte is written as <see cref="QoiColorSpace.Linear"/> when
 /// <see cref="BufferedFrame.Color"/> has <see cref="ColorEncoding.Transfer"/> set to
 /// <see cref="TransferFunction.Linear"/>, else <see cref="QoiColorSpace.Srgb"/>.
@@ -34,9 +34,11 @@ public sealed class QoiImageEncoder : IImageEncoder
         requested.HasAlpha ? PixelFormat.Rgba32 : PixelFormat.Rgb24;
 
     /// <inheritdoc />
-    /// <remarks>QOI has no options record; pass null.</remarks>
+    /// <remarks>QOI has no options record: pass null. Any options object throws <see cref="ArgumentException"/>.</remarks>
     public static IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null) =>
-        new Session(output);
+        options is null
+            ? new Session(output)
+            : throw new ArgumentException($"QOI encoding takes no options (pass null), not {options.GetType().Name}.", nameof(options));
 
     private sealed class Session(IBufferWriter<byte> output) : BufferedEncoderSession(output)
     {

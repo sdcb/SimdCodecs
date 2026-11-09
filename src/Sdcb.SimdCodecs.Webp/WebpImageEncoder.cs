@@ -6,9 +6,9 @@ namespace Sdcb.SimdCodecs.Webp;
 
 /// <summary>
 /// <see cref="IImageEncoder"/> for WebP: the encoder abstraction's adapter over <see cref="WebpEncoder"/> and
-/// <see cref="WebpAnimationEncoder"/>. The options type chooses the coding: <see cref="WebpLosslessEncodeOptions"/> (or none)
-/// is lossless VP8L, <see cref="WebpLossyEncodeOptions"/> lossy VP8, and <see cref="WebpAnimationEncodeOptions"/> an
-/// animation. A session given several frames writes an animation too; with lossless or lossy options their effort,
+/// <see cref="WebpAnimationEncoder"/>. The options type chooses the coding: <see cref="WebpLossyEncodeOptions"/> (or none, which
+/// means <c>new WebpLossyEncodeOptions()</c>) is lossy VP8, <see cref="WebpLosslessEncodeOptions"/> lossless VP8L, and
+/// <see cref="WebpAnimationEncodeOptions"/> an animation. A session given several frames writes an animation too; with lossless or lossy options their effort,
 /// quality and metadata become the animation's, with the matching <see cref="WebpAnimationMode"/>.
 /// <para>
 /// WebP stores 8-bit samples with straight alpha, so <see cref="GetClosestInputFormat"/> is the requested format at
@@ -42,10 +42,17 @@ public sealed class WebpImageEncoder : IImageEncoder
 
     /// <inheritdoc />
     /// <remarks><paramref name="options"/> is a <see cref="WebpLosslessEncodeOptions"/>, <see cref="WebpLossyEncodeOptions"/> or
-    /// <see cref="WebpAnimationEncodeOptions"/>; any other type, or null, means lossless defaults.</remarks>
+    /// <see cref="WebpAnimationEncodeOptions"/>; null means lossy with <c>new WebpLossyEncodeOptions()</c>
+    /// (a lossless file needs <see cref="WebpLosslessEncodeOptions"/>). Any other type throws <see cref="ArgumentException"/>.</remarks>
     public static IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null) =>
-        new Session(output, options is WebpLossyEncodeOptions or WebpAnimationEncodeOptions or WebpLosslessEncodeOptions
-            ? options : new WebpLosslessEncodeOptions());
+        new Session(output, options switch
+        {
+            null => new WebpLossyEncodeOptions(),
+            WebpLossyEncodeOptions or WebpAnimationEncodeOptions or WebpLosslessEncodeOptions => options,
+            _ => throw new ArgumentException(
+                $"WebP encoding takes WebpLossyEncodeOptions, WebpLosslessEncodeOptions or WebpAnimationEncodeOptions, not {options.GetType().Name}.",
+                nameof(options)),
+        });
 
     private static PixelFormat Native(PixelFormat f) => f.To8Bit().ToStraight();
 

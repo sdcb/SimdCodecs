@@ -33,9 +33,15 @@ public sealed class TiffImageEncoder : IImageEncoder
     public static PixelFormat GetClosestInputFormat(PixelFormat requested) => Native(requested);
 
     /// <inheritdoc />
-    /// <remarks><paramref name="options"/> is a <see cref="TiffEncodeOptions"/> (any other type, or null, means the defaults).</remarks>
+    /// <remarks><paramref name="options"/> is a <see cref="TiffEncodeOptions"/> (null means the defaults; any other type
+    /// throws <see cref="ArgumentException"/>).</remarks>
     public static IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null) =>
-        new Session(output, options as TiffEncodeOptions ?? new TiffEncodeOptions());
+        new Session(output, options switch
+        {
+            null => new TiffEncodeOptions(),
+            TiffEncodeOptions o => o,
+            _ => throw new ArgumentException($"TIFF encoding takes TiffEncodeOptions, not {options.GetType().Name}.", nameof(options)),
+        });
 
     private static PixelFormat Native(PixelFormat f) => f.Layout switch
     {
