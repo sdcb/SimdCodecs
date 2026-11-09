@@ -317,7 +317,15 @@ public static partial class ImageCodecs
     /// </para>
     /// </summary>
     /// <param name="data">The complete encoded image.</param>
-    /// <param name="format">The layout of the result.</param>
+    /// <param name="format">
+    /// The layout of the result. Pick the one the code that reads the pixels expects, so nothing converts them again:
+    /// <see cref="PixelFormat.Rgba32"/> for an HTML canvas, WebGL and most cross-platform image APIs;
+    /// <see cref="PixelFormat.Bgra32Premultiplied"/> for WPF (<c>Pbgra32</c>), Direct2D and SkiaSharp on Windows
+    /// (<c>Bgra8888</c>, premultiplied); <see cref="PixelFormat.Bgra32"/> for System.Drawing (<c>Format32bppArgb</c>);
+    /// <see cref="PixelFormat.Bgr24"/> for an OpenCV <c>Mat</c> (<c>CV_8UC3</c>); <see cref="PixelFormat.Gray8"/> for
+    /// OCR and other luma-only analysis; <see cref="PixelFormat.Rgba64"/> or <see cref="PixelFormat.Gray16"/> to keep a
+    /// 16-bit image's precision.
+    /// </param>
     /// <param name="options">Scale, region and pool; null for the whole image at full size in new memory.</param>
     /// <param name="cancellationToken">Checked between coarse units of work.</param>
     /// <exception cref="NotSupportedException">No registered codec decodes the data (see
@@ -529,7 +537,26 @@ public static partial class ImageCodecs
     /// and <see cref="PixelConverter.TryGetLayout"/>. See <see cref="IImageDecoder.TryDecodeInto"/> for what the
     /// pixels are. Returns false when no codec recognises the stream, the destination does not fit, or the payload is
     /// undecodable.
+    /// <para>
+    /// Pixels come out in the stored orientation; set <see cref="DecodeOptions.ApplyOrientation"/> for a phone photo to
+    /// come out upright. Without a buffer of your own, <see cref="Decode(ReadOnlySpan{byte}, PixelFormat, DecodeOptions?, CancellationToken)"/>
+    /// sizes and allocates it in the same call.
+    /// </para>
     /// </summary>
+    /// <param name="data">The complete encoded image.</param>
+    /// <param name="destination">The pixels, <c>stride × (height − 1) + width × format.BytesPerPixel</c> bytes at least.</param>
+    /// <param name="stride">Bytes from one row to the next; 0 means tightly packed (<c>width × format.BytesPerPixel</c>).</param>
+    /// <param name="format">
+    /// The layout to write. Pick the one the code that reads the pixels expects, so nothing converts them again:
+    /// <see cref="PixelFormat.Rgba32"/> for an HTML canvas, WebGL and most cross-platform image APIs;
+    /// <see cref="PixelFormat.Bgra32Premultiplied"/> for WPF (<c>Pbgra32</c>), Direct2D and SkiaSharp on Windows
+    /// (<c>Bgra8888</c>, premultiplied); <see cref="PixelFormat.Bgra32"/> for System.Drawing (<c>Format32bppArgb</c>);
+    /// <see cref="PixelFormat.Bgr24"/> for an OpenCV <c>Mat</c> (<c>CV_8UC3</c>); <see cref="PixelFormat.Gray8"/> for
+    /// OCR and other luma-only analysis; <see cref="PixelFormat.Rgba64"/> or <see cref="PixelFormat.Gray16"/> to keep a
+    /// 16-bit image's precision.
+    /// </param>
+    /// <param name="options">Scale, region and orientation; null for the whole image at full size, as stored.</param>
+    /// <param name="cancellationToken">Checked between coarse units of work.</param>
     /// <exception cref="ArgumentException"><see cref="DecodeOptions.Region"/> does not lie inside the image.</exception>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public static bool TryDecodeInto(ReadOnlySpan<byte> data, Span<byte> destination, int stride, PixelFormat format,
