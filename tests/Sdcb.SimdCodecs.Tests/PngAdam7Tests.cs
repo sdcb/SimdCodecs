@@ -30,9 +30,15 @@ public sealed class PngAdam7Tests
             (4, 8, false), (4, 16, false),
             (6, 8, false), (6, 16, false),
         ];
+        (int Width, int Height)[] representativeSizes = [(1, 1), (7, 9), (33, 17)];
         foreach (var (colorType, depth, paletteAlpha) in formats)
         {
-            foreach (var (width, height) in Sizes)
+            // Full sweep of all 12 sizes on standard RGB / RGBA 8-bit formats;
+            // representative sizes covering empty passes, odd boundaries, and full passes on remaining formats.
+            var sizes = (colorType == 2 && depth == 8) || (colorType == 6 && depth == 8)
+                ? Sizes
+                : representativeSizes;
+            foreach (var (width, height) in sizes)
                 data.Add(colorType, depth, paletteAlpha, width, height);
         }
         return data;

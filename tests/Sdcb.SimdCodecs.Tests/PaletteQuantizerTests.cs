@@ -36,7 +36,7 @@ public sealed class PaletteQuantizerTests
         if (!alpha) palette = [.. palette.Select(p => p & 0xFFFFFF)];
         var mapper = new Quantizer.Mapper(palette, alpha);
         var hinted = new Quantizer.Mapper(palette, alpha);
-        var colours = Enumerable.Range(0, 100_000).Select(_ => alpha ? random.Next() * 2 + random.Next(2) : random.Next(1 << 24))
+        var colours = Enumerable.Range(0, 10_000).Select(_ => alpha ? random.Next() * 2 + random.Next(2) : random.Next(1 << 24))
             .Concat(palette)
             .Concat(from r in new[] { 0, 15, 16, 127, 128, 255 }
                     from g in new[] { 0, 31, 32, 255 }

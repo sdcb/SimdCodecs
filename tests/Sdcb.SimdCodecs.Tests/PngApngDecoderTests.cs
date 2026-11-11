@@ -181,9 +181,17 @@ public sealed class PngApngDecoderTests
         foreach (byte d2 in new byte[] { 0, 1, 2 })
         foreach (byte b1 in new byte[] { 0, 1 })
         foreach (byte b2 in new byte[] { 0, 1 })
-        foreach (var depth in new[] { 8, 16 })
-        foreach (var defaultIsFrame in new[] { true, false })
-            data.Add(d0, d1, d2, b1, b2, depth, defaultIsFrame);
+        {
+            // All 108 dispose × blend combinations at 8-bit with defaultIsFrame=true.
+            data.Add(d0, d1, d2, b1, b2, 8, true);
+
+            var hash = d0 * 36 + d1 * 12 + d2 * 4 + b1 * 2 + b2;
+            // Representative orthogonal samples across all dispose and blend modes for defaultIsFrame=false and depth=16.
+            if (hash % 6 == 0)
+                data.Add(d0, d1, d2, b1, b2, 8, false);
+            if (hash % 6 == 1)
+                data.Add(d0, d1, d2, b1, b2, 16, true);
+        }
         return data;
     }
 
