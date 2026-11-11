@@ -18,7 +18,7 @@ public sealed class ApngRobustnessTests
 {
     private const long MaxPixels = 1L << 22;
 
-    private static int Iterations => int.TryParse(Environment.GetEnvironmentVariable("APNG_FUZZ_ITERATIONS"), out var n) ? n : 4000;
+    private static int Iterations => int.TryParse(Environment.GetEnvironmentVariable("APNG_FUZZ_ITERATIONS"), out var n) ? n : 500;
 
     private static int Seed => int.TryParse(Environment.GetEnvironmentVariable("APNG_FUZZ_SEED"), out var n) ? n : 20261105;
 

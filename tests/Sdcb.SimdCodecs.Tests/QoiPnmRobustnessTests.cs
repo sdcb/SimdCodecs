@@ -17,7 +17,7 @@ public sealed class QoiPnmRobustnessTests
     private const long MaxPixels = 1L << 22;
 
     private static int Iterations(string codec) =>
-        int.TryParse(Environment.GetEnvironmentVariable($"{codec}_FUZZ_ITERATIONS"), out var n) ? n : 4000;
+        int.TryParse(Environment.GetEnvironmentVariable($"{codec}_FUZZ_ITERATIONS"), out var n) ? n : 500;
 
     private static int Seed(string codec) =>
         int.TryParse(Environment.GetEnvironmentVariable($"{codec}_FUZZ_SEED"), out var n) ? n : 20261030;

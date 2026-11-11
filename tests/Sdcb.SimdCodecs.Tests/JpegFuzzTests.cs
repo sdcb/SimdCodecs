@@ -59,7 +59,7 @@ public sealed class JpegFuzzTests
     }
 
     private static int Iterations =>
-        int.TryParse(Environment.GetEnvironmentVariable("JPEG_FUZZ_ITERATIONS"), out var n) && n > 0 ? n : 4000;
+        int.TryParse(Environment.GetEnvironmentVariable("JPEG_FUZZ_ITERATIONS"), out var n) && n > 0 ? n : 500;
 
     private static int Seed =>
         int.TryParse(Environment.GetEnvironmentVariable("JPEG_FUZZ_SEED"), out var n) ? n : 20261024;

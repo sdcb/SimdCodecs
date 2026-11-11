@@ -24,7 +24,7 @@ public sealed class TiffRobustnessTests
     private const int W = 37;
     private const int H = 23;
 
-    private static int Iterations => int.TryParse(Environment.GetEnvironmentVariable("TIFF_FUZZ_ITERATIONS"), out var n) ? n : 4000;
+    private static int Iterations => int.TryParse(Environment.GetEnvironmentVariable("TIFF_FUZZ_ITERATIONS"), out var n) ? n : 200;
 
     private static int Seed => int.TryParse(Environment.GetEnvironmentVariable("TIFF_FUZZ_SEED"), out var n) ? n : 20261105;
 

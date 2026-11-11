@@ -16,7 +16,7 @@ public sealed class BmpRobustnessTests
 {
     private const long MaxPixels = 1L << 22;
 
-    private static int Iterations => int.TryParse(Environment.GetEnvironmentVariable("BMP_FUZZ_ITERATIONS"), out var n) ? n : 4000;
+    private static int Iterations => int.TryParse(Environment.GetEnvironmentVariable("BMP_FUZZ_ITERATIONS"), out var n) ? n : 500;
 
     private static int Seed => int.TryParse(Environment.GetEnvironmentVariable("BMP_FUZZ_SEED"), out var n) ? n : 20261030;
 

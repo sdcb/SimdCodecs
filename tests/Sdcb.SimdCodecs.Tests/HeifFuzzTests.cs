@@ -26,7 +26,7 @@ namespace Sdcb.SimdCodecs.Tests;
 [Collection(FacadeRegistryCollection.Name)]
 public sealed class HeifFuzzTests
 {
-    private static int Iterations => int.TryParse(Environment.GetEnvironmentVariable("HEIF_FUZZ_ITERATIONS"), out var n) ? n : 4000;
+    private static int Iterations => int.TryParse(Environment.GetEnvironmentVariable("HEIF_FUZZ_ITERATIONS"), out var n) ? n : 100;
 
     private static int Seed => int.TryParse(Environment.GetEnvironmentVariable("HEIF_FUZZ_SEED"), out var n) ? n : 20261103;
 

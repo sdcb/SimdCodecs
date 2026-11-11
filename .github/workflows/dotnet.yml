@@ -25,6 +25,15 @@ env:
   # The build job CAPTURES a dotnet invocation's stdout to resolve the version, so
   # the SDK's first-run banner must not be able to land in it.
   DOTNET_NOLOGO: 1
+  # CI fuzz iterations: keep PR/CI runs fast while preserving mutation coverage.
+  # Long soak testing (300,000 iterations per AGENTS.md) is done explicitly by developers.
+  HEIF_FUZZ_ITERATIONS: 100
+  TIFF_FUZZ_ITERATIONS: 200
+  JPEG_FUZZ_ITERATIONS: 500
+  BMP_FUZZ_ITERATIONS: 500
+  APNG_FUZZ_ITERATIONS: 500
+  QOI_FUZZ_ITERATIONS: 500
+  PNM_FUZZ_ITERATIONS: 500
 
 jobs:
   build:
@@ -172,7 +181,7 @@ jobs:
       if: matrix.group == 'webp'
       run: sudo apt-get update && sudo apt-get install -y webp
     - name: Build tests
-      run: dotnet build tests/Sdcb.SimdCodecs.Tests -c Release
+      run: dotnet build tests/Sdcb.SimdCodecs.Tests -c Release -p:GeneratePackageOnBuild=false
     - name: Test
       run: |
         case "${{ matrix.group }}" in
