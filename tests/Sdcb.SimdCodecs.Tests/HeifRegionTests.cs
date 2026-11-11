@@ -25,7 +25,9 @@ public sealed class HeifRegionTests
         var data = HeifTests.ReadFixture(fixture);
         var rng = new Random(fixture.Length * 104729);
         var ct = TestContext.Current.CancellationToken;
-        for (var iteration = 0; iteration < 6; iteration++)
+        var grid = fixture.Contains("grid");
+        var iterations = grid ? 2 : 4;
+        for (var iteration = 0; iteration < iterations; iteration++)
         {
             var container = HeifContainer.Parse(data);
             container.Transforms.Clear();

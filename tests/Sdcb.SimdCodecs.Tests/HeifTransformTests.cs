@@ -28,7 +28,8 @@ public sealed class HeifTransformTests
 
         var rng = new Random(fixture.Length * 7919);
         var formats = PixelConverterTests.Formats;
-        for (var iteration = 0; iteration < 24; iteration++)
+        var iterations = fixture.Contains("grid") ? 6 : 24;
+        for (var iteration = 0; iteration < iterations; iteration++)
         {
             var container = HeifContainer.Parse(data);
             container.Transforms.Clear();

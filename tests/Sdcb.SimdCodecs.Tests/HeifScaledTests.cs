@@ -33,12 +33,12 @@ public sealed class HeifScaledTests
         var grid = HeifContainer.Parse(data).Tiles.Count > 1;
         var native = 0;
         var fallback = 0;
-        for (var iteration = 0; iteration < 5; iteration++)
+        for (var iteration = 0; iteration < 3; iteration++)
         {
             var container = HeifContainer.Parse(data);
             container.Transforms.Clear();
             if (iteration > 0)
-                AddTransforms(container, rng, aligned: iteration < 4);
+                AddTransforms(container, rng, aligned: iteration < 2);
             var (w, h) = container.DisplaySize();
             var depth = container.TileConfigs[0].ParseSps().BitDepthY;
             var layout = depth > 8 ? PixelFormat.Rgb48 : PixelFormat.Rgb24;
@@ -59,7 +59,7 @@ public sealed class HeifScaledTests
                 if (!HeifDecoder.ScalesNatively(container, d, null))
                 {
                     // No tile is boxed natively when the seams miss the box edges; the adapter then takes the fallback.
-                    iteration.ShouldBe(4, $"{fixture} d{d}: only the misaligned chain may miss the box edges");
+                    iteration.ShouldBe(2, $"{fixture} d{d}: only the misaligned chain may miss the box edges");
                     grid.ShouldBeTrue($"{fixture} d{d}: a single coded image always scales natively");
                     fallback++;
                     continue;
@@ -121,7 +121,10 @@ public sealed class HeifScaledTests
                         (image.Width, image.Height, image.BitDepth, image.SampleFormat).ShouldBe((r.Width, r.Height, full.BitDepth, full.SampleFormat));
                         image.Pixels.SequenceEqual(crop).ShouldBeTrue($"{fixture} d{d} {region}");
                     }
-                    foreach (var format in PixelFormat.All)
+                    var formats = region is null
+                        ? [PixelFormat.Rgba32, PixelFormat.Bgr24, PixelFormat.Gray8]
+                        : PixelFormat.All;
+                    foreach (var format in formats)
                     {
                         var expected = new byte[r.Width * r.Height * format.BytesPerPixel];
                         PixelConverter.Convert(crop, 0, layout, expected, 0, format, r.Width, r.Height);

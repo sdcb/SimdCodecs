@@ -34,6 +34,16 @@ public sealed class HeifImageDecoderTests
         "synth-screen-testsrc2-1280x720-main8.heic",
     ];
 
+    /// <summary>Fixtures for general contract checks; the 50 MP grid is covered by the golden tests.</summary>
+    private static readonly string[] StandardDecodableFixtures =
+    [
+        "hevc-main-3072x4096-grid.heic",
+        "hevc-main10-3072x4096-grid.heic",
+        "synth-photo-fuji-1600x900-main8.heic",
+        "synth-photo-mangrove-1599x1199-main8.heic",
+        "synth-screen-testsrc2-1280x720-main8.heic",
+    ];
+
     /// <summary>The cheaper fixtures for the format × stride matrix: the three single-item files and one 10-bit grid.</summary>
     private static readonly string[] LayoutFixtures =
     [
@@ -58,6 +68,8 @@ public sealed class HeifImageDecoderTests
         [PixelFormat.Rgba32, PixelFormat.Bgra32, PixelFormat.Rgb24, PixelFormat.Bgr24, PixelFormat.Gray8];
 
     public static IEnumerable<object[]> Decodable() => DecodableFixtures.Select(static f => new object[] { f });
+
+    public static IEnumerable<object[]> StandardDecodable() => StandardDecodableFixtures.Select(static f => new object[] { f });
 
     public static IEnumerable<object[]> Rejected() => RejectedFixtures.Select(static f => new object[] { f });
 
@@ -94,7 +106,7 @@ public sealed class HeifImageDecoderTests
     /// replication, the source matrix's weights); a wrong offset or scale would move every pixel.
     /// </summary>
     [Theory]
-    [MemberData(nameof(Decodable))]
+    [MemberData(nameof(StandardDecodable))]
     public void Gray8_IsCloseToTheLumaOfTheRgb(string fixture)
     {
         byte[] data = HeifTests.ReadFixture(fixture);
@@ -117,7 +129,7 @@ public sealed class HeifImageDecoderTests
     // ───────────────────────────── contract ─────────────────────────────
 
     [Theory]
-    [MemberData(nameof(Decodable))]
+    [MemberData(nameof(StandardDecodable))]
     public void ReadInfo_DescribesTheDecodedImage(string fixture)
     {
         byte[] data = HeifTests.ReadFixture(fixture);

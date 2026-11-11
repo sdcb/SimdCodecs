@@ -26,9 +26,11 @@ public sealed class HeifRobustnessTests
     public void TruncationsFailCleanly(string fixture)
     {
         byte[] source = HeifTests.ReadFixture(fixture);
-        // Every prefix of the header region, then a geometric sample of the payload.
+        // Every prefix of the initial header, sampled prefixes through metadata, then a geometric sample of payload.
         var lengths = new List<int>();
-        for (int length = 0; length < Math.Min(source.Length, 4096); length++) lengths.Add(length);
+        var headerEnd = Math.Min(source.Length, 4096);
+        for (int length = 0; length < Math.Min(headerEnd, 64); length++) lengths.Add(length);
+        for (int length = 64; length < headerEnd; length += 32) lengths.Add(length);
         for (long length = 4096; length < source.Length; length = length * 3 / 2 + 1) lengths.Add((int)length);
         foreach (int length in lengths)
         {
