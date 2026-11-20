@@ -14,7 +14,7 @@ namespace Sdcb.SimdCodecs.Png;
 /// <para>Rows are in file layout: 16-bit samples big-endian (the high byte first, which is the
 /// byte kept), and, for <see cref="SourceBitDepth"/> 1, 2 and 4, still packed. Greyscale, grey +
 /// alpha, RGB and RGBA are byte shuffles, sixteen output bytes at a time where the CPU has a
-/// byte shuffle (SSSE3 / AdvSimd), scalar otherwise. Indexed and packed greyscale go through a
+/// byte shuffle (SSSE3 / AdvSimd / wasm PackedSimd), scalar otherwise. Indexed and packed greyscale go through a
 /// 256-entry RGBA table — the palette with its tRNS alpha, or the grey levels scaled to 0-255 —
 /// one load and one 32-bit store per pixel.</para>
 /// <para>A tRNS transparent colour (greyscale or RGB) costs nothing for packed greyscale, whose table
@@ -267,13 +267,13 @@ internal sealed class PngRgba8Expander
         return MemoryMarshal.Read<uint>(bytes);
     }
 
-    private static bool CanShuffle => Ssse3.IsSupported || AdvSimd.Arm64.IsSupported;
+    private static bool CanShuffle => Ssse3.IsSupported || AdvSimd.Arm64.IsSupported || System.Runtime.Intrinsics.Wasm.PackedSimd.IsSupported;
 
     // Byte shuffle with "index ≥ 16 gives 0": pshufb zeroes on the top bit, tbl on any index past
     // the table, so the masks below use only 0-15 and 0x80.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<byte> Shuffle(Vector128<byte> value, Vector128<byte> indices) =>
-        Ssse3.IsSupported ? Ssse3.Shuffle(value, indices) : AdvSimd.Arm64.VectorTableLookup(value, indices);
+        Ssse3.IsSupported ? Ssse3.Shuffle(value, indices) : AdvSimd.Arm64.IsSupported ? AdvSimd.Arm64.VectorTableLookup(value, indices) : System.Runtime.Intrinsics.Wasm.PackedSimd.Swizzle(value, indices);
 
     private static Vector128<byte> OpaqueAlpha => Vector128.Create((byte)0, 0, 0, 0xFF, 0, 0, 0, 0xFF, 0, 0, 0, 0xFF, 0, 0, 0, 0xFF);
 

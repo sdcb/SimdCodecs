@@ -36,7 +36,7 @@ public static class PixelConverter
 
     // Byte shuffles need a table lookup with zeroing: SSSE3 pshufb or arm64 TBL. Both read an index
     // with its high bit set as "write 0", which is what every mask below relies on.
-    private static bool UseShuffle => BitConverter.IsLittleEndian && (Ssse3.IsSupported || AdvSimd.Arm64.IsSupported);
+    private static bool UseShuffle => BitConverter.IsLittleEndian && (Ssse3.IsSupported || AdvSimd.Arm64.IsSupported || System.Runtime.Intrinsics.Wasm.PackedSimd.IsSupported);
     private static bool UseV128 => Vector128.IsHardwareAccelerated && BitConverter.IsLittleEndian;
 
     /// <summary>
@@ -564,7 +564,7 @@ public static class PixelConverter
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<byte> Shuffle(Vector128<byte> v, Vector128<byte> mask) =>
-        Ssse3.IsSupported ? Ssse3.Shuffle(v, mask) : AdvSimd.Arm64.VectorTableLookup(v, mask);
+        Ssse3.IsSupported ? Ssse3.Shuffle(v, mask) : AdvSimd.Arm64.IsSupported ? AdvSimd.Arm64.VectorTableLookup(v, mask) : System.Runtime.Intrinsics.Wasm.PackedSimd.Swizzle(v, mask);
 
     /// <summary>
     /// Converts whole steps of <paramref name="step"/> pixels: each loads 16 source bytes, shuffles them

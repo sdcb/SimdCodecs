@@ -26,7 +26,7 @@ internal static class BmpKernels
     private const byte Z = 0x80; // a shuffle index that yields 0, for both pshufb and TBL
 
     /// <summary>Byte shuffles need a table lookup with zeroing: SSSE3 pshufb or arm64 TBL.</summary>
-    private static bool CanShuffle128 => BitConverter.IsLittleEndian && (Ssse3.IsSupported || AdvSimd.Arm64.IsSupported);
+    private static bool CanShuffle128 => BitConverter.IsLittleEndian && (Ssse3.IsSupported || AdvSimd.Arm64.IsSupported || System.Runtime.Intrinsics.Wasm.PackedSimd.IsSupported);
 
     /// <summary>The fastest tier for the byte-shuffle kernels on this machine.</summary>
     public static int BestTier => Avx2.IsSupported ? Vector256Tier : CanShuffle128 ? Vector128Tier : Scalar;
@@ -40,7 +40,7 @@ internal static class BmpKernels
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<byte> Shuffle(Vector128<byte> value, Vector128<byte> mask) =>
-        Ssse3.IsSupported ? Ssse3.Shuffle(value, mask) : AdvSimd.Arm64.VectorTableLookup(value, mask);
+        Ssse3.IsSupported ? Ssse3.Shuffle(value, mask) : AdvSimd.Arm64.IsSupported ? AdvSimd.Arm64.VectorTableLookup(value, mask) : System.Runtime.Intrinsics.Wasm.PackedSimd.Swizzle(value, mask);
 
     /// <summary>
     /// Three bytes per pixel to four, alpha 255: <c>B, G, R → R, G, B, 255</c> when <paramref name="swap"/>,
