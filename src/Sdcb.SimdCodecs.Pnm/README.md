@@ -46,6 +46,12 @@ How the encoder converts the input to the chosen format:
 
 Plain output keeps every line within 70 characters and starts each image row on a new line. A PFM is written little-endian, which is scale −1, with its rows bottom-up as the format stores them. The layout, 16-bit and PFM overloads also have a `Stream` version that writes through one pooled buffer.
 
+## Streaming
+
+`PnmImageDecoder.CreateRowReader` decodes P1 to P7 from a forward-only `Stream` (synchronously or asynchronously) a band of rows at a time, holding about a row of input and of samples. The rows are exactly those `TryDecodeInto` writes, and the reader accepts and refuses what it does: a short raster throws `InvalidDataException`, and bytes after the last row are never read. A raw row is decoded once all its bytes have arrived. A plain raster is read token by token, so a number or a comment may end anywhere in a read. The header, comments included, is buffered whole and may be at most 1 MiB in a stream. Options other than the whole image at full size read the whole stream first (`IsStreaming` false). PFM, with its bottom-up rows, has no streaming reader.
+
+`PnmImageEncoder.Create` always returns a streaming session: the header is written at `AddFrame`, and each band of rows as `WriteRows` hands it over. The bytes are the same as the whole-image encode, however the rows are split.
+
 ## Decisions
 
 The format pages leave these cases open. The table shows what this package does:

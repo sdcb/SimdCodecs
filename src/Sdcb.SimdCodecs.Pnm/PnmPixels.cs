@@ -53,6 +53,45 @@ internal static class PnmPixels
         }
     }
 
+    /// <summary>The scratch <see cref="DecodeRawRow"/> takes: a chunk of 16-bit RGBA.</summary>
+    public const int RowScratchBytes = Chunk * 8;
+
+    /// <summary>
+    /// Decodes one raw raster row (<see cref="RowBytes"/> bytes of <paramref name="raw"/>) into <paramref name="row"/> as
+    /// <paramref name="format"/>, as <see cref="DecodeTo"/> or, for 16-bit samples into a 16-bit layout, the native decode
+    /// then a conversion would: a chunk of pixels at a time, through <paramref name="scratch"/>
+    /// (<see cref="RowScratchBytes"/>).
+    /// </summary>
+    public static void DecodeRawRow(ReadOnlySpan<byte> raw, in PnmInfo info, Span<byte> row, PixelFormat format, Span<byte> scratch)
+    {
+        int width = info.Width, channels = info.Channels, bpp = format.BytesPerPixel;
+        if (info.SampleFormat == SampleFormat.UInt16 && format.Sample == SampleFormat.UInt16)
+        {
+            var max = (uint)info.MaxValue;
+            for (var x = 0; x < width; x += Chunk)
+            {
+                var n = Math.Min(Chunk, width - x);
+                var count = n * channels;
+                var from = MemoryMarshal.Cast<byte, ushort>(raw.Slice(2 * x * channels, 2 * count));
+                var to = MemoryMarshal.Cast<byte, ushort>(scratch[..(2 * count)]);
+                if (BitConverter.IsLittleEndian) BinaryPrimitives.ReverseEndianness(from, to);
+                else from.CopyTo(to);
+                if (max != 65535)
+                    for (var i = 0; i < to.Length; i++)
+                        to[i] = Scale16(to[i], max);
+                PixelConverter.ConvertRow(scratch[..(2 * count)], channels, SampleFormat.UInt16, row[(x * bpp)..], format, n);
+            }
+            return;
+        }
+        scoped var source = new Source8(raw, info);
+        for (var x = 0; x < width; x += Chunk)
+        {
+            var n = Math.Min(Chunk, width - x);
+            var chunk = source.Read(0, x, n, scratch);
+            PixelConverter.ConvertRow(chunk, channels, SampleFormat.UInt8, row[(x * bpp)..], format, n);
+        }
+    }
+
     /// <summary>Decodes to the native samples: <see cref="PnmInfo.SampleFormat"/>, tightly packed.</summary>
     public static byte[] Decode(ReadOnlySpan<byte> data, in PnmInfo info, int offset)
     {
@@ -178,6 +217,15 @@ internal static class PnmPixels
         private readonly long _rowBytes;
         private int _plain;
         private readonly int _tier;
+
+        /// <summary>A raw raster's rows, from <paramref name="raster"/>'s first byte (the streaming decoder: one row at a time).</summary>
+        public Source8(ReadOnlySpan<byte> raster, in PnmInfo info)
+        {
+            _info = info;
+            _rowBytes = RowBytes(info);
+            _tier = PnmKernels.BestTier;
+            _raster = raster;
+        }
 
         public Source8(ReadOnlySpan<byte> data, in PnmInfo info, int offset)
         {

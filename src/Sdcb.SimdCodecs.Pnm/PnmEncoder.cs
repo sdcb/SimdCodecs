@@ -247,6 +247,11 @@ public static class PnmEncoder
             return new Input(samples, width, height, (int)rowStride, channels, sixteen, false, format);
         }
 
+        /// <summary>A band of rows in a native layout (<see cref="PixelFormat.ForChannels"/>), 8- or 16-bit, <paramref name="stride"/>
+        /// bytes apart; the caller has checked the size and the buffer.</summary>
+        public static Input OfRows(ReadOnlySpan<byte> rows, int width, int rowCount, int stride, PixelFormat native) =>
+            new(rows, width, rowCount, stride, native.Channels, native.Sample == SampleFormat.UInt16, false, native);
+
         public ReadOnlySpan<byte> Row(int y) => Pixels.Slice(y * Stride, Width * Channels * (Sixteen ? 2 : 1));
     }
 
@@ -266,12 +271,15 @@ public static class PnmEncoder
         };
     }
 
-    private static Target Plan(in Input input, PnmEncodeOptions? options)
+    private static Target Plan(in Input input, PnmEncodeOptions? options) =>
+        Plan(input.Width, input.Height, input.Channels, input.Sixteen, options);
+
+    private static Target Plan(int width, int height, int inputChannels, bool sixteen, PnmEncodeOptions? options)
     {
         options ??= new PnmEncodeOptions();
         var format = options.Format switch
         {
-            PnmFormat.Auto => input.Channels switch { 1 => PnmFormat.Graymap, 3 => PnmFormat.Pixmap, _ => PnmFormat.Arbitrary },
+            PnmFormat.Auto => inputChannels switch { 1 => PnmFormat.Graymap, 3 => PnmFormat.Pixmap, _ => PnmFormat.Arbitrary },
             >= PnmFormat.PlainBitmap and <= PnmFormat.Arbitrary => options.Format,
             _ => throw new ArgumentException($"{options.Format} is not a PBM, PGM, PPM or PAM format; PFM is written by EncodePfm.", nameof(options)),
         };
@@ -279,12 +287,12 @@ public static class PnmEncoder
         {
             PnmFormat.PlainBitmap or PnmFormat.Bitmap or PnmFormat.PlainGraymap or PnmFormat.Graymap => 1,
             PnmFormat.PlainPixmap or PnmFormat.Pixmap => 3,
-            _ => input.Channels,
+            _ => inputChannels,
         };
-        if (input.Sixteen && (channels != input.Channels || format is PnmFormat.PlainBitmap or PnmFormat.Bitmap))
-            throw new ArgumentException($"16-bit input of {input.Channels} channels cannot be written as {format}.", nameof(options));
+        if (sixteen && (channels != inputChannels || format is PnmFormat.PlainBitmap or PnmFormat.Bitmap))
+            throw new ArgumentException($"16-bit input of {inputChannels} channels cannot be written as {format}.", nameof(options));
         var maxValue = format is PnmFormat.PlainBitmap or PnmFormat.Bitmap ? 1
-            : options.MaxValue == 0 ? (input.Sixteen ? 65535 : 255)
+            : options.MaxValue == 0 ? (sixteen ? 65535 : 255)
             : options.MaxValue;
         if (maxValue is < 1 or > 65535)
             throw new ArgumentException($"Maximum value {maxValue} is not 1..65535.", nameof(options));
@@ -296,13 +304,13 @@ public static class PnmEncoder
             var tupleType = options.TupleType ?? channels switch { 1 => "GRAYSCALE", 2 => "GRAYSCALE_ALPHA", 3 => "RGB", _ => "RGB_ALPHA" };
             if (tupleType.Length == 0 || tupleType.Any(c => c is < ' ' or > '~'))
                 throw new ArgumentException("The tuple type must be printable ASCII on one line.", nameof(options));
-            header = $"P7\nWIDTH {input.Width}\nHEIGHT {input.Height}\nDEPTH {channels}\nMAXVAL {maxValue}\nTUPLTYPE {tupleType}\nENDHDR\n";
+            header = $"P7\nWIDTH {width}\nHEIGHT {height}\nDEPTH {channels}\nMAXVAL {maxValue}\nTUPLTYPE {tupleType}\nENDHDR\n";
         }
         else
         {
             header = maxValue == 1 && format is PnmFormat.PlainBitmap or PnmFormat.Bitmap
-                ? $"P{magic}\n{input.Width} {input.Height}\n"
-                : $"P{magic}\n{input.Width} {input.Height}\n{maxValue}\n";
+                ? $"P{magic}\n{width} {height}\n"
+                : $"P{magic}\n{width} {height}\n{maxValue}\n";
         }
         return new Target(format, channels, maxValue, Encoding.ASCII.GetBytes(header));
     }
@@ -343,6 +351,73 @@ public static class PnmEncoder
     private static void Write(in Input input, Target target, IBufferWriter<byte> output)
     {
         output.Write(target.Header);
+        WriteRaster(input, target, output);
+    }
+
+    /// <summary>
+    /// Writes a file a band of rows at a time: the header at <see cref="Begin"/>, then each band's raster as it arrives.
+    /// Every row of a Netpbm raster is written on its own (a plain raster starts each row on a new line), so the bytes
+    /// are those of the whole-image encode however the rows are split.
+    /// </summary>
+    internal sealed class RowWriter : IDisposable
+    {
+        private readonly Target _target;
+        private readonly int _width;
+        private readonly PixelFormat _format, _native;
+        private byte[]? _scratch;
+
+        private RowWriter(Target target, int width, PixelFormat format, PixelFormat native)
+        {
+            _target = target;
+            _width = width;
+            _format = format;
+            _native = native;
+        }
+
+        /// <summary>
+        /// Plans a <paramref name="width"/> × <paramref name="height"/> image of <paramref name="format"/> rows and writes its
+        /// header. The rows are encoded as <paramref name="format"/>'s channels at its depth, straight alpha, RGB order: the
+        /// layout the buffered encode converts its input to.
+        /// </summary>
+        /// <exception cref="ArgumentException">The size or options do not fit.</exception>
+        public static RowWriter Begin(int width, int height, PixelFormat format, PnmEncodeOptions? options, IBufferWriter<byte> output)
+        {
+            CheckSize(width, height);
+            var native = PixelFormat.ForChannels(format.Channels, format.Sample);
+            var target = Plan(width, height, native.Channels, native.Sample == SampleFormat.UInt16, options);
+            output.Write(target.Header);
+            return new RowWriter(target, width, format, native);
+        }
+
+        /// <summary>Encodes <paramref name="rowCount"/> rows, <paramref name="stride"/> bytes apart (the caller checked both).</summary>
+        public void Write(ReadOnlySpan<byte> rows, int rowCount, int stride, IBufferWriter<byte> output)
+        {
+            if (_format == _native)
+            {
+                WriteRaster(Input.OfRows(rows, _width, rowCount, stride, _native), _target, output);
+                return;
+            }
+            var inBytes = _width * _format.BytesPerPixel;
+            var nativeBytes = _width * _native.BytesPerPixel;
+            _scratch ??= ArrayPool<byte>.Shared.Rent(nativeBytes);
+            var row = _scratch.AsSpan(0, nativeBytes);
+            for (var y = 0; y < rowCount; y++)
+            {
+                PixelConverter.ConvertRow(rows.Slice(y * stride, inBytes), _format, row, _native, _width);
+                WriteRaster(Input.OfRows(row, _width, 1, nativeBytes, _native), _target, output);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_scratch is not null)
+                ArrayPool<byte>.Shared.Return(_scratch);
+            _scratch = null;
+        }
+    }
+
+    private static void WriteRaster(in Input input, Target target, IBufferWriter<byte> output)
+    {
         int width = input.Width, channels = target.Channels, max = target.MaxValue;
         if (IsVerbatim(input, target))
         {
