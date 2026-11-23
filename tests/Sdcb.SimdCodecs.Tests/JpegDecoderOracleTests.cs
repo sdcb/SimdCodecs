@@ -222,7 +222,7 @@ public sealed class JpegDecoderOracleTests
 
     public static IEnumerable<object[]> CaseLabels() => OracleCases.Select(c => new object[] { c.Label });
 
-    private static (byte[] Jpeg, JpegScale Scale) BuildCase(string label)
+    internal static (byte[] Jpeg, JpegScale Scale) BuildCase(string label)
     {
         var c = OracleCases.First(c => c.Label == label);
         return (c.Build(), c.Scale);

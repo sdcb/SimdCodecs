@@ -24,6 +24,20 @@ Scaled decode (`JpegScale.Half` and below) runs a reduced inverse DCT so neither
 JpegDecoder.DecodeTo(data, rgba, JpegScale.Quarter);
 ```
 
+Decode from a forward-only stream (a request body, a socket) a band of rows at a time:
+
+```csharp
+using Sdcb.SimdCodecs.Abstractions;
+
+await using var reader = await JpegImageDecoder.OpenRowReaderAsync(stream, PixelFormat.Rgb24);
+var band = new byte[reader.Width * 3 * 16];
+int rows;
+while ((rows = await reader.ReadRowsAsync(band, 16)) > 0)
+    Consume(band, rows);
+```
+
+A sequential frame whose first scan interleaves every component (every baseline file in practice) is decoded as it arrives: the reader holds two MCU rows of samples per component and about one MCU row of compressed input, never the whole file or image, and reads the stream no further than the rows asked for need. It also scales in the DCT domain (`DecodeOptions.ScaleDenominator` 2, 4 or 8) on the fly. Progressive and multi-scan frames, regions, `ApplyOrientation` and larger scales read the whole stream and decode it first (`IsStreaming` is then false). Either way the rows are exactly `JpegImageDecoder.TryDecodeInto`'s for the same bytes, a truncated stream fails exactly where `TryDecodeInto` fails (and decodes the same salvaged pixels where it succeeds), and undecodable input throws `InvalidDataException`. `ReadRows` reads synchronously, `ReadRowsAsync` asynchronously; a reader may mix them.
+
 Encode to a baseline JPEG:
 
 ```csharp

@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
@@ -22,8 +23,16 @@ namespace Sdcb.SimdCodecs.Jpeg;
 /// smaller image at a fraction of the cost (<see cref="TryGetClosestSize"/>); 16 and above decode at 1/8, then apply
 /// the box filter of <see cref="BoxDownscaler"/> for the rest.
 /// </para>
+/// <para>
+/// <see cref="CreateRowReader"/> / <see cref="OpenRowReader"/> read a JPEG from a forward-only stream a band of rows at a
+/// time. A sequential frame whose first scan interleaves every component (every baseline file in practice) is decoded
+/// as it arrives, holding about two MCU rows of samples and one MCU row of compressed bytes, at full size or at a
+/// <see cref="DecodeOptions.ScaleDenominator"/> of 2, 4 or 8; progressive and multi-scan frames, regions, orientation
+/// and larger scales read the whole stream first (<see cref="IImageRowReader.IsStreaming"/> false). Either way the rows
+/// are exactly <see cref="TryDecodeInto"/>'s.
+/// </para>
 /// </summary>
-public sealed class JpegImageDecoder : IImageDecoder
+public sealed class JpegImageDecoder : IStreamingImageDecoder
 {
     private static ReadOnlySpan<byte> Signature => [0xFF, 0xD8, 0xFF];
 
@@ -39,6 +48,7 @@ public sealed class JpegImageDecoder : IImageDecoder
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
+        CreateRowReader = CreateRowReader,
     };
 
     /// <inheritdoc />
@@ -208,6 +218,42 @@ public sealed class JpegImageDecoder : IImageDecoder
     /// <inheritdoc />
     public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail) =>
         JpegMetadata.TryDecodeExifThumbnail(data, out thumbnail);
+
+    /// <inheritdoc />
+    public static StreamingRowReader CreateRowReader(StreamInput input, PixelFormat format, DecodeOptions? options) =>
+        new JpegRowReader(input, format, options);
+
+    /// <summary>
+    /// A reader of the JPEG in <paramref name="stream"/>, from its current position, writing rows in
+    /// <paramref name="format"/> (see <see cref="CreateRowReader"/>). The header is read by the first read, or by
+    /// <see cref="StreamingRowReader.Initialize"/>; <see cref="OpenRowReaderAsync"/> reads it asynchronously.
+    /// </summary>
+    /// <param name="stream">The stream to read; it need not seek.</param>
+    /// <param name="format">The layout of the rows to write.</param>
+    /// <param name="options">Scale, region, orientation; null for the whole image at full size.</param>
+    /// <param name="leaveOpen">Keep <paramref name="stream"/> open when the reader is disposed.</param>
+    public static StreamingRowReader OpenRowReader(Stream stream, PixelFormat format, DecodeOptions? options = null, bool leaveOpen = false) =>
+        CreateRowReader(new StreamInput(stream, leaveOpen), format, options);
+
+    /// <summary><see cref="OpenRowReader"/>, then reads the header asynchronously.</summary>
+    /// <inheritdoc cref="OpenRowReader" path="/param"/>
+    /// <param name="cancellationToken">Cancels the header read.</param>
+    /// <exception cref="InvalidDataException">The header is malformed or the stream ends inside it.</exception>
+    public static async ValueTask<StreamingRowReader> OpenRowReaderAsync(Stream stream, PixelFormat format, DecodeOptions? options = null,
+        bool leaveOpen = false, CancellationToken cancellationToken = default)
+    {
+        var reader = OpenRowReader(stream, format, options, leaveOpen);
+        try
+        {
+            await reader.InitializeAsync(cancellationToken).ConfigureAwait(false);
+            return reader;
+        }
+        catch
+        {
+            reader.Dispose();
+            throw;
+        }
+    }
 
     /// <summary>
     /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA: <paramref name="rgbaDestination"/> must be
