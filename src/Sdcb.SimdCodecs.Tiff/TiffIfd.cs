@@ -13,6 +13,13 @@ internal interface ITiffBytes
 
     /// <summary>Fills <paramref name="destination"/> from <paramref name="offset"/>; throws <see cref="InvalidDataException"/> when the range is not inside the file.</summary>
     void Read(long offset, scoped Span<byte> destination);
+
+    /// <summary>
+    /// <paramref name="length"/> bytes from <paramref name="offset"/>, where the caller checked they lie inside the file:
+    /// a slice of the bytes when they are in memory, else read into <paramref name="buffer"/> (rented from the shared
+    /// pool, grown as needed; the caller returns it). Valid until the next call with the same buffer.
+    /// </summary>
+    ReadOnlySpan<byte> View(long offset, int length, ref byte[]? buffer);
 }
 
 internal readonly ref struct SpanBytes(ReadOnlySpan<byte> bytes) : ITiffBytes
@@ -27,18 +34,44 @@ internal readonly ref struct SpanBytes(ReadOnlySpan<byte> bytes) : ITiffBytes
             throw new InvalidDataException("TIFF data extends past the end of the file");
         _bytes.Slice((int)offset, destination.Length).CopyTo(destination);
     }
+
+    public ReadOnlySpan<byte> View(long offset, int length, ref byte[]? buffer)
+    {
+        if (offset < 0 || offset + length > _bytes.Length)
+            throw new InvalidDataException("TIFF data extends past the end of the file");
+        return _bytes.Slice((int)offset, length);
+    }
 }
 
-/// <summary>A seekable stream as TIFF bytes. Every read seeks, so only what is asked for is touched.</summary>
+internal static class TiffBuffers
+{
+    /// <summary>Rents <paramref name="buffer"/> from the shared pool at <paramref name="length"/> bytes or more; returns its first <paramref name="length"/> bytes.</summary>
+    public static Span<byte> Ensure(ref byte[]? buffer, int length)
+    {
+        if (buffer is null || buffer.Length < length)
+        {
+            if (buffer is not null) System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
+            buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(length);
+        }
+        return buffer.AsSpan(0, length);
+    }
+}
+
+/// <summary>
+/// A seekable stream as TIFF bytes, offsets counted from <c>origin</c> (where the TIFF starts in the stream). Every
+/// read seeks, so only what is asked for is touched.
+/// </summary>
 internal sealed class StreamBytes : ITiffBytes
 {
     private readonly Stream _stream;
+    private readonly long _origin;
 
-    public StreamBytes(Stream stream)
+    public StreamBytes(Stream stream, long origin = 0)
     {
         if (!stream.CanSeek) throw new ArgumentException("The stream must be seekable", nameof(stream));
         _stream = stream;
-        Length = stream.Length;
+        _origin = origin;
+        Length = Math.Max(0, stream.Length - origin);
     }
 
     public long Length { get; }
@@ -47,7 +80,7 @@ internal sealed class StreamBytes : ITiffBytes
     {
         if (offset < 0 || offset + destination.Length > Length)
             throw new InvalidDataException("TIFF data extends past the end of the file");
-        _stream.Position = offset;
+        _stream.Position = _origin + offset;
         var done = 0;
         while (done < destination.Length)
         {
@@ -55,6 +88,13 @@ internal sealed class StreamBytes : ITiffBytes
             if (n == 0) throw new InvalidDataException("TIFF stream ended early");
             done += n;
         }
+    }
+
+    public ReadOnlySpan<byte> View(long offset, int length, ref byte[]? buffer)
+    {
+        var span = TiffBuffers.Ensure(ref buffer, length);
+        Read(offset, span);
+        return span;
     }
 }
 
@@ -123,7 +163,7 @@ internal static class TiffIfdParser
     internal const int MaxSamplesPerPixel = 256;
 
     /// <summary>Entries a BigTIFF directory may declare (its count is 64-bit); a classic one holds at most 65535.</summary>
-    private const long MaxEntries = 1 << 20;
+    internal const long MaxEntries = 1 << 20;
 
     /// <summary>
     /// Parses the header at the start of <paramref name="src"/>: classic TIFF (TIFF 6.0 §2, 8 bytes) or BigTIFF (the
@@ -575,7 +615,8 @@ internal static class TiffIfdParser
         var total = (long)count * elemSize;
         if (total <= f.OffsetSize) return valueSpan[..(int)total].ToArray();
         var offset = Offset(valueSpan, f);
-        if (total > src.Length || offset > src.Length - total)
+        // A stream may be longer than an array holds; a span never is, so the last test changes nothing for it.
+        if (total > src.Length || offset > src.Length - total || total > Array.MaxLength)
             throw new InvalidDataException("Tag value extends past the end of the file");
         var buffer = new byte[total];
         src.Read(offset, buffer);

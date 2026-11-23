@@ -253,7 +253,7 @@ public static partial class TiffReader
     private static FileStream OpenForSegments(string path) =>
         new(path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1);
 
-    private static TiffPageLayout ReadLayoutCore<T>(ref T src, int pageIndex) where T : ITiffBytes, allows ref struct
+    internal static TiffPageLayout ReadLayoutCore<T>(ref T src, int pageIndex) where T : ITiffBytes, allows ref struct
     {
         ArgumentOutOfRangeException.ThrowIfNegative(pageIndex);
         var (format, ifdOffset) = TiffIfdParser.ReadHeader(ref src);
@@ -273,7 +273,7 @@ public static partial class TiffReader
         return new TiffPageLayout(pageIndex, format, TiffIfdParser.Parse(ref src, ifdOffset, format), ifdOffset);
     }
 
-    private static TiffSegmentRect ReadSegmentCore<T>(ref T src, TiffPageLayout layout, int segmentIndex,
+    internal static TiffSegmentRect ReadSegmentCore<T>(ref T src, TiffPageLayout layout, int segmentIndex,
         Span<byte> destination) where T : ITiffBytes, allows ref struct
     {
         var rect = layout.SegmentRectangle(segmentIndex);   // throws ArgumentOutOfRangeException
@@ -349,7 +349,7 @@ public static partial class TiffReader
                         publiclyVisible: true);
                 }
 
-                var samples = DecodeSegment(raw, 0, count, index, format, staging, false, scratch, inflateSource,
+                var samples = DecodeSegment(raw.AsSpan(0, (int)count), format, staging, false, scratch, inflateSource,
                     scratchStream, capacity);
 
                 // The same normalisation ReadInto applies, at the same widths.

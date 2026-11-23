@@ -205,7 +205,7 @@ public sealed class TiffRobustnessTests
     /// The directories hold the meaning, and libtiff writes them after the image data, so a third of the mutations
     /// land in the header, a third in the last 512 bytes (directories and tag arrays) and a third anywhere.
     /// </summary>
-    private static byte[] Mutate(byte[] seed, Random random, out string description)
+    internal static byte[] Mutate(byte[] seed, Random random, out string description)
     {
         var data = seed.ToArray();
         var at = random.Next(3) switch

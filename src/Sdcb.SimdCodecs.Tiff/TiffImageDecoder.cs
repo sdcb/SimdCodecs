@@ -40,7 +40,7 @@ namespace Sdcb.SimdCodecs.Tiff;
 /// per row of tiles and per page.
 /// </para>
 /// </summary>
-public sealed class TiffImageDecoder : IMultiFrameImageDecoder
+public sealed class TiffImageDecoder : IMultiFrameImageDecoder, IStreamingImageDecoder
 {
     /// <summary>The registration for <c>ImageCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
@@ -55,6 +55,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
         TryOpenFrames = TryOpenFrames,
+        CreateRowReader = CreateRowReader,
     };
 
     /// <inheritdoc />
@@ -117,6 +118,21 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         return true;
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// The first page, a band of rows at a time. TIFF needs random access (the directory is usually written after the
+    /// pixels), so the reader streams only when the stream can seek: it reads the header, the first page's directory
+    /// and the IFD chain's next pointers by offset, then each strip, or row of tiles (every plane's segments, for a
+    /// planar page), decodes it exactly as <see cref="TryDecodeInto"/> does and hands out its rows; it holds one band
+    /// and its coded bytes, never the file or the page. The input moves forward only by reading, so a file whose bands
+    /// (or directories) would make it read through more than twice the file -- separate planes stored one after another,
+    /// a chain that jumps back and forth -- is decoded whole instead, as are a stream that cannot seek, a float page
+    /// (which <see cref="TryDecodeInto"/> has no integer projection for) and any option but the whole image at full
+    /// size (<see cref="IImageRowReader.IsStreaming"/> false). The rows are <see cref="TryDecodeInto"/>'s either way.
+    /// </remarks>
+    public static StreamingRowReader CreateRowReader(StreamInput input, PixelFormat format, DecodeOptions? options) =>
+        new TiffRowReader(input, format, options);
+
     /// <summary>The layout <see cref="TryDecodePage"/> gives page <paramref name="pageIndex"/>, from its directory alone.</summary>
     internal static bool TryReadPageInfo(ReadOnlySpan<byte> data, int pageIndex, out ImageInfo info)
     {
@@ -126,14 +142,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
             var layout = TiffReader.ReadLayout(data, pageIndex);
             if (!TiffColor.TryCreate(layout, out var plan))
                 return false;
-            info = new ImageInfo(layout.Width, layout.Height, plan.OutChannels, plan.OutFormat)
-            {
-                Format = ImageFormat.Tiff,
-                BitDepth = layout.Photometric == TiffPhotometric.Palette ? (layout.StoredBitsPerSample == 16 ? 16 : 8) : layout.StoredBitsPerSample,
-                Orientation = (ImageOrientation)layout.Orientation,
-                ColorEncoding = ColorOf(layout),
-                Resolution = ResolutionOf(layout),
-            };
+            info = InfoOf(layout, plan);
             return true;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or NotSupportedException)
@@ -141,6 +150,17 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
             return false;
         }
     }
+
+    /// <summary>The <see cref="ImageInfo"/> of the page <paramref name="layout"/> describes (one frame).</summary>
+    internal static ImageInfo InfoOf(TiffPageLayout layout, TiffColor plan) =>
+        new(layout.Width, layout.Height, plan.OutChannels, plan.OutFormat)
+        {
+            Format = ImageFormat.Tiff,
+            BitDepth = layout.Photometric == TiffPhotometric.Palette ? (layout.StoredBitsPerSample == 16 ? 16 : 8) : layout.StoredBitsPerSample,
+            Orientation = (ImageOrientation)layout.Orientation,
+            ColorEncoding = ColorOf(layout),
+            Resolution = ResolutionOf(layout),
+        };
 
     /// <inheritdoc />
     /// <remarks>TIFF has no scaling. Integer pages are decoded strip by strip (or by row of tiles) straight into
@@ -187,6 +207,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
         var bandRows = Math.Min(layout.Geometry.SegmentHeight, rect.Height);
         var bandStride = rect.Width * plan.OutBytesPerPixel;
         var band = ArrayPool<byte>.Shared.Rent(bandRows * bandStride);
+        var src = new SpanBytes(data);
         try
         {
             var first = layout.Geometry.DownIndexForRow(rect.Y);
@@ -195,7 +216,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var (y0, rows) = BandRows(layout, rect, down);
-                DecodeBand(data, layout, plan, rect, down, band.AsSpan(0, rows * bandStride), bandStride);
+                DecodeBand(ref src, layout, plan, rect, down, band.AsSpan(0, rows * bandStride), bandStride);
                 for (var r = 0; r < rows; r++)
                 {
                     PixelConverter.ConvertRow(band.AsSpan(r * bandStride, bandStride), plan.OutChannels, plan.OutFormat,
@@ -215,7 +236,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
     }
 
     /// <summary>The first image row of segment row <paramref name="down"/> inside <paramref name="rect"/>, and how many there are.</summary>
-    private static (int Y0, int Rows) BandRows(TiffPageLayout layout, PixelRect rect, int down)
+    internal static (int Y0, int Rows) BandRows(TiffPageLayout layout, PixelRect rect, int down)
     {
         var g = layout.Geometry;
         var y0 = Math.Max(rect.Y, g.FirstRow(down));
@@ -231,8 +252,8 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
     /// equals the same rectangle of the whole page; a chunky strip the file does not list (a short strip list, which
     /// the whole-page read tolerates) is left as zeros, as the whole-page read leaves it.
     /// </summary>
-    private static void DecodeBand(ReadOnlySpan<byte> data, TiffPageLayout layout, TiffColor plan, PixelRect rect,
-        int down, Span<byte> band, int bandStride)
+    internal static void DecodeBand<T>(ref T src, TiffPageLayout layout, TiffColor plan, PixelRect rect,
+        int down, Span<byte> band, int bandStride) where T : ITiffBytes, allows ref struct
     {
         var g = layout.Geometry;
         var (y0, rows) = BandRows(layout, rect, down);
@@ -261,7 +282,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
                     if (segment is not null) ArrayPool<byte>.Shared.Return(segment);
                     segment = ArrayPool<byte>.Shared.Rent(need);
                 }
-                TiffReader.ReadSegment(data, layout, index, segment);
+                TiffReader.ReadSegmentCore(ref src, layout, index, segment);
                 var segStride = seg.Width * inBpp;
                 for (var r = 0; r < rows; r++)
                 {
@@ -369,6 +390,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
             try
             {
                 var target = result.WritablePixels;
+                var src = new SpanBytes(data);
                 var bandStride = region.Width * plan.OutBytesPerPixel;
                 var first = layout.Geometry.DownIndexForRow(region.Y);
                 var last = layout.Geometry.DownIndexForRow(region.Y + region.Height - 1);
@@ -376,7 +398,7 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var (y0, rows) = BandRows(layout, region, down);
-                    DecodeBand(data, layout, plan, region, down,
+                    DecodeBand(ref src, layout, plan, region, down,
                         target.Slice((y0 - region.Y) * bandStride, rows * bandStride), bandStride);
                 }
             }
@@ -427,12 +449,12 @@ public sealed class TiffImageDecoder : IMultiFrameImageDecoder
 
     // A reader exception other than InvalidDataException (an argument the file's numbers make invalid, a compression
     // or layout the reader does not support) as the InvalidDataException Decode throws for untrusted input.
-    private static InvalidDataException Undecodable(Exception e) =>
+    internal static InvalidDataException Undecodable(Exception e) =>
         new(e is NotSupportedException ? $"The TIFF uses a feature this decoder does not support: {e.Message}"
             : $"The TIFF data is invalid: {e.Message}", e);
 
     // The refusal of TiffColor.TryCreate, named: what the page stores that IDecodedImage has no layout for.
-    private static InvalidDataException Unpresentable(TiffPageLayout layout, int pageIndex) =>
+    internal static InvalidDataException Unpresentable(TiffPageLayout layout, int pageIndex) =>
         new($"Page {pageIndex + 1} stores {layout.SamplesPerPixel} sample(s) per pixel of {layout.BitsPerSample}-bit " +
             $"{layout.SampleFormat} data as {layout.Photometric}, a layout this decoder does not present (it decodes grey, " +
             "RGB, palette, CMYK and YCbCr with 8- or 16-bit unsigned samples, and grey or RGB with 16- or 32-bit float samples).");

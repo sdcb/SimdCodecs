@@ -42,6 +42,8 @@ Old-style JPEG (Compression 6), CIELab, subsampled YCbCr stored in separate plan
 
 A `DecodeOptions.Region` reads only the strips or tiles it intersects, and `TryDecodeInto` writes integer pages band by band into the caller's buffer without a page raster; both give exactly the pixels of decoding the page whole and then cropping and converting it (`TiffRegionDecodeTests`).
 
+`TiffImageDecoder.CreateRowReader` reads the first page from a stream, rows top to bottom, synchronously or asynchronously, with exactly `TryDecodeInto`'s rows (`TiffStreamingDecodeTests`). A TIFF needs random access, so it streams only from a seekable stream: it reads the directory by offset, then one strip or row of tiles at a time, holding that band and its coded bytes rather than the file or the page. A stream that cannot seek, a float page, an option other than the whole image at full size, and a file whose bands or directories lie so scattered that streaming would read through more than twice the file (separate planes stored one after another, as libtiff writes them) are read whole and decoded instead; `IsStreaming` says which. `TiffReader.Read(Stream)` reads a seekable stream by offset as well, without copying it.
+
 ## Writing
 
 `TiffWriter` writes classic TIFF (never BigTIFF): uncompressed or Deflate, strips or tiles, 8/16/32-bit integer and float samples, with ICC, XMP and Exif.
