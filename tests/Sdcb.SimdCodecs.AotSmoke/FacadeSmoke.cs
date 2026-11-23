@@ -33,14 +33,14 @@ internal static class FacadeSmoke
         }
 
         Check(!ImageCodecs.CanDecode("not an image"u8), "garbage", "CanDecode");
-        return count + Heif() + V2();
+        return count + Heif() + await V2Async();
     }
 
     /// <summary>
     /// The 2.0 entry points, each through its registry delegate: options, metadata, thumbnail, closest size, the
     /// session API, 16-bit and premultiplied output, and every built-in encoder through the encoder registry.
     /// </summary>
-    private static int V2()
+    private static async Task<int> V2Async()
     {
         const int w = 37, h = 23;
         var rgb = Program.Pattern(w, h);
@@ -64,6 +64,17 @@ internal static class FacadeSmoke
         using var frame = session.GetFrame(0).Decode();
         var crop = new byte[5 * 5 * 3];
         session.GetFrame(0).CopyPixels(new PixelRect(1, 1, 5, 5), PixelFormat.Bgr24, crop, 0);
+
+        // A session over a non-seekable stream: opened asynchronously, decoded asynchronously; forward-only, copied.
+        using (var piped = await ImageDecoder.OpenAsync(new ForwardStream(png), leaveOpen: false, forwardOnly: false))
+        using (var streamed = await piped.GetFrame(0).DecodeAsync())
+            Check(streamed.Pixels.SequenceEqual(frame.Pixels), "v2", "ImageDecoder.OpenAsync + DecodeAsync");
+        var copied = new byte[w * h * 4];
+        var expectedCopy = new byte[w * h * 4];
+        await session.GetFrame(0).CopyPixelsAsync(null, PixelFormat.Rgba32, expectedCopy, 0);
+        using (var forward = ImageDecoder.Open(new ForwardStream(png), leaveOpen: false, forwardOnly: true))
+            forward.GetFrame(0).CopyPixels(null, PixelFormat.Rgba32, copied, 0);
+        Check(copied.AsSpan().SequenceEqual(expectedCopy), "v2", "ImageDecoder.Open forward-only + CopyPixels");
 
         var oriented = Oriented(rgb, w, h);
 
@@ -367,4 +378,21 @@ internal static class FacadeSmoke
         if (!ok)
             throw new InvalidOperationException($"facade {label}: {call} failed");
     }
+}
+
+/// <summary>A stream that cannot seek: an upload or a pipe.</summary>
+internal sealed class ForwardStream(byte[] data) : Stream
+{
+    private readonly MemoryStream _inner = new(data);
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, Math.Min(count, 100));
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }
