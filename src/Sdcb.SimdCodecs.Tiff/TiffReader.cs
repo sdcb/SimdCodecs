@@ -58,7 +58,8 @@ public static partial class TiffReader
         var (format, firstIfd) = ReadHeader(tiff);
 
         var sink = new BufferingSink();
-        return ReadCore(tiff, format, firstIfd, ref sink, attachPixels: true);
+        var src = new SpanBytes(tiff);
+        return ReadCore(ref src, format, firstIfd, ref sink, attachPixels: true);
     }
 
     /// <summary>
@@ -81,11 +82,13 @@ public static partial class TiffReader
         where TSink : ITiffStripSink
     {
         var (format, firstIfd) = ReadHeader(tiff);
-        return ReadCore(tiff, format, firstIfd, ref sink, attachPixels: false);
+        var src = new SpanBytes(tiff);
+        return ReadCore(ref src, format, firstIfd, ref sink, attachPixels: false);
     }
 
-    private static TiffDocument ReadCore<TSink>(ReadOnlySpan<byte> tiff, TiffFormat format, long firstIfd,
+    private static TiffDocument ReadCore<TSrc, TSink>(ref TSrc src, TiffFormat format, long firstIfd,
         ref TSink sink, bool attachPixels)
+        where TSrc : ITiffBytes, allows ref struct
         where TSink : ITiffStripSink
     {
         var pages = new List<TiffPage>();
@@ -96,7 +99,7 @@ public static partial class TiffReader
         var visited = new HashSet<long>();
         while (ifdOffset != 0 && visited.Add(ifdOffset))
         {
-            var (page, nextOffset) = ReadPage(tiff, ifdOffset, format, pageIndex, ref sink);
+            var (page, nextOffset) = ReadPage(ref src, ifdOffset, format, pageIndex, ref sink);
             // Only the buffering path re-attaches pixels, and it is the sink that holds them: a
             // streaming caller has already consumed them and gets metadata alone.
             pages.Add(attachPixels && sink is BufferingSink buffered
@@ -181,7 +184,7 @@ public static partial class TiffReader
             throw new ArgumentOutOfRangeException(nameof(pageIndex), "The file has fewer pages");
 
         var sink = new BufferingSink();
-        var (page, _) = ReadPage(tiff, ifdOffset, format, pageIndex, ref sink, cancellationToken);
+        var (page, _) = ReadPage(ref src, ifdOffset, format, pageIndex, ref sink, cancellationToken);
         return page with { Pixels = sink.TakePixels() };
     }
 
@@ -193,6 +196,12 @@ public static partial class TiffReader
     internal static int CountPages(ReadOnlySpan<byte> tiff)
     {
         var src = new SpanBytes(tiff);
+        return CountPages(ref src);
+    }
+
+    /// <inheritdoc cref="CountPages(ReadOnlySpan{byte})"/>
+    internal static int CountPages<T>(ref T src) where T : ITiffBytes, allows ref struct
+    {
         var (format, ifdOffset) = TiffIfdParser.ReadHeader(ref src);
         var visited = new HashSet<long>();
         var pages = 0;
@@ -211,28 +220,44 @@ public static partial class TiffReader
         return pages;
     }
 
-    /// <summary>Decode every page from a TIFF stream (slurped to a byte array).</summary>
+    /// <summary>Decode every page from a TIFF stream, which starts at the stream's current position.</summary>
+    /// <remarks>A seekable stream is read by offset -- the header, each directory and its tag arrays, then each strip
+    /// or tile -- and never copied whole; the stream is left at its end, as reading it through would. Any other stream
+    /// is read to its end first. Either way the pages are those of <see cref="Read(ReadOnlySpan{byte})"/> over the
+    /// same bytes.</remarks>
     public static TiffDocument Read(Stream stream)
     {
-        // TIFF readers need random access via the IFD chain — slurp the stream
-        // and operate on the in-memory span. For very large TIFFs the caller
-        // should map the file (MemoryMappedFile) and pass that span instead.
-        // Pre-size when the length is known: MemoryStream grows by doubling, so slurping a
-        // 100 MB TIFF into a default-capacity stream reallocates a dozen times and copies
-        // roughly twice the file before the first byte is ever decoded.
-        var capacity = stream.CanSeek ? (int)Math.Min(int.MaxValue, stream.Length - stream.Position) : 0;
-        using var ms = new MemoryStream(capacity);
+        ArgumentNullException.ThrowIfNull(stream);
+        if (stream.CanSeek)
+        {
+            var origin = stream.Position;
+            var bytes = new StreamBytes(stream, origin);
+            try
+            {
+                var (format, firstIfd) = TiffIfdParser.ReadHeader(ref bytes);
+                var sink = new BufferingSink();
+                return ReadCore(ref bytes, format, firstIfd, ref sink, attachPixels: true);
+            }
+            finally
+            {
+                stream.Position = Math.Max(origin, stream.Length);
+            }
+        }
+
+        // TIFF readers need random access via the IFD chain: a stream that cannot seek is read whole, then decoded as
+        // a span.
+        using var ms = new MemoryStream();
         stream.CopyTo(ms);
         return Read(ms.GetBuffer().AsSpan(0, (int)ms.Length));
     }
 
-    private static (TiffPage Page, long NextIfdOffset) ReadPage<TSink>(ReadOnlySpan<byte> tiff, long ifdOffset,
+    private static (TiffPage Page, long NextIfdOffset) ReadPage<TSrc, TSink>(ref TSrc src, long ifdOffset,
         TiffFormat fileFormat, int pageIndex, ref TSink sink, CancellationToken cancellationToken = default)
+        where TSrc : ITiffBytes, allows ref struct
         where TSink : ITiffStripSink
     {
         cancellationToken.ThrowIfCancellationRequested();
         // ---- Parse and validate the IFD (shared with the on-demand segment read) ----
-        var src = new SpanBytes(tiff);
         var ifd = TiffIfdParser.Parse(ref src, ifdOffset, fileFormat);
         var fileIsLE = fileFormat.LittleEndian;
         var width = ifd.Width;
@@ -350,6 +375,7 @@ public static partial class TiffReader
 
         byte[]? inflateSource = null;
         MemoryStream? scratchStream = null;
+        byte[]? coded = null; // a segment's coded bytes, when the source is not in memory
         var staging = format.NeedsStaging ? new SegmentStaging() : null;
         if (compression is TiffCompression.Deflate or TiffCompression.ZlibPkzip)
         {
@@ -357,7 +383,7 @@ public static partial class TiffReader
             // past the end of the file is clamped to the file, since DecodeSegment refuses it before any copy.
             var maxSegment = 0L;
             foreach (var byteCount in segmentByteCounts)
-                maxSegment = Math.Max(maxSegment, Math.Min(byteCount, tiff.Length));
+                maxSegment = Math.Max(maxSegment, Math.Min(byteCount, Math.Min(src.Length, Array.MaxLength)));
             inflateSource = ArrayPool<byte>.Shared.Rent((int)maxSegment);
             // writable + publiclyVisible so each segment is presented by moving Length/Position
             // rather than by constructing a new stream over a new array.
@@ -385,8 +411,9 @@ public static partial class TiffReader
                         for (var plane = 0; plane < planes; plane++)
                         {
                             var index = geometry.SegmentIndex(plane, tileY, tileX);
-                            var samples = DecodeSegment(tiff, segmentOffsets[index], segmentByteCounts[index],
-                                index, format, staging, passFileBytesThrough, scratch, inflateSource, scratchStream,
+                            var samples = DecodeSegment(
+                                SegmentView(ref src, segmentOffsets[index], segmentByteCounts[index], index, ref coded),
+                                format, staging, passFileBytesThrough, scratch, inflateSource, scratchStream,
                                 segmentCapacity);
 
                             // Normalise the TILE, at the TILE's width. Horizontal differencing restarts at
@@ -420,7 +447,8 @@ public static partial class TiffReader
                         var index = geometry.SegmentIndex(0, strip);
                         // A chunky strip list may be short (truncated file): deliver the rows it covers.
                         if (index >= segmentOffsets.Length) break;
-                        var samples = DecodeSegment(tiff, segmentOffsets[index], segmentByteCounts[index], index,
+                        var samples = DecodeSegment(
+                            SegmentView(ref src, segmentOffsets[index], segmentByteCounts[index], index, ref coded),
                             format, staging, passFileBytesThrough, scratch, inflateSource, scratchStream,
                             rowCount * bytesPerRow);
 
@@ -440,7 +468,8 @@ public static partial class TiffReader
                     for (var plane = 0; plane < planes; plane++)
                     {
                         var index = geometry.SegmentIndex(plane, strip);
-                        var samples = DecodeSegment(tiff, segmentOffsets[index], segmentByteCounts[index], index,
+                        var samples = DecodeSegment(
+                            SegmentView(ref src, segmentOffsets[index], segmentByteCounts[index], index, ref coded),
                             format, staging, passFileBytesThrough, scratch, inflateSource, scratchStream,
                             rowCount * width * segBytesPerPixel);
                         if (needsSwap)
@@ -465,16 +494,29 @@ public static partial class TiffReader
                 ArrayPool<byte>.Shared.Return(scratch);
             if (band is not null)
                 ArrayPool<byte>.Shared.Return(band);
+            if (coded is not null)
+                ArrayPool<byte>.Shared.Return(coded);
             staging?.Dispose();
         }
 
         return (page, nextIfdOffset);
     }
 
+    /// <summary>The coded bytes of segment <paramref name="index"/>, refused when the file does not hold them.</summary>
+    private static ReadOnlySpan<byte> SegmentView<T>(ref T src, long offset, long byteCount, int index, ref byte[]? buffer)
+        where T : ITiffBytes, allows ref struct
+    {
+        // Both are non-negative (the parser refuses offsets past long.MaxValue), so the test cannot wrap. A stream can be
+        // longer than an array holds, so the count is bounded by that too (a span never is, so it changes nothing there).
+        if (offset > src.Length || byteCount > src.Length - offset || byteCount > Array.MaxLength)
+            throw new InvalidDataException($"Segment {index} extents out of bounds");
+        return src.View(offset, (int)byteCount, ref buffer);
+    }
+
     /// <summary>
     /// One SEGMENT -- a strip or a tile, the two being the same thing to every stage but geometry --
-    /// from the file into decoded samples, returned as a slice of <paramref name="scratch"/> or, on
-    /// the pass-through path, of the file itself. Shared by both layouts so that a tile can never
+    /// from its coded bytes into decoded samples, returned as a slice of <paramref name="scratch"/> or, on
+    /// the pass-through path, of <paramref name="segment"/> itself. Shared by both layouts so that a tile can never
     /// come to decompress differently from a strip.
     /// </summary>
     /// <remarks>
@@ -482,15 +524,11 @@ public static partial class TiffReader
     /// <paramref name="staging"/> as packed rows first and then expanded into the scratch at one byte per
     /// sample, so from the caller's side it is an 8-bit page like any other.
     /// </remarks>
-    private static ReadOnlySpan<byte> DecodeSegment(ReadOnlySpan<byte> tiff, long offset, long byteCount,
-        int index, SegmentFormat format, SegmentStaging? staging, bool passFileBytesThrough, byte[]? scratch,
+    private static ReadOnlySpan<byte> DecodeSegment(ReadOnlySpan<byte> segment, SegmentFormat format,
+        SegmentStaging? staging, bool passFileBytesThrough, byte[]? scratch,
         byte[]? inflateSource, MemoryStream? scratchStream, int capacity)
     {
-        // Both are non-negative (the parser refuses offsets past long.MaxValue), so the test cannot wrap.
-        if (offset > tiff.Length || byteCount > tiff.Length - offset)
-            throw new InvalidDataException($"Segment {index} extents out of bounds");
-        var length = (int)byteCount;
-        var segment = tiff.Slice((int)offset, length);
+        var length = segment.Length;
 
         if (passFileBytesThrough)
             return segment[..Math.Min(segment.Length, capacity)];
