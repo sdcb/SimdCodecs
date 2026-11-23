@@ -245,6 +245,19 @@ public sealed class JpegStreamingEncodeTests
         Should.Throw<InvalidOperationException>(() => session.Commit(Ct));
     }
 
+    [Fact]
+    public void A_writer_failure_at_the_trailer_fails_commit_instead_of_leaving_a_truncated_file()
+    {
+        // One MCU row: the writer sees the headers, the row, then EOI; it throws on the third.
+        var pixels = Photo(8, 8, 3, 8);
+        using var cts = new CancellationTokenSource();
+        var output = new CancellingWriter(cts) { Armed = true, ThrowAt = 3 };
+        using var session = JpegImageEncoder.Create(output, new JpegEncodeOptions { Subsampling = JpegSubsampling.Chroma444 });
+        var frame = session.AddFrame(8, 8, PixelFormat.Rgb24);
+        Should.Throw<IOException>(() => frame.WriteRows(pixels, 8, 0, Ct));
+        Should.Throw<InvalidOperationException>(() => session.Commit(Ct));
+    }
+
     private sealed class CancellingWriter(CancellationTokenSource cts) : IBufferWriter<byte>
     {
         private readonly byte[] _buffer = new byte[1 << 16];
@@ -253,10 +266,18 @@ public sealed class JpegStreamingEncodeTests
 
         public int Advances { get; private set; }
 
+        /// <summary>When set, the advance with this (1-based) number throws instead of cancelling.</summary>
+        public int ThrowAt { get; init; }
+
         public void Advance(int count)
         {
             if (!Armed) return;
             Advances++;
+            if (ThrowAt > 0)
+            {
+                if (Advances == ThrowAt) throw new IOException("disk full");
+                return;
+            }
             cts.Cancel();
         }
 

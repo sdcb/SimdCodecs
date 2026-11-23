@@ -124,11 +124,14 @@ public sealed class JpegImageEncoder : IImageEncoder
             var native = Native(format);
             var channels = Channels(native);
             var setup = JpegEncoder.Prepare(width, height, channels, WithMetadata(options, metadata));
+            ThrowIfFaulted();
             (_format, _native, _width, _height) = (format, native, width, height);
             _rowBytes = width * channels;
             _w = new JpegBitWriter(4096);
+            _faulted = true; // until the headers are out: a retried AddFrame must not write them twice
             JpegEncoder.WriteBaselinePreamble(ref _w, setup);
             Flush();
+            _faulted = false;
             _rows = new JpegEncoder.McuRowEncoder(setup.Frame, channels, JpegEncoder.StdDcTables, JpegEncoder.StdAcTables);
             _mcuRows = _rows.Rows;
         }
@@ -136,9 +139,8 @@ public sealed class JpegImageEncoder : IImageEncoder
         protected override void EncodeRows(ReadOnlySpan<byte> rows, int rowCount, int stride, CancellationToken cancellationToken)
         {
             // A call that stops part way (cancelled, or the writer threw) has coded rows the session does not count as
-            // written; going on would write a corrupt file, so the session refuses.
-            if (_faulted)
-                throw new InvalidOperationException("An earlier WriteRows call failed part way; the session cannot continue.");
+            // written (or part of the headers or trailer is out); going on would write a corrupt file, so the session refuses.
+            ThrowIfFaulted();
             _faulted = true;
             EncodeRowsCore(rows, rowCount, stride, cancellationToken);
             _faulted = false;
@@ -187,14 +189,22 @@ public sealed class JpegImageEncoder : IImageEncoder
 
         protected override void EndFrame(CancellationToken cancellationToken)
         {
+            _faulted = true; // cleared once EOI is out, so a writer failure here fails Commit too
             _w.FlushBits();
             _w.WriteByte(0xFF);
             _w.WriteByte(0xD9);
             Flush();
+            _faulted = false;
             Release();
         }
 
-        protected override void Finish(CancellationToken cancellationToken) { }
+        protected override void Finish(CancellationToken cancellationToken) => ThrowIfFaulted();
+
+        private void ThrowIfFaulted()
+        {
+            if (_faulted)
+                throw new InvalidOperationException("An earlier call failed part way through writing the file; the session cannot continue.");
+        }
 
         /// <summary>
         /// Hands the finished bytes to the output and starts the buffer over. Every coded MCU ends with the stuffing pass

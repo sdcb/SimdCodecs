@@ -95,3 +95,15 @@ Recorded on a Ryzen 7 5800X, Windows 11, .NET 10.0.11, AVX2 (no AVX-512), MP/s:
 | q95 4:4:4 | 266 | 262 | 139 | 144 / 96 | 51 / 42 |
 
 At the same quality our files are 0.2–2.3% smaller than libjpeg-turbo's in every mode and PSNR-Y is 0.004–0.09 dB higher (float AAN DCT, unrounded colour conversion).
+
+In `baseline` mode a `streamed` row is the same encoder through `JpegImageEncoder`'s streaming session, fed 16-row bands into a reused `ArrayBufferWriter`; the run aborts unless its bytes equal `JpegEncoder.Encode`'s. Recorded 2026-11-23 on the same Ryzen 7 5800X (Windows 11, .NET 10.0.15, AVX2), median of 15, machine shared with other jobs, MP/s:
+
+| config | buffered | streamed | streamed ÷ buffered time |
+|---|---:|---:|---:|
+| q50 4:2:0 | 636 | 604 | 1.05× |
+| q75 4:2:0 | 587 | 588 | 1.00× |
+| q85 4:2:0 | 543 | 543 | 1.00× |
+| q90 4:2:0 | 505 | 500 | 1.01× |
+| q95 4:2:0 | 442 | 441 | 1.00× |
+| q90 4:4:4 | 312 | 311 | 1.00× |
+| q95 4:4:4 | 275 | 276 | 1.00× |
