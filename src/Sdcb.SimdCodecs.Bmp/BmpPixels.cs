@@ -97,7 +97,7 @@ internal static class BmpPixels
     /// its pixels) into <paramref name="output"/> in the planned target format.
     /// </summary>
     /// <returns>The row's pixels ORed together in a 32-bit layout, for the kinds that track alpha; 0 otherwise.</returns>
-    internal static uint DecodeRow(RowKind kind, BmpHeader h, PixelFormat target, ReadOnlySpan<byte> source, Span<byte> output,
+    internal static uint DecodeRow(RowKind kind, in BmpHeader h, PixelFormat target, ReadOnlySpan<byte> source, Span<byte> output,
         ReadOnlySpan<uint> lut, ReadOnlySpan<byte> control, uint set, Fields? fields, int tier)
     {
         var width = h.Width;
@@ -156,7 +156,7 @@ internal static class BmpPixels
                 var y = h.TopDown ? r : height - 1 - r;
                 var row = destination.Slice(y * rowStride, width * outBytes);
                 var output = scratch is null ? row : scratch.AsSpan(0, width * 4);
-                seen |= DecodeRow(kind, h, target, source, output, lut, control, set, fields, tier);
+                seen |= DecodeRow(kind, in h, target, source, output, lut, control, set, fields, tier);
                 if (scratch is not null)
                     PixelConverter.ConvertRow(output, 4, SampleFormat.UInt8, row, format, width);
             }

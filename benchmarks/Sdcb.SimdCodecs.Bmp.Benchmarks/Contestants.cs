@@ -89,6 +89,19 @@ internal sealed class DecodeSetup
             setup.Contestants.Add(new(Names.CurrentRows, Rows));
         }
 
+        // What a caller without the reader does with a stream: read it whole (into a reused buffer of the right size,
+        // the cheapest way), then decode the bytes.
+        if (!icon && Want(Names.CurrentReadAll))
+        {
+            var file = new byte[data.Length];
+            setup.Contestants.Add(new(Names.CurrentReadAll, () =>
+            {
+                using var stream = new MemoryStream(data, writable: false);
+                stream.ReadExactly(file);
+                BmpImageDecoder.TryDecodeInto(file, rgba, 0, PixelFormat.Rgba32);
+            }));
+        }
+
         if (Baseline.IsBuilt && Want(Names.Baseline) && Baseline.CanDecode(icon))
         {
             var buffer = new byte[w * h * 4];

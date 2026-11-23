@@ -42,7 +42,10 @@ public class BmpDecodeBenchmarks
     [Benchmark]
     public void CurrentRows() => _run[Names.CurrentRows]();
 
-    public static readonly string[] Methods = [Names.Current, Names.CurrentRows, Names.CurrentBgra, Names.Baseline, Names.ImageSharp, Names.Wic];
+    [Benchmark]
+    public void CurrentReadAll() => _run[Names.CurrentReadAll]();
+
+    public static readonly string[] Methods = [Names.Current, Names.CurrentRows, Names.CurrentReadAll, Names.CurrentBgra, Names.Baseline, Names.ImageSharp, Names.Wic];
 }
 
 /// <summary>BenchmarkDotNet over the encode cases; see <see cref="BmpDecodeBenchmarks"/>.</summary>

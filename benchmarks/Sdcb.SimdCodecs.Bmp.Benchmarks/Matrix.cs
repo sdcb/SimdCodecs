@@ -46,25 +46,25 @@ internal static class Matrix
                       "(it reads no icons); WIC = WPF's `BitmapDecoder` + `FormatConvertedBitmap` to BGRA. Ratios below 1 mean we are " +
                       "faster: current ÷ ImageSharp (both RGBA), current BGR(A) ÷ WIC (both BGRA). Every timed output was checked " +
                       "against the others first. `current rows ← stream` = the streaming reader (`BmpImageDecoder.CreateRowReader`) " +
-                      "over a seekable `MemoryStream`, RGBA rows 64 at a time; `rows ÷ current` is what streaming costs over the span decoder.");
+                      "over a seekable `MemoryStream`, RGBA rows 64 at a time; `current ← read whole stream` = the same stream read whole into a reused buffer, then `TryDecodeInto`: what streaming replaces. `rows ÷ current` is what streaming costs over decoding bytes already in memory, `rows ÷ read whole` over reading the stream first.");
         sb.AppendLine();
-        sb.AppendLine("| Case | KB | MP | current | current rows ← stream | current BGR(A) | baseline | ImageSharp | WIC | current MP/s | ÷ ImageSharp | ÷ WIC | ÷ baseline | rows ÷ current |");
-        sb.AppendLine("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+        sb.AppendLine("| Case | KB | MP | current | current rows ← stream | current ← read whole stream | current BGR(A) | baseline | ImageSharp | WIC | current MP/s | ÷ ImageSharp | ÷ WIC | ÷ baseline | rows ÷ current | rows ÷ read whole |");
+        sb.AppendLine("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
         var notes = new List<string>();
         foreach (var (s, ms) in rows)
         {
             var mp = s.Width * (double)s.Height / 1e6;
-            sb.AppendLine($"| `{s.Case.Name}` | {s.Data.Length / 1024.0:F0} | {mp:F2} | {Ms(ms, Names.Current)} | {Ms(ms, Names.CurrentRows)} | {Ms(ms, Names.CurrentBgra)} | " +
+            sb.AppendLine($"| `{s.Case.Name}` | {s.Data.Length / 1024.0:F0} | {mp:F2} | {Ms(ms, Names.Current)} | {Ms(ms, Names.CurrentRows)} | {Ms(ms, Names.CurrentReadAll)} | {Ms(ms, Names.CurrentBgra)} | " +
                           $"{Ms(ms, Names.Baseline)} | {Ms(ms, Names.ImageSharp)} | {Ms(ms, Names.Wic)} | " +
                           $"{(Get(ms, Names.Current) is { } c ? (mp / (c / 1000)).ToString("F0", CultureInfo.InvariantCulture) : "—")} | " +
-                          $"{Ratio(ms, Names.Current, Names.ImageSharp)} | {Ratio(ms, Names.CurrentBgra, Names.Wic)} | {Ratio(ms, Names.Current, Names.Baseline)} | {Ratio(ms, Names.CurrentRows, Names.Current)} |");
+                          $"{Ratio(ms, Names.Current, Names.ImageSharp)} | {Ratio(ms, Names.CurrentBgra, Names.Wic)} | {Ratio(ms, Names.Current, Names.Baseline)} | {Ratio(ms, Names.CurrentRows, Names.Current)} | {Ratio(ms, Names.CurrentRows, Names.CurrentReadAll)} |");
             notes.AddRange(s.Notes.Select(n => $"`{s.Case.Name}`: {n}"));
         }
 
         sb.AppendLine();
         sb.AppendLine("Geometric means over the cases both decode:");
         sb.AppendLine();
-        foreach (var (a, b) in new[] { (Names.Current, Names.ImageSharp), (Names.CurrentBgra, Names.Wic), (Names.Current, Names.Baseline), (Names.CurrentRows, Names.Current) })
+        foreach (var (a, b) in new[] { (Names.Current, Names.ImageSharp), (Names.CurrentBgra, Names.Wic), (Names.Current, Names.Baseline), (Names.CurrentRows, Names.Current), (Names.CurrentRows, Names.CurrentReadAll) })
         {
             foreach (var content in SourceImage.Contents)
             {
@@ -76,7 +76,7 @@ internal static class Matrix
         }
 
         AppendAllocations(sb, rows.Select(r => (r.Setup.Case.Name, r.Setup.Allocated)).ToList(),
-            [Names.Current, Names.CurrentRows, Names.CurrentBgra, Names.Baseline, Names.ImageSharp, Names.Wic]);
+            [Names.Current, Names.CurrentRows, Names.CurrentReadAll, Names.CurrentBgra, Names.Baseline, Names.ImageSharp, Names.Wic]);
         AppendNotes(sb, notes);
         return sb.ToString();
     }

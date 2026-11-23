@@ -65,6 +65,7 @@ internal static class Names
     public const string CurrentBgra = "CurrentBgra";
     public const string CurrentStream = "CurrentStream";
     public const string CurrentRows = "CurrentRows";
+    public const string CurrentReadAll = "CurrentReadAll";
     public const string CurrentSession = "CurrentSession";
     public const string Baseline = "Baseline";
     public const string BaselineStream = "BaselineStream";
@@ -77,6 +78,7 @@ internal static class Names
         CurrentBgra => "current BGR(A)",
         CurrentStream => "current → stream",
         CurrentRows => "current rows ← stream",
+        CurrentReadAll => "current ← read whole stream",
         CurrentSession => "current session → writer",
         Baseline => "baseline",
         BaselineStream => "baseline → stream",

@@ -262,7 +262,7 @@ internal sealed class BmpRowReader(StreamInput input, PixelFormat format, Decode
         var width = _h.Width;
         var row = destination[..(width * Format.BytesPerPixel)];
         var output = _scratch is null ? row : _scratch.AsSpan(0, width * 4);
-        BmpPixels.DecodeRow(_kind, _h, _target, source, output, _lut, _control, _set, _fields, _tier);
+        BmpPixels.DecodeRow(_kind, in _h, _target, source, output, _lut, _control, _set, _fields, _tier);
         if (_scratch is not null)
             PixelConverter.ConvertRow(output, 4, SampleFormat.UInt8, row, Format, width);
         if (_forceOpaque)
