@@ -33,7 +33,7 @@ internal static class FacadeSmoke
         }
 
         Check(!ImageCodecs.CanDecode("not an image"u8), "garbage", "CanDecode");
-        return count + Heif() + V2();
+        return count + Heif() + V2() + await StreamingAsync();
     }
 
     /// <summary>
@@ -167,6 +167,9 @@ internal static class FacadeSmoke
         {
             Check(Throws<NotSupportedException>(() => ImageCodecs.Decode(data, PixelFormat.Rgba32)), label, "Decode Rgba32 refuses float");
         }
+        // The row reader over a stream that cannot seek, in bands of 5 rows: TryDecodeInto's rows.
+        if (info.SampleFormat != SampleFormat.Float32)
+            Check(ReadRows(data).AsSpan().SequenceEqual(rgba), label, "OpenRowReader Rgba32");
         // Cut short past its header, the file is corrupt: Decode throws why, TryDecode returns false.
         var cut = data.AsSpan(0, Math.Min(data.Length, 40)).ToArray();
         if (!ImageCodecs.TryDecode(cut, out var cutImage))
@@ -238,6 +241,81 @@ internal static class FacadeSmoke
         Check(!ImageCodecs.TryDecodeInto(pq, new byte[640 * 360 * 4], 0, PixelFormat.Rgba32), "heif-pq", "TryDecodeInto Rgba32 refuses PQ");
         Console.WriteLine($"facade heif-pq {hdr.Width}x{hdr.Height} {hdr.ColorEncoding.Primaries}/{hdr.ColorEncoding.Transfer}\t{Hash(hdr.ToRgba8())}");
         return 2;
+    }
+
+    /// <summary>
+    /// The stream entry points asynchronously only: <see cref="ImageCodecs.OpenRowReaderAsync"/> on a few formats, and
+    /// <see cref="ImageCodecs.CreateEncoder(ImageFormat, Stream, EncodeOptions?, bool)"/> with WriteRowsAsync / CommitAsync
+    /// for every built-in encoder, whose bytes must equal the one-call encode's.
+    /// </summary>
+    private static async Task<int> StreamingAsync()
+    {
+        const int w = 37, h = 23;
+        var rgb = Program.Pattern(w, h);
+        var hashes = new List<string>();
+        foreach (var format in new[] { ImageFormat.Png, ImageFormat.Jpeg, ImageFormat.Tiff, ImageFormat.Webp, ImageFormat.Gif,
+                     ImageFormat.Bmp, ImageFormat.Ico, ImageFormat.Qoi, ImageFormat.Pnm })
+        {
+            var label = $"stream {format}";
+            var file = ImageCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, format);
+            using var sink = new MemoryStream();
+            await using (var session = ImageCodecs.CreateEncoder(format, sink, leaveOpen: true))
+            {
+                var frame = session.AddFrame(w, h, PixelFormat.Rgb24);
+                for (var y = 0; y < h; y += 4)
+                    await frame.WriteRowsAsync(rgb.AsMemory(y * w * 3), Math.Min(4, h - y));
+                await session.CommitAsync();
+                hashes.Add($"{format}={(session.IsStreaming ? 's' : 'b')}");
+            }
+            Check(sink.ToArray().AsSpan().SequenceEqual(file), label, "CreateEncoder(Stream)");
+
+            await using var reader = await ImageCodecs.OpenRowReaderAsync(new ForwardStream(file), PixelFormat.Bgra32);
+            var rows = new byte[reader.Width * reader.Height * 4];
+            while (reader.RowsRead < reader.Height)
+                await reader.ReadRowsAsync(rows.AsMemory(reader.RowsRead * reader.Width * 4), 7);
+            var expected = new byte[rows.Length];
+            Check(ImageCodecs.TryDecodeInto(file, expected, 0, PixelFormat.Bgra32), label, "TryDecodeInto Bgra32");
+            Check(rows.AsSpan().SequenceEqual(expected), label, "OpenRowReaderAsync Bgra32");
+            hashes[^1] += $"/{Hash(rows)}";
+        }
+        Check(Throws<InvalidDataException>(() => ImageCodecs.OpenRowReader(new ForwardStream("not an image"u8.ToArray()), PixelFormat.Rgba32)),
+            "stream", "OpenRowReader (unknown)");
+        Console.WriteLine($"facade streaming\t{string.Join(' ', hashes)}");
+        return 1;
+    }
+
+    // Every row of data through the synchronous row reader, Rgba32, in bands of 5.
+    private static byte[] ReadRows(byte[] data)
+    {
+        using var reader = ImageCodecs.OpenRowReader(new ForwardStream(data), PixelFormat.Rgba32);
+        var rows = new byte[reader.Width * reader.Height * 4];
+        while (reader.RowsRead < reader.Height)
+            reader.ReadRows(rows.AsSpan(reader.RowsRead * reader.Width * 4), 5);
+        return rows;
+    }
+
+    /// <summary>A stream that cannot seek and hands out at most 100 bytes per read, as a network stream does.</summary>
+    private sealed class ForwardStream(byte[] data) : Stream
+    {
+        private int _position;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var n = Math.Min(Math.Min(count, 100), data.Length - _position);
+            data.AsSpan(_position, n).CopyTo(buffer.AsSpan(offset));
+            _position += n;
+            return n;
+        }
     }
 
     private static async Task<List<(string, byte[])>> SamplesAsync()

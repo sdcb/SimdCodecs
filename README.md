@@ -76,6 +76,20 @@ The facade covers what every format has in common. Each format package has a ric
 
 </details>
 
+### Streaming
+
+`ImageCodecs.OpenRowReader(stream, format, options)` / `OpenRowReaderAsync(…)` decode a stream that need not seek (a request body, a pipe) a band of rows at a time, top to bottom; the rows are exactly `TryDecodeInto`'s. `ImageCodecs.CreateEncoder(format, stream)` writes a file to a stream about every 64 KiB as the encoder produces it; its frames take `WriteRowsAsync` and the session `CommitAsync`, which never write synchronously. `IsStreaming` says whether the codec really works as the data flows: when it is false (a format, variant or option that needs the whole image, such as an interlaced PNG, a progressive JPEG, a scaled decode or palette quantisation) the reader reads the stream whole and decodes it first, and the encoder writes the file at `Commit`, behind the same API.
+
+```csharp
+// An upload re-encoded as PNG, stream to stream: rows in, bytes out, no synchronous I/O.
+await using IImageRowReader reader = await ImageCodecs.OpenRowReaderAsync(request.Body, PixelFormat.Rgba32);
+await using StreamEncoderSession png = ImageCodecs.CreateEncoder(ImageFormat.Png, response.Body);
+StreamFrameEncoder frame = png.AddFrame(reader.Width, reader.Height, PixelFormat.Rgba32);
+byte[] band = new byte[reader.Width * 4 * 16];
+for (int n; (n = await reader.ReadRowsAsync(band, 16)) > 0;)
+    await frame.WriteRowsAsync(band.AsMemory(0, n * reader.Width * 4), n);
+await png.CommitAsync();
+```
 Upgrading from 1.x: [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md).
 
 ## Formats

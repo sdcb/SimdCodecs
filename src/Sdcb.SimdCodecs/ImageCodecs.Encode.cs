@@ -33,6 +33,20 @@ public static partial class ImageCodecs
     ];
     private static readonly Lock s_encoderLock = new();
 
+    /// <summary>The encoder registry as it stands (for tests, to put it back with <see cref="ExchangeEncoders"/>).</summary>
+    internal static ImageEncoderRegistration[] EncoderSnapshot => Volatile.Read(ref s_encoders);
+
+    /// <summary>Replaces the encoder registry and returns the one it replaced (for tests, as <see cref="ExchangeRegistry"/>).</summary>
+    internal static ImageEncoderRegistration[] ExchangeEncoders(ImageEncoderRegistration[] encoders)
+    {
+        lock (s_encoderLock)
+        {
+            var previous = s_encoders;
+            Volatile.Write(ref s_encoders, encoders);
+            return previous;
+        }
+    }
+
     /// <summary>
     /// Enables encoding to a format the facade does not encode out of the box, or replaces the encoder for one
     /// (<c>ImageCodecs.RegisterEncoder(MyEncoder.Registration)</c>). PNG, JPEG, TIFF, WebP, GIF, BMP, ICO, QOI and Netpbm
@@ -83,6 +97,12 @@ public static partial class ImageCodecs
     /// 8-bit-only format receives them narrowed, <c>v &gt;&gt; 8</c>), its <see cref="IDecodedImage.ColorEncoding"/> and
     /// its <see cref="IDecodedImage.Metadata"/> (Exif, XMP, ICC), so a transcode keeps the capture time, GPS position and
     /// colour profile. Float images cannot be encoded this way (no integer projection).
+    /// <para>
+    /// The file is written to the stream about every 64 KiB as the encoder produces it, synchronously; the stream is not
+    /// flushed. An encode that fails or is cancelled may leave the first part of the file in the stream. To write it
+    /// asynchronously, or row band by row band, use
+    /// <see cref="CreateEncoder(ImageFormat, Stream, EncodeOptions?, bool)"/>.
+    /// </para>
     /// </summary>
     /// <exception cref="NotSupportedException">No registered encoder writes <paramref name="format"/>, or the image has
     /// float samples.</exception>
@@ -92,13 +112,13 @@ public static partial class ImageCodecs
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(destination);
-        var buffer = new ArrayBufferWriter<byte>();
-        Encode(image, format, buffer, options, cancellationToken);
-        destination.Write(buffer.WrittenSpan);
+        using var writer = new StreamBufferWriter(destination);
+        Encode(image, format, writer, options, cancellationToken);
+        writer.Flush();
     }
 
     /// <summary><see cref="Encode(IDecodedImage, ImageFormat, Stream, EncodeOptions?, CancellationToken)"/> into a buffer
-    /// writer (for a <c>Stream</c> with no copy: <c>PipeWriter.Create(stream)</c>).</summary>
+    /// writer (a <c>PipeWriter</c>, an <c>ArrayBufferWriter</c>).</summary>
     public static void Encode(IDecodedImage image, ImageFormat format, IBufferWriter<byte> destination, EncodeOptions? options = null,
         CancellationToken cancellationToken = default)
     {
@@ -130,7 +150,7 @@ public static partial class ImageCodecs
 
     /// <summary>
     /// <see cref="Encode(ReadOnlySpan{byte}, int, int, PixelFormat, ImageFormat, int, EncodeOptions?, ImageMetadata?, CancellationToken)"/>
-    /// writing the file into <paramref name="destination"/> (for a <c>Stream</c> with no copy: <c>PipeWriter.Create(stream)</c>).
+    /// writing the file into <paramref name="destination"/> (a <c>PipeWriter</c>, an <c>ArrayBufferWriter</c>).
     /// </summary>
     /// <exception cref="NotSupportedException">No registered encoder writes <paramref name="format"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="options"/> is of a type <paramref name="format"/>'s encoder does not take.</exception>
@@ -146,7 +166,10 @@ public static partial class ImageCodecs
 
     /// <summary>
     /// <see cref="Encode(ReadOnlySpan{byte}, int, int, PixelFormat, ImageFormat, int, EncodeOptions?, ImageMetadata?, CancellationToken)"/>
-    /// writing the file to <paramref name="destination"/> (buffered, then written in one call).
+    /// writing the file to <paramref name="destination"/>, about every 64 KiB as the encoder produces it, synchronously;
+    /// the stream is not flushed. An encode that fails or is cancelled may leave the first part of the file in the stream.
+    /// To write it asynchronously, or row band by row band, use
+    /// <see cref="CreateEncoder(ImageFormat, Stream, EncodeOptions?, bool)"/>.
     /// </summary>
     /// <exception cref="NotSupportedException">No registered encoder writes <paramref name="format"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="options"/> is of a type <paramref name="format"/>'s encoder does not take.</exception>
@@ -155,9 +178,9 @@ public static partial class ImageCodecs
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(destination);
-        var buffer = new ArrayBufferWriter<byte>();
-        Encode(pixels, width, height, pixelFormat, format, buffer, stride, options, metadata, cancellationToken);
-        destination.Write(buffer.WrittenSpan);
+        using var writer = new StreamBufferWriter(destination);
+        Encode(pixels, width, height, pixelFormat, format, writer, stride, options, metadata, cancellationToken);
+        writer.Flush();
     }
 
     private static ImageEncoderRegistration? FindEncoder(ImageFormat format)
