@@ -75,6 +75,20 @@ ImageCodecs.Register(HeifImageDecoder.Registration);
 
 </details>
 
+### 流式读写
+
+`ImageCodecs.OpenRowReader(stream, format, options)` / `OpenRowReaderAsync(…)` 从不必可寻址的流（请求体、管道）自上而下逐个行带解码，行数据与 `TryDecodeInto` 完全一致。`ImageCodecs.CreateEncoder(format, stream)` 在编码器产出字节时大约每 64 KiB 写一次流；它的帧有 `WriteRowsAsync`，会话有 `CommitAsync`，二者都不做同步写入。`IsStreaming` 表示 codec 是否真的边读边解、边编边写：为 false 时（需要整幅图像的格式、变体或选项，比如隔行 PNG、渐进式 JPEG、缩放解码、调色板量化），读取器先读完整个流再解码，编码器在 `Commit` 时写出文件，API 不变。
+
+```csharp
+// 把上传的图片转成 PNG，流到流：行进，字节出，没有同步 I/O。
+await using IImageRowReader reader = await ImageCodecs.OpenRowReaderAsync(request.Body, PixelFormat.Rgba32);
+await using StreamEncoderSession png = ImageCodecs.CreateEncoder(ImageFormat.Png, response.Body);
+StreamFrameEncoder frame = png.AddFrame(reader.Width, reader.Height, PixelFormat.Rgba32);
+byte[] band = new byte[reader.Width * 4 * 16];
+for (int n; (n = await reader.ReadRowsAsync(band, 16)) > 0;)
+    await frame.WriteRowsAsync(band.AsMemory(0, n * reader.Width * 4), n);
+await png.CommitAsync();
+```
 从 1.x 升级：见 [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md)。
 
 ## 支持的格式

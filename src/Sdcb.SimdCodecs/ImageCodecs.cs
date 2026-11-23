@@ -382,14 +382,20 @@ public static partial class ImageCodecs
         // reported as one whatever it holds) or has no projection of it to the format.
         if (DecodeFailure(entry, data, options, cancellationToken, null) is { } failure)
             throw failure;
-        var name = FormatName(entry.Format);
+        throw NoProjection(entry.Format, info, format);
+    }
+
+    // Why a codec that decodes an image wrote no pixels of it in a format: float samples, or an HDR transfer.
+    private static NotSupportedException NoProjection(ImageFormat imageFormat, in ImageInfo info, PixelFormat format)
+    {
+        var name = FormatName(imageFormat);
         if (info.SampleFormat == SampleFormat.Float32)
         {
-            throw new NotSupportedException(
+            return new NotSupportedException(
                 $"The {name} image has float samples, which have no {format} form without a tone policy: decode it with " +
                 "ImageCodecs.Decode(data) and use IDecodedImage.ToFloats or PixelConverter.StretchToRgba8.");
         }
-        throw new NotSupportedException(
+        return new NotSupportedException(
             $"The {name} image decodes, but its codec has no {format} projection of it (an HDR transfer such as PQ " +
             "or HLG has no display pixels without tone mapping): decode it with ImageCodecs.Decode(data) instead.");
     }

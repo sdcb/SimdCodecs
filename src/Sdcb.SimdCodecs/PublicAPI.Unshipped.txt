@@ -1,1 +1,16 @@
 #nullable enable
+Sdcb.SimdCodecs.StreamEncoderSession
+Sdcb.SimdCodecs.StreamEncoderSession.AddFrame(int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.ColorEncoding? color = null, Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata = null, System.TimeSpan? duration = null) -> Sdcb.SimdCodecs.StreamFrameEncoder!
+Sdcb.SimdCodecs.StreamEncoderSession.Commit(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+Sdcb.SimdCodecs.StreamEncoderSession.CommitAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Sdcb.SimdCodecs.StreamEncoderSession.Dispose() -> void
+Sdcb.SimdCodecs.StreamEncoderSession.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Sdcb.SimdCodecs.StreamEncoderSession.IsStreaming.get -> bool
+Sdcb.SimdCodecs.StreamEncoderSession.MaxFrames.get -> int
+Sdcb.SimdCodecs.StreamFrameEncoder
+Sdcb.SimdCodecs.StreamFrameEncoder.RowsWritten.get -> int
+Sdcb.SimdCodecs.StreamFrameEncoder.WriteRows(System.ReadOnlySpan<byte> rows, int rowCount, int stride = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+Sdcb.SimdCodecs.StreamFrameEncoder.WriteRowsAsync(System.ReadOnlyMemory<byte> rows, int rowCount, int stride = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+static Sdcb.SimdCodecs.ImageCodecs.CreateEncoder(Sdcb.SimdCodecs.Abstractions.ImageFormat format, System.IO.Stream! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null, bool leaveOpen = false) -> Sdcb.SimdCodecs.StreamEncoderSession!
+static Sdcb.SimdCodecs.ImageCodecs.OpenRowReader(System.IO.Stream! stream, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, bool leaveOpen = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> Sdcb.SimdCodecs.Abstractions.IImageRowReader!
+static Sdcb.SimdCodecs.ImageCodecs.OpenRowReaderAsync(System.IO.Stream! stream, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, bool leaveOpen = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Sdcb.SimdCodecs.Abstractions.IImageRowReader!>
