@@ -136,7 +136,13 @@ public sealed class TiffWriter : IAsyncDisposable
     }
 
     private static IfdBuilder BuildIfd(IImageSource source, TiffPageOptions options,
-        uint[] offsets, uint[] byteCounts, List<TiffExifEntry>? exifIfd0 = null)
+        uint[] offsets, uint[] byteCounts, List<TiffExifEntry>? exifIfd0 = null) =>
+        BuildIfd(source.Width, source.Height, source.IsPreCompressed ? source.Compression : options.Compression,
+            source.Photometric, options, offsets, byteCounts, exifIfd0);
+
+    /// <summary>The page's IFD; shared with the streaming encoder session, whose files equal this writer's.</summary>
+    internal static IfdBuilder BuildIfd(int width, int height, TiffCompression compression, TiffPhotometric photometric,
+        TiffPageOptions options, uint[] offsets, uint[] byteCounts, List<TiffExifEntry>? exifIfd0)
     {
         var ifd = new IfdBuilder();
         // The Exif block's IFD0 tags first, so every tag the page sets below (resolution, and Artist / Software when the
@@ -145,10 +151,10 @@ public sealed class TiffWriter : IAsyncDisposable
             foreach (var entry in exifIfd0)
                 ifd.Set(entry);
 
-        ifd.SetLong(TiffTag.ImageWidth, (uint)source.Width);
-        ifd.SetLong(TiffTag.ImageLength, (uint)source.Height);
-        ifd.SetShort(TiffTag.Compression, (ushort)(source.IsPreCompressed ? source.Compression : options.Compression));
-        ifd.SetShort(TiffTag.PhotometricInterp, (ushort)source.Photometric);
+        ifd.SetLong(TiffTag.ImageWidth, (uint)width);
+        ifd.SetLong(TiffTag.ImageLength, (uint)height);
+        ifd.SetShort(TiffTag.Compression, (ushort)compression);
+        ifd.SetShort(TiffTag.PhotometricInterp, (ushort)photometric);
         ifd.SetShort(TiffTag.SamplesPerPixel, (ushort)options.SamplesPerPixel);
         ifd.SetShort(TiffTag.PlanarConfig, (ushort)TiffPlanarConfig.Contig);
 
@@ -175,7 +181,7 @@ public sealed class TiffWriter : IAsyncDisposable
         }
         else
         {
-            var rowsPerStrip = options.RowsPerStrip > 0 ? options.RowsPerStrip : source.Height;
+            var rowsPerStrip = options.RowsPerStrip > 0 ? options.RowsPerStrip : height;
             ifd.SetLong(TiffTag.RowsPerStrip, (uint)rowsPerStrip);
             ifd.SetLongArray(TiffTag.StripOffsets, offsets);
             ifd.SetLongArray(TiffTag.StripByteCounts, byteCounts);
@@ -292,12 +298,28 @@ public sealed class TiffWriter : IAsyncDisposable
         await _target.WriteAsync(header, ct).ConfigureAwait(false);
     }
 
-    /// <summary>Deflate data with ZLIB framing, using BCL ZLibStream.</summary>
+    /// <summary>
+    /// How many bytes at a time a segment is handed to the deflater. The deflater's output depends on how its input is
+    /// split, so every path feeds it the same pieces: whole <see cref="DeflateChunk"/>-byte slices of the segment, then
+    /// the rest. That makes a segment's compressed bytes a function of its pixels alone, so the streaming session
+    /// (which sees rows a band at a time) writes the very bytes this writer does, holding one slice, not one strip.
+    /// </summary>
+    internal const int DeflateChunk = 64 * 1024;
+
+    /// <summary>Deflate data with ZLIB framing, using BCL ZLibStream, fed <see cref="DeflateChunk"/> bytes at a time.</summary>
     internal static byte[] DeflateZlib(ReadOnlySpan<byte> data)
     {
         using var ms = new MemoryStream();
-        using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
-            z.Write(data);
+        using (var z = NewDeflater(ms))
+            while (!data.IsEmpty)
+            {
+                var n = Math.Min(DeflateChunk, data.Length);
+                z.Write(data[..n]);
+                data = data[n..];
+            }
         return ms.ToArray();
     }
+
+    /// <summary>The deflater every segment goes through (ZLIB framing, <see cref="CompressionLevel.Optimal"/>).</summary>
+    internal static ZLibStream NewDeflater(Stream output) => new(output, CompressionLevel.Optimal, leaveOpen: true);
 }

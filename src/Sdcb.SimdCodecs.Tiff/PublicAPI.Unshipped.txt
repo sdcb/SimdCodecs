@@ -1,1 +1,2 @@
 #nullable enable
+static Sdcb.SimdCodecs.Tiff.TiffImageEncoder.Create(System.IO.Stream! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null, bool leaveOpen = false) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!

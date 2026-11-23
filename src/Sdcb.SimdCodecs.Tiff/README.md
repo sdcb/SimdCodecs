@@ -45,3 +45,14 @@ A `DecodeOptions.Region` reads only the strips or tiles it intersects, and `TryD
 ## Writing
 
 `TiffWriter` writes classic TIFF (never BigTIFF): uncompressed or Deflate, strips or tiles, 8/16/32-bit integer and float samples, with ICC, XMP and Exif.
+
+`TiffImageEncoder.Create(Stream)` streams a file to a writable, seekable stream as the rows arrive: each strip, or each row of tiles, is compressed and written once its rows are in, and a page's IFD follows its last segment. Memory is one band of rows (a 64 KiB deflate input slice for strips, one row of tiles for a tiled page), whatever the page size. The header's and each IFD's forward offsets are patched by seeking, so a non-seekable stream is refused with `ArgumentException`; encode into an `IBufferWriter<byte>` (`TiffImageEncoder.Create(IBufferWriter<byte>)`, buffered) and copy instead. The streamed file is byte for byte the buffered encoder's for the same pixels and options (`TiffStreamingEncodeTests`).
+
+```csharp
+using var file = File.Create("scan.tif");
+using var session = TiffImageEncoder.Create(file, new TiffEncodeOptions { Page = new TiffPageOptions { RowsPerStrip = 64 } });
+var page = session.AddFrame(width, height, PixelFormat.Rgb24);
+foreach (var (band, rows) in Bands())   // any band size
+    page.WriteRows(band, rows);
+session.Commit();                        // patches the first-IFD offset; the file is complete
+```

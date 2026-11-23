@@ -94,52 +94,57 @@ internal sealed class IfdBuilder
     {
         await target.AlignAsync(ct).ConfigureAwait(false);
         var ifdStart = target.Position;
+        var bytes = Serialize(ifdStart, out var nextIfdField);
+        await target.WriteAsync(bytes, ct).ConfigureAwait(false);
+        return ifdStart + nextIfdField;
+    }
 
-        var entryCount = (ushort)_entries.Count;
+    /// <summary>
+    /// The IFD as it is stored at file offset <paramref name="ifdStart"/> (a word boundary): the entry count, the
+    /// entries in tag order, the NextIFD pointer (0; the caller patches it) and then every value longer than four bytes,
+    /// in entry order. <paramref name="nextIfdField"/> is the NextIFD pointer's offset within the returned bytes.
+    /// </summary>
+    public byte[] Serialize(long ifdStart, out int nextIfdField)
+    {
         const int entrySize = 12; // tag(2) + type(2) + count(4) + value/offset(4)
+        var entryCount = (ushort)_entries.Count;
+        nextIfdField = 2 + entryCount * entrySize;
+        var length = (long)nextIfdField + 4;
+        foreach (var (_, (_, _, valueBytes)) in _entries)
+            if (valueBytes.Length > 4)
+                length += valueBytes.Length;
+        if (ifdStart + length > uint.MaxValue)
+            throw new IOException("The TIFF file would pass 4 GiB, the most a classic TIFF offset addresses.");
 
-        // Entry count
-        await target.WriteUInt16Async(entryCount, ct).ConfigureAwait(false);
+        var bytes = new byte[length];
+        var span = bytes.AsSpan();
+        MemoryMarshal.Write(span, in entryCount);
 
-        // Compute where overflow data starts (after all entries + NextIFD pointer)
-        var overflowOffset = (uint)(ifdStart + 2 + entryCount * entrySize + 4);
-
-        // Collect overflow data to write after the directory
-        var overflowData = new List<byte[]>();
-        var entryBytes = new byte[entrySize];
-
+        // Overflow data starts after all entries + NextIFD pointer.
+        var overflowOffset = (uint)(ifdStart + nextIfdField + 4);
+        var at = 2;
+        var overflowAt = nextIfdField + 4;
         foreach (var (tag, (type, count, valueBytes)) in _entries)
         {
             var typeShort = (ushort)type;
-            MemoryMarshal.Write(entryBytes.AsSpan(0, 2), in tag);
-            MemoryMarshal.Write(entryBytes.AsSpan(2, 2), in typeShort);
-            MemoryMarshal.Write(entryBytes.AsSpan(4, 4), in count);
-
+            MemoryMarshal.Write(span.Slice(at, 2), in tag);
+            MemoryMarshal.Write(span.Slice(at + 2, 2), in typeShort);
+            MemoryMarshal.Write(span.Slice(at + 4, 4), in count);
             if (valueBytes.Length <= 4)
             {
-                // Inline: pad to 4 bytes
-                entryBytes.AsSpan(8, 4).Clear();
-                valueBytes.CopyTo(entryBytes.AsSpan(8));
+                // Inline: padded to 4 bytes (the array is zeroed).
+                valueBytes.CopyTo(span.Slice(at + 8));
             }
             else
             {
-                // Overflow: write offset to data area
-                MemoryMarshal.Write(entryBytes.AsSpan(8, 4), in overflowOffset);
+                MemoryMarshal.Write(span.Slice(at + 8, 4), in overflowOffset);
                 overflowOffset += (uint)valueBytes.Length;
-                overflowData.Add(valueBytes);
+                valueBytes.CopyTo(span.Slice(overflowAt));
+                overflowAt += valueBytes.Length;
             }
-
-            await target.WriteAsync(entryBytes, ct).ConfigureAwait(false);
+            at += entrySize;
         }
-
-        // NextIFD pointer (0 = no next page; caller patches this)
-        var nextIfdPatchOffset = target.Position;
-        await target.WriteUInt32Async(0, ct).ConfigureAwait(false);
-
-        // Write overflow value data
-        foreach (var data in overflowData)
-            await target.WriteAsync(data, ct).ConfigureAwait(false);
-
-        return nextIfdPatchOffset;
+        // NextIFD pointer stays 0 (no next page) until the caller patches it.
+        return bytes;
     }
 }
