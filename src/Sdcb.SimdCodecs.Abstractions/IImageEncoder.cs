@@ -52,6 +52,13 @@ public interface IImageEncoder
 /// <summary>One file being encoded: add its frames, then <see cref="Commit"/>.</summary>
 public interface IImageEncoderSession : IDisposable
 {
+    /// <summary>
+    /// True when the session encodes rows as they are written and hands finished bytes to the output before
+    /// <see cref="Commit"/> (memory bounded by a band of rows); false when it collects whole frames and encodes them at
+    /// <see cref="Commit"/> (a format or option that needs the whole image, such as palette quantisation).
+    /// </summary>
+    bool IsStreaming { get; }
+
     /// <summary>The most frames the format holds: 1 for a still-only format.</summary>
     int MaxFrames { get; }
 

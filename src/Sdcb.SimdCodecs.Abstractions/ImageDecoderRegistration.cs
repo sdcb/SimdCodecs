@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 namespace Sdcb.SimdCodecs.Abstractions;
 
@@ -55,6 +56,8 @@ public sealed class ImageDecoderRegistration
     public delegate bool TryDecodePlanesHandler(ReadOnlySpan<byte> data, Span<ushort> y, Span<ushort> cb, Span<ushort> cr,
         CancellationToken cancellationToken);
 
+    /// <summary><see cref="IStreamingImageDecoder.CreateRowReader"/>.</summary>
+    public delegate StreamingRowReader CreateRowReaderHandler(StreamInput input, PixelFormat format, DecodeOptions? options);
 
     /// <summary>The format the codec decodes (what <c>ImageCodecs.DetectFormat</c> reports for it).</summary>
     /// <exception cref="ArgumentOutOfRangeException">Set to <see cref="ImageFormat.Unknown"/> or an undefined value.</exception>
@@ -106,6 +109,12 @@ public sealed class ImageDecoderRegistration
 
     /// <summary>The codec's planar decode; set exactly when <see cref="TryReadPlanarInfo"/> is.</summary>
     public TryDecodePlanesHandler? TryDecodePlanes { get; init; }
+
+    /// <summary>
+    /// The codec's forward-only stream decoder, or null when it has none: the facade then reads the stream whole and
+    /// decodes it with <see cref="TryDecodeInto"/> (a <see cref="BufferedRowReader"/>).
+    /// </summary>
+    public CreateRowReaderHandler? CreateRowReader { get; init; }
 
     /// <summary>
     /// Checks what the initializer cannot check property by property: that both planar delegates or neither are set.
