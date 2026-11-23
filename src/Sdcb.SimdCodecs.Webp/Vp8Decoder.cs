@@ -137,7 +137,7 @@ internal static class Vp8Decoder
             while (state.MacroblockY < state.MacroblockHeight)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                state.ReconstructRow(ref header, ref tokens.PartitionRef(state.MacroblockY & partitionMask), stopWhenPadded: false);
+                state.ReconstructRow(ref header, ref tokens.PartitionRef(state.MacroblockY & partitionMask));
                 if (state.FinishRow(ref sink, rowLimit))
                 {
                     break;
@@ -341,10 +341,11 @@ internal static class Vp8Decoder
         /// Entropy-decodes macroblock row <see cref="MacroblockY"/> (modes from <paramref name="header"/>,
         /// coefficients from <paramref name="tokenDecoder"/>) and reconstructs it, unfiltered, into the
         /// row cache. Nothing but the row's cache rows and the above contexts changes, so the row can be
-        /// decoded again after <see cref="RestoreContexts"/>. With <paramref name="stopWhenPadded"/> it
-        /// returns false as soon as <paramref name="tokenDecoder"/> has read past its data.
+        /// decoded again after <see cref="RestoreContexts"/> (a streaming reader does when
+        /// <paramref name="tokenDecoder"/> read past its window: <see cref="Vp8BoolDecoder.Padded"/>). That
+        /// check is the caller's, once per row: a test in the macroblock loop measured 8% slower.
         /// </summary>
-        public bool ReconstructRow(ref Vp8BoolDecoder header, ref Vp8BoolDecoder tokenDecoder, bool stopWhenPadded)
+        public void ReconstructRow(ref Vp8BoolDecoder header, ref Vp8BoolDecoder tokenDecoder)
         {
             bool skipResidual = (_ablation & WebpAblation.SkipResidual) != 0;
             bool skipPrediction = (_ablation & WebpAblation.SkipPrediction) != 0;
@@ -496,14 +497,7 @@ internal static class Vp8Decoder
                         Unsafe.InitBlockUnaligned(ref Unsafe.As<short, byte>(ref coefficients), 0, 32);
                     }
                 }
-
-                if (stopWhenPadded && tokenDecoder.Padded)
-                {
-                    return false;
-                }
             }
-
-            return true;
         }
 
         /// <summary>

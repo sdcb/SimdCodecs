@@ -374,7 +374,8 @@ internal sealed class WebpRowReader : StreamingRowReader
             // Over a window that ends before the partition does, zero bits past it are not the stream's: a row that
             // read them is decoded again once more of the partition is there. A starved row costs its decode time,
             // so the next attempt waits for twice the window.
-            if (!_frame.ReconstructRow(ref header, ref tokens, stopWhenPadded: !complete) || (!complete && tokens.Padded))
+            _frame.ReconstructRow(ref header, ref tokens);
+            if (!complete && tokens.Padded)
             {
                 _frame.RestoreContexts();
                 _retryWindow = (int)Math.Min((long)available * 2 + 64, int.MaxValue);
@@ -409,7 +410,7 @@ internal sealed class WebpRowReader : StreamingRowReader
             ref Cursor cursor = ref _partitions[_frame.MacroblockY & (count - 1)];
             var header = _header.Resume(_firstPartition!);
             var tokens = cursor.Resume(tokenData);
-            _frame.ReconstructRow(ref header, ref tokens, stopWhenPadded: false);
+            _frame.ReconstructRow(ref header, ref tokens);
             _header.Save(header);
             cursor.Save(tokens);
         }
