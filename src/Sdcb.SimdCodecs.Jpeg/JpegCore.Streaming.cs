@@ -95,6 +95,7 @@ internal ref partial struct JpegCore
         _sZeroFill = false;
         _sTail = TailRows;
         _sMinInput = 0;
+        _sRowBytes = 0;
     }
 
     /// <summary>
@@ -144,7 +145,9 @@ internal ref partial struct JpegCore
                 }
                 else
                 {
-                    if (!isFinal && _data.Length - _pos < _sMinInput)
+                    // Wait for half as much again as the last row took (and what an undone attempt asked for), so a row is
+                    // rarely started only to be undone at the end of the input: rows of a photo vary, but not by that much.
+                    if (!isFinal && _data.Length - _pos < Math.Max(_sMinInput, _sRowBytes + _sRowBytes / 2))
                         return OperationStatus.NeedMoreData;
                     var cp = Checkpoint();
                     bool ended;
@@ -165,6 +168,7 @@ internal ref partial struct JpegCore
                     }
 
                     _sMinInput = 0;
+                    _sRowBytes = _pos - cp.Pos;
                     _sZeroFill = ended;
                 }
 
@@ -361,7 +365,7 @@ internal ref partial struct JpegCore
         internal int _bitCnt;
         internal int _sNextMcu;
         internal bool _sZeroFill;
-        internal int _sTail, _sTailMarker, _sMinInput;
+        internal int _sTail, _sTailMarker, _sMinInput, _sRowBytes;
     }
 
     /// <summary>The engine suspended in <paramref name="s"/>, over <paramref name="data"/>: the input from the position it
@@ -414,7 +418,7 @@ internal ref partial struct JpegCore
         _bitCnt = s._bitCnt;
         _sNextMcu = s._sNextMcu;
         _sZeroFill = s._sZeroFill;
-        (_sTail, _sTailMarker, _sMinInput) = (s._sTail, s._sTailMarker, s._sMinInput);
+        (_sTail, _sTailMarker, _sMinInput, _sRowBytes) = (s._sTail, s._sTailMarker, s._sMinInput, s._sRowBytes);
     }
 
     /// <summary>Saves the engine into <paramref name="s"/>, its position made relative to <paramref name="consumed"/>
@@ -459,6 +463,6 @@ internal ref partial struct JpegCore
         s._bitCnt = _bitCnt;
         s._sNextMcu = _sNextMcu;
         s._sZeroFill = _sZeroFill;
-        (s._sTail, s._sTailMarker, s._sMinInput) = (_sTail, _sTailMarker, _sMinInput);
+        (s._sTail, s._sTailMarker, s._sMinInput, s._sRowBytes) = (_sTail, _sTailMarker, _sMinInput, _sRowBytes);
     }
 }

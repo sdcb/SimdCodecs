@@ -263,6 +263,7 @@ internal ref partial struct JpegCore
     private int _sTail;               // TailRows … TailDone
     private int _sTailMarker;
     private int _sMinInput;           // after a unit was undone: the input it waits for before trying again
+    private int _sRowBytes;           // compressed bytes the last MCU row took: the input to wait for before the next
     private byte[]? _winScratch;      // one full output row, when the window drops columns
     private bool _isRgb;
     private bool _chroma16;
