@@ -63,6 +63,7 @@ internal static class Names
 {
     public const string Current = "Current";
     public const string CurrentStream = "CurrentStream";
+    public const string Streaming = "Streaming";
     public const string Baseline = "Baseline";
     public const string ImageSharp = "ImageSharp";
 
@@ -70,6 +71,7 @@ internal static class Names
     {
         Current => "current",
         CurrentStream => "current → stream",
+        Streaming => "streaming",
         Baseline => "baseline",
         _ => name,
     };

@@ -13,7 +13,7 @@ namespace Sdcb.SimdCodecs.Qoi;
 /// </summary>
 public static class QoiEncoder
 {
-    private const int Chunk = 512;
+    internal const int Chunk = 512;
 
     // A chunk of pixels writes at most 5 bytes each, plus a run left over from before it.
     private const int ChunkOutput = Chunk * 5 + 1;
@@ -89,17 +89,38 @@ public static class QoiEncoder
 
     private static int Validate(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, QoiColorSpace colorSpace, int stride)
     {
-        if (width <= 0 || height <= 0 || (long)width * height > QoiCodec.MaximumPixels)
-            throw new ArgumentException($"QOI size {width}x{height} must be positive and at most {QoiCodec.MaximumPixels:N0} pixels.");
-        if (colorSpace is not (QoiColorSpace.Srgb or QoiColorSpace.Linear))
-            throw new ArgumentOutOfRangeException(nameof(colorSpace));
+        ValidateSize(width, height, colorSpace);
         if (!PixelConverter.TryGetLayout(width, height, format, stride, pixels.Length, out var rowStride))
             throw new ArgumentException($"The pixels do not hold a {width}x{height} {format} image with stride {stride}.", nameof(pixels));
         return rowStride;
     }
 
+    internal static void ValidateSize(int width, int height, QoiColorSpace colorSpace)
+    {
+        if (width <= 0 || height <= 0 || (long)width * height > QoiCodec.MaximumPixels)
+            throw new ArgumentException($"QOI size {width}x{height} must be positive and at most {QoiCodec.MaximumPixels:N0} pixels.");
+        if (colorSpace is not (QoiColorSpace.Srgb or QoiColorSpace.Linear))
+            throw new ArgumentOutOfRangeException(nameof(colorSpace));
+    }
+
     private static void Write(ReadOnlySpan<byte> pixels, int width, int height, PixelFormat format, QoiColorSpace colorSpace,
         int rowStride, IBufferWriter<byte> output, CancellationToken cancellationToken = default)
+    {
+        WriteHeader(width, height, format, colorSpace, output);
+        Span<uint> rgba = stackalloc uint[Chunk];
+        var state = new Writer();
+        var rowBytes = width * format.BytesPerPixel;
+        for (var y = 0; y < height; y++)
+        {
+            if ((y & 63) == 0)
+                cancellationToken.ThrowIfCancellationRequested();
+            WriteRow(ref state, pixels.Slice(y * rowStride, rowBytes), width, format, rgba, output);
+        }
+        WriteEnd(ref state, output);
+    }
+
+    /// <summary>The 14-byte header: 4 channels when <paramref name="format"/> has alpha, else 3.</summary>
+    internal static void WriteHeader(int width, int height, PixelFormat format, QoiColorSpace colorSpace, IBufferWriter<byte> output)
     {
         var header = output.GetSpan(QoiCodec.HeaderSize);
         "qoif"u8.CopyTo(header);
@@ -108,34 +129,39 @@ public static class QoiEncoder
         header[12] = format.HasAlpha ? (byte)4 : (byte)3;
         header[13] = (byte)colorSpace;
         output.Advance(QoiCodec.HeaderSize);
+    }
 
+    /// <summary>
+    /// Encodes one row (<c>width × format.BytesPerPixel</c> bytes) with <paramref name="state"/> carried over from the
+    /// rows before it: the one row step of the whole-image encoder and the streaming session, so their bytes are the same.
+    /// </summary>
+    /// <param name="rgba">Scratch of <see cref="Chunk"/> pixels.</param>
+    internal static void WriteRow(ref Writer state, ReadOnlySpan<byte> row, int width, PixelFormat format, Span<uint> rgba,
+        IBufferWriter<byte> output)
+    {
         // Every pixel goes to the encoder as straight 8-bit RGBA; RGBA32 input already is.
         var bpp = format.BytesPerPixel;
-        Span<uint> rgba = stackalloc uint[Chunk];
-        var state = new Writer();
-        for (var y = 0; y < height; y++)
+        for (var x = 0; x < width; x += Chunk)
         {
-            if ((y & 63) == 0)
-                cancellationToken.ThrowIfCancellationRequested();
-            var row = pixels.Slice(y * rowStride, width * bpp);
-            for (var x = 0; x < width; x += Chunk)
+            var n = Math.Min(Chunk, width - x);
+            scoped ReadOnlySpan<uint> chunk;
+            if (format == PixelFormat.Rgba32)
             {
-                var n = Math.Min(Chunk, width - x);
-                scoped ReadOnlySpan<uint> chunk;
-                if (format == PixelFormat.Rgba32)
-                {
-                    chunk = MemoryMarshal.Cast<byte, uint>(row.Slice(x * 4, n * 4));
-                }
-                else
-                {
-                    PixelConverter.ConvertRow(row.Slice(x * bpp, n * bpp), format, MemoryMarshal.AsBytes(rgba), PixelFormat.Rgba32, n);
-                    chunk = rgba[..n];
-                }
-                var span = output.GetSpan(ChunkOutput);
-                output.Advance(state.Write(chunk, span));
+                chunk = MemoryMarshal.Cast<byte, uint>(row.Slice(x * 4, n * 4));
             }
+            else
+            {
+                PixelConverter.ConvertRow(row.Slice(x * bpp, n * bpp), format, MemoryMarshal.AsBytes(rgba), PixelFormat.Rgba32, n);
+                chunk = rgba[..n];
+            }
+            var span = output.GetSpan(ChunkOutput);
+            output.Advance(state.Write(chunk, span));
         }
+    }
 
+    /// <summary>The open run, if any, then the 8-byte end marker.</summary>
+    internal static void WriteEnd(ref Writer state, IBufferWriter<byte> output)
+    {
         var end = output.GetSpan(1 + QoiCodec.PaddingSize);
         var written = state.Flush(end);
         end.Slice(written, QoiCodec.PaddingSize).Clear();
@@ -144,7 +170,7 @@ public static class QoiEncoder
     }
 
     /// <summary>The encoder state between chunks of pixels: the previous pixel, the open run, the index.</summary>
-    private struct Writer
+    internal struct Writer
     {
         private uint _prev;
         private int _run;

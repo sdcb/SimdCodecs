@@ -82,10 +82,31 @@ internal static class QoiCodec
             _px = 0xFF000000u;
         }
 
+        /// <summary>
+        /// The offset in the data of the next chunk: <see cref="HeaderSize"/> for a whole file; a streaming decoder
+        /// that hands the reader a window of the file sets it to the window's first unread byte.
+        /// </summary>
+        public int Position
+        {
+            readonly get => _position;
+            set => _position = value;
+        }
+
         /// <summary>Decodes the next <c>pixels.Length</c> pixels.</summary>
         /// <exception cref="InvalidDataException">The chunks end first.</exception>
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public void Read(ReadOnlySpan<byte> data, Span<uint> pixels)
+        {
+            if (!TryRead(data, pixels))
+                throw new InvalidDataException("QOI data ends before the last pixel.");
+        }
+
+        /// <summary>
+        /// Decodes the next <c>pixels.Length</c> pixels; false when the chunks end first (a chunk would run past the
+        /// data). Every byte is a valid chunk opcode, so running out is the only way to fail. After false the state is
+        /// partly advanced: a caller that retries with more data restores a copy taken before the call.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        public bool TryRead(ReadOnlySpan<byte> data, Span<uint> pixels)
         {
             var n = pixels.Length;
             var i = 0;
@@ -100,7 +121,7 @@ internal static class QoiCodec
             if (i == n)
             {
                 _run = run;
-                return;
+                return true;
             }
 
             // Every chunk is at most 5 bytes. While p <= limit = length − 5 a chunk read from p stays inside data.
@@ -122,7 +143,7 @@ internal static class QoiCodec
                 {
                     var remaining = tailBase < 0 ? data.Length - p : 0;
                     if (remaining <= 0)
-                        throw new InvalidDataException("QOI data ends before the last pixel.");
+                        return false;
                     tail.Clear();
                     data[p..].CopyTo(tail);
                     tailBase = p;
@@ -189,12 +210,13 @@ internal static class QoiCodec
             if (tailBase >= 0)
             {
                 if (p > limit + 1)
-                    throw new InvalidDataException("QOI data ends inside the last chunk.");
+                    return false;
                 p += tailBase;
             }
             _position = p;
             _run = run;
             _px = px;
+            return true;
         }
 
         /// <summary>

@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Collections.Generic;
 using System.Threading;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Abstractions.CodecSupport;
@@ -12,8 +11,14 @@ namespace Sdcb.SimdCodecs.Qoi;
 /// <see cref="PixelFormat.Rgba32"/> and any without to <see cref="PixelFormat.Rgb24"/>.
 /// QOI has no options record: <see cref="Create"/> accepts null only.
 /// The colour space byte is written as <see cref="QoiColorSpace.Linear"/> when
-/// <see cref="BufferedFrame.Color"/> has <see cref="ColorEncoding.Transfer"/> set to
+/// the frame's colour encoding has <see cref="ColorEncoding.Transfer"/> set to
 /// <see cref="TransferFunction.Linear"/>, else <see cref="QoiColorSpace.Srgb"/>.
+/// <para>
+/// The session streams (<see cref="IImageEncoderSession.IsStreaming"/> true): the header is written by
+/// <see cref="IImageEncoderSession.AddFrame"/>, each band of rows is encoded and written as it arrives, and the end
+/// marker at <see cref="IImageEncoderSession.Commit"/>. The bytes are those <see cref="QoiEncoder"/> writes for the
+/// whole image, however the rows are split into bands.
+/// </para>
 /// </summary>
 public sealed class QoiImageEncoder : IImageEncoder
 {
@@ -40,16 +45,39 @@ public sealed class QoiImageEncoder : IImageEncoder
             ? new Session(output)
             : throw new ArgumentException($"QOI encoding takes no options (pass null), not {options.GetType().Name}.", nameof(options));
 
-    private sealed class Session(IBufferWriter<byte> output) : BufferedEncoderSession(output)
+    private sealed class Session(IBufferWriter<byte> output) : StreamingEncoderSession(output)
     {
+        // The encoder state between bands: previous pixel, open run, index. A run open at the end of one band goes on
+        // into the next, as it does between rows of a whole image.
+        private QoiEncoder.Writer _state;
+        private int _width;
+        private PixelFormat _format;
+
         public override int MaxFrames => 1;
 
-        protected override void Encode(IReadOnlyList<BufferedFrame> frames, CancellationToken cancellationToken)
+        protected override void BeginFrame(int index, int width, int height, PixelFormat format, ColorEncoding? color,
+            ImageMetadata? metadata, TimeSpan? duration)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var frame = frames[0];
-            var colorSpace = frame.Color?.Transfer == TransferFunction.Linear ? QoiColorSpace.Linear : QoiColorSpace.Srgb;
-            QoiEncoder.Encode(frame.Pixels, frame.Width, frame.Height, frame.Format, Output, colorSpace, 0, cancellationToken);
+            var colorSpace = color?.Transfer == TransferFunction.Linear ? QoiColorSpace.Linear : QoiColorSpace.Srgb;
+            QoiEncoder.ValidateSize(width, height, colorSpace);
+            _state = new QoiEncoder.Writer();
+            _width = width;
+            _format = format;
+            QoiEncoder.WriteHeader(width, height, format, colorSpace, Output);
         }
+
+        protected override void EncodeRows(ReadOnlySpan<byte> rows, int rowCount, int stride, CancellationToken cancellationToken)
+        {
+            Span<uint> rgba = stackalloc uint[QoiEncoder.Chunk];
+            var rowBytes = _width * _format.BytesPerPixel;
+            for (var y = 0; y < rowCount; y++)
+            {
+                if ((y & 63) == 63)
+                    cancellationToken.ThrowIfCancellationRequested();
+                QoiEncoder.WriteRow(ref _state, rows.Slice(y * stride, rowBytes), _width, _format, rgba, Output);
+            }
+        }
+
+        protected override void Finish(CancellationToken cancellationToken) => QoiEncoder.WriteEnd(ref _state, Output);
     }
 }

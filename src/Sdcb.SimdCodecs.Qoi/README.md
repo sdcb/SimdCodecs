@@ -27,6 +27,20 @@ QoiEncoder.Encode(bgr, width, height, PixelFormat.Bgr24, file, QoiColorSpace.Lin
 
 The encoder takes RGBA, BGRA, RGB, BGR or grey input at any row stride. RGBA and BGRA input is written with 4 channels; the others are written with 3. For each pixel the encoder uses the first chunk that fits, trying them in this order: run, index, diff, luma, RGB, RGBA.
 
+## Streaming
+
+`QoiImageDecoder.CreateRowReader` decodes from a forward-only stream (a network or request body that cannot seek), a band of rows at a time, top to bottom, synchronously (`ReadRows`) or asynchronously (`ReadRowsAsync`). It holds the decoder state and about one row of the file, and its rows are exactly those `TryDecodeInto` writes. A row is decoded once all of its chunks have arrived; a truncated stream throws `InvalidDataException`. Scaling, cropping or orientation options read the stream to its end and decode it whole (`IsStreaming` is false).
+
+```csharp
+using var reader = QoiImageDecoder.CreateRowReader(new StreamInput(requestBody), PixelFormat.Rgba32, null);
+await reader.InitializeAsync();
+var band = new byte[reader.Width * 4 * 16];
+int rows;
+while ((rows = await reader.ReadRowsAsync(band, 16)) > 0)
+    Consume(band, rows);
+```
+
+`QoiImageEncoder.Create` returns a streaming session: `AddFrame` writes the header, each `WriteRows` band is encoded and written to the output as it arrives (a run goes on across bands), and `Commit` writes the end marker. The bytes are those `QoiEncoder.Encode` writes for the whole image, however the rows are banded.
 ## Decisions
 
 The specification leaves these cases open. The table shows what this package does:
