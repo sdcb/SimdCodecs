@@ -84,7 +84,7 @@ public sealed class FacadeStreamingTests : IDisposable
 
     /// <summary>Asserts every feed's rows equal <see cref="ImageCodecs.TryDecodeInto"/>'s; returns whether the reader streamed.</summary>
     private static async Task<bool> RowsEqualDecodeIntoAsync(byte[] file, PixelFormat format, DecodeOptions? options = null,
-        StreamingAssert.Feed[]? feeds = null, string? label = null)
+        StreamingAssert.Feed[]? feeds = null, string? label = null, bool sameOnEveryFeed = true)
     {
         ImageCodecs.TryReadInfo(file, out var info).ShouldBeTrue(label);
         var (w, h) = (options ?? DecodeOptions.Default).GetOutputSize(info);
@@ -98,7 +98,8 @@ public sealed class FacadeStreamingTests : IDisposable
             if (!rows.AsSpan().SequenceEqual(expected))
                 throw new ShouldAssertException($"{label} {feed}: rows differ from TryDecodeInto at byte {rows.AsSpan().CommonPrefixLength(expected)}.");
             streaming ??= s;
-            s.ShouldBe(streaming.Value, $"{label} {feed}: IsStreaming depends on the feed");
+            if (sameOnEveryFeed)
+                s.ShouldBe(streaming.Value, $"{label} {feed}: IsStreaming depends on the feed");
         }
         return streaming!.Value;
     }
@@ -150,8 +151,9 @@ public sealed class FacadeStreamingTests : IDisposable
         files.Add(("jp2", Fixture("jpeg2000", "jp2-rgb-struct64.jp2")));
         foreach (var (label, file) in files)
         {
+            // TIFF (and bottom-up BMP) stream only from a seekable stream: Whole streams, the others fall back.
             await RowsEqualDecodeIntoAsync(file, PixelFormat.Rgba32, label: label,
-                feeds: [StreamingAssert.Feed.RandomChunks, StreamingAssert.Feed.AsyncOnly, StreamingAssert.Feed.Whole]);
+                feeds: [StreamingAssert.Feed.RandomChunks, StreamingAssert.Feed.AsyncOnly, StreamingAssert.Feed.Whole], sameOnEveryFeed: false);
             await RowsEqualDecodeIntoAsync(file, PixelFormat.Bgr24, label: label, feeds: [StreamingAssert.Feed.OneByte]);
             // Options a codec may not stream: the rows are still TryDecodeInto's.
             await RowsEqualDecodeIntoAsync(file, PixelFormat.Rgba32, new DecodeOptions { ScaleDenominator = 2 }, label: label + " 1/2",
