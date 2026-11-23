@@ -6,6 +6,7 @@ using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
@@ -26,7 +27,7 @@ namespace Sdcb.SimdCodecs.Png;
 /// at the facade boundary.
 /// </para>
 /// </summary>
-public sealed class PngImageDecoder : IMultiFrameImageDecoder
+public sealed class PngImageDecoder : IMultiFrameImageDecoder, IStreamingImageDecoder
 {
     /// <summary>The registration for <c>ImageCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
@@ -41,6 +42,7 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
         TryOpenFrames = TryOpenFrames,
+        CreateRowReader = CreateRowReader,
     };
 
     private static ReadOnlySpan<byte> Signature => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
@@ -313,6 +315,70 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
         return ImageDecoderFallback.TryDecodeInto(TryDecode, data, destination, stride, format, options, cancellationToken);
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// A non-interlaced, non-animated PNG streams: the IDAT data is inflated as it arrives and each row is written as soon
+    /// as it is complete, holding two rows and a window of compressed input whatever the height. The rows are
+    /// <see cref="TryDecodeInto"/>'s byte for byte; the last row is returned once the rest of the file (every CRC, up to
+    /// IEND) has been checked, so a file <see cref="TryDecodeInto"/> refuses throws <see cref="InvalidDataException"/>
+    /// before its last row. <see cref="IImageRowReader.Info"/> is <see cref="TryReadInfo"/> over the chunks before the
+    /// image data: an <c>eXIf</c> (orientation), <c>cICP</c>, <c>gAMA</c>, <c>iCCP</c> or <c>pHYs</c> placed after IDAT is
+    /// not in it. A chunk after IDAT that the PNG specification puts before it and that would change rows already
+    /// written fails the read with <see cref="InvalidDataException"/> where <see cref="TryDecodeInto"/> honours it: a
+    /// PLTE (indexed), a tRNS (formats with alpha), or a PQ/HLG cICP (8-bit samples, which <see cref="TryDecodeInto"/>
+    /// refuses).
+    /// <para>Read whole and decoded first (<see cref="IImageRowReader.IsStreaming"/> false), with exactly
+    /// <see cref="TryDecodeInto"/>'s result: Adam7-interlaced and animated (acTL) files, an indexed file whose PLTE comes
+    /// after IDAT, a cICP PQ/HLG file read to 8-bit samples, and options other than the whole image at full size.</para>
+    /// </remarks>
+    public static StreamingRowReader CreateRowReader(StreamInput input, PixelFormat format, DecodeOptions? options) =>
+        PngReader.CreateRowReader(input, format, options);
+
+    /// <summary>
+    /// Opens a <see cref="CreateRowReader">row reader</see> over <paramref name="stream"/> (positioned at the start of the
+    /// PNG; it need not seek) and reads its header.
+    /// </summary>
+    /// <param name="stream">The PNG, read forward only.</param>
+    /// <param name="format">The layout of the rows to write.</param>
+    /// <param name="options">Null (or the whole image) to stream; any other options decode the whole file first.</param>
+    /// <param name="leaveOpen">Keep <paramref name="stream"/> open when the reader is disposed, or when the open fails
+    /// (otherwise a failed open disposes it).</param>
+    /// <exception cref="InvalidDataException">The stream is not a PNG, or its header is malformed or cut short.</exception>
+    public static StreamingRowReader OpenRowReader(Stream stream, PixelFormat format, DecodeOptions? options = null, bool leaveOpen = false)
+    {
+        var reader = CreateRowReader(new StreamInput(stream, leaveOpen), format, options);
+        try
+        {
+            reader.Initialize();
+            return reader;
+        }
+        catch
+        {
+            reader.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary><see cref="OpenRowReader"/>, reading the header asynchronously.</summary>
+    /// <inheritdoc cref="OpenRowReader" path="/param"/>
+    /// <param name="cancellationToken">Cancels the header read.</param>
+    /// <exception cref="InvalidDataException">The stream is not a PNG, or its header is malformed or cut short.</exception>
+    public static async ValueTask<StreamingRowReader> OpenRowReaderAsync(Stream stream, PixelFormat format, DecodeOptions? options = null,
+        bool leaveOpen = false, CancellationToken cancellationToken = default)
+    {
+        var reader = CreateRowReader(new StreamInput(stream, leaveOpen), format, options);
+        try
+        {
+            await reader.InitializeAsync(cancellationToken).ConfigureAwait(false);
+            return reader;
+        }
+        catch
+        {
+            reader.Dispose();
+            throw;
+        }
+    }
+
     /// <summary>
     /// <see cref="TryDecodeInto"/> to tightly packed 8-bit RGBA: <paramref name="rgbaDestination"/> must be
     /// at least <c>Width * Height * 4</c> bytes.
@@ -446,6 +512,23 @@ public sealed class PngImageDecoder : IMultiFrameImageDecoder
         // The ICC profile only matters when no cICP and no gAMA 1.0 outrank it (see MapColorEncoding).
         var icc = iccp is { } r && cicp is null && gamma != 1.0 ? PngReader.TryInflateIccp(data[r]) : null;
         return new ChunkFacts(transparent, orientation, frames, cicp, gamma, resolution, icc);
+    }
+
+    // TryReadInfo's answer from a header ReadHeader has read: for a file TryReadInfo refuses but the span decoder reads
+    // (an IHDR that is not the first chunk), so that a row reader still has its info.
+    internal static ImageInfo InfoOf(PngImage header)
+    {
+        TryMapLayout(header.ColorType, header.SourceBitDepth, header.TransparentColor is not null, out var channels, out var format);
+        return new ImageInfo(header.Width, header.Height, channels, format)
+        {
+            Format = ImageFormat.Png,
+            BitDepth = header.ColorType == 3 ? 8 : header.SourceBitDepth,
+            Orientation = header.Exif is { } exif ? ExifOrientation.Read(exif) : ImageOrientation.Normal,
+            ColorEncoding = MapColorEncoding(header.Cicp, header.Gamma, header.IccProfile),
+            Resolution = header.PhysicalDimensions is { } p
+                ? new Resolution(p.PixelsPerUnitX, p.PixelsPerUnitY, p.UnitIsMetre ? ResolutionUnit.PerMeter : ResolutionUnit.AspectRatio)
+                : null,
+        };
     }
 
     // The layout TryDecode produces. Indexed always expands to RGBA8; the rest keep

@@ -18,6 +18,7 @@ internal static class Names
     public const string CurrentParallel = "CurrentParallel";
     public const string CurrentReduced = "CurrentReduced";
     public const string Baseline = "Baseline";
+    public const string Streaming = "Streaming";
     public const string ImageSharp = "ImageSharp";
     public const string LibPng = "LibPng";
 
@@ -73,6 +74,39 @@ internal sealed class DecodeSetup
         (Names.InflateOnly, PngAblation.InflateOnly),
     ];
 
+    // Every row of png through PngImageDecoder.OpenRowReader (a non-seekable read of the bytes in memory) into rows.
+    private static void ReadStreaming(byte[] png, byte[] rows)
+    {
+        using var reader = PngImageDecoder.OpenRowReader(new ForwardOnlyStream(png), Abstractions.PixelFormat.Rgba32);
+        reader.ReadRows(rows, reader.Height);
+    }
+
+    /// <summary>A byte array read forward only, as a network or request stream is.</summary>
+    private sealed class ForwardOnlyStream(byte[] data) : Stream
+    {
+        private int _position;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            int n = Math.Min(buffer.Length, data.Length - _position);
+            data.AsSpan(_position, n).CopyTo(buffer);
+            _position += n;
+            return n;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     /// <param name="c">The case.</param>
     /// <param name="only">
     /// Set up just this contestant, without the cross-checks (which would run every other one): what
@@ -124,6 +158,20 @@ internal sealed class DecodeSetup
             if (Want(Names.CurrentNative))
             {
                 setup.Contestants.Add(new(Names.CurrentNative, () => Sink = PngReader.Decode(png)));
+            }
+
+            if (Want(Names.Streaming))
+            {
+                // The forward-only row reader over a stream of the file, every row into the same buffer layout. Its rows
+                // must be the span decode's before it is timed.
+                byte[] rows = Destination();
+                ReadStreaming(png, rows);
+                if (verify && !rows.AsSpan().SequenceEqual(current))
+                {
+                    throw new InvalidOperationException($"{c.Name}: the streaming reader's rows differ from TryDecodeIntoRgba8; refusing to benchmark.");
+                }
+
+                setup.Contestants.Add(new(Names.Streaming, () => ReadStreaming(png, rows)));
             }
 
             if (Settings.Ablate && only is null)
