@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Jpeg;
 using Shouldly;
 
@@ -101,6 +102,91 @@ public sealed class JpegFuzzTests
         var finished = await Task.WhenAny(work, Task.Delay(budget, TestContext.Current.CancellationToken));
         (finished == work).ShouldBeTrue($"fuzz run did not finish in {budget} (stuck at {current}, {progress} done)");
         await work;
+    }
+
+    private static int StreamIterations =>
+        int.TryParse(Environment.GetEnvironmentVariable("JPEG_STREAM_FUZZ_ITERATIONS"), out var n) && n > 0 ? n
+        : int.TryParse(Environment.GetEnvironmentVariable("JPEG_FUZZ_ITERATIONS"), out n) && n > 0 ? n : 300;
+
+    /// <summary>
+    /// The streaming reader (<see cref="JpegImageDecoder.CreateRowReader"/>) against the whole decode on the same damaged
+    /// streams: where <see cref="JpegImageDecoder.TryDecodeInto"/> succeeds the reader gives exactly its rows, fed in
+    /// random chunks (one byte at a time now and then) or async-only; where it fails the reader throws
+    /// <see cref="InvalidDataException"/> — and nothing else, ever. Set <c>JPEG_STREAM_FUZZ_ITERATIONS</c> (or <c>JPEG_FUZZ_ITERATIONS</c>, which it follows when unset) for a soak.
+    /// </summary>
+    [Fact]
+    public async Task MutatedStreams_StreamingMatchesDecodeInto()
+    {
+        var seeds = Seeds.Value;
+        var iterations = StreamIterations;
+        var seed = Seed;
+        string? current = null;
+        var progress = 0;
+        var work = Task.Run(() =>
+        {
+            var rng = new Random(seed ^ 0x5EED);
+            var scales = new[] { 1, 1, 1, 2, 4, 8 };
+            var formats = new[] { PixelFormat.Rgba32, PixelFormat.Rgb24, PixelFormat.Gray8, PixelFormat.Bgra32, PixelFormat.Rgba64 };
+            var feeds = new[] { Streaming.StreamingAssert.Feed.RandomChunks, Streaming.StreamingAssert.Feed.RandomChunks, Streaming.StreamingAssert.Feed.AsyncOnly, Streaming.StreamingAssert.Feed.OneByte };
+            for (var it = 0; it < iterations; ++it)
+            {
+                var (name, original) = seeds[rng.Next(seeds.Length)];
+                var how = "intact";
+                var mutant = rng.Next(16) == 0 ? original : Mutate(original, rng, out how);
+                var scale = scales[rng.Next(scales.Length)];
+                var format = formats[rng.Next(formats.Length)];
+                var feed = feeds[rng.Next(feeds.Length)];
+                current = $"iteration {it} (seed {seed}): {name}, {how}, 1/{scale}, {format}, {feed}";
+                StreamOne(mutant, scale, format, feed, it, current);
+                Volatile.Write(ref progress, it + 1);
+            }
+        }, TestContext.Current.CancellationToken);
+
+        var budget = TimeSpan.FromSeconds(Math.Max(60, iterations / 20));
+        var finished = await Task.WhenAny(work, Task.Delay(budget, TestContext.Current.CancellationToken));
+        (finished == work).ShouldBeTrue($"fuzz run did not finish in {budget} (stuck at {current}, {progress} done)");
+        await work;
+    }
+
+    private static void StreamOne(byte[] mutant, int scale, PixelFormat format, Streaming.StreamingAssert.Feed feed, int it, string context)
+    {
+        var options = scale == 1 ? null : new DecodeOptions { ScaleDenominator = scale };
+        byte[]? expected = null;
+        if (JpegImageDecoder.TryReadInfo(mutant, out var info))
+        {
+            var (w, h) = (options ?? DecodeOptions.Default).GetOutputSize(info);
+            if ((long)info.Width * info.Height > MaxPixels)
+                return;
+            var buffer = new byte[w * h * format.BytesPerPixel];
+            if (JpegImageDecoder.TryDecodeInto(mutant, buffer, w * format.BytesPerPixel, format, options, CancellationToken.None))
+                expected = buffer;
+        }
+
+        var sw = Stopwatch.StartNew();
+        byte[]? actual = null;
+        try
+        {
+            actual = Streaming.StreamingAssert.ReadAll(mutant, feed, input => JpegImageDecoder.CreateRowReader(input, format, options),
+                out _, out _, out _, seed: it + 1);
+        }
+        catch (InvalidDataException)
+        {
+        }
+        catch (Exception e)
+        {
+            throw new ShouldAssertException($"{context}: {e.GetType().Name}: {e.Message}", e);
+        }
+
+        sw.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(5), context);
+        if (expected is null)
+        {
+            actual.ShouldBeNull($"{context}: the whole decode rejects the stream, the reader accepted it");
+            return;
+        }
+
+        actual.ShouldNotBeNull($"{context}: the whole decode accepts the stream, the reader rejected it");
+        if (!actual.AsSpan().SequenceEqual(expected))
+            throw new ShouldAssertException($"{context}: rows differ from TryDecodeInto at byte {actual.AsSpan().CommonPrefixLength(expected)}");
     }
 
     /// <summary>

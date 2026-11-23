@@ -47,7 +47,7 @@ namespace Sdcb.SimdCodecs.Jpeg;
 /// samples; the later scan is entropy-decoded and dropped.</item>
 /// </list>
 /// </summary>
-internal ref struct JpegCore
+internal ref partial struct JpegCore
 {
     // Not readonly: an abbreviated table-specification stream (Tables) is parsed through the same reader first.
     private ReadOnlySpan<byte> _data;
@@ -133,7 +133,7 @@ internal ref struct JpegCore
     /// objects, so nothing — a table, a predictor, a pooled-buffer reference — can leak
     /// from one image into the next.
     /// </summary>
-    private sealed class DecoderState
+    internal sealed class DecoderState
     {
         public readonly int[] Order = new int[4];
         public readonly JpegHuffman[] HuffDc = { new(), new(), new(), new() };
@@ -165,7 +165,7 @@ internal ref struct JpegCore
         public static void Return(DecoderState s) => t_cached = s;
     }
 
-    private sealed class Component
+    internal sealed class Component
     {
         public int Id, H, V, Tq, Hd, Ha;
         public JpegHuffman? DcTable, AcTable; // the current scan's tables
@@ -232,7 +232,7 @@ internal ref struct JpegCore
     /// over several scans, keep every block's coefficients and run IDCT + output
     /// MCU row by MCU row once the scans are in.
     /// </summary>
-    private enum DecodeMode
+    internal enum DecodeMode
     {
         Undecided,
         Streaming,
@@ -253,6 +253,17 @@ internal ref struct JpegCore
     // computed exactly as in a whole-image decode, so the window's pixels are the whole decode's.
     private bool _hasWindow;
     private int _winX0, _winY0, _winW, _winY1;
+    private int _destY0;              // the output row at the start of _dest
+    private int _emitLimit;           // EmitRows writes rows below this one (OutY, or the end of a streaming band)
+    private bool _overrun;            // a read went past the end of _data (see Get8)
+
+    // Streaming decode progress (JpegCore.Streaming.cs; all instance fields stay in this declaration).
+    private int _sNextMcu;            // the next MCU row to decode
+    private bool _sZeroFill;          // the scan ended early: the MCU rows left are zero samples
+    private int _sTail;               // TailRows … TailDone
+    private int _sTailMarker;
+    private int _sMinInput;           // after a unit was undone: the input it waits for before trying again
+    private int _sRowBytes;           // compressed bytes the last MCU row took: the input to wait for before the next
     private byte[]? _winScratch;      // one full output row, when the window drops columns
     private bool _isRgb;
     private bool _chroma16;
@@ -285,7 +296,12 @@ internal ref struct JpegCore
     public JpegInfo ParseInfo()
     {
         DecodeHeader(ScanMode.Header);
+        return FrameInfo();
+    }
 
+    /// <summary>The <see cref="JpegInfo"/> of the frame header just read (what <see cref="ParseInfo"/> returns).</summary>
+    private readonly JpegInfo FrameInfo()
+    {
         // Header-scan mode returns before the frame header computes the sampling
         // maxima, so derive subsampling directly from the component factors here.
         var hMax = 1;
@@ -360,26 +376,16 @@ internal ref struct JpegCore
         _stride = stride;
         _format = format;
         _outRow = 0;
-        _outBpp = format switch
-        {
-            JpegPixelFormat.Rgba32 or JpegPixelFormat.Bgra32 => 4,
-            JpegPixelFormat.Rgb24 or JpegPixelFormat.Bgr24 => 3,
-            _ => 1,
-        };
+        _outBpp = BytesPerPixel(format);
         if (!_hasWindow)
             (_winX0, _winY0, _winW, _winY1) = (0, 0, OutX, OutY);
         if (_winX0 != 0 || _winW != OutX)
             _winScratch = ArrayPool<byte>.Shared.Rent(OutX * _outBpp);
+        _destY0 = _winY0;
+        _emitLimit = OutY;
         _mode = _progressive ? DecodeMode.Coefficients : DecodeMode.Undecided;
         _streamDone = false;
-        PrepareOutput();
-        // Grey from a YCbCr frame is its Y plane (see JpegPixelFormat.Gray8): the chroma blocks are still
-        // entropy-decoded, as the scans interleave them, but never inverse-transformed, upsampled or
-        // colour-converted. RGB-coded, CMYK and YCCK frames have no luma plane; their grey is the luma
-        // of the RGB row.
-        _lumaOnly = format == JpegPixelFormat.Gray8 && ImgN == 3 && !_isRgb;
-        if (format is JpegPixelFormat.Rgb24 or JpegPixelFormat.Bgr24 || (format == JpegPixelFormat.Gray8 && ImgN != 1 && !_lumaOnly))
-            _packScratch = ArrayPool<byte>.Shared.Rent(OutX * 4);
+        PrepareFormat(format);
 
         var reachedEoi = DecodeScans();
 
@@ -394,6 +400,19 @@ internal ref struct JpegCore
         {
             ZeroFillFrom(0);
         }
+    }
+
+    /// <summary>The output set-up both a whole decode and a streaming one make once the frame header is read.</summary>
+    private void PrepareFormat(JpegPixelFormat format)
+    {
+        PrepareOutput();
+        // Grey from a YCbCr frame is its Y plane (see JpegPixelFormat.Gray8): the chroma blocks are still
+        // entropy-decoded, as the scans interleave them, but never inverse-transformed, upsampled or
+        // colour-converted. RGB-coded, CMYK and YCCK frames have no luma plane; their grey is the luma
+        // of the RGB row.
+        _lumaOnly = format == JpegPixelFormat.Gray8 && ImgN == 3 && !_isRgb;
+        if (format is JpegPixelFormat.Rgb24 or JpegPixelFormat.Bgr24 || (format == JpegPixelFormat.Gray8 && ImgN != 1 && !_lumaOnly))
+            _packScratch = ArrayPool<byte>.Shared.Rent(OutX * 4);
     }
 
     /// <summary>
@@ -523,7 +542,9 @@ internal ref struct JpegCore
 
     private void EmitRows()
     {
-        while (_outRow < OutY)
+        // _emitLimit is OutY for a whole decode; a streaming decode stops at the end of the caller's band, leaving the
+        // rows the strips can still give pending until the next call.
+        while (_outRow < _emitLimit)
         {
             for (var k = 0; k < ImgN; ++k)
             {
@@ -644,13 +665,13 @@ internal ref struct JpegCore
     /// <summary>Where output row <paramref name="j"/> (inside the window) is written: its destination row, or the
     /// full-row scratch when the window drops columns.</summary>
     private readonly Span<byte> TargetRow(int j) =>
-        _winScratch != null ? _winScratch.AsSpan(0, OutX * _outBpp) : _dest.Slice((j - _winY0) * _stride, OutX * _outBpp);
+        _winScratch != null ? _winScratch.AsSpan(0, OutX * _outBpp) : _dest.Slice((j - _destY0) * _stride, OutX * _outBpp);
 
     /// <summary>Copies the window's columns of row <paramref name="j"/> from the scratch row to the destination.</summary>
     private readonly void FlushRow(int j)
     {
         if (_winScratch != null)
-            _winScratch.AsSpan(_winX0 * _outBpp, _winW * _outBpp).CopyTo(_dest.Slice((j - _winY0) * _stride, _winW * _outBpp));
+            _winScratch.AsSpan(_winX0 * _outBpp, _winW * _outBpp).CopyTo(_dest.Slice((j - _destY0) * _stride, _winW * _outBpp));
     }
 
     /// <summary>Writes the RGBA (or BGRA) row <paramref name="rgba"/> as the 3- or 1-byte output format.</summary>
@@ -748,9 +769,25 @@ internal ref struct JpegCore
 
     // ============================== byte reader ==============================
 
-    private bool AtEof => _pos >= _data.Length;
+    // Every read past the end of _data reads 0 (as stb does past end of file) and sets _overrun: a streaming decode,
+    // whose _data is only the input buffered so far, then knows the result depends on bytes not yet there.
 
-    private byte Get8() => _pos < _data.Length ? _data[_pos++] : (byte)0;
+    /// <summary>True at the end of the data (and so, for a streaming decode, possibly short of it).</summary>
+    private bool AtEnd()
+    {
+        if (_pos < _data.Length)
+            return false;
+        _overrun = true;
+        return true;
+    }
+
+    private byte Get8()
+    {
+        if (_pos < _data.Length)
+            return _data[_pos++];
+        _overrun = true;
+        return 0;
+    }
 
     private int Get16()
     {
@@ -758,7 +795,18 @@ internal ref struct JpegCore
         return (hi << 8) | Get8();
     }
 
-    private void Skip(int n) => _pos = Math.Min(_data.Length, _pos + n);
+    private void Skip(int n)
+    {
+        if (n > _data.Length - _pos)
+        {
+            _overrun = true;
+            _pos = _data.Length;
+        }
+        else
+        {
+            _pos += n;
+        }
+    }
 
     // ============================== bit reader ==============================
     //
@@ -1631,6 +1679,57 @@ internal ref struct JpegCore
     private void DecodeStreamingScan()
     {
         Span<short> data = stackalloc short[64];
+        Span<int> blockComp = stackalloc int[MaxBlocksPerMcu];
+        Span<int> blockDx = stackalloc int[MaxBlocksPerMcu];
+        Span<int> blockDy = stackalloc int[MaxBlocksPerMcu];
+        var blocks = BlockOrder(blockComp, blockDx, blockDy);
+        for (var m = 0; m < _imgMcuY; ++m)
+        {
+            if (DecodeStreamingRow(m, data, blockComp.Slice(0, blocks), blockDx.Slice(0, blocks), blockDy.Slice(0, blocks)))
+            {
+                // The scan ended early: the rest of the frame is zero samples.
+                CommitMcuRow(m);
+                ZeroFillFrom(m + 1);
+                return;
+            }
+
+            CommitMcuRow(m);
+        }
+    }
+
+    /// <summary>
+    /// The blocks of one interleaved MCU of the current scan, in scan order: block b belongs to component
+    /// <paramref name="blockComp"/>[b] at (<paramref name="blockDx"/>[b], <paramref name="blockDy"/>[b]) in its H×V grid.
+    /// Returns the block count (≤ <see cref="MaxBlocksPerMcu"/>).
+    /// </summary>
+    private readonly int BlockOrder(Span<int> blockComp, Span<int> blockDx, Span<int> blockDy)
+    {
+        var blocks = 0;
+        for (var k = 0; k < _scanN; ++k)
+        {
+            var c = _comp[_order[k]];
+            for (var y = 0; y < c.V; ++y)
+            {
+                for (var x = 0; x < c.H; ++x)
+                {
+                    blockComp[blocks] = _order[k];
+                    blockDx[blocks] = x;
+                    blockDy[blocks++] = y;
+                }
+            }
+        }
+
+        return blocks;
+    }
+
+    /// <summary>
+    /// Entropy-decodes and inverse-transforms MCU row <paramref name="m"/> of the streaming scan into its strip half,
+    /// without committing it. Returns true when the scan ended inside the row: the rest of the row is zero samples, and so
+    /// is every later row.
+    /// </summary>
+    private bool DecodeStreamingRow(int m, scoped Span<short> data, scoped ReadOnlySpan<int> blockComp,
+        scoped ReadOnlySpan<int> blockDx, scoped ReadOnlySpan<int> blockDy)
+    {
         if (_scanN == 1)
         {
             // Single-component frame: its own block grid, no MCU padding; an "MCU
@@ -1639,71 +1738,34 @@ internal ref struct JpegCore
             var c = _comp[n];
             var w = (c.X + 7) >> 3;
             var h = (c.Y + 7) >> 3;
-            for (var m = 0; m < _imgMcuY; ++m)
-            {
-                var by0 = m * c.V;
-                var by1 = Math.Min(h, by0 + c.V);
-                for (var by = by1; by < by0 + c.V; ++by)
-                    ZeroBlockRow(c, by);
-                var end = DecodeSingleRows(m, n, by0, by1, w, data);
-                if (end >= 0)
-                {
-                    var (eby, ebx) = Math.DivRem(end, w);
-                    for (var x = ebx + 1; x < w; ++x)
-                        ZeroBlock(c, x, eby);
-                    for (var y = eby + 1; y < by1; ++y)
-                        ZeroBlockRow(c, y);
-                    CommitMcuRow(m);
-                    ZeroFillFrom(m + 1);
-                    return;
-                }
-
-                CommitMcuRow(m);
-            }
+            var by0 = m * c.V;
+            var by1 = Math.Min(h, by0 + c.V);
+            for (var by = by1; by < by0 + c.V; ++by)
+                ZeroBlockRow(c, by);
+            var end = DecodeSingleRows(m, n, by0, by1, w, data);
+            if (end < 0)
+                return false;
+            var (eby, ebx) = Math.DivRem(end, w);
+            for (var x = ebx + 1; x < w; ++x)
+                ZeroBlock(c, x, eby);
+            for (var y = eby + 1; y < by1; ++y)
+                ZeroBlockRow(c, y);
+            return true;
         }
-        else
+
+        // Interleaved: full MCU sweep, h×v blocks per component per MCU, in scan order.
+        var i = DecodeInterleavedRow(m, data, blockComp, blockDx, blockDy);
+        if (i < 0)
+            return false;
+        for (var k = 0; k < ImgN; ++k)
         {
-            // Interleaved: full MCU sweep, h×v blocks per component per MCU, in scan order.
-            Span<int> blockComp = stackalloc int[MaxBlocksPerMcu];
-            Span<int> blockDx = stackalloc int[MaxBlocksPerMcu];
-            Span<int> blockDy = stackalloc int[MaxBlocksPerMcu];
-            var blocks = 0;
-            for (var k = 0; k < _scanN; ++k)
-            {
-                var c = _comp[_order[k]];
-                for (var y = 0; y < c.V; ++y)
-                {
-                    for (var x = 0; x < c.H; ++x)
-                    {
-                        blockComp[blocks] = _order[k];
-                        blockDx[blocks] = x;
-                        blockDy[blocks++] = y;
-                    }
-                }
-            }
-
-            for (var m = 0; m < _imgMcuY; ++m)
-            {
-                var i = DecodeInterleavedRow(m, data, blockComp.Slice(0, blocks), blockDx.Slice(0, blocks), blockDy.Slice(0, blocks));
-                if (i >= 0)
-                {
-                    // The scan ended early: the rest of the frame is zero samples.
-                    for (var k = 0; k < ImgN; ++k)
-                    {
-                        var c = _comp[k];
-                        for (var by = m * c.V; by < (m + 1) * c.V; ++by)
-                            for (var bx = (i + 1) * c.H; bx < _imgMcuX * c.H; ++bx)
-                                ZeroBlock(c, bx, by);
-                    }
-
-                    CommitMcuRow(m);
-                    ZeroFillFrom(m + 1);
-                    return;
-                }
-
-                CommitMcuRow(m);
-            }
+            var c = _comp[k];
+            for (var by = m * c.V; by < (m + 1) * c.V; ++by)
+                for (var bx = (i + 1) * c.H; bx < _imgMcuX * c.H; ++bx)
+                    ZeroBlock(c, bx, by);
         }
+
+        return true;
     }
 
     /// <summary>
@@ -2211,7 +2273,7 @@ internal ref struct JpegCore
             m = GetMarker();
             while (m == 0xff)
             {
-                if (AtEof)
+                if (AtEnd())
                     throw Err("no SOF");
                 m = GetMarker();
             }
@@ -2239,7 +2301,7 @@ internal ref struct JpegCore
             while (true)
             {
                 int m = GetMarker();
-                if (m == 0xd9 || (m == 0xff && AtEof))
+                if (m == 0xd9 || (m == 0xff && AtEnd()))
                     break;
                 if (!ProcessMarker(m))
                     throw Err($"JPEG tables: bad or unsupported marker 0x{m:X2}");
@@ -2259,12 +2321,12 @@ internal ref struct JpegCore
     /// </summary>
     private byte SkipJunkAtEnd()
     {
-        while (!AtEof)
+        while (!AtEnd())
         {
             var x = Get8();
             while (x == 0xff)
             {
-                if (AtEof)
+                if (AtEnd())
                     return 0xff;
                 x = Get8();
                 if (x != 0x00 && x != 0xff)

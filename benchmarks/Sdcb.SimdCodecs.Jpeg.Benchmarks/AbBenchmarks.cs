@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Reports;
+using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Jpeg;
 
 namespace Sdcb.SimdCodecs.Jpeg.Benchmarks;
@@ -59,6 +60,13 @@ public class AbBenchmarks
         _rgba = new byte[info.Width * info.Height * 4];
         _turbo = new TurboDecoder(fast: false);
         BaselineDecoder.DecodeTo(_jpeg, _rgba);
+
+        // A benchmark refuses to time wrong output: the streaming reader's rows must be the span decode's.
+        var expected = new byte[_rgba.Length];
+        JpegDecoder.DecodeTo(_jpeg, expected);
+        Streaming();
+        if (!_rgba.AsSpan().SequenceEqual(expected))
+            throw new InvalidOperationException($"{Case}: the streaming reader's rows differ from JpegDecoder.DecodeTo.");
     }
 
     [GlobalCleanup]
@@ -69,6 +77,24 @@ public class AbBenchmarks
 
     [Benchmark]
     public (int, int) Current() => JpegDecoder.DecodeTo(_jpeg, _rgba);
+
+    /// <summary>
+    /// The streaming reader (<see cref="JpegImageDecoder.OpenRowReader"/>) over the same bytes as a stream, every row read
+    /// into the same buffer, 64 KB of input at a time: what a forward-only decode costs over the span decode
+    /// (<see cref="Current"/>). Progressive files take its buffered fallback.
+    /// </summary>
+    [Benchmark]
+    public (int, int) Streaming()
+    {
+        using var reader = JpegImageDecoder.OpenRowReader(new MemoryStream(_jpeg, writable: false), PixelFormat.Rgba32);
+        reader.Initialize();
+        while (reader.RowsRead < reader.Height)
+            reader.ReadRows(_rgba.AsSpan(reader.RowsRead * reader.Width * 4), StreamBand);
+        return (reader.Width, reader.Height);
+    }
+
+    /// <summary>Rows per <see cref="Streaming"/> read: a typical consumer band.</summary>
+    private const int StreamBand = 16;
 
     [Benchmark]
     public (int, int) LibjpegTurbo() => _turbo!.DecodeRgba(_jpeg, _rgba);
@@ -93,7 +119,7 @@ public class AbBenchmarks
     public (int, int) EntropyCore() =>
         JpegDiagnostics.DecodeTo(_jpeg, _rgba, JpegAblation.SkipIdct | JpegAblation.SkipUpsample | JpegAblation.SkipColor | JpegAblation.SkipBlockSink);
 
-    public static readonly string[] CoreMethods = [nameof(Baseline), nameof(Current), nameof(LibjpegTurbo)];
+    public static readonly string[] CoreMethods = [nameof(Baseline), nameof(Current), nameof(Streaming), nameof(LibjpegTurbo)];
     public static readonly string[] AblationMethods = [nameof(NoIdct), nameof(NoUpsample), nameof(NoColor), nameof(EntropyOnly), nameof(EntropyCore), nameof(LibjpegTurboPlanes)];
 
     /// <summary>Per-file medians → markdown: speed vs baseline and turbo, and stage costs by ablation.</summary>
@@ -115,14 +141,15 @@ public class AbBenchmarks
         var sb = new StringBuilder();
         sb.AppendLine($"Baseline: {baselineLabel}. Times are BenchmarkDotNet medians in ms.");
         sb.AppendLine();
-        sb.Append("| File | turbo | baseline | current | current ÷ baseline | current ÷ turbo |");
+        sb.Append("| File | turbo | baseline | current | streaming | current ÷ baseline | current ÷ turbo | streaming ÷ current |");
         if (ablated) sb.Append(" IDCT | upsample | colour | entropy + rest | entropy | rest | turbo planes | turbo up+colour |");
         sb.AppendLine();
-        sb.Append("|---|---:|---:|---:|---:|---:|");
+        sb.Append("|---|---:|---:|---:|---:|---:|---:|---:|");
         if (ablated) sb.Append("---:|---:|---:|---:|---:|---:|---:|---:|");
         sb.AppendLine();
 
-        double logBase = 0, logTurbo = 0;
+        double logBase = 0, logTurbo = 0, logStream = 0;
+        var streamed = 0;
         var n = 0;
         foreach (var c in cases)
         {
@@ -133,7 +160,15 @@ public class AbBenchmarks
             n++;
             logBase += Math.Log(current.Value / baseline.Value);
             logTurbo += Math.Log(current.Value / turbo.Value);
-            sb.Append($"| `{c}` | {Ms(turbo.Value)} | {Ms(baseline.Value)} | {Ms(current.Value)} | {X(current.Value / baseline.Value)} | {X(current.Value / turbo.Value)} |");
+            var streaming = Get(c, nameof(Streaming));
+            if (streaming is { } st)
+            {
+                streamed++;
+                logStream += Math.Log(st / current.Value);
+            }
+
+            sb.Append($"| `{c}` | {Ms(turbo.Value)} | {Ms(baseline.Value)} | {Ms(current.Value)} | {(streaming is { } s1 ? Ms(s1) : "—")} | " +
+                      $"{X(current.Value / baseline.Value)} | {X(current.Value / turbo.Value)} | {(streaming is { } s2 ? X(s2 / current.Value) : "—")} |");
             if (ablated)
             {
                 string Cost(string m) => Get(c, m) is { } v ? Ms(current.Value - v) : "—";
@@ -149,7 +184,8 @@ public class AbBenchmarks
         }
 
         if (n > 0)
-            sb.AppendLine($"| **geomean** | | | | **{X(Math.Exp(logBase / n))}** | **{X(Math.Exp(logTurbo / n))}** |{(ablated ? " | | | | | | | |" : "")}");
+            sb.AppendLine($"| **geomean** | | | | | **{X(Math.Exp(logBase / n))}** | **{X(Math.Exp(logTurbo / n))}** | " +
+                          $"{(streamed > 0 ? $"**{X(Math.Exp(logStream / streamed))}**" : "")} |{(ablated ? " | | | | | | | |" : "")}");
         if (ablated)
         {
             sb.AppendLine();
