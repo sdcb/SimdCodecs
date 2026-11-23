@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
@@ -201,12 +202,35 @@ public sealed class QoiImageDecoder : IStreamingImageDecoder
             var rowBytes = _width * Format.BytesPerPixel;
             Span<uint> chunk = stackalloc uint[QoiDecoder.RowChunk];
             var attempt = _reader;
+            // Tightly packed RGBA or BGRA rows decode as one run of pixels, as many rows a call as half the buffered
+            // bytes hold at the previous rows' rate: a call per row costs the decode several percent.
+            var batch = stride == rowBytes && (Format == PixelFormat.Rgba32 || Format == PixelFormat.Bgra32);
             while (rowsWritten < rowCount)
             {
                 var left = input.Length - consumed;
                 if (!isFinal && left < Math.Min(2L * _lastRowBytes + 16, _rowWorstBytes))
                     return OperationStatus.NeedMoreData;
                 attempt.Position = consumed;
+                var k = batch && _lastRowBytes > 0 ? (int)Math.Min(rowCount - rowsWritten, left / (2L * _lastRowBytes)) : 1;
+                if (k > 1)
+                {
+                    var band = destination.Slice(rowsWritten * stride, k * rowBytes);
+                    if (attempt.TryRead(input, MemoryMarshal.Cast<byte, uint>(band)))
+                    {
+                        if (Format == PixelFormat.Bgra32)
+                            PixelConverter.ConvertRow(band, PixelFormat.Rgba32, band, PixelFormat.Bgra32, k * _width);
+                        _reader = attempt;
+                        _lastRowBytes = Math.Max(1, (attempt.Position - consumed) / k);
+                        consumed = attempt.Position;
+                        rowsWritten += k;
+                        _retryAt = 0;
+                        continue;
+                    }
+                    // The rows were denser than the ones before: go on a row at a time.
+                    attempt = _reader;
+                    attempt.Position = consumed;
+                    batch = false;
+                }
                 if (!QoiDecoder.TryDecodeRow(ref attempt, input, destination.Slice(rowsWritten * stride, rowBytes), _width, Format, chunk))
                 {
                     // The bytes left end inside this row; they start the next call's input. Wait for twice as many,
