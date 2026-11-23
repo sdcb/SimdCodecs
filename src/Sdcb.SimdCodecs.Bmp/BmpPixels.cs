@@ -97,6 +97,8 @@ internal static class BmpPixels
     /// its pixels) into <paramref name="output"/> in the planned target format.
     /// </summary>
     /// <returns>The row's pixels ORed together in a 32-bit layout, for the kinds that track alpha; 0 otherwise.</returns>
+    // Inlined into the span decoder's row loop: called a row at a time, a call per row is measurable on small images.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static uint DecodeRow(RowKind kind, in BmpHeader h, PixelFormat target, ReadOnlySpan<byte> source, Span<byte> output,
         ReadOnlySpan<uint> lut, ReadOnlySpan<byte> control, uint set, Fields? fields, int tier)
     {
