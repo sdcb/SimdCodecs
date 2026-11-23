@@ -202,8 +202,10 @@ public sealed class QoiImageDecoder : IStreamingImageDecoder
             var rowBytes = _width * Format.BytesPerPixel;
             Span<uint> chunk = stackalloc uint[QoiDecoder.RowChunk];
             var attempt = _reader;
-            // Tightly packed RGBA or BGRA rows decode as one run of pixels, as many rows a call as half the buffered
-            // bytes hold at the previous rows' rate: a call per row costs the decode several percent.
+            // Tightly packed RGBA or BGRA rows decode as one run of pixels, as many rows a call as the buffered bytes
+            // hold at 5 bytes a pixel, the most a row can take: such a batch cannot run out, so no work is thrown
+            // away. (A call per row costs the decode several percent; a batch guessed from the previous rows' rate
+            // that ran out threw away up to a buffer's worth of decoding.)
             var batch = stride == rowBytes && (Format == PixelFormat.Rgba32 || Format == PixelFormat.Bgra32);
             while (rowsWritten < rowCount)
             {
@@ -211,7 +213,7 @@ public sealed class QoiImageDecoder : IStreamingImageDecoder
                 if (!isFinal && left < Math.Min(2L * _lastRowBytes + 16, _rowWorstBytes))
                     return OperationStatus.NeedMoreData;
                 attempt.Position = consumed;
-                var k = batch && _lastRowBytes > 0 ? (int)Math.Min(rowCount - rowsWritten, left / (2L * _lastRowBytes)) : 1;
+                var k = batch ? (int)Math.Min(rowCount - rowsWritten, left / _rowWorstBytes) : 1;
                 if (k > 1)
                 {
                     var band = destination.Slice(rowsWritten * stride, k * rowBytes);
@@ -226,7 +228,7 @@ public sealed class QoiImageDecoder : IStreamingImageDecoder
                         _retryAt = 0;
                         continue;
                     }
-                    // The rows were denser than the ones before: go on a row at a time.
+                    // Not reached (k rows fit in the bytes left); should it be, go on a row at a time.
                     attempt = _reader;
                     attempt.Position = consumed;
                     batch = false;
