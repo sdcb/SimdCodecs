@@ -46,6 +46,21 @@ byte[] rle = BmpEncoder.Encode(rgba, width, height, PixelFormat.Rgba32,
 
 Input is any `PixelFormat` (B, G, R input written as 24- or 32-bit is copied as it is), or 1 / 3 / 4 channels. `BmpEncoder.EncodeDib` writes a packed DIB; with `iconImage: true`, an icon or cursor image: a 40-byte header with the doubled height, then the AND mask (alpha below 128 is transparent).
 
+## Streaming
+
+`BmpImageDecoder.CreateRowReader` reads rows top to bottom from a `StreamInput`, synchronously or asynchronously, holding a band of rows rather than the file. Its rows equal `TryDecodeInto`'s byte for byte, and its `Info` equals `TryReadInfo`'s.
+
+| Bitmap | Stream that cannot seek | Seekable stream |
+|---|---|---|
+| Uncompressed (`BI_RGB`, `BI_BITFIELDS`, `BI_ALPHABITFIELDS`, every depth and palette), top-down | Streams | Streams |
+| The same, bottom-up | Falls back | Streams: one forward pass to the end of the pixels, then a seek back to each band of about 256 KiB of stored rows, handed out last stored row first. The pixels are read twice |
+| 32-bit `BI_RGB` read to a layout with alpha | Falls back: its fourth byte is alpha only if some pixel's is not 0, which the last pixel can settle | Streams after a forward pass that reads every fourth byte (the bottom-up pass when there is one) |
+| RLE, Huffman 1D, `BI_PNG`; a layout other than 8-bit RGBA / BGRA / RGB / BGR / grey; decode options other than the whole image; a pixel offset into the headers or more than 1 MiB in; a V5 profile stored after the pixels | Falls back | Falls back |
+
+A `StreamInput` made with `retainConsumed: true` counts as seekable here: it goes back within the bytes it keeps (the file, then, but not a decoded frame). A reader that falls back reads the whole stream and decodes it with `TryDecodeInto` behind the same API (`IsStreaming` false). The profile case falls back because the image's `ColorEncoding` comes from the profile, and the reader's `Info` is settled before any row. A truncated stream throws `InvalidDataException` when the rows reach the missing bytes (at `Initialize` for a seekable stream, whose length says so).
+
+`BmpImageEncoder.Create` returns a streaming session (`IsStreaming` true) when `TopDown` is set, `Format` names a direct-colour layout (`Rgb555`, `Rgb565`, `Rgb24`, `Rgb32`, `Argb32`) and `Rle` is off: the file's size and offsets are then known before any pixel, so the headers go out with the frame and each band of rows as it is written, the profile at `Commit`. The bytes equal the buffered session's for the same options. Bottom-up files, `Auto` (which scans the image for alpha) and palettes are collected and encoded at `Commit`.
+
 ## Decisions
 
 Where the documentation leaves a choice to the decoder, it is made as WIC (Windows' own decoder) makes it, with the exceptions marked; the test suite holds every one of them against WIC, ImageMagick or a hand-built stream.

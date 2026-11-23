@@ -70,7 +70,64 @@ internal static class BmpPixels
 
     // ---- Uncompressed ------------------------------------------------------------------------------------------
 
-    private enum RowKind { Indexed, Copy24, Expand24, Swap24, Shuffle32, Pack32, Expand16, Fields }
+    internal enum RowKind { Indexed, Copy24, Expand24, Swap24, Shuffle32, Pack32, Expand16, Fields }
+
+    /// <summary>
+    /// How an uncompressed bitmap's rows decode to <paramref name="format"/>, chosen once per image: the row kernel, its
+    /// shuffle <paramref name="control"/> (4 bytes) and the bits it <paramref name="set"/>s, and the format it writes
+    /// (<paramref name="target"/>: <paramref name="format"/>, or RGBA when the output needs a converted detour).
+    /// </summary>
+    internal static RowKind PlanRows(BmpHeader h, PixelFormat format, Span<byte> control, out uint set, out PixelFormat target)
+    {
+        target = format;
+        var kind = Choose(h, format, control, out set);
+        if (kind is null)
+        {
+            target = PixelFormat.Rgba32;
+            kind = Choose(h, target, control, out set) ?? RowKind.Fields;
+        }
+        return kind.Value;
+    }
+
+    /// <summary>The per-mask channel decoder <see cref="RowKind.Fields"/> needs; null for any other kind.</summary>
+    internal static Fields? FieldsFor(RowKind kind, BmpHeader h) => kind == RowKind.Fields ? new Fields(h) : null;
+
+    /// <summary>
+    /// Decodes one stored row (<paramref name="source"/>: the row, or as much of the last row as the file holds, at least
+    /// its pixels) into <paramref name="output"/> in the planned target format.
+    /// </summary>
+    /// <returns>The row's pixels ORed together in a 32-bit layout, for the kinds that track alpha; 0 otherwise.</returns>
+    internal static uint DecodeRow(RowKind kind, BmpHeader h, PixelFormat target, ReadOnlySpan<byte> source, Span<byte> output,
+        ReadOnlySpan<uint> lut, ReadOnlySpan<byte> control, uint set, Fields? fields, int tier)
+    {
+        var width = h.Width;
+        switch (kind)
+        {
+            case RowKind.Indexed:
+                ExpandIndexed(source, output, width, h.BitsPerPixel, lut, target.BytesPerPixel);
+                return 0;
+            case RowKind.Copy24:
+                source[..(3 * width)].CopyTo(output);
+                return 0;
+            case RowKind.Expand24:
+                BmpKernels.Expand24(source, output, width, swap: target == PixelFormat.Rgba32, tier);
+                return 0;
+            case RowKind.Swap24:
+                BmpKernels.Swap24(source, output, width, tier);
+                return 0;
+            case RowKind.Shuffle32:
+                return BmpKernels.Shuffle32(source, output, width, control, set, tier);
+            case RowKind.Pack32:
+                BmpKernels.Pack32To24(source, output, width, control, tier);
+                return 0;
+            case RowKind.Expand16:
+                BmpKernels.Expand16(source, output, width, green6: h.GreenMask == 0x07E0,
+                    rgba: target == PixelFormat.Rgba32, BmpKernels.BestArithmeticTier);
+                return 0;
+            default:
+                return fields!.Decode(source, output, width, h.BitsPerPixel);
+        }
+    }
 
     /// <returns>Every decoded pixel ORed together in the output's 32-bit layout, for 4-byte outputs (so its top
     /// byte, alpha in both RGBA and BGRA, says whether any pixel had alpha); 0 otherwise.</returns>
@@ -82,17 +139,11 @@ internal static class BmpPixels
         var tier = BmpKernels.BestTier;
 
         // The row kernel, chosen once. A layout without one decodes to RGBA in a pooled row, then converts.
-        var target = format;
         Span<byte> control = stackalloc byte[4];
-        var kind = Choose(h, format, control, out var set);
-        if (kind is null)
-        {
-            target = PixelFormat.Rgba32;
-            kind = Choose(h, target, control, out set) ?? RowKind.Fields;
-        }
+        var kind = PlanRows(h, format, control, out var set, out var target);
         Span<uint> lut = stackalloc uint[bpp <= 8 ? 256 : 0];
         if (bpp <= 8) BuildPalette(data, h, target, lut);
-        var fields = kind == RowKind.Fields ? new Fields(h) : null;
+        var fields = FieldsFor(kind, h);
         byte[]? scratch = target == format ? null : ArrayPool<byte>.Shared.Rent(width * 4);
         uint seen = 0;
         try
@@ -105,34 +156,7 @@ internal static class BmpPixels
                 var y = h.TopDown ? r : height - 1 - r;
                 var row = destination.Slice(y * rowStride, width * outBytes);
                 var output = scratch is null ? row : scratch.AsSpan(0, width * 4);
-                switch (kind)
-                {
-                    case RowKind.Indexed:
-                        ExpandIndexed(source, output, width, bpp, lut, target.BytesPerPixel);
-                        break;
-                    case RowKind.Copy24:
-                        source[..(3 * width)].CopyTo(output);
-                        break;
-                    case RowKind.Expand24:
-                        BmpKernels.Expand24(source, output, width, swap: target == PixelFormat.Rgba32, tier);
-                        break;
-                    case RowKind.Swap24:
-                        BmpKernels.Swap24(source, output, width, tier);
-                        break;
-                    case RowKind.Shuffle32:
-                        seen |= BmpKernels.Shuffle32(source, output, width, control, set, tier);
-                        break;
-                    case RowKind.Pack32:
-                        BmpKernels.Pack32To24(source, output, width, control, tier);
-                        break;
-                    case RowKind.Expand16:
-                        BmpKernels.Expand16(source, output, width, green6: h.GreenMask == 0x07E0,
-                            rgba: target == PixelFormat.Rgba32, BmpKernels.BestArithmeticTier);
-                        break;
-                    default:
-                        seen |= fields!.Decode(source, output, width, bpp);
-                        break;
-                }
+                seen |= DecodeRow(kind, h, target, source, output, lut, control, set, fields, tier);
                 if (scratch is not null)
                     PixelConverter.ConvertRow(output, 4, SampleFormat.UInt8, row, format, width);
             }
@@ -198,7 +222,7 @@ internal static class BmpPixels
     };
 
     /// <summary>Arbitrary channel masks, a pixel at a time, to RGBA or BGRA.</summary>
-    private sealed class Fields
+    internal sealed class Fields
     {
         private readonly Channel _r, _g, _b, _a;
 

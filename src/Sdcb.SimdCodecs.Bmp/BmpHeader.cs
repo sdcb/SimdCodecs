@@ -54,6 +54,10 @@ internal readonly struct BmpHeader
     public int IccOffset { get; private init; }
     public int IccLength { get; private init; }
 
+    /// <summary>A prefix's header (<see cref="ReadFile(ReadOnlySpan{byte}, bool)"/>): an embedded profile is declared
+    /// whose bytes are not in the prefix, so whether it is used depends on the rest of the file.</summary>
+    public bool IccBeyondPrefix { get; private init; }
+
     /// <summary>Bytes per stored row of an uncompressed bitmap: whole 32-bit words.</summary>
     public int Stride => (int)(((long)Width * BitsPerPixel + 31) / 32 * 4);
 
@@ -72,6 +76,26 @@ internal readonly struct BmpHeader
         return header[0] == 'B' && header[1] == 'A' && header[14] == 'B' && header[15] == 'M';
     }
 
+    /// <summary>
+    /// How much of a file <see cref="ReadFile(ReadOnlySpan{byte}, bool)"/> with <c>prefix</c> needs: the larger of the
+    /// pixel offset (<paramref name="pixelOffset"/>, from the file header) and 16 bytes past the bitmap header. −1 when
+    /// <paramref name="data"/> is too short to tell yet; 0 when its first bytes already show a file
+    /// <see cref="ReadFile(ReadOnlySpan{byte})"/> refuses.
+    /// </summary>
+    public static long PrefixLength(ReadOnlySpan<byte> data, out long pixelOffset)
+    {
+        pixelOffset = 0;
+        if (data.Length < 2) return -1;
+        if (data[0] != 'B' || data[1] is not ((byte)'M' or (byte)'A')) return 0;
+        var fileHeader = data[1] == 'A' ? 14 : 0;
+        if (data.Length < fileHeader + 18) return -1;
+        if (fileHeader != 0 && (data[14] != 'B' || data[15] != 'M')) return 0;
+        var size = BinaryPrimitives.ReadUInt32LittleEndian(data[(fileHeader + 14)..]);
+        if (!IsHeaderSize(size)) return 0;
+        pixelOffset = BinaryPrimitives.ReadUInt32LittleEndian(data[(fileHeader + 10)..]);
+        return Math.Max(pixelOffset, fileHeader + 14 + size + 16);
+    }
+
     // Core (12); OS/2 2.x, cut after any of its fields (16 to 40 in 4-byte steps, then 42, 44, 46, 48, 52, 56,
     // 60 and 64), which also covers the 40-, 52- and 56-byte Windows headers; V4 (108); V5 (124, or longer).
     private static bool IsHeaderSize(uint size) =>
@@ -80,7 +104,16 @@ internal readonly struct BmpHeader
     /// <summary>Parses a bitmap file: a <c>BITMAPFILEHEADER</c> and the DIB after it, or the first bitmap of an
     /// OS/2 bitmap array.</summary>
     /// <exception cref="InvalidDataException">The data is not a bitmap this reader decodes.</exception>
-    public static BmpHeader ReadFile(ReadOnlySpan<byte> data)
+    public static BmpHeader ReadFile(ReadOnlySpan<byte> data) => ReadFile(data, prefix: false);
+
+    /// <summary>
+    /// <see cref="ReadFile(ReadOnlySpan{byte})"/>, or with <paramref name="prefix"/> over the start of a file only: the
+    /// streaming reader's header. A prefix must reach the file header's pixel offset (which must not point into the
+    /// headers) and 16 bytes past the bitmap header; then the header comes out as it would from the whole file, except
+    /// that the raster is not checked for truncation (the reader finds that as it reads) and a profile whose bytes lie
+    /// beyond the prefix sets <see cref="IccBeyondPrefix"/> instead of being dropped.
+    /// </summary>
+    public static BmpHeader ReadFile(ReadOnlySpan<byte> data, bool prefix)
     {
         if (data.Length < 18 || data[0] != 'B')
             throw new InvalidDataException("Not a BMP file: no 'BM' signature.");
@@ -99,7 +132,7 @@ internal readonly struct BmpHeader
             throw new InvalidDataException("Not a BMP file: no 'BM' signature.");
         }
         var offBits = BinaryPrimitives.ReadUInt32LittleEndian(data[(fileHeader + 10)..]);
-        return Parse(data, fileHeader + 14, offBits, iconMask: false);
+        return Parse(data, fileHeader + 14, offBits, iconMask: false, prefix);
     }
 
     /// <summary>Parses a packed DIB: a bitmap header, its masks and palette, then the pixels, as the clipboard
@@ -107,9 +140,9 @@ internal readonly struct BmpHeader
     /// <param name="iconMask">An icon image: the header's height counts the colour bitmap and the 1-bit AND
     /// mask after it, which says which pixels are transparent.</param>
     /// <exception cref="InvalidDataException">The data is not a DIB this reader decodes.</exception>
-    public static BmpHeader ReadDib(ReadOnlySpan<byte> data, bool iconMask) => Parse(data, 0, null, iconMask);
+    public static BmpHeader ReadDib(ReadOnlySpan<byte> data, bool iconMask) => Parse(data, 0, null, iconMask, prefix: false);
 
-    private static BmpHeader Parse(ReadOnlySpan<byte> data, int dib, uint? offBits, bool iconMask)
+    private static BmpHeader Parse(ReadOnlySpan<byte> data, int dib, uint? offBits, bool iconMask, bool prefix)
     {
         if (data.Length - dib < 4) throw Truncated();
         var size = BinaryPrimitives.ReadUInt32LittleEndian(data[dib..]);
@@ -268,7 +301,7 @@ internal readonly struct BmpHeader
             // Every row must be there; the last may stop short of its padding, which some writers leave out.
             var stride = (long)header.Stride;
             var needed = stride * (height - 1) + (width * bitCount + 7) / 8;
-            if (header.PixelLength < needed)
+            if (!prefix && header.PixelLength < needed)
                 throw new InvalidDataException($"The pixel data is truncated: {header.PixelLength} of {needed} bytes.");
             if (iconMask)
             {
@@ -288,6 +321,12 @@ internal readonly struct BmpHeader
             var length = (long)BinaryPrimitives.ReadUInt32LittleEndian(h[116..]);
             if (length > 0 && offset >= dib + size && offset + length <= data.Length)
                 header = header.WithIcc((int)offset, (int)length);
+            else if (prefix && length > 0 && offset >= dib + size)
+                header = header with { IccBeyondPrefix = true };
+            // In a prefix, one after the pixel offset counts as beyond it however much was read: what streams then
+            // does not depend on how the stream arrived.
+            if (prefix && header.IccLength > 0 && offset + length > pixels)
+                header = header.WithIcc(0, 0) with { IccBeyondPrefix = true };
         }
         return header;
     }

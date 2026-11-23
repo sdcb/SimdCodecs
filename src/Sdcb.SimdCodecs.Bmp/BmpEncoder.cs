@@ -214,128 +214,33 @@ public static class BmpEncoder
                 : format == PixelFormat.Gray8 ? BmpEncodeFormat.Indexed8
                 : BmpEncodeFormat.Rgb24;
         }
-        var header = options.Header;
-        if (header == BmpHeaderVersion.Auto)
-        {
-            header = iconImage ? BmpHeaderVersion.Info
-                : !options.IccProfile.IsEmpty ? BmpHeaderVersion.V5
-                : layout == BmpEncodeFormat.Argb32 ? BmpHeaderVersion.V4
-                : BmpHeaderVersion.Info;
-        }
-        Validate(options, layout, header, width, height, iconImage);
-
-        var bpp = layout switch
-        {
-            BmpEncodeFormat.Indexed1 => 1,
-            BmpEncodeFormat.Indexed4 => 4,
-            BmpEncodeFormat.Indexed8 => 8,
-            BmpEncodeFormat.Rgb555 or BmpEncodeFormat.Rgb565 => 16,
-            BmpEncodeFormat.Rgb24 => 24,
-            _ => 32,
-        };
-        var indexed = bpp <= 8;
-        var bitfields = layout == BmpEncodeFormat.Rgb565 || (layout == BmpEncodeFormat.Argb32 && header >= BmpHeaderVersion.V4);
-        var compression = options.Rle ? (bpp == 8 ? 1u : 2u) : bitfields ? 3u : 0u;
-        var headerSize = header switch
-        {
-            BmpHeaderVersion.Core => 12,
-            BmpHeaderVersion.Info => 40,
-            BmpHeaderVersion.V4 => 108,
-            _ => 124,
-        };
-        var masksAfterHeader = bitfields && header == BmpHeaderVersion.Info ? 12 : 0;
+        var plan = PlanFile(layout, options, iconImage);
+        Validate(options, layout, plan.Header, width, height, iconImage);
+        var bpp = plan.Bpp;
+        var indexed = plan.Indexed;
 
         // Palette and indices, or nothing for direct colour.
         int[] palette = [];
         byte[]? indices = null;
         if (indexed) (palette, indices) = Palettize(input, 1 << bpp, options.Dither, blackTransparent: iconImage);
-        // A core header has no colour count, so its palette is always full; direct colour has none.
-        var paletteEntries = header == BmpHeaderVersion.Core && indexed ? 1 << bpp : palette.Length;
-        var entrySize = header == BmpHeaderVersion.Core ? 3 : 4;
 
         // The pixel bytes: rows of whole 32-bit words, or the RLE stream.
-        var rowBytes = (int)(((long)width * bpp + 31) / 32 * 4);
-        var usedBytes = (int)(((long)width * bpp + 7) / 8);
+        var rowBytes = plan.RowBytes(width);
+        var usedBytes = plan.UsedBytes(width);
         byte[]? rle = options.Rle ? Rle.Encode(indices!, width, height, bpp) : null;
         var pixelBytes = rle?.Length ?? (long)rowBytes * height;
         var maskStride = (width + 31) / 32 * 4;
         var maskBytes = iconImage ? (long)maskStride * height : 0;
-        var icc = header == BmpHeaderVersion.V5 ? options.IccProfile.Span : default;
+        var icc = plan.Header == BmpHeaderVersion.V5 ? options.IccProfile.Span : default;
 
-        var fileHeader = file ? 14 : 0;
-        var pixelOffset = fileHeader + headerSize + masksAfterHeader + paletteEntries * entrySize; // at most 1174
+        var pixelOffset = plan.PixelOffset(file, palette.Length); // at most 1174
         var total = pixelOffset + pixelBytes + maskBytes + icc.Length;
         if (total > (stream is null ? Array.MaxLength : uint.MaxValue))
             throw new ArgumentOutOfRangeException(nameof(width), "The bitmap would be larger than the format or an array can hold.");
 
         // Headers, masks and palette.
         Span<byte> o = stackalloc byte[pixelOffset];
-        o.Clear();
-        if (file)
-        {
-            o[0] = (byte)'B';
-            o[1] = (byte)'M';
-            BinaryPrimitives.WriteUInt32LittleEndian(o[2..], (uint)total);
-            BinaryPrimitives.WriteUInt32LittleEndian(o[10..], (uint)pixelOffset);
-        }
-
-        var h = o.Slice(fileHeader, headerSize);
-        BinaryPrimitives.WriteUInt32LittleEndian(h, (uint)headerSize);
-        var storedHeight = iconImage ? 2 * height : options.TopDown ? -height : height;
-        if (header == BmpHeaderVersion.Core)
-        {
-            BinaryPrimitives.WriteUInt16LittleEndian(h[4..], (ushort)width);
-            BinaryPrimitives.WriteUInt16LittleEndian(h[6..], (ushort)height);
-            BinaryPrimitives.WriteUInt16LittleEndian(h[8..], 1);
-            BinaryPrimitives.WriteUInt16LittleEndian(h[10..], (ushort)bpp);
-        }
-        else
-        {
-            BinaryPrimitives.WriteInt32LittleEndian(h[4..], width);
-            BinaryPrimitives.WriteInt32LittleEndian(h[8..], storedHeight);
-            BinaryPrimitives.WriteUInt16LittleEndian(h[12..], 1);
-            BinaryPrimitives.WriteUInt16LittleEndian(h[14..], (ushort)bpp);
-            BinaryPrimitives.WriteUInt32LittleEndian(h[16..], compression);
-            BinaryPrimitives.WriteUInt32LittleEndian(h[20..], (uint)(pixelBytes + maskBytes));
-            BinaryPrimitives.WriteInt32LittleEndian(h[24..], options.PixelsPerMeterX);
-            BinaryPrimitives.WriteInt32LittleEndian(h[28..], options.PixelsPerMeterY);
-            BinaryPrimitives.WriteUInt32LittleEndian(h[32..], indexed ? (uint)palette.Length : 0);
-        }
-
-        // Masks: in a V4 / V5 header, or after a 40-byte one.
-        if (bitfields)
-        {
-            var masks = header >= BmpHeaderVersion.V4 ? h[40..] : o.Slice(fileHeader + headerSize, 12);
-            (uint r, uint g, uint b, uint a) = layout == BmpEncodeFormat.Rgb565
-                ? (0xF800u, 0x07E0u, 0x001Fu, 0u)
-                : (0x00FF0000u, 0x0000FF00u, 0x000000FFu, 0xFF000000u);
-            BinaryPrimitives.WriteUInt32LittleEndian(masks, r);
-            BinaryPrimitives.WriteUInt32LittleEndian(masks[4..], g);
-            BinaryPrimitives.WriteUInt32LittleEndian(masks[8..], b);
-            if (header >= BmpHeaderVersion.V4) BinaryPrimitives.WriteUInt32LittleEndian(masks[12..], a);
-        }
-        if (header >= BmpHeaderVersion.V4)
-        {
-            // Endpoints and gamma stay 0: they are read only for LCS_CALIBRATED_RGB.
-            BinaryPrimitives.WriteUInt32LittleEndian(h[56..], icc.IsEmpty ? SrgbTag : ProfileEmbedded);
-            if (header == BmpHeaderVersion.V5)
-            {
-                BinaryPrimitives.WriteUInt32LittleEndian(h[108..], ImagesIntent);
-                if (!icc.IsEmpty)
-                {
-                    BinaryPrimitives.WriteUInt32LittleEndian(h[112..], (uint)(total - icc.Length - fileHeader));
-                    BinaryPrimitives.WriteUInt32LittleEndian(h[116..], (uint)icc.Length);
-                }
-            }
-        }
-
-        var pal = o.Slice(fileHeader + headerSize + masksAfterHeader, paletteEntries * entrySize);
-        for (var i = 0; i < palette.Length; i++)
-        {
-            pal[i * entrySize] = (byte)palette[i];
-            pal[i * entrySize + 1] = (byte)(palette[i] >> 8);
-            pal[i * entrySize + 2] = (byte)(palette[i] >> 16);
-        }
+        WriteHeaders(o, plan, width, height, options, file, iconImage, palette, pixelBytes, maskBytes, icc.Length, total);
 
         var output = stream is null ? GC.AllocateUninitializedArray<byte>((int)total) : null;
         byte[]? pooled = stream is null ? null : ArrayPool<byte>.Shared.Rent(Math.Max(Math.Max(rowBytes, maskStride), pixelOffset));
@@ -402,6 +307,177 @@ public static class BmpEncoder
         {
             if (pooled is not null) ArrayPool<byte>.Shared.Return(pooled);
         }
+    }
+
+    /// <summary>The file layout a set of options gives: header version, depth, compression and where things go.</summary>
+    internal readonly record struct FilePlan(BmpEncodeFormat Layout, BmpHeaderVersion Header, int Bpp, bool Bitfields,
+        uint Compression, int HeaderSize, int MasksAfterHeader)
+    {
+        public bool Indexed => Bpp <= 8;
+        public int EntrySize => Header == BmpHeaderVersion.Core ? 3 : 4;
+        public int RowBytes(int width) => (int)(((long)width * Bpp + 31) / 32 * 4);
+        public int UsedBytes(int width) => (int)(((long)width * Bpp + 7) / 8);
+
+        // A core header has no colour count, so its palette is always full; direct colour has none.
+        public int PaletteEntries(int paletteLength) => Header == BmpHeaderVersion.Core && Indexed ? 1 << Bpp : paletteLength;
+
+        public int PixelOffset(bool file, int paletteLength) =>
+            (file ? 14 : 0) + HeaderSize + MasksAfterHeader + PaletteEntries(paletteLength) * EntrySize;
+    }
+
+    /// <summary>The plan for a resolved (not <see cref="BmpEncodeFormat.Auto"/>) layout.</summary>
+    internal static FilePlan PlanFile(BmpEncodeFormat layout, BmpEncodeOptions options, bool iconImage)
+    {
+        var header = options.Header;
+        if (header == BmpHeaderVersion.Auto)
+        {
+            header = iconImage ? BmpHeaderVersion.Info
+                : !options.IccProfile.IsEmpty ? BmpHeaderVersion.V5
+                : layout == BmpEncodeFormat.Argb32 ? BmpHeaderVersion.V4
+                : BmpHeaderVersion.Info;
+        }
+        var bpp = layout switch
+        {
+            BmpEncodeFormat.Indexed1 => 1,
+            BmpEncodeFormat.Indexed4 => 4,
+            BmpEncodeFormat.Indexed8 => 8,
+            BmpEncodeFormat.Rgb555 or BmpEncodeFormat.Rgb565 => 16,
+            BmpEncodeFormat.Rgb24 => 24,
+            _ => 32,
+        };
+        var bitfields = layout == BmpEncodeFormat.Rgb565 || (layout == BmpEncodeFormat.Argb32 && header >= BmpHeaderVersion.V4);
+        var compression = options.Rle ? (bpp == 8 ? 1u : 2u) : bitfields ? 3u : 0u;
+        var headerSize = header switch
+        {
+            BmpHeaderVersion.Core => 12,
+            BmpHeaderVersion.Info => 40,
+            BmpHeaderVersion.V4 => 108,
+            _ => 124,
+        };
+        var masksAfterHeader = bitfields && header == BmpHeaderVersion.Info ? 12 : 0;
+        return new FilePlan(layout, header, bpp, bitfields, compression, headerSize, masksAfterHeader);
+    }
+
+    /// <summary>The file header (when <paramref name="file"/>), bitmap header, masks and palette, into <paramref name="o"/>
+    /// (<see cref="FilePlan.PixelOffset"/> bytes).</summary>
+    private static void WriteHeaders(Span<byte> o, FilePlan plan, int width, int height, BmpEncodeOptions options, bool file,
+        bool iconImage, int[] palette, long pixelBytes, long maskBytes, int iccLength, long total)
+    {
+        var (layout, header, bpp, bitfields) = (plan.Layout, plan.Header, plan.Bpp, plan.Bitfields);
+        var (indexed, headerSize, masksAfterHeader, entrySize) = (plan.Indexed, plan.HeaderSize, plan.MasksAfterHeader, plan.EntrySize);
+        var fileHeader = file ? 14 : 0;
+        var pixelOffset = plan.PixelOffset(file, palette.Length);
+        o.Clear();
+        if (file)
+        {
+            o[0] = (byte)'B';
+            o[1] = (byte)'M';
+            BinaryPrimitives.WriteUInt32LittleEndian(o[2..], (uint)total);
+            BinaryPrimitives.WriteUInt32LittleEndian(o[10..], (uint)pixelOffset);
+        }
+
+        var h = o.Slice(fileHeader, headerSize);
+        BinaryPrimitives.WriteUInt32LittleEndian(h, (uint)headerSize);
+        var storedHeight = iconImage ? 2 * height : options.TopDown ? -height : height;
+        if (header == BmpHeaderVersion.Core)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(h[4..], (ushort)width);
+            BinaryPrimitives.WriteUInt16LittleEndian(h[6..], (ushort)height);
+            BinaryPrimitives.WriteUInt16LittleEndian(h[8..], 1);
+            BinaryPrimitives.WriteUInt16LittleEndian(h[10..], (ushort)bpp);
+        }
+        else
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(h[4..], width);
+            BinaryPrimitives.WriteInt32LittleEndian(h[8..], storedHeight);
+            BinaryPrimitives.WriteUInt16LittleEndian(h[12..], 1);
+            BinaryPrimitives.WriteUInt16LittleEndian(h[14..], (ushort)bpp);
+            BinaryPrimitives.WriteUInt32LittleEndian(h[16..], plan.Compression);
+            BinaryPrimitives.WriteUInt32LittleEndian(h[20..], (uint)(pixelBytes + maskBytes));
+            BinaryPrimitives.WriteInt32LittleEndian(h[24..], options.PixelsPerMeterX);
+            BinaryPrimitives.WriteInt32LittleEndian(h[28..], options.PixelsPerMeterY);
+            BinaryPrimitives.WriteUInt32LittleEndian(h[32..], indexed ? (uint)palette.Length : 0);
+        }
+
+        // Masks: in a V4 / V5 header, or after a 40-byte one.
+        if (bitfields)
+        {
+            var masks = header >= BmpHeaderVersion.V4 ? h[40..] : o.Slice(fileHeader + headerSize, 12);
+            (uint r, uint g, uint b, uint a) = layout == BmpEncodeFormat.Rgb565
+                ? (0xF800u, 0x07E0u, 0x001Fu, 0u)
+                : (0x00FF0000u, 0x0000FF00u, 0x000000FFu, 0xFF000000u);
+            BinaryPrimitives.WriteUInt32LittleEndian(masks, r);
+            BinaryPrimitives.WriteUInt32LittleEndian(masks[4..], g);
+            BinaryPrimitives.WriteUInt32LittleEndian(masks[8..], b);
+            if (header >= BmpHeaderVersion.V4) BinaryPrimitives.WriteUInt32LittleEndian(masks[12..], a);
+        }
+        if (header >= BmpHeaderVersion.V4)
+        {
+            // Endpoints and gamma stay 0: they are read only for LCS_CALIBRATED_RGB.
+            BinaryPrimitives.WriteUInt32LittleEndian(h[56..], iccLength == 0 ? SrgbTag : ProfileEmbedded);
+            if (header == BmpHeaderVersion.V5)
+            {
+                BinaryPrimitives.WriteUInt32LittleEndian(h[108..], ImagesIntent);
+                if (iccLength != 0)
+                {
+                    BinaryPrimitives.WriteUInt32LittleEndian(h[112..], (uint)(total - iccLength - fileHeader));
+                    BinaryPrimitives.WriteUInt32LittleEndian(h[116..], (uint)iccLength);
+                }
+            }
+        }
+
+        var pal = o.Slice(fileHeader + headerSize + masksAfterHeader, plan.PaletteEntries(palette.Length) * entrySize);
+        for (var i = 0; i < palette.Length; i++)
+        {
+            pal[i * entrySize] = (byte)palette[i];
+            pal[i * entrySize + 1] = (byte)(palette[i] >> 8);
+            pal[i * entrySize + 2] = (byte)(palette[i] >> 16);
+        }
+    }
+
+    // ---- Streaming ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// True when <paramref name="options"/> fix the file's size and every offset before any pixel is seen, so a session
+    /// can write the file a row at a time in file order: top-down, a direct-colour layout named explicitly (not
+    /// <see cref="BmpEncodeFormat.Auto"/>, which scans the image for alpha; not a palette, which needs every colour),
+    /// and no RLE.
+    /// </summary>
+    internal static bool CanStream(BmpEncodeOptions options) => options.TopDown && !options.Rle
+        && options.Format is BmpEncodeFormat.Rgb555 or BmpEncodeFormat.Rgb565 or BmpEncodeFormat.Rgb24
+            or BmpEncodeFormat.Rgb32 or BmpEncodeFormat.Argb32;
+
+    /// <summary>
+    /// The headers of a streamed file (<see cref="CanStream"/> options), checked as <see cref="Encode(ReadOnlySpan{byte}, int, int, PixelFormat, Stream, BmpEncodeOptions?, int)"/>
+    /// checks them: the same bytes it writes before the rows. The rows then come from <see cref="WriteStreamRow"/>, the
+    /// options' V5 profile after them.
+    /// </summary>
+    /// <exception cref="ArgumentException">The size or options do not fit.</exception>
+    internal static byte[] StreamHeaders(int width, int height, BmpEncodeOptions options, out FilePlan plan)
+    {
+        if (width < 1 || height < 1)
+            throw new ArgumentOutOfRangeException(nameof(width), $"A bitmap is at least 1x1, not {width}x{height}.");
+        if ((long)width * height > BmpHeader.MaximumPixels)
+            throw new ArgumentOutOfRangeException(nameof(width), $"{width}x{height} is above the limit of {BmpHeader.MaximumPixels:N0} pixels.");
+        plan = PlanFile(options.Format, options, iconImage: false);
+        Validate(options, options.Format, plan.Header, width, height, iconImage: false);
+        var iccLength = plan.Header == BmpHeaderVersion.V5 ? options.IccProfile.Length : 0;
+        var pixelBytes = (long)plan.RowBytes(width) * height;
+        var pixelOffset = plan.PixelOffset(file: true, 0);
+        var total = pixelOffset + pixelBytes + iccLength;
+        if (total > uint.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(width), "The bitmap would be larger than the format can hold (4 GiB).");
+        var headers = new byte[pixelOffset];
+        WriteHeaders(headers, plan, width, height, options, file: true, iconImage: false, [], pixelBytes, 0, iccLength, total);
+        return headers;
+    }
+
+    /// <summary>One stored row (<see cref="FilePlan.RowBytes"/> bytes, padding cleared) from one input row in
+    /// <paramref name="format"/>, an 8-bit basic layout: what the whole-image encoder writes for that row.</summary>
+    internal static void WriteStreamRow(ReadOnlySpan<byte> source, int width, PixelFormat format, FilePlan plan, Span<byte> row)
+    {
+        row[plan.UsedBytes(width)..].Clear();
+        WriteDirect(new Input(source, width, 1, format, width * format.BytesPerPixel), 0, row, plan.Layout, iconImage: false);
     }
 
     private static void Validate(BmpEncodeOptions options, BmpEncodeFormat layout, BmpHeaderVersion header, int width, int height, bool iconImage)
