@@ -26,6 +26,22 @@ Decoding is single-threaded by default. Opt in to decoding the transparency plan
 WebpDecoder.DecodeTo(data, rgba, 0, new WebpDecodeOptions { Multithreaded = true });
 ```
 
+Read a lossy still from a forward-only stream (a request body, a socket), a band of rows at a time, synchronously or asynchronously. Rows are decoded as the VP8 chunk's bytes arrive: with one token partition (what encoders write by default) from a window of about two macroblock rows of compressed input, so memory is O(width) whatever the height; with several partitions the VP8 chunk is buffered first (O(compressed chunk) + O(width)). An ALPH transparency plane is decoded whole with the header (width × height bytes). Lossless and animated files, and region or scale options, read the whole stream and decode it as `TryDecodeInto` does (`IsStreaming` is false). The rows equal `TryDecodeInto`'s byte for byte; `Info` lacks what is stored after the image (an EXIF orientation, usually), and a file that stores its ALPH chunk, or an animated VP8X chunk, after the image data is refused with `InvalidDataException`:
+
+```csharp
+using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
+
+await using var reader = WebpImageDecoder.CreateRowReader(new StreamInput(requestBody), PixelFormat.Rgba32, null);
+await reader.InitializeAsync();
+byte[] band = new byte[reader.Width * 4 * 16];
+int rows;
+while ((rows = await reader.ReadRowsAsync(band, 16)) > 0)
+{
+    // rows × (Width × 4) bytes of band are the next rows.
+}
+```
+
 Decode every frame into a full-canvas RGBA buffer:
 
 ```csharp

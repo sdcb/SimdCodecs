@@ -487,7 +487,7 @@ public static partial class WebpDecoder
     }
 
     /// <summary>An ALPH plane decoded on another thread, handed over once complete.</summary>
-    private sealed class PendingAlpha
+    internal sealed class PendingAlpha
     {
         private byte[]? _plane;
 
@@ -555,8 +555,12 @@ public static partial class WebpDecoder
         }
     }
 
-    /// <summary>Upsamples chroma (fancy or nearest) and converts finished rows to RGBA.</summary>
-    private readonly ref struct RgbaSink(
+    /// <summary>
+    /// Upsamples chroma (fancy or nearest) and converts finished rows to RGBA: image row r goes to
+    /// <c>output[(r - outputRow0) × stride]</c> (a band of rows, for a streaming reader), its alpha comes from row r
+    /// of the whole plane.
+    /// </summary>
+    internal readonly ref struct RgbaSink(
         Span<byte> output,
         int stride,
         int width,
@@ -565,7 +569,8 @@ public static partial class WebpDecoder
         ReadOnlySpan<byte> alpha,
         ushort[] tRows,
         byte[] chromaRows,
-        PendingAlpha? pendingAlpha = null) : IVp8RowSink
+        PendingAlpha? pendingAlpha = null,
+        int outputRow0 = 0) : IVp8RowSink
     {
         private readonly Span<byte> _output = output;
         private readonly ReadOnlySpan<byte> _alpha = alpha;
@@ -601,7 +606,7 @@ public static partial class WebpDecoder
                 ref byte uRow = ref Unsafe.Add(ref u, (chromaRow - uvRow0) * uvStride);
                 ref byte vRow = ref Unsafe.Add(ref v, (chromaRow - uvRow0) * uvStride);
                 ref byte yRow = ref Unsafe.Add(ref y, (row - yRow0) * yStride);
-                ref byte destinationRow = ref Unsafe.Add(ref outputBase, row * stride);
+                ref byte destinationRow = ref Unsafe.Add(ref outputBase, (row - outputRow0) * stride);
                 ref byte alphaRow = ref Unsafe.NullRef<byte>();
                 if (hasAlpha)
                 {
@@ -1264,7 +1269,7 @@ public static partial class WebpDecoder
         Unsafe.Add(ref destination, 3) = alpha;
     }
 
-    private static byte[] DecodeAndUnfilterAlpha(
+    internal static byte[] DecodeAndUnfilterAlpha(
         ReadOnlySpan<byte> alphaChunk,
         int width,
         int height)

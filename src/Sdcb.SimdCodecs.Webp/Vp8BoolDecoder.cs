@@ -24,6 +24,9 @@ internal ref struct Vp8BoolDecoder
     private int _bits;
     private uint _rangeMinus1;
 
+    // Set once a refill has run out of data and fed zero bits instead.
+    private bool _padded;
+
     public Vp8BoolDecoder(ReadOnlySpan<byte> data)
     {
         _next = ref MemoryMarshal.GetReference(data);
@@ -31,7 +34,33 @@ internal ref struct Vp8BoolDecoder
         _value = 0;
         _bits = -8;
         _rangeMinus1 = 254;
+        _padded = false;
     }
+
+    /// <summary>
+    /// Resumes a decoder whose arithmetic state (<see cref="Load"/>) was saved after it had read every byte before
+    /// <paramref name="data"/>: <paramref name="data"/> starts at the first byte it had not read. The window is only
+    /// ever refilled with whole bytes, so the decode goes on exactly as if the input had been one span.
+    /// </summary>
+    public Vp8BoolDecoder(ReadOnlySpan<byte> data, ulong value, int bits, uint rangeMinus1)
+    {
+        _next = ref MemoryMarshal.GetReference(data);
+        _remaining = data.Length;
+        _value = value;
+        _bits = bits;
+        _rangeMinus1 = rangeMinus1;
+        _padded = false;
+    }
+
+    /// <summary>Bytes of the data not read into the window yet.</summary>
+    public readonly int Remaining => _remaining;
+
+    /// <summary>
+    /// True once the decoder has run out of data and fed zero bits: at the true end of a partition that is how the
+    /// stream continues (RFC 6386 §7.3), but over a window that ends before the partition does it means the decode
+    /// got ahead of the input, and what it decoded since may be wrong.
+    /// </summary>
+    public readonly bool Padded => _padded;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int ReadBit(int probability)
@@ -221,6 +250,10 @@ internal ref struct Vp8BoolDecoder
                 next = _next;
                 _next = ref Unsafe.Add(ref _next, 1);
                 _remaining--;
+            }
+            else
+            {
+                _padded = true;
             }
 
             _value = (_value << 8) | next;
