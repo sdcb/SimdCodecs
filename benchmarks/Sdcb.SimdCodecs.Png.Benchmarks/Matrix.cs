@@ -214,6 +214,32 @@ internal static class Matrix
             }
         }
 
+        if (rows.Any(r => r.Ms.ContainsKey(Names.Streaming)))
+        {
+            sb.AppendLine();
+            sb.AppendLine($"Streaming session (`PngImageEncoder.Create`, rows pushed {EncodeSetup.SessionBand} at a time, IDATs leaving per band) " +
+                          "against the buffered `PngWriter` call with the same options: one thread, then `ParallelFragments = " +
+                          $"{EncodeSetup.ParallelFragments}`:");
+            sb.AppendLine();
+            sb.AppendLine("| Case | current | streaming | time ÷ current | size ÷ current | parallel | streaming parallel | time ÷ parallel | size ÷ parallel |");
+            sb.AppendLine("|---|---:|---:|---:|---:|---:|---:|---:|---:|");
+            foreach ((EncodeSetup s, Dictionary<string, double> ms) in rows)
+            {
+                sb.AppendLine($"| `{s.Case.Name}` | {Ms(ms, Names.Current)} | {Ms(ms, Names.Streaming)} | {Ratio(ms, Names.Streaming, Names.Current)} | " +
+                              $"{SizeOf(s, Names.Streaming, Names.Current)} | {Ms(ms, Names.CurrentParallel)} | {Ms(ms, Names.StreamingParallel)} | " +
+                              $"{Ratio(ms, Names.StreamingParallel, Names.CurrentParallel)} | {SizeOf(s, Names.StreamingParallel, Names.CurrentParallel)} |");
+            }
+
+            if (GeoMean(rows.Select(r => r.Ms).ToList(), Names.Streaming, Names.Current) is { } g1)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"Geometric mean streaming ÷ current: {g1.ToString("F3", CultureInfo.InvariantCulture)}×");
+            }
+
+            if (GeoMean(rows.Select(r => r.Ms).ToList(), Names.StreamingParallel, Names.CurrentParallel) is { } g2)
+                sb.AppendLine($"Geometric mean streaming parallel ÷ parallel: {g2.ToString("F3", CultureInfo.InvariantCulture)}×");
+        }
+
         if (rows.Any(r => r.Ms.ContainsKey(Names.CurrentReduced)))
         {
             sb.AppendLine();
@@ -234,7 +260,7 @@ internal static class Matrix
         }
 
         AppendAllocations(sb, rows.Select(r => (r.Setup.Case.Name, r.Setup.Allocated)).ToList(),
-            [Names.Current, Names.CurrentParallel, Names.CurrentReduced, Names.Baseline, Names.ImageSharp, Names.LibPng]);
+            [Names.Current, Names.CurrentParallel, Names.CurrentReduced, Names.Streaming, Names.StreamingParallel, Names.Baseline, Names.ImageSharp, Names.LibPng]);
         AppendNotes(sb, notes);
         return sb.ToString();
     }
@@ -284,6 +310,8 @@ internal static class Matrix
         Names.CurrentNative => "native",
         Names.CurrentParallel => "parallel",
         Names.CurrentReduced => "reduced",
+        Names.Streaming => "streaming",
+        Names.StreamingParallel => "streaming parallel",
         _ => name,
     };
 
@@ -308,6 +336,12 @@ internal static class Matrix
     private static string SizeRatio(EncodeSetup s, string competitor) =>
         s.Sizes.TryGetValue(Names.Current, out int a) && s.Sizes.TryGetValue(competitor, out int b)
             ? ((double)a / b).ToString("F3", CultureInfo.InvariantCulture)
+            : "—";
+
+    /// <summary>Size of <paramref name="a"/> over <paramref name="b"/> to five places: streaming moves sizes by hundredths of a percent.</summary>
+    private static string SizeOf(EncodeSetup s, string a, string b) =>
+        s.Sizes.TryGetValue(a, out int x) && s.Sizes.TryGetValue(b, out int y)
+            ? ((double)x / y).ToString("F5", CultureInfo.InvariantCulture)
             : "—";
 
     private static double Median(List<double> values)

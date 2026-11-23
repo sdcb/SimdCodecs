@@ -501,7 +501,7 @@ public static class PngWriter
     /// so that every fragment holds at least two rows and at least
     /// <see cref="MinimumParallelFragmentBytes"/>.
     /// </summary>
-    private static int EffectiveFragmentCount(int requested, int height, int stride)
+    internal static int EffectiveFragmentCount(int requested, int height, int stride)
     {
         if (requested <= 1)
         {
@@ -702,7 +702,7 @@ public static class PngWriter
     /// The two-byte zlib header: deflate with a 32K window, the level's own FLEVEL hint, and the
     /// FCHECK bits that make the pair divisible by 31 (RFC 1950 s2.2).
     /// </summary>
-    private static void WriteZlibHeader(Stream destination, CompressionLevel level)
+    internal static void WriteZlibHeader(Stream destination, CompressionLevel level)
     {
         const int Cmf = 0x78;              // compression method 8 (deflate), window 32K
         var flevel = level switch
@@ -749,7 +749,7 @@ public static class PngWriter
     /// checksums and the length of the second. This is what lets fragments be checksummed on the
     /// threads that produced them instead of in a serial pass over the whole payload afterwards.
     /// </summary>
-    private static uint AdlerCombine(uint first, uint second, long secondLength)
+    internal static uint AdlerCombine(uint first, uint second, long secondLength)
     {
         const uint Base = 65521;
 

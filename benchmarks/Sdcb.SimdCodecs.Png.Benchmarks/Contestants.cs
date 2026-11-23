@@ -1,6 +1,8 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
+using Sdcb.SimdCodecs.Abstractions;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Png;
@@ -17,6 +19,8 @@ internal static class Names
     public const string CurrentNative = "CurrentNative";
     public const string CurrentParallel = "CurrentParallel";
     public const string CurrentReduced = "CurrentReduced";
+    public const string Streaming = "Streaming";
+    public const string StreamingParallel = "StreamingParallel";
     public const string Baseline = "Baseline";
     public const string ImageSharp = "ImageSharp";
     public const string LibPng = "LibPng";
@@ -258,7 +262,7 @@ internal sealed class EncodeSetup
             byte[] output = encode();
             if ((lossless ? VerifyLossless(output, c, samples) : Verify(output, c, samples)) is { } problem)
             {
-                if (name is Names.Current or Names.CurrentParallel or Names.CurrentReduced)
+                if (name is Names.Current or Names.CurrentParallel or Names.CurrentReduced or Names.Streaming or Names.StreamingParallel)
                 {
                     throw new InvalidOperationException($"{c.Name}: {name} output is wrong ({problem}); refusing to benchmark.");
                 }
@@ -277,6 +281,12 @@ internal sealed class EncodeSetup
         Add(Names.CurrentParallel, () => EncodeCurrent(c.Format, samples, width, height, parallel));
         var reduced = options with { LosslessReduction = true };
         Add(Names.CurrentReduced, () => EncodeCurrent(c.Format, samples, width, height, reduced));
+        // The PngImageEncoder session, rows pushed in bands of 16 as a row producer would: streaming, IDATs leaving per band.
+        var streamOutput = new ArrayBufferWriter<byte>();
+        Add(Names.Streaming, () => EncodeSession(c.Format, samples, width, height, options, streamOutput).ToArray(),
+            () => Sink = EncodeSession(c.Format, samples, width, height, options, streamOutput).Length);
+        Add(Names.StreamingParallel, () => EncodeSession(c.Format, samples, width, height, parallel, streamOutput).ToArray(),
+            () => Sink = EncodeSession(c.Format, samples, width, height, parallel, streamOutput).Length);
         if (only is null)
         {
             var header = PngReader.Decode(EncodeCurrent(c.Format, samples, width, height, reduced));
@@ -321,6 +331,40 @@ internal sealed class EncodeSetup
         }
 
         return setup;
+    }
+
+    /// <summary>Rows per <c>WriteRows</c> call of the session contestants.</summary>
+    public const int SessionBand = 16;
+
+    private static ReadOnlyMemory<byte> EncodeSession(EncodeFormat format, byte[] samples, int width, int height, PngWriteOptions options,
+        ArrayBufferWriter<byte> output)
+    {
+        var pixelFormat = format switch
+        {
+            EncodeFormat.Gray8 => PixelFormat.Gray8,
+            EncodeFormat.Rgb8 => PixelFormat.Rgb24,
+            EncodeFormat.Rgba8 => PixelFormat.Rgba32,
+            EncodeFormat.Gray16 => PixelFormat.Gray16,
+            EncodeFormat.Rgb16 => PixelFormat.Rgb48,
+            _ => PixelFormat.Rgba64,
+        };
+        output.ResetWrittenCount();
+        using var session = PngImageEncoder.Create(output, options);
+        if (!session.IsStreaming)
+        {
+            throw new InvalidOperationException("The PNG session does not stream these options.");
+        }
+
+        var frame = session.AddFrame(width, height, pixelFormat);
+        var rowBytes = width * pixelFormat.BytesPerPixel;
+        for (var y = 0; y < height; y += SessionBand)
+        {
+            var n = Math.Min(SessionBand, height - y);
+            frame.WriteRows(samples.AsSpan(y * rowBytes, n * rowBytes), n);
+        }
+
+        session.Commit();
+        return output.WrittenMemory;
     }
 
     private static byte[] EncodeCurrent(EncodeFormat format, byte[] samples, int width, int height, PngWriteOptions options) => format switch

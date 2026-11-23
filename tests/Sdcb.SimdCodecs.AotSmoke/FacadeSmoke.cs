@@ -86,7 +86,7 @@ internal static class FacadeSmoke
 
         // Several frames to the PNG encoder through the session: an APNG, opened again through the facade.
         var apng = new System.Buffers.ArrayBufferWriter<byte>();
-        using (var animation = ImageCodecs.CreateEncoder(ImageFormat.Png, apng, new PngWriteOptions { LoopCount = 3 }))
+        using (var animation = ImageCodecs.CreateEncoder(ImageFormat.Png, apng, new PngWriteOptions { LoopCount = 3, Animation = true }))
         {
             for (var f = 0; f < 3; f++)
             {

@@ -74,6 +74,12 @@ public class PngEncodeBenchmarks
     public void CurrentParallel() => _run[Names.CurrentParallel]();
 
     [Benchmark]
+    public void Streaming() => _run[Names.Streaming]();
+
+    [Benchmark]
+    public void StreamingParallel() => _run[Names.StreamingParallel]();
+
+    [Benchmark]
     public void Baseline() => _run[Names.Baseline]();
 
     [Benchmark]
@@ -82,7 +88,7 @@ public class PngEncodeBenchmarks
     [Benchmark]
     public void LibPng() => _run[Names.LibPng]();
 
-    public static readonly string[] Methods = [Names.Current, Names.CurrentParallel, Names.Baseline, Names.ImageSharp, Names.LibPng];
+    public static readonly string[] Methods = [Names.Current, Names.CurrentParallel, Names.Streaming, Names.StreamingParallel, Names.Baseline, Names.ImageSharp, Names.LibPng];
 }
 
 /// <summary>Runs every contestant on one case before moving to the next.</summary>
