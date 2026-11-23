@@ -124,11 +124,40 @@ internal static class Vp8Decoder
         int rowLimit = int.MaxValue)
         where TSink : IVp8RowSink, allows ref struct
     {
-        bool applyLoopFilter = (ablation & WebpAblation.SkipLoopFilter) == 0;
-        bool skipResidual = (ablation & WebpAblation.SkipResidual) != 0;
-        bool skipPrediction = (ablation & WebpAblation.SkipPrediction) != 0;
-        bool skipCopy = (ablation & WebpAblation.SkipMacroblockCopy) != 0;
-        if (frame.Length < 10)
+        int partitionLength = ReadFrameTag(frame, frame.Length, width, height);
+        var header = new Vp8BoolDecoder(frame.Slice(10, partitionLength));
+        FrameState state = FrameState.Create(ref header, width, height, ablation);
+        try
+        {
+            PartitionSlices partitions = ReadPartitions(frame[(10 + partitionLength)..], state.PartitionCount);
+            var tokens = new Vp8TokenPartitions(
+                partitions.P0, partitions.P1, partitions.P2, partitions.P3,
+                partitions.P4, partitions.P5, partitions.P6, partitions.P7);
+            int partitionMask = state.PartitionCount - 1;
+            while (state.MacroblockY < state.MacroblockHeight)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                state.ReconstructRow(ref header, ref tokens.PartitionRef(state.MacroblockY & partitionMask), stopWhenPadded: false);
+                if (state.FinishRow(ref sink, rowLimit))
+                {
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            state.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Checks the 10-byte key-frame header at the start of <paramref name="frame"/> (a VP8 chunk of
+    /// <paramref name="frameLength"/> bytes, of which only the header need be present) and returns the
+    /// first partition's length.
+    /// </summary>
+    internal static int ReadFrameTag(ReadOnlySpan<byte> frame, int frameLength, int width, int height)
+    {
+        if (frameLength < 10 || frame.Length < 10)
         {
             throw new InvalidDataException("The VP8 key-frame header is truncated.");
         }
@@ -140,7 +169,7 @@ internal static class Vp8Decoder
         }
 
         int partitionLength = (int)(frameTag >> 5);
-        if (partitionLength > frame.Length - 10 ||
+        if (partitionLength > frameLength - 10 ||
             frame[3] != 0x9d || frame[4] != 0x01 || frame[5] != 0x2a)
         {
             throw new InvalidDataException("The VP8 key-frame header or first partition is invalid.");
@@ -153,286 +182,424 @@ internal static class Vp8Decoder
             throw new InvalidDataException("The WebP and VP8 dimensions do not match.");
         }
 
-        ReadOnlySpan<byte> headerPartition = frame.Slice(10, partitionLength);
-        var header = new Vp8BoolDecoder(headerPartition);
-        if (header.ReadBit(128) != 0)
-        {
-            throw new NotSupportedException("Reserved VP8 key-frame color-space flags are unsupported.");
-        }
+        return partitionLength;
+    }
 
-        _ = header.ReadBit(128);
+    /// <summary>
+    /// A key frame's decoding state between macroblock rows: the frame header read from the first
+    /// partition, the row caches and the above contexts. <see cref="DecodeFrame{TSink}"/> keeps one
+    /// on its stack; a streaming reader keeps one between reads. A row is entropy-decoded and
+    /// reconstructed (<see cref="ReconstructRow"/>) before anything outside that row is touched
+    /// (<see cref="FinishRow{TSink}"/>), so a row whose input ran out can be retried: restore the
+    /// above contexts (<see cref="SaveContexts"/> / <see cref="RestoreContexts"/>) and the two bool
+    /// decoders, and decode it again.
+    /// </summary>
+    internal struct FrameState
+    {
+        private SegmentFeatures _segments;
+        private FilterSettings _filter;
+        private SegmentParameterSet _segmentParameters;
+        private byte[] _probabilities;
+        private int _skipProbability;   // -1 when macroblocks carry no skip flag
+        private byte[] _yCache;
+        private byte[] _uCache;
+        private byte[] _vCache;
+        private byte[] _topRows;
+        private byte[] _aboveB;
+        private uint[] _aboveNz;
+        private byte[] _rowFilter;
+        private byte[]? _savedAboveB;
+        private uint[]? _savedAboveNz;
+        private int _width;
+        private int _height;
+        private int _yStride;
+        private int _uvStride;
+        private int _paddedWidth;
+        private WebpAblation _ablation;
 
-        SegmentFeatures segments = ReadSegments(ref header);
-        FilterSettings filter;
-        try
-        {
-            filter = ReadFilter(ref header);
-        }
-        catch
-        {
-            ReturnSegmentBuffers(segments);
-            throw;
-        }
+        /// <summary>The number of token partitions (1, 2, 4 or 8).</summary>
+        public int PartitionCount { readonly get; private set; }
 
-        byte[] coefficientProbabilities = Array.Empty<byte>();
-        bool coefficientProbabilitiesRented = false;
-        int partitionCount;
-        Quantizers quantizers;
-        bool skipFlagPresent;
-        byte skipProbability;
-        PartitionSlices partitions;
-        try
-        {
-            partitionCount = 1 << header.ReadLiteral(2);
-            quantizers = ReadQuantizers(ref header);
-            _ = header.ReadBit(128);
-            coefficientProbabilities = WebpBufferPool<byte>.Rent(4 * 8 * 3 * 11);
-            coefficientProbabilitiesRented = true;
-            Vp8Tables.CopyDefaultCoefficientProbabilities(coefficientProbabilities);
-            ReadCoefficientProbabilityUpdates(ref header, coefficientProbabilities);
-            skipFlagPresent = header.ReadBit(128) != 0;
-            skipProbability = skipFlagPresent ? (byte)header.ReadLiteral(8) : (byte)0;
+        public int MacroblockWidth { readonly get; private set; }
 
-            ReadOnlySpan<byte> tokenFrame = frame[(10 + partitionLength)..];
-            partitions = ReadPartitions(tokenFrame, partitionCount);
-        }
-        catch
+        public int MacroblockHeight { readonly get; private set; }
+
+        /// <summary>The macroblock row <see cref="ReconstructRow"/> decodes next.</summary>
+        public int MacroblockY { readonly get; private set; }
+
+        /// <summary>Rows handed to the sink so far.</summary>
+        public int Emitted { readonly get; private set; }
+
+        /// <summary>
+        /// Reads the frame header from the first partition (<paramref name="header"/>, left positioned
+        /// at the first macroblock's modes) and rents the row caches.
+        /// </summary>
+        public static FrameState Create(ref Vp8BoolDecoder header, int width, int height, WebpAblation ablation)
         {
-            if (coefficientProbabilitiesRented)
+            if (header.ReadBit(128) != 0)
             {
-                WebpBufferPool<byte>.Return(coefficientProbabilities);
+                throw new NotSupportedException("Reserved VP8 key-frame color-space flags are unsupported.");
             }
 
-            ReturnSegmentBuffers(segments);
-            ReturnFilterBuffers(filter);
-            throw;
+            _ = header.ReadBit(128);
+
+            SegmentFeatures segments = ReadSegments(ref header);
+            FilterSettings filter;
+            try
+            {
+                filter = ReadFilter(ref header);
+            }
+            catch
+            {
+                ReturnSegmentBuffers(segments);
+                throw;
+            }
+
+            byte[] coefficientProbabilities = Array.Empty<byte>();
+            bool coefficientProbabilitiesRented = false;
+            int partitionCount;
+            Quantizers quantizers;
+            int skipProbability;
+            try
+            {
+                partitionCount = 1 << header.ReadLiteral(2);
+                quantizers = ReadQuantizers(ref header);
+                _ = header.ReadBit(128);
+                coefficientProbabilities = WebpBufferPool<byte>.Rent(4 * 8 * 3 * 11);
+                coefficientProbabilitiesRented = true;
+                Vp8Tables.CopyDefaultCoefficientProbabilities(coefficientProbabilities);
+                ReadCoefficientProbabilityUpdates(ref header, coefficientProbabilities);
+                bool skipFlagPresent = header.ReadBit(128) != 0;
+                skipProbability = skipFlagPresent ? (byte)header.ReadLiteral(8) : -1;
+            }
+            catch
+            {
+                if (coefficientProbabilitiesRented)
+                {
+                    WebpBufferPool<byte>.Return(coefficientProbabilities);
+                }
+
+                ReturnSegmentBuffers(segments);
+                ReturnFilterBuffers(filter);
+                throw;
+            }
+
+            int mbWidth = (width + 15) >> 4;
+            int paddedWidth = mbWidth * 16;
+            var state = new FrameState
+            {
+                _segments = segments,
+                _filter = filter,
+                _probabilities = coefficientProbabilities,
+                _skipProbability = skipProbability,
+                _width = width,
+                _height = height,
+                _paddedWidth = paddedWidth,
+                // Cache rows carry CacheLeft bytes before column 0: column -1 is the 129 left frame edge
+                // intra prediction reads; the rest keeps rows aligned.
+                _yStride = paddedWidth + 2 * CacheLeft,
+                _uvStride = paddedWidth / 2 + 2 * CacheLeft,
+                _ablation = ablation,
+                PartitionCount = partitionCount,
+                MacroblockWidth = mbWidth,
+                MacroblockHeight = (height + 15) >> 4,
+            };
+            state._yCache = WebpBufferPool<byte>.Rent(checked(state._yStride * (LumaCacheExtra + 16)));
+            state._uCache = WebpBufferPool<byte>.Rent(checked(state._uvStride * (ChromaCacheExtra + 8)));
+            state._vCache = WebpBufferPool<byte>.Rent(checked(state._uvStride * (ChromaCacheExtra + 8)));
+            // Unfiltered bottom rows of the previous macroblock row: intra prediction reads these, while
+            // the cache above the current row holds them loop-filtered.
+            state._topRows = WebpBufferPool<byte>.Rent(checked(paddedWidth * 2));
+            state._aboveB = WebpBufferPool<byte>.Rent(mbWidth * 4);
+            state._aboveNz = WebpBufferPool<uint>.Rent(mbWidth);
+            state._rowFilter = WebpBufferPool<byte>.Rent(mbWidth * 2);
+            Array.Clear(state._aboveB);
+            Array.Clear(state._aboveNz);
+            ComputeSegmentParameters(segments, quantizers, filter, state._segmentParameters);
+            return state;
         }
 
-        var tokens = new Vp8TokenPartitions(
-            partitions.P0, partitions.P1, partitions.P2, partitions.P3,
-            partitions.P4, partitions.P5, partitions.P6, partitions.P7);
-
-        int mbWidth = (width + 15) >> 4;
-        int mbHeight = (height + 15) >> 4;
-        int paddedWidth = mbWidth * 16;
-        // Cache rows carry CacheLeft bytes before column 0: column -1 is the 129 left frame edge
-        // intra prediction reads; the rest keeps rows aligned.
-        int yStride = paddedWidth + 2 * CacheLeft;
-        int uvStride = paddedWidth / 2 + 2 * CacheLeft;
-        byte[] yCache = WebpBufferPool<byte>.Rent(checked(yStride * (LumaCacheExtra + 16)));
-        byte[] uCache = WebpBufferPool<byte>.Rent(checked(uvStride * (ChromaCacheExtra + 8)));
-        byte[] vCache = WebpBufferPool<byte>.Rent(checked(uvStride * (ChromaCacheExtra + 8)));
-        // Unfiltered bottom rows of the previous macroblock row: intra prediction reads these, while
-        // the cache above the current row holds them loop-filtered.
-        byte[] topRows = WebpBufferPool<byte>.Rent(checked(paddedWidth * 2));
-        byte[] aboveB = WebpBufferPool<byte>.Rent(mbWidth * 4);
-        uint[] aboveNz = WebpBufferPool<uint>.Rent(mbWidth);
-        byte[] rowFilter = WebpBufferPool<byte>.Rent(mbWidth * 2);
-        // The row above the macroblock being predicted, with its top-left pixel at index -1:
-        // luma 16 + 4 above-right (at AboveY), U and V 8 (at AboveU / AboveV).
-        Span<byte> aboveRows = stackalloc byte[AboveLength];
-        Span<byte> blockModes = stackalloc byte[16];
-        Span<byte> leftB = stackalloc byte[4];
-        uint leftNz = 0;
-        Span<short> residual = stackalloc short[16];
-        // 25 blocks of 16 coefficients: 16 luma, 4 U, 4 V, Y2. Kept zero between blocks: each block
-        // is cleared right after it has been consumed.
-        Span<short> mbCoefficients = stackalloc short[25 * 16];
-        mbCoefficients.Clear();
-        SegmentParameterSet segmentParameters = default;
-        ComputeSegmentParameters(segments, quantizers, filter, segmentParameters);
-        ref byte probabilityBase = ref MemoryMarshal.GetArrayDataReference(coefficientProbabilities);
-
-        try
+        /// <summary>Copies the above contexts that <see cref="ReconstructRow"/> updates.</summary>
+        public void SaveContexts()
         {
-            Array.Clear(aboveB);
-            Array.Clear(aboveNz);
+            int mbWidth = MacroblockWidth;
+            _savedAboveB ??= WebpBufferPool<byte>.Rent(mbWidth * 4);
+            _savedAboveNz ??= WebpBufferPool<uint>.Rent(mbWidth);
+            _aboveB.AsSpan(0, mbWidth * 4).CopyTo(_savedAboveB);
+            _aboveNz.AsSpan(0, mbWidth).CopyTo(_savedAboveNz);
+        }
+
+        /// <summary>Puts back the contexts <see cref="SaveContexts"/> copied, undoing a <see cref="ReconstructRow"/>.</summary>
+        public readonly void RestoreContexts()
+        {
+            int mbWidth = MacroblockWidth;
+            _savedAboveB.AsSpan(0, mbWidth * 4).CopyTo(_aboveB);
+            _savedAboveNz.AsSpan(0, mbWidth).CopyTo(_aboveNz);
+        }
+
+        /// <summary>
+        /// Entropy-decodes macroblock row <see cref="MacroblockY"/> (modes from <paramref name="header"/>,
+        /// coefficients from <paramref name="tokenDecoder"/>) and reconstructs it, unfiltered, into the
+        /// row cache. Nothing but the row's cache rows and the above contexts changes, so the row can be
+        /// decoded again after <see cref="RestoreContexts"/>. With <paramref name="stopWhenPadded"/> it
+        /// returns false as soon as <paramref name="tokenDecoder"/> has read past its data.
+        /// </summary>
+        public bool ReconstructRow(ref Vp8BoolDecoder header, ref Vp8BoolDecoder tokenDecoder, bool stopWhenPadded)
+        {
+            bool skipResidual = (_ablation & WebpAblation.SkipResidual) != 0;
+            bool skipPrediction = (_ablation & WebpAblation.SkipPrediction) != 0;
+            bool skipCopy = (_ablation & WebpAblation.SkipMacroblockCopy) != 0;
+            int width = _width;
+            int mbWidth = MacroblockWidth;
+            int mbY = MacroblockY;
+            int yStride = _yStride;
+            int uvStride = _uvStride;
+            int paddedWidth = _paddedWidth;
+            byte[] aboveB = _aboveB;
+            uint[] aboveNz = _aboveNz;
+            byte[] rowFilter = _rowFilter;
+            byte[]? segmentProbabilities = _segments.Enabled && _segments.UpdateMap ? _segments.MapProbabilities : null;
+            int skipProbability = _skipProbability;
+
+            // The row above the macroblock being predicted, with its top-left pixel at index -1:
+            // luma 16 + 4 above-right (at AboveY), U and V 8 (at AboveU / AboveV).
+            Span<byte> aboveRows = stackalloc byte[AboveLength];
+            Span<byte> blockModes = stackalloc byte[16];
+            Span<byte> leftB = stackalloc byte[4];
+            uint leftNz = 0;
+            Span<short> residual = stackalloc short[16];
+            // 25 blocks of 16 coefficients: 16 luma, 4 U, 4 V, Y2. Kept zero between blocks: each block
+            // is cleared right after it has been consumed.
+            Span<short> mbCoefficients = stackalloc short[25 * 16];
+            mbCoefficients.Clear();
+            leftB.Clear();
+            ref byte probabilityBase = ref MemoryMarshal.GetArrayDataReference(_probabilities);
             ref byte aboveY = ref Unsafe.Add(ref MemoryMarshal.GetReference(aboveRows), AboveY);
             ref byte aboveU = ref Unsafe.Add(ref MemoryMarshal.GetReference(aboveRows), AboveU);
             ref byte aboveV = ref Unsafe.Add(ref MemoryMarshal.GetReference(aboveRows), AboveV);
-            ref byte topY = ref MemoryMarshal.GetArrayDataReference(topRows);
+            ref byte topY = ref MemoryMarshal.GetArrayDataReference(_topRows);
             ref byte topU = ref Unsafe.Add(ref topY, paddedWidth);
             ref byte topV = ref Unsafe.Add(ref topU, paddedWidth / 2);
-            ref byte yRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(yCache), LumaCacheExtra * yStride + CacheLeft);
-            ref byte uRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(uCache), ChromaCacheExtra * uvStride + CacheLeft);
-            ref byte vRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(vCache), ChromaCacheExtra * uvStride + CacheLeft);
-            int emitted = 0;
-            for (int mbY = 0; mbY < mbHeight; mbY++)
+            ref byte yRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_yCache), LumaCacheExtra * yStride + CacheLeft);
+            ref byte uRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_uCache), ChromaCacheExtra * uvStride + CacheLeft);
+            ref byte vRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_vCache), ChromaCacheExtra * uvStride + CacheLeft);
+            for (int row = 0; row < 16; row++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                for (int row = 0; row < 16; row++)
+                Unsafe.Add(ref yRow0, row * yStride - 1) = 129;
+            }
+
+            for (int row = 0; row < 8; row++)
+            {
+                Unsafe.Add(ref uRow0, row * uvStride - 1) = 129;
+                Unsafe.Add(ref vRow0, row * uvStride - 1) = 129;
+            }
+
+            for (int mbX = 0; mbX < mbWidth; mbX++)
+            {
+                int modes = ReadMacroblockModes(ref header, segmentProbabilities, skipProbability,
+                    aboveB.AsSpan(mbX * 4, 4), leftB, blockModes);
+                int segment = modes & 3;
+                bool skip = (modes & 4) != 0;
+                byte yMode = (byte)((modes >> 3) & 7);
+                byte uvMode = (byte)(modes >> 6);
+                ref SegmentParameters sp = ref _segmentParameters[segment];
+                ref short coefficientBase = ref MemoryMarshal.GetReference(mbCoefficients);
+                bool i16 = yMode != 4;
+                ulong masks = 0;
+                if (skip)
                 {
-                    Unsafe.Add(ref yRow0, row * yStride - 1) = 129;
+                    // A skipped macroblock has no coefficients; only a Y2 context survives, and
+                    // only when the macroblock has no Y2 block itself (RFC 6386 §13.3).
+                    uint keep = i16 ? 0u : NzY2;
+                    aboveNz[mbX] &= keep;
+                    leftNz &= keep;
+                }
+                else
+                {
+                    masks = ParseResiduals(ref tokenDecoder, ref probabilityBase, ref coefficientBase, ref sp, i16,
+                        ref aboveNz[mbX], ref leftNz);
                 }
 
-                for (int row = 0; row < 8; row++)
+                uint nonzeroMask = (uint)masks;
+                uint acMask = (uint)(masks >> 32);
+                rowFilter[mbX * 2] = i16 ? sp.FilterLevelI16 : sp.FilterLevelI4;
+                // Inner edges are filtered unless the macroblock is i16 with no coefficients.
+                rowFilter[mbX * 2 + 1] = (byte)(nonzeroMask == 0 && i16 ? 0 : 1);
+
+                if (!skipCopy)
                 {
-                    Unsafe.Add(ref uRow0, row * uvStride - 1) = 129;
-                    Unsafe.Add(ref vRow0, row * uvStride - 1) = 129;
+                    PrepareAbove(ref aboveY, ref aboveU, ref aboveV, ref topY, ref topU, ref topV, mbX, mbY, width);
                 }
 
-                leftB.Clear();
-                leftNz = 0;
-                int tokenPartition = mbY & (partitionCount - 1);
-                ref Vp8BoolDecoder tokenDecoder = ref tokens.PartitionRef(tokenPartition);
-                for (int mbX = 0; mbX < mbWidth; mbX++)
+                ref byte dy = ref Unsafe.Add(ref yRow0, mbX * 16);
+                ref byte du = ref Unsafe.Add(ref uRow0, mbX * 8);
+                ref byte dv = ref Unsafe.Add(ref vRow0, mbX * 8);
+                if (!skipPrediction)
                 {
-                    int modes = ReadMacroblockModes(ref header, segments.Enabled && segments.UpdateMap ? segments.MapProbabilities : null,
-                        skipFlagPresent ? skipProbability : -1, aboveB.AsSpan(mbX * 4, 4), leftB, blockModes);
-                    int segment = modes & 3;
-                    bool skip = (modes & 4) != 0;
-                    byte yMode = (byte)((modes >> 3) & 7);
-                    byte uvMode = (byte)(modes >> 6);
-                    ref SegmentParameters sp = ref segmentParameters[segment];
-                    ref short coefficientBase = ref MemoryMarshal.GetReference(mbCoefficients);
-                    bool i16 = yMode != 4;
-                    ulong masks = 0;
-                    if (skip)
+                    if (i16)
                     {
-                        // A skipped macroblock has no coefficients; only a Y2 context survives, and
-                        // only when the macroblock has no Y2 block itself (RFC 6386 §13.3).
-                        uint keep = i16 ? 0u : NzY2;
-                        aboveNz[mbX] &= keep;
-                        leftNz &= keep;
-                    }
-                    else
-                    {
-                        masks = ParseResiduals(ref tokenDecoder, ref probabilityBase, ref coefficientBase, ref sp, i16,
-                            ref aboveNz[mbX], ref leftNz);
+                        PredictLarge(ref dy, yStride, 16, yMode, mbY > 0, mbX > 0, ref aboveY);
                     }
 
-                    uint nonzeroMask = (uint)masks;
-                    uint acMask = (uint)(masks >> 32);
-                    rowFilter[mbX * 2] = i16 ? sp.FilterLevelI16 : sp.FilterLevelI4;
-                    // Inner edges are filtered unless the macroblock is i16 with no coefficients.
-                    rowFilter[mbX * 2 + 1] = (byte)(nonzeroMask == 0 && i16 ? 0 : 1);
+                    PredictLarge(ref du, uvStride, 8, uvMode, mbY > 0, mbX > 0, ref aboveU);
+                    PredictLarge(ref dv, uvStride, 8, uvMode, mbY > 0, mbX > 0, ref aboveV);
+                }
 
-                    if (!skipCopy)
+                if (i16 && (nonzeroMask & NzY2) != 0)
+                {
+                    ref short y2 = ref Unsafe.Add(ref coefficientBase, 24 * 16);
+                    InverseWalshToBlocks(ref y2, ref coefficientBase, (acMask & NzY2) != 0);
+                    Unsafe.InitBlockUnaligned(ref Unsafe.As<short, byte>(ref y2), 0, 32);
+                }
+
+                for (int block = 0; block < 16; block++)
+                {
+                    int blockX = block & 3;
+                    int blockY = block >> 2;
+                    ref byte destination = ref Unsafe.Add(ref dy, blockY * 4 * yStride + blockX * 4);
+                    if (!i16 && !skipPrediction)
                     {
-                        PrepareAbove(ref aboveY, ref aboveU, ref aboveV, ref topY, ref topU, ref topV, mbX, mbY, width);
+                        PredictSubblock(ref destination, yStride, blockModes[block],
+                            ref SubblockAbove(ref destination, yStride, blockX, blockY, ref aboveY, aboveRows));
                     }
 
-                    ref byte dy = ref Unsafe.Add(ref yRow0, mbX * 16);
-                    ref byte du = ref Unsafe.Add(ref uRow0, mbX * 8);
-                    ref byte dv = ref Unsafe.Add(ref vRow0, mbX * 8);
-                    if (!skipPrediction)
+                    // An i16 block can be all zero except for the DC its Y2 block supplied.
+                    ref short coefficients = ref Unsafe.Add(ref coefficientBase, block * 16);
+                    if (((nonzeroMask >> block) & 1) != 0 || coefficients != 0)
                     {
-                        if (i16)
+                        if (!skipResidual)
                         {
-                            PredictLarge(ref dy, yStride, 16, yMode, mbY > 0, mbX > 0, ref aboveY);
+                            InverseDctAdd(ref coefficients, ref destination, yStride, residual, ((acMask >> block) & 1) != 0);
                         }
 
-                        PredictLarge(ref du, uvStride, 8, uvMode, mbY > 0, mbX > 0, ref aboveU);
-                        PredictLarge(ref dv, uvStride, 8, uvMode, mbY > 0, mbX > 0, ref aboveV);
+                        Unsafe.InitBlockUnaligned(ref Unsafe.As<short, byte>(ref coefficients), 0, 32);
                     }
+                }
 
-                    if (i16 && (nonzeroMask & NzY2) != 0)
+                if ((nonzeroMask & 0xff0000) != 0)
+                {
+                    for (int block = 16; block < 24; block++)
                     {
-                        ref short y2 = ref Unsafe.Add(ref coefficientBase, 24 * 16);
-                        InverseWalshToBlocks(ref y2, ref coefficientBase, (acMask & NzY2) != 0);
-                        Unsafe.InitBlockUnaligned(ref Unsafe.As<short, byte>(ref y2), 0, 32);
-                    }
-
-                    for (int block = 0; block < 16; block++)
-                    {
-                        int blockX = block & 3;
-                        int blockY = block >> 2;
-                        ref byte destination = ref Unsafe.Add(ref dy, blockY * 4 * yStride + blockX * 4);
-                        if (!i16 && !skipPrediction)
+                        if (((nonzeroMask >> block) & 1) == 0)
                         {
-                            PredictSubblock(ref destination, yStride, blockModes[block],
-                                ref SubblockAbove(ref destination, yStride, blockX, blockY, ref aboveY, aboveRows));
+                            continue;
                         }
 
-                        // An i16 block can be all zero except for the DC its Y2 block supplied.
                         ref short coefficients = ref Unsafe.Add(ref coefficientBase, block * 16);
-                        if (((nonzeroMask >> block) & 1) != 0 || coefficients != 0)
+                        if (!skipResidual)
                         {
-                            if (!skipResidual)
-                            {
-                                InverseDctAdd(ref coefficients, ref destination, yStride, residual, ((acMask >> block) & 1) != 0);
-                            }
-
-                            Unsafe.InitBlockUnaligned(ref Unsafe.As<short, byte>(ref coefficients), 0, 32);
+                            ref byte plane = ref block < 20 ? ref du : ref dv;
+                            InverseDctAdd(ref coefficients, ref Unsafe.Add(ref plane, ((block >> 1) & 1) * 4 * uvStride + (block & 1) * 4),
+                                uvStride, residual, ((acMask >> block) & 1) != 0);
                         }
-                    }
 
-                    if ((nonzeroMask & 0xff0000) != 0)
-                    {
-                        for (int block = 16; block < 24; block++)
-                        {
-                            if (((nonzeroMask >> block) & 1) == 0)
-                            {
-                                continue;
-                            }
-
-                            ref short coefficients = ref Unsafe.Add(ref coefficientBase, block * 16);
-                            if (!skipResidual)
-                            {
-                                ref byte plane = ref block < 20 ? ref du : ref dv;
-                                InverseDctAdd(ref coefficients, ref Unsafe.Add(ref plane, ((block >> 1) & 1) * 4 * uvStride + (block & 1) * 4),
-                                    uvStride, residual, ((acMask >> block) & 1) != 0);
-                            }
-
-                            Unsafe.InitBlockUnaligned(ref Unsafe.As<short, byte>(ref coefficients), 0, 32);
-                        }
+                        Unsafe.InitBlockUnaligned(ref Unsafe.As<short, byte>(ref coefficients), 0, 32);
                     }
                 }
 
-                if (!skipCopy)
+                if (stopWhenPadded && tokenDecoder.Padded)
                 {
-                    // The next row predicts from this one's bottom row before the loop filter.
-                    MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref yRow0, 15 * yStride), paddedWidth)
-                        .CopyTo(MemoryMarshal.CreateSpan(ref topY, paddedWidth));
-                    MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref uRow0, 7 * uvStride), paddedWidth / 2)
-                        .CopyTo(MemoryMarshal.CreateSpan(ref topU, paddedWidth / 2));
-                    MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref vRow0, 7 * uvStride), paddedWidth / 2)
-                        .CopyTo(MemoryMarshal.CreateSpan(ref topV, paddedWidth / 2));
-                }
-
-                if (applyLoopFilter)
-                {
-                    FilterMacroblockRow(yCache, yStride, uCache, vCache, uvStride, mbWidth, mbY, filter, rowFilter);
-                }
-
-                int end = mbY == mbHeight - 1 ? height : mbY * 16 + 8;
-                if ((ablation & WebpAblation.SkipOutput) == 0 && end > emitted)
-                {
-                    sink.Emit(
-                        ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(yCache), CacheLeft), yStride, mbY * 16 - LumaCacheExtra,
-                        ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(uCache), CacheLeft),
-                        ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(vCache), CacheLeft),
-                        uvStride, mbY * 8 - ChromaCacheExtra, emitted, end);
-                }
-
-                emitted = end;
-                if (emitted >= rowLimit)
-                {
-                    break;
-                }
-
-                // Slide the cache down by one macroblock row, keeping the rows the next row's loop
-                // filter and output still need.
-                if (!skipCopy)
-                {
-                    yCache.AsSpan(16 * yStride, LumaCacheExtra * yStride).CopyTo(yCache);
-                    uCache.AsSpan(8 * uvStride, ChromaCacheExtra * uvStride).CopyTo(uCache);
-                    vCache.AsSpan(8 * uvStride, ChromaCacheExtra * uvStride).CopyTo(vCache);
+                    return false;
                 }
             }
+
+            return true;
         }
-        finally
+
+        /// <summary>
+        /// Completes the row <see cref="ReconstructRow"/> decoded: keeps its unfiltered bottom rows for
+        /// the next row's prediction, loop-filters it, hands the rows that are now final to
+        /// <paramref name="sink"/> and slides the cache. Returns true when the emitted rows reach
+        /// <paramref name="rowLimit"/>.
+        /// </summary>
+        public bool FinishRow<TSink>(ref TSink sink, int rowLimit)
+            where TSink : IVp8RowSink, allows ref struct
         {
-            WebpBufferPool<byte>.Return(yCache);
-            WebpBufferPool<byte>.Return(uCache);
-            WebpBufferPool<byte>.Return(vCache);
-            WebpBufferPool<byte>.Return(topRows);
-            WebpBufferPool<byte>.Return(aboveB);
-            WebpBufferPool<uint>.Return(aboveNz);
-            WebpBufferPool<byte>.Return(rowFilter);
-            WebpBufferPool<byte>.Return(coefficientProbabilities);
-            ReturnSegmentBuffers(segments);
-            ReturnFilterBuffers(filter);
+            bool skipCopy = (_ablation & WebpAblation.SkipMacroblockCopy) != 0;
+            int mbY = MacroblockY;
+            int yStride = _yStride;
+            int uvStride = _uvStride;
+            int paddedWidth = _paddedWidth;
+            if (!skipCopy)
+            {
+                // The next row predicts from this one's bottom row before the loop filter.
+                ref byte topY = ref MemoryMarshal.GetArrayDataReference(_topRows);
+                ref byte topU = ref Unsafe.Add(ref topY, paddedWidth);
+                ref byte topV = ref Unsafe.Add(ref topU, paddedWidth / 2);
+                ref byte yRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_yCache), LumaCacheExtra * yStride + CacheLeft);
+                ref byte uRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_uCache), ChromaCacheExtra * uvStride + CacheLeft);
+                ref byte vRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_vCache), ChromaCacheExtra * uvStride + CacheLeft);
+                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref yRow0, 15 * yStride), paddedWidth)
+                    .CopyTo(MemoryMarshal.CreateSpan(ref topY, paddedWidth));
+                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref uRow0, 7 * uvStride), paddedWidth / 2)
+                    .CopyTo(MemoryMarshal.CreateSpan(ref topU, paddedWidth / 2));
+                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref vRow0, 7 * uvStride), paddedWidth / 2)
+                    .CopyTo(MemoryMarshal.CreateSpan(ref topV, paddedWidth / 2));
+            }
+
+            if ((_ablation & WebpAblation.SkipLoopFilter) == 0)
+            {
+                FilterMacroblockRow(_yCache, yStride, _uCache, _vCache, uvStride, MacroblockWidth, mbY, _filter, _rowFilter);
+            }
+
+            int end = mbY == MacroblockHeight - 1 ? _height : mbY * 16 + 8;
+            if ((_ablation & WebpAblation.SkipOutput) == 0 && end > Emitted)
+            {
+                sink.Emit(
+                    ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_yCache), CacheLeft), yStride, mbY * 16 - LumaCacheExtra,
+                    ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_uCache), CacheLeft),
+                    ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_vCache), CacheLeft),
+                    uvStride, mbY * 8 - ChromaCacheExtra, Emitted, end);
+            }
+
+            Emitted = end;
+            MacroblockY = mbY + 1;
+            if (end >= rowLimit)
+            {
+                return true;
+            }
+
+            // Slide the cache down by one macroblock row, keeping the rows the next row's loop
+            // filter and output still need.
+            if (!skipCopy)
+            {
+                _yCache.AsSpan(16 * yStride, LumaCacheExtra * yStride).CopyTo(_yCache);
+                _uCache.AsSpan(8 * uvStride, ChromaCacheExtra * uvStride).CopyTo(_uCache);
+                _vCache.AsSpan(8 * uvStride, ChromaCacheExtra * uvStride).CopyTo(_vCache);
+            }
+
+            return false;
+        }
+
+        /// <summary>Returns every rented buffer; the state is unusable afterwards.</summary>
+        public void Dispose()
+        {
+            if (_yCache is null)
+            {
+                return;
+            }
+
+            WebpBufferPool<byte>.Return(_yCache);
+            WebpBufferPool<byte>.Return(_uCache);
+            WebpBufferPool<byte>.Return(_vCache);
+            WebpBufferPool<byte>.Return(_topRows);
+            WebpBufferPool<byte>.Return(_aboveB);
+            WebpBufferPool<uint>.Return(_aboveNz);
+            WebpBufferPool<byte>.Return(_rowFilter);
+            WebpBufferPool<byte>.Return(_probabilities);
+            if (_savedAboveB is not null)
+            {
+                WebpBufferPool<byte>.Return(_savedAboveB);
+            }
+
+            if (_savedAboveNz is not null)
+            {
+                WebpBufferPool<uint>.Return(_savedAboveNz);
+            }
+
+            ReturnSegmentBuffers(_segments);
+            ReturnFilterBuffers(_filter);
+            this = default;
         }
     }
 
@@ -1143,10 +1310,12 @@ internal static class Vp8Decoder
         }
     }
 
-    private static PartitionSlices ReadPartitions(ReadOnlySpan<byte> data, int count)
+    /// <summary>
+    /// The offset and length, within <paramref name="data"/> (everything after the first partition), of each of the
+    /// <paramref name="count"/> token partitions (RFC 6386 §9.5).
+    /// </summary>
+    internal static void ReadPartitionBounds(ReadOnlySpan<byte> data, int count, Span<int> offsets, Span<int> lengths)
     {
-        ReadOnlySpan<byte> p0 = default, p1 = default, p2 = default, p3 = default;
-        ReadOnlySpan<byte> p4 = default, p5 = default, p6 = default, p7 = default;
         int sizeCount = count - 1;
         int tableLength = sizeCount * 3;
         if (data.Length < tableLength)
@@ -1154,23 +1323,37 @@ internal static class Vp8Decoder
             throw new InvalidDataException("The VP8 token partition size table is truncated.");
         }
 
-        Span<int> sizes = stackalloc int[7];
-        for (int i = 0; i < sizeCount; i++)
-        {
-            int sizeOffset = i * 3;
-            sizes[i] = data[sizeOffset] | data[sizeOffset + 1] << 8 | data[sizeOffset + 2] << 16;
-        }
-
         int offset = tableLength;
         for (int i = 0; i < count; i++)
         {
-            int size = i == sizeCount ? data.Length - offset : sizes[i];
+            int size = data.Length - offset;
+            if (i < sizeCount)
+            {
+                int sizeOffset = i * 3;
+                size = data[sizeOffset] | data[sizeOffset + 1] << 8 | data[sizeOffset + 2] << 16;
+            }
+
             if (size > data.Length - offset)
             {
                 throw new InvalidDataException("A VP8 token partition exceeds the frame.");
             }
 
-            ReadOnlySpan<byte> part = data.Slice(offset, size);
+            offsets[i] = offset;
+            lengths[i] = size;
+            offset += size;
+        }
+    }
+
+    private static PartitionSlices ReadPartitions(ReadOnlySpan<byte> data, int count)
+    {
+        ReadOnlySpan<byte> p0 = default, p1 = default, p2 = default, p3 = default;
+        ReadOnlySpan<byte> p4 = default, p5 = default, p6 = default, p7 = default;
+        Span<int> offsets = stackalloc int[8];
+        Span<int> lengths = stackalloc int[8];
+        ReadPartitionBounds(data, count, offsets, lengths);
+        for (int i = 0; i < count; i++)
+        {
+            ReadOnlySpan<byte> part = data.Slice(offsets[i], lengths[i]);
             switch (i)
             {
                 case 0: p0 = part; break;
@@ -1182,8 +1365,6 @@ internal static class Vp8Decoder
                 case 6: p6 = part; break;
                 case 7: p7 = part; break;
             }
-
-            offset += size;
         }
 
         return new PartitionSlices(p0, p1, p2, p3, p4, p5, p6, p7);

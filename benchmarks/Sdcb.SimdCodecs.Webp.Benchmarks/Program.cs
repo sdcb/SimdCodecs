@@ -139,6 +139,13 @@ static void CheckCorrectness(IReadOnlyList<string> inputs, bool requireBaseline)
             throw new InvalidOperationException($"{input}: current decoder output differs from libwebp; refusing to benchmark.");
         }
 
+        byte[] streamed = new byte[current.Length];
+        AbBenchmarks.StreamingDecode(source, streamed);
+        if (!streamed.AsSpan().SequenceEqual(current))
+        {
+            throw new InvalidOperationException($"{input}: the streaming reader's rows differ from DecodeTo; refusing to benchmark.");
+        }
+
         string vsBaseline = "no baseline";
         if (BaselineDecoder.Description is not null)
         {

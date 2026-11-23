@@ -21,7 +21,7 @@ namespace Sdcb.SimdCodecs.Webp;
 /// exactly the generic path's (whole decode, box filter, crop). Lossless and animated input take the generic path.
 /// </para>
 /// </summary>
-public sealed class WebpImageDecoder : IMultiFrameImageDecoder
+public sealed class WebpImageDecoder : IMultiFrameImageDecoder, IStreamingImageDecoder
 {
     /// <inheritdoc />
     public static int SignatureLength => 12;
@@ -51,7 +51,7 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
     }
 
     // WebP has no colour signalling besides its ICCP chunk: that profile's primaries, when H.273 names them.
-    private static ColorEncoding EncodingOf(ReadOnlySpan<byte> iccProfile) =>
+    internal static ColorEncoding EncodingOf(ReadOnlySpan<byte> iccProfile) =>
         IccPrimaries.Encoding(iccProfile) ?? ColorEncoding.AssumedSrgb;
 
     /// <inheritdoc />
@@ -327,6 +327,20 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
     public static bool TryDecodeThumbnail(ReadOnlySpan<byte> data, [NotNullWhen(true)] out IDecodedImage? thumbnail) =>
         ImageDecoderFallback.NoThumbnail(out thumbnail);
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// A lossy still (simple VP8, or VP8X with VP8 and optional ALPH) at full size streams: rows are decoded as the VP8
+    /// chunk's bytes arrive, with one token partition from a window of about two macroblock rows of compressed input
+    /// (O(width) memory), with several from the VP8 chunk buffered whole (O(compressed chunk) + O(width)). An ALPH plane
+    /// is decoded whole with the header (width × height bytes). Lossless, animated input and any other option read the
+    /// whole stream and decode it with <see cref="TryDecodeInto"/> (<see cref="IImageRowReader.IsStreaming"/> false).
+    /// The rows equal <see cref="TryDecodeInto"/>'s byte for byte; <see cref="IImageRowReader.Info"/> lacks what is
+    /// stored after the image (an EXIF orientation, usually). An ALPH chunk after the VP8 chunk, or an animated VP8X
+    /// after it, which the span decoder applies, is refused with <see cref="InvalidDataException"/>.
+    /// </remarks>
+    public static StreamingRowReader CreateRowReader(StreamInput input, PixelFormat format, DecodeOptions? options) =>
+        new WebpRowReader(input, format, options);
+
     /// <summary>The registration for <c>ImageCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
     {
@@ -340,6 +354,7 @@ public sealed class WebpImageDecoder : IMultiFrameImageDecoder
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
         TryOpenFrames = TryOpenFrames,
+        CreateRowReader = CreateRowReader,
     };
 
     /// <summary>

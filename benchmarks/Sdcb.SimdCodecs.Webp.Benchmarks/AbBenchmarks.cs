@@ -10,6 +10,8 @@ using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Order;
 using BenchmarkDotNet.Reports;
 using BenchmarkDotNet.Running;
+using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 
 namespace Sdcb.SimdCodecs.Webp.Benchmarks;
 
@@ -66,6 +68,26 @@ public class AbBenchmarks
     [Benchmark]
     public void LibWebp() => Benchmarks.LibWebp.DecodeRgbaInto(_source, _rgba, _width, _height);
 
+    /// <summary>The current decoder through its forward-only row reader, 16 rows per read, from a stream.</summary>
+    [Benchmark]
+    public void Streaming() => StreamingDecode(_source, _rgba);
+
+    /// <summary>
+    /// Reads every row of <paramref name="source"/> through <see cref="WebpImageDecoder.CreateRowReader"/> into
+    /// <paramref name="rgba"/>, as a caller with a request body would: a stream, a band of 16 rows per call.
+    /// </summary>
+    internal static void StreamingDecode(byte[] source, byte[] rgba)
+    {
+        using var reader = WebpImageDecoder.CreateRowReader(new StreamInput(new MemoryStream(source, writable: false)),
+            PixelFormat.Rgba32, null);
+        reader.Initialize();
+        int rowBytes = reader.Width * 4;
+        while (reader.RowsRead < reader.Height)
+        {
+            reader.ReadRows(rgba.AsSpan(reader.RowsRead * rowBytes), 16);
+        }
+    }
+
     [Benchmark]
     public void NoLoopFilter() => WebpDiagnostics.DecodeTo(_source, _rgba, WebpAblation.SkipLoopFilter);
 
@@ -93,7 +115,7 @@ public class AbBenchmarks
     [Benchmark]
     public void NoPredictorTransform() => WebpDiagnostics.DecodeTo(_source, _rgba, WebpAblation.SkipPredictorTransform);
 
-    public static readonly string[] CoreMethods = [nameof(Baseline), nameof(Current), nameof(LibWebp)];
+    public static readonly string[] CoreMethods = [nameof(Baseline), nameof(Current), nameof(LibWebp), nameof(Streaming)];
 
     /// <summary>Ablations that mean something for <paramref name="input"/>.</summary>
     public static string[] AblationMethods(string input)
@@ -138,8 +160,8 @@ public class AbBenchmarks
         var sb = new StringBuilder();
         sb.AppendLine($"Baseline: {baselineLabel}. Times are {source} in ms.");
         sb.AppendLine();
-        sb.AppendLine("| Input | libwebp | baseline | current | current ÷ baseline | current ÷ libwebp |");
-        sb.AppendLine("|---|---:|---:|---:|---:|---:|");
+        sb.AppendLine("| Input | libwebp | baseline | current | current ÷ baseline | current ÷ libwebp | streaming | streaming ÷ current |");
+        sb.AppendLine("|---|---:|---:|---:|---:|---:|---:|---:|");
         foreach (string input in inputs)
         {
             if (Get(input, nameof(Current)) is not { } current)
@@ -150,7 +172,8 @@ public class AbBenchmarks
             double? lib = Get(input, nameof(LibWebp));
             double? baseline = Get(input, nameof(Baseline));
             sb.AppendLine($"| `{Path.GetFileName(input)}` | {(lib is { } l ? Ms(l) : "—")} | {(baseline is { } b ? Ms(b) : "—")} | {Ms(current)} | " +
-                          $"{(baseline is { } b2 ? X(current / b2) : "—")} | {(lib is { } l2 ? X(current / l2) : "—")} |");
+                          $"{(baseline is { } b2 ? X(current / b2) : "—")} | {(lib is { } l2 ? X(current / l2) : "—")} | " +
+                          $"{(Get(input, nameof(Streaming)) is { } st ? Ms(st) + " | " + X(st / current) : "— | —")} |");
         }
 
         if (allocated is { Count: > 0 })
@@ -240,6 +263,7 @@ internal static class QuickAb
             {
                 (nameof(AbBenchmarks.Current), () => WebpDecoder.DecodeTo(source, rgba)),
                 (nameof(AbBenchmarks.LibWebp), () => LibWebp.DecodeRgbaInto(source, rgba, info.Width, info.Height)),
+                (nameof(AbBenchmarks.Streaming), () => AbBenchmarks.StreamingDecode(source, rgba)),
             };
             if (hasBaseline)
             {
