@@ -101,12 +101,18 @@ internal static class QoiCodec
         /// data). Every byte is a valid chunk opcode, so running out is the only way to fail. After false the state is
         /// partly advanced: a caller that retries with more data restores a copy taken before the call.
         /// </summary>
-        public bool TryRead(ReadOnlySpan<byte> data, Span<uint> pixels) => Read<ReturnAtEnd>(data, pixels);
+        public bool TryRead(ReadOnlySpan<byte> data, Span<uint> pixels)
+        {
+            Read<ReturnAtEnd>(data, pixels);
+            return _position >= 0;
+        }
 
-        // One loop, two instantiations over a struct marker: the typeof test is a constant in each (also under Mono AOT), so the throwing one keeps its end checks as
-        // cold throw blocks (returning false from them instead costs the whole-image decode about 8%).
+        // One loop, two instantiations over a struct marker; the typeof test is a constant in each (also under Mono AOT).
+        // The throwing one is the loop as it was before streaming: its end checks are cold throw blocks and it returns
+        // nothing. (A shared loop returning bool cost the whole-image decode 4-8%, measured.) The other marks running
+        // out with a position of -1: the state is discarded after a failed read anyway.
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private bool Read<TEnd>(ReadOnlySpan<byte> data, Span<uint> pixels) where TEnd : struct
+        private void Read<TEnd>(ReadOnlySpan<byte> data, Span<uint> pixels) where TEnd : struct
         {
             var n = pixels.Length;
             var i = 0;
@@ -121,7 +127,7 @@ internal static class QoiCodec
             if (i == n)
             {
                 _run = run;
-                return true;
+                return;
             }
 
             // Every chunk is at most 5 bytes. While p <= limit = length − 5 a chunk read from p stays inside data.
@@ -146,7 +152,8 @@ internal static class QoiCodec
                     {
                         if (typeof(TEnd) == typeof(ThrowAtEnd))
                             throw new InvalidDataException("QOI data ends before the last pixel.");
-                        return false;
+                        _position = -1;
+                        return;
                     }
                     tail.Clear();
                     data[p..].CopyTo(tail);
@@ -217,14 +224,14 @@ internal static class QoiCodec
                 {
                     if (typeof(TEnd) == typeof(ThrowAtEnd))
                         throw new InvalidDataException("QOI data ends inside the last chunk.");
-                    return false;
+                    _position = -1;
+                    return;
                 }
                 p += tailBase;
             }
             _position = p;
             _run = run;
             _px = px;
-            return true;
         }
 
         /// <summary>

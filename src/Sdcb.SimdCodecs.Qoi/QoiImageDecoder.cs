@@ -150,7 +150,9 @@ public sealed class QoiImageDecoder : IStreamingImageDecoder
     /// state over the buffered input and the copy is kept only when the whole row decoded, so a row never splits
     /// across calls and the destination of a failed attempt is simply written again. After a failed attempt the next
     /// one waits for twice the bytes (capped at the 5 bytes a pixel a row can take at most), so a stream that arrives a
-    /// byte at a time costs a few decodes of each row, not one per byte.
+    /// byte at a time costs a few decodes of each row, not one per byte. Before a row it asks for more input while the
+    /// bytes buffered are fewer than twice what the previous row took, so a partial row is seldom decoded only to be
+    /// decoded again.
     /// </summary>
     private sealed class RowReader(StreamInput input, PixelFormat format, DecodeOptions? options) : StreamingRowReader(input, format)
     {
@@ -158,6 +160,7 @@ public sealed class QoiImageDecoder : IStreamingImageDecoder
         private int _width;
         private long _rowWorstBytes;   // the most input one row's chunks take: 5 bytes a pixel
         private int _retryAt;          // after a failed row: the input length worth another attempt (0: any)
+        private int _lastRowBytes;     // the input the previous row took
 
         protected override OperationStatus DecodeHeader(ReadOnlySpan<byte> input, bool isFinal, out int consumed,
             out ImageInfo info, out int width, out int height)
@@ -200,16 +203,19 @@ public sealed class QoiImageDecoder : IStreamingImageDecoder
             var attempt = _reader;
             while (rowsWritten < rowCount)
             {
+                var left = input.Length - consumed;
+                if (!isFinal && left < Math.Min(2L * _lastRowBytes + 16, _rowWorstBytes))
+                    return OperationStatus.NeedMoreData;
                 attempt.Position = consumed;
                 if (!QoiDecoder.TryDecodeRow(ref attempt, input, destination.Slice(rowsWritten * stride, rowBytes), _width, Format, chunk))
                 {
                     // The bytes left end inside this row; they start the next call's input. Wait for twice as many,
                     // never for more than the row can need (with that many it cannot fail).
-                    var left = input.Length - consumed;
                     _retryAt = (int)Math.Min(Math.Min(Math.Max(2L * left, 64), _rowWorstBytes), Array.MaxLength);
                     return OperationStatus.NeedMoreData;
                 }
                 _reader = attempt;
+                _lastRowBytes = attempt.Position - consumed;
                 consumed = attempt.Position;
                 rowsWritten++;
                 _retryAt = 0;
