@@ -193,7 +193,7 @@ public sealed class FacadeStreamingTests : IDisposable
             .Message.ShouldContain("AVIF");
 
         // A truncated or corrupt file of a known format: the codec's reason, prefixed with the format.
-        var png = ImageCodecs.Encode(Pattern(40, 30, 3, 2), 40, 30, PixelFormat.Rgb24, ImageFormat.Png);
+        var png = ImageCodecs.Encode(Pattern(40, 30, 3, 2), 40, 30, PixelFormat.Rgb24, ImageFormat.Png, cancellationToken: TestContext.Current.CancellationToken);
         foreach (var cut in new[] { 8, 30, png.Length / 2, png.Length - 1 })
         {
             foreach (var feed in StreamingAssert.AllFeeds)
@@ -219,11 +219,11 @@ public sealed class FacadeStreamingTests : IDisposable
     [Fact]
     public async Task OpenRowReader_DisposesTheStreamUnlessLeftOpen()
     {
-        var file = ImageCodecs.Encode(Pattern(9, 7, 3, 4), 9, 7, PixelFormat.Rgb24, ImageFormat.Bmp);
+        var file = ImageCodecs.Encode(Pattern(9, 7, 3, 4), 9, 7, PixelFormat.Rgb24, ImageFormat.Bmp, cancellationToken: TestContext.Current.CancellationToken);
         foreach (var leaveOpen in new[] { false, true })
         {
             var stream = new ChunkedStream(file);
-            using (var reader = ImageCodecs.OpenRowReader(stream, PixelFormat.Rgba32, leaveOpen: leaveOpen))
+            using (var reader = ImageCodecs.OpenRowReader(stream, PixelFormat.Rgba32, leaveOpen: leaveOpen, cancellationToken: TestContext.Current.CancellationToken))
                 stream.WasDisposed.ShouldBeFalse();
             stream.WasDisposed.ShouldBe(!leaveOpen, $"leaveOpen {leaveOpen}");
 
@@ -354,17 +354,17 @@ public sealed class FacadeStreamingTests : IDisposable
         var rgb = Pattern(w, h, 3, 8);
         foreach (var format in EncoderFormats)
         {
-            var expected = ImageCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, format);
+            var expected = ImageCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, format, cancellationToken: TestContext.Current.CancellationToken);
             var sink = new WriteLog(asyncOnly: false);
-            ImageCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, format, sink);
+            ImageCodecs.Encode(rgb, w, h, PixelFormat.Rgb24, format, sink, cancellationToken: TestContext.Current.CancellationToken);
             sink.ToArray().ShouldBe(expected, $"{format} raw pixels");
             sink.Flushes.ShouldBe(0, "Encode(Stream) does not flush the stream");
 
-            using var image = ImageCodecs.Decode(expected);
+            using var image = ImageCodecs.Decode(expected, cancellationToken: TestContext.Current.CancellationToken);
             var fromImage = new ArrayBufferWriter<byte>();
-            ImageCodecs.Encode(image, format, fromImage);
+            ImageCodecs.Encode(image, format, fromImage, cancellationToken: TestContext.Current.CancellationToken);
             var imageSink = new MemoryStream();
-            ImageCodecs.Encode(image, format, imageSink);
+            ImageCodecs.Encode(image, format, imageSink, cancellationToken: TestContext.Current.CancellationToken);
             imageSink.ToArray().ShouldBe(fromImage.WrittenSpan.ToArray(), $"{format} image");
         }
     }
@@ -374,8 +374,8 @@ public sealed class FacadeStreamingTests : IDisposable
     {
         var sources = new[]
         {
-            ImageCodecs.Encode(Pattern(333, 211, 3, 9), 333, 211, PixelFormat.Rgb24, ImageFormat.Jpeg),
-            ImageCodecs.Encode(Pattern(129, 64, 4, 10), 129, 64, PixelFormat.Rgba32, ImageFormat.Png),
+            ImageCodecs.Encode(Pattern(333, 211, 3, 9), 333, 211, PixelFormat.Rgb24, ImageFormat.Jpeg, cancellationToken: TestContext.Current.CancellationToken),
+            ImageCodecs.Encode(Pattern(129, 64, 4, 10), 129, 64, PixelFormat.Rgba32, ImageFormat.Png, cancellationToken: TestContext.Current.CancellationToken),
             Fixture("webp", "astronaut-192-q20-normal.webp"),
         };
         foreach (var source in sources)
