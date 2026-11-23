@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -178,7 +179,23 @@ internal sealed class Setup(Case c)
             }
             ReadRows();
             if (!rows.AsSpan().SequenceEqual(rgba)) throw new InvalidOperationException($"{c.Name}: the row reader differs from TryDecodeInto");
-            setup.Contestants.Add(new(Names.PnmRows, ReadRows));
+            setup.Contestants.Add(new(Names.Streaming, ReadRows));
+        }
+
+        if (c.Qoi)
+        {
+            // The streaming reader over a stream of the file, 16 rows a call, into the same kind of buffer.
+            var streamed = new byte[rgba.Length];
+            void Stream()
+            {
+                using var reader = QoiImageDecoder.CreateRowReader(new StreamInput(new MemoryStream(data, writable: false)), PixelFormat.Rgba32, null);
+                reader.Initialize();
+                while (reader.RowsRead < reader.Height)
+                    reader.ReadRows(streamed.AsSpan(reader.RowsRead * w * 4), 16);
+            }
+            Stream();
+            if (!streamed.AsSpan().SequenceEqual(rgba)) throw new InvalidOperationException($"{c.Name}: the streaming reader differs from current");
+            setup.Contestants.Add(new(Names.Streaming, Stream));
         }
 
         if (Baseline.CanDecode(c.Qoi))
@@ -267,8 +284,31 @@ internal sealed class Setup(Case c)
             }
             Session();
             if (!writer.WrittenSpan.SequenceEqual(ours)) throw new InvalidOperationException($"{c.Name}: the streaming session's bytes differ from Encode's");
-            setup.Sizes[Names.PnmSession] = writer.WrittenCount;
-            setup.Contestants.Add(new(Names.PnmSession, Session));
+            setup.Sizes[Names.Streaming] = writer.WrittenCount;
+            setup.Contestants.Add(new(Names.Streaming, Session));
+        }
+
+        if (c.Qoi)
+        {
+            // The streaming session, 16 rows a band, into a reused writer.
+            var writer = new ArrayBufferWriter<byte>(ours.Length + 64);
+            var rowBytes = w * format.BytesPerPixel;
+            void Session()
+            {
+                writer.ResetWrittenCount();
+                using var session = QoiImageEncoder.Create(writer);
+                var frame = session.AddFrame(w, h, format);
+                for (var y = 0; y < h; y += 16)
+                {
+                    var n = Math.Min(16, h - y);
+                    frame.WriteRows(pixels.AsSpan(y * rowBytes, n * rowBytes), n);
+                }
+                session.Commit();
+            }
+            Session();
+            if (!writer.WrittenSpan.SequenceEqual(ours)) throw new InvalidOperationException($"{c.Name}: the streaming session's bytes differ from current");
+            setup.Sizes[Names.Streaming] = writer.WrittenCount;
+            setup.Contestants.Add(new(Names.Streaming, Session));
         }
 
         if (c.Format is not ("pfm" or "ppm16") && Baseline.CanEncode(c.Qoi))
@@ -333,17 +373,17 @@ internal static class Matrix
         }
 
         var names = decode
-            ? new[] { Names.Current, Names.PnmRows, Names.Baseline, Names.ImageSharp }
-            : [Names.Current, Names.CurrentStream, Names.PnmSession, Names.Baseline, Names.ImageSharp];
+            ? new[] { Names.Current, Names.Streaming, Names.Baseline, Names.ImageSharp }
+            : [Names.Current, Names.CurrentStream, Names.Streaming, Names.Baseline, Names.ImageSharp];
         var compare = decode ? Names.Current : Names.CurrentStream;
         var sb = new StringBuilder();
         sb.AppendLine($"### {(decode ? "Decode" : "Encode")} (in-process medians of {rounds} interleaved rounds, ms)");
         sb.AppendLine();
         sb.AppendLine(decode
             ? "`current` = `QoiImageDecoder` / `PnmImageDecoder.TryDecodeInto` to RGBA in a caller buffer (PFM: `PnmDecoder.Decode` to " +
-              "floats); ImageSharp = `Image.Load<Rgba32>` + `CopyPixelDataTo`, one thread. Every timed output was checked against ours first."
+              "floats); `streaming` = QOI's `CreateRowReader` over a `MemoryStream`, 16 rows a call; ImageSharp = `Image.Load<Rgba32>` + `CopyPixelDataTo`, one thread. Every timed output was checked against ours first."
             : "`current` = `QoiEncoder` / `PnmEncoder.Encode` to a new array; `current → stream` = the `Stream` overload into a reused " +
-              "stream, as ImageSharp writes; ImageSharp = its encoder from an image built beforehand into a reused stream, one thread. " +
+              "stream, as ImageSharp writes; `streaming` = QOI's streaming session in 16-row bands into a reused writer; ImageSharp = its encoder from an image built beforehand into a reused stream, one thread. " +
               "Every output decodes to the input.");
         sb.AppendLine();
         sb.AppendLine("| Case | KB | " + string.Join(" | ", names.Select(Names.Label)) + $" | {Names.Label(compare)} ÷ ImageSharp | ÷ baseline |");
@@ -357,7 +397,7 @@ internal static class Matrix
             notes.AddRange(s.Notes.Select(n => $"`{s.Case.Name}`: {n}"));
         }
         sb.AppendLine();
-        foreach (var (a, b) in new[] { (compare, Names.ImageSharp), (compare, Names.Baseline) })
+        foreach (var (a, b) in new[] { (compare, Names.ImageSharp), (compare, Names.Baseline), (Names.Streaming, Names.Current) })
         {
             foreach (var codec in new[] { "qoi", "pnm" })
             {

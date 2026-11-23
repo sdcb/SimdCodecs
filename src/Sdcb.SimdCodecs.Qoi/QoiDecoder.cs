@@ -64,41 +64,54 @@ public static class QoiDecoder
     {
         var reader = new QoiCodec.Reader(info.Channels == 3);
         int width = info.Width, height = info.Height;
-        if (format == PixelFormat.Rgba32 || format == PixelFormat.Bgra32)
+        if (format == PixelFormat.Rgba32 && rowStride == width * 4 && !cancellationToken.CanBeCanceled)
         {
-            // RGBA pixels land in place; BGRA swaps them where they are.
-            var rowBytes = width * 4;
-            if (rowStride == rowBytes && format == PixelFormat.Rgba32 && !cancellationToken.CanBeCanceled)
-            {
-                reader.Read(data, MemoryMarshal.Cast<byte, uint>(destination[..(rowBytes * height)]));
-                return;
-            }
-            for (var y = 0; y < height; y++)
-            {
-                if ((y & 63) == 0)
-                    cancellationToken.ThrowIfCancellationRequested();
-                var row = destination.Slice(y * rowStride, rowBytes);
-                reader.Read(data, MemoryMarshal.Cast<byte, uint>(row));
-                if (format == PixelFormat.Bgra32)
-                    PixelConverter.ConvertRow(row, PixelFormat.Rgba32, row, PixelFormat.Bgra32, width);
-            }
+            // RGBA pixels land in place, the whole image in one call.
+            reader.Read(data, MemoryMarshal.Cast<byte, uint>(destination[..(width * 4 * height)]));
             return;
         }
 
-        const int Chunk = 512;
-        Span<uint> chunk = stackalloc uint[Chunk];
-        var bpp = format.BytesPerPixel;
+        Span<uint> chunk = stackalloc uint[RowChunk];
+        var rowBytes = width * format.BytesPerPixel;
         for (var y = 0; y < height; y++)
         {
             if ((y & 63) == 0)
                 cancellationToken.ThrowIfCancellationRequested();
-            var row = destination.Slice(y * rowStride, width * bpp);
-            for (var x = 0; x < width; x += Chunk)
-            {
-                var n = Math.Min(Chunk, width - x);
-                reader.Read(data, chunk[..n]);
-                PixelConverter.ConvertRow(MemoryMarshal.AsBytes(chunk[..n]), PixelFormat.Rgba32, row[(x * bpp)..], format, n);
-            }
+            if (!TryDecodeRow(ref reader, data, destination.Slice(y * rowStride, rowBytes), width, format, chunk))
+                throw new InvalidDataException("QOI data ends before the last pixel.");
         }
+    }
+
+    /// <summary>The pixels <see cref="TryDecodeRow"/> converts at a time when the format is not RGBA or BGRA.</summary>
+    internal const int RowChunk = 512;
+
+    /// <summary>
+    /// Decodes the next row into <paramref name="row"/> (<c>width × format.BytesPerPixel</c> bytes) as
+    /// <paramref name="format"/>: the one row step of both the span decoder and the streaming reader, so their rows
+    /// are the same bytes. False when <paramref name="data"/> ends first; the reader is then partly advanced.
+    /// </summary>
+    /// <param name="chunk">Scratch of <see cref="RowChunk"/> pixels.</param>
+    internal static bool TryDecodeRow(ref QoiCodec.Reader reader, ReadOnlySpan<byte> data, Span<byte> row, int width,
+        PixelFormat format, Span<uint> chunk)
+    {
+        if (format == PixelFormat.Rgba32 || format == PixelFormat.Bgra32)
+        {
+            // RGBA pixels land in place; BGRA swaps them where they are.
+            if (!reader.TryRead(data, MemoryMarshal.Cast<byte, uint>(row)))
+                return false;
+            if (format == PixelFormat.Bgra32)
+                PixelConverter.ConvertRow(row, PixelFormat.Rgba32, row, PixelFormat.Bgra32, width);
+            return true;
+        }
+
+        var bpp = format.BytesPerPixel;
+        for (var x = 0; x < width; x += RowChunk)
+        {
+            var n = Math.Min(RowChunk, width - x);
+            if (!reader.TryRead(data, chunk[..n]))
+                return false;
+            PixelConverter.ConvertRow(MemoryMarshal.AsBytes(chunk[..n]), PixelFormat.Rgba32, row[(x * bpp)..], format, n);
+        }
+        return true;
     }
 }

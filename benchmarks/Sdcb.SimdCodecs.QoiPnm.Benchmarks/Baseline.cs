@@ -36,10 +36,10 @@ internal static unsafe class Baseline
 
     public static bool CanEncode(bool qoi) => IsBuilt && (qoi ? Loaded.Value.QoiEncode : Loaded.Value.PnmEncode) != IntPtr.Zero;
 
-    /// <summary>The baseline's <c>QoiImageDecoder</c> / <c>PnmImageDecoder.TryDecodeInto</c>, to RGBA.</summary>
+    /// <summary>The baseline's <c>QoiImageDecoder</c> / <c>PnmImageDecoder.TryDecodeInto</c> (the 2.0 six-parameter form), to RGBA.</summary>
     public static bool TryDecodeInto(bool qoi, ReadOnlySpan<byte> data, Span<byte> rgba) =>
-        ((delegate*<ReadOnlySpan<byte>, Span<byte>, int, PixelFormat, bool>)(qoi ? Loaded.Value.QoiDecodeInto : Loaded.Value.PnmDecodeInto))(
-            data, rgba, 0, PixelFormat.Rgba32);
+        ((delegate*<ReadOnlySpan<byte>, Span<byte>, int, PixelFormat, DecodeOptions?, CancellationToken, bool>)(qoi ? Loaded.Value.QoiDecodeInto : Loaded.Value.PnmDecodeInto))(
+            data, rgba, 0, PixelFormat.Rgba32, null, default);
 
     /// <summary>The baseline's <c>QoiEncoder.Encode(pixels, width, height, format, Srgb, 0)</c>.</summary>
     public static byte[] EncodeQoi(byte[] pixels, int width, int height, PixelFormat format) =>
@@ -72,7 +72,7 @@ internal static unsafe class Baseline
         if (File.Exists(Path.Combine(dir, "Sdcb.SimdCodecs.Qoi.dll")))
         {
             var qoi = alc.LoadFromAssemblyName(new AssemblyName("Sdcb.SimdCodecs.Qoi"));
-            bound.QoiDecodeInto = Pointer(qoi.GetType("Sdcb.SimdCodecs.Qoi.QoiImageDecoder"), "TryDecodeInto", 4);
+            bound.QoiDecodeInto = Pointer(qoi.GetType("Sdcb.SimdCodecs.Qoi.QoiImageDecoder"), "TryDecodeInto", 6);
             bound.QoiEncode = qoi.GetType("Sdcb.SimdCodecs.Qoi.QoiEncoder")?.GetMethods(BindingFlags.Public | BindingFlags.Static).SingleOrDefault(m =>
                     m.Name == "Encode" && m.GetParameters() is { Length: 6 } p && p[4].ParameterType.Name == "QoiColorSpace")
                 ?.MethodHandle.GetFunctionPointer() ?? IntPtr.Zero;
@@ -80,7 +80,7 @@ internal static unsafe class Baseline
         if (File.Exists(Path.Combine(dir, "Sdcb.SimdCodecs.Pnm.dll")))
         {
             var pnm = alc.LoadFromAssemblyName(new AssemblyName("Sdcb.SimdCodecs.Pnm"));
-            bound.PnmDecodeInto = Pointer(pnm.GetType("Sdcb.SimdCodecs.Pnm.PnmImageDecoder"), "TryDecodeInto", 4);
+            bound.PnmDecodeInto = Pointer(pnm.GetType("Sdcb.SimdCodecs.Pnm.PnmImageDecoder"), "TryDecodeInto", 6);
             bound.PnmOptionsType = pnm.GetType("Sdcb.SimdCodecs.Pnm.PnmEncodeOptions");
             bound.PnmEncode = pnm.GetType("Sdcb.SimdCodecs.Pnm.PnmEncoder")?.GetMethods(BindingFlags.Public | BindingFlags.Static).SingleOrDefault(m =>
                     m.Name == "Encode" && m.GetParameters() is { Length: 6 } p && p[3].ParameterType.Name == nameof(PixelFormat) && p[4].ParameterType.Name == "PnmEncodeOptions")
