@@ -65,11 +65,15 @@ internal static class Names
     public const string CurrentStream = "CurrentStream";
     public const string Baseline = "Baseline";
     public const string ImageSharp = "ImageSharp";
+    public const string PnmRows = "PnmRows";
+    public const string PnmSession = "PnmSession";
 
     public static string Label(string name) => name switch
     {
         Current => "current",
         CurrentStream => "current → stream",
+        PnmRows => "PNM row reader",
+        PnmSession => "PNM streaming session",
         Baseline => "baseline",
         _ => name,
     };

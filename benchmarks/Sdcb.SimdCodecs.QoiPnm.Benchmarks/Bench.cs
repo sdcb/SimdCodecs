@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using Sdcb.SimdCodecs.Abstractions;
+using Sdcb.SimdCodecs.Abstractions.CodecSupport;
 using Sdcb.SimdCodecs.Png.Benchmarks;
 using Sdcb.SimdCodecs.Pnm;
 using Sdcb.SimdCodecs.Qoi;
@@ -166,6 +167,19 @@ internal sealed class Setup(Case c)
             if (!rgba.AsSpan().SequenceEqual(expected)) throw new InvalidOperationException($"{c.Name}: current does not give the source back");
         }
         setup.Contestants.Add(new(Names.Current, () => Ours(rgba)));
+        if (!c.Qoi)
+        {
+            // The streaming reader over the same bytes, 16 rows a call, into the same kind of buffer.
+            var rows = new byte[rgba.Length];
+            void ReadRows()
+            {
+                using var reader = PnmImageDecoder.CreateRowReader(new StreamInput(new MemoryStream(data, writable: false)), PixelFormat.Rgba32, null);
+                while (reader.ReadRows(rows.AsSpan(reader.RowsRead * w * 4), 16) > 0) { }
+            }
+            ReadRows();
+            if (!rows.AsSpan().SequenceEqual(rgba)) throw new InvalidOperationException($"{c.Name}: the row reader differs from TryDecodeInto");
+            setup.Contestants.Add(new(Names.PnmRows, ReadRows));
+        }
 
         if (Baseline.CanDecode(c.Qoi))
         {
@@ -233,6 +247,30 @@ internal sealed class Setup(Case c)
             toStream();
         }));
 
+        if (!c.Qoi && c.Format != "pfm")
+        {
+            // The streaming session, 16 rows a call, into a reused writer: the bytes of the whole-image encode.
+            var sessionFormat = c.Format == "ppm16" ? PixelFormat.Rgb48 : format;
+            var writer = new System.Buffers.ArrayBufferWriter<byte>(ours.Length);
+            void Session()
+            {
+                writer.ResetWrittenCount();
+                using var session = PnmImageEncoder.Create(writer, c.Format == "ppm16" ? null : c.PnmOptions);
+                var frame = session.AddFrame(w, h, sessionFormat);
+                var rowBytes = w * sessionFormat.BytesPerPixel;
+                for (var y = 0; y < h; y += 16)
+                {
+                    var n = Math.Min(16, h - y);
+                    frame.WriteRows(pixels.AsSpan(y * rowBytes, n * rowBytes), n);
+                }
+                session.Commit();
+            }
+            Session();
+            if (!writer.WrittenSpan.SequenceEqual(ours)) throw new InvalidOperationException($"{c.Name}: the streaming session's bytes differ from Encode's");
+            setup.Sizes[Names.PnmSession] = writer.WrittenCount;
+            setup.Contestants.Add(new(Names.PnmSession, Session));
+        }
+
         if (c.Format is not ("pfm" or "ppm16") && Baseline.CanEncode(c.Qoi))
         {
             Func<byte[]> baseline;
@@ -295,8 +333,8 @@ internal static class Matrix
         }
 
         var names = decode
-            ? new[] { Names.Current, Names.Baseline, Names.ImageSharp }
-            : [Names.Current, Names.CurrentStream, Names.Baseline, Names.ImageSharp];
+            ? new[] { Names.Current, Names.PnmRows, Names.Baseline, Names.ImageSharp }
+            : [Names.Current, Names.CurrentStream, Names.PnmSession, Names.Baseline, Names.ImageSharp];
         var compare = decode ? Names.Current : Names.CurrentStream;
         var sb = new StringBuilder();
         sb.AppendLine($"### {(decode ? "Decode" : "Encode")} (in-process medians of {rounds} interleaved rounds, ms)");

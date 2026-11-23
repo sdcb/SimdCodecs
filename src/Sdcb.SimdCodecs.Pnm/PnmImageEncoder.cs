@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Collections.Generic;
 using System.Threading;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Abstractions.CodecSupport;
@@ -9,7 +8,8 @@ namespace Sdcb.SimdCodecs.Pnm;
 /// <summary>
 /// <see cref="IImageEncoder"/> for Netpbm: the encoder abstraction's adapter over <see cref="PnmEncoder"/>.
 /// Netpbm stores 8- and 16-bit grey, grey + alpha, RGB, or RGBA, so <see cref="GetClosestInputFormat"/> keeps depth,
-/// straight alpha, and RGB order.
+/// straight alpha, and RGB order. Every session streams (<see cref="IImageEncoderSession.IsStreaming"/>): the header
+/// reaches the writer at <c>AddFrame</c> and each band of rows as it is written.
 /// </summary>
 public sealed class PnmImageEncoder : IImageEncoder
 {
@@ -40,18 +40,32 @@ public sealed class PnmImageEncoder : IImageEncoder
             _ => throw new ArgumentException($"Netpbm encoding takes PnmEncodeOptions, not {options.GetType().Name}.", nameof(options)),
         });
 
-    private sealed class Session(IBufferWriter<byte> output, PnmEncodeOptions options) : BufferedEncoderSession(output)
+    // Every Netpbm option encodes row by row (a plain raster starts each row on a new line), so every session streams:
+    // the header at AddFrame, each band's raster as WriteRows hands it over.
+    private sealed class Session(IBufferWriter<byte> output, PnmEncodeOptions options) : StreamingEncoderSession(output)
     {
+        private PnmEncoder.RowWriter? _writer;
+
         public override int MaxFrames => 1;
 
-        protected override void Encode(IReadOnlyList<BufferedFrame> frames, CancellationToken cancellationToken)
+        protected override void BeginFrame(int index, int width, int height, PixelFormat format, ColorEncoding? color,
+            ImageMetadata? metadata, TimeSpan? duration) =>
+            _writer = PnmEncoder.RowWriter.Begin(width, height, format, options, Output);
+
+        protected override void EncodeRows(ReadOnlySpan<byte> rows, int rowCount, int stride, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var frame = frames[0];
-            var native = GetClosestInputFormat(frame.Format);
-            var pixels = frame.PixelsAs(native);
-            var file = PnmEncoder.Encode(pixels, frame.Width, frame.Height, native, options);
-            WriteOutput(file);
+            _writer!.Write(rows, rowCount, stride, Output);
+        }
+
+        protected override void Finish(CancellationToken cancellationToken) { }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                _writer?.Dispose();
+            _writer = null;
+            base.Dispose(disposing);
         }
     }
 }

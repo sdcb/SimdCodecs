@@ -10,8 +10,9 @@ namespace Sdcb.SimdCodecs.Pnm;
 /// into the <c>Sdcb.SimdCodecs</c> facade. An image decodes as 8-bit samples up to a maximum value of 255,
 /// 16-bit above. <see cref="TryDecodeInto"/> writes the caller's buffer directly. Malformed data makes the
 /// <c>Try</c> methods return false rather than throw. PFM has its own adapter, <see cref="PfmImageDecoder"/>.
+/// <see cref="CreateRowReader"/> decodes from a forward-only stream a row at a time.
 /// </summary>
-public sealed class PnmImageDecoder : IImageDecoder
+public sealed class PnmImageDecoder : IStreamingImageDecoder
 {
     /// <summary>The registration for <c>ImageCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
@@ -25,7 +26,18 @@ public sealed class PnmImageDecoder : IImageDecoder
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
+        CreateRowReader = CreateRowReader,
     };
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Every P1 to P7 image streams: the header is read whole (at most 1 MiB, comments included; a longer one throws
+    /// <see cref="InvalidDataException"/>), then each raw row as soon as its bytes are there and each plain row token by
+    /// token, holding a row of input and of samples. Options other than the whole image at full size decode the whole
+    /// stream first (<see cref="IImageRowReader.IsStreaming"/> false). PFM is not read here: see <see cref="PfmImageDecoder"/>.
+    /// </remarks>
+    public static StreamingRowReader CreateRowReader(StreamInput input, PixelFormat format, DecodeOptions? options) =>
+        new PnmRowReader(input, format, options);
 
     /// <inheritdoc />
     /// <remarks><c>P1</c> to <c>P7</c> and a whitespace byte.</remarks>
@@ -154,13 +166,7 @@ internal static class PnmAdapter
     {
         try
         {
-            var pnm = Read(data, pfm, out _);
-            info = new ImageInfo(pnm.Width, pnm.Height, pnm.Channels, pnm.SampleFormat)
-            {
-                Format = pfm ? ImageFormat.Pfm : ImageFormat.Pnm,
-                BitDepth = pfm ? 32 : 32 - BitOperations.LeadingZeroCount((uint)pnm.MaxValue),
-                ColorEncoding = pfm ? LinearFloat : ColorEncoding.AssumedSrgb,
-            };
+            info = ToImageInfo(Read(data, pfm, out _), pfm);
             return true;
         }
         catch (InvalidDataException)
@@ -169,6 +175,14 @@ internal static class PnmAdapter
             return false;
         }
     }
+
+    public static ImageInfo ToImageInfo(in PnmInfo pnm, bool pfm) =>
+        new(pnm.Width, pnm.Height, pnm.Channels, pnm.SampleFormat)
+        {
+            Format = pfm ? ImageFormat.Pfm : ImageFormat.Pnm,
+            BitDepth = pfm ? 32 : 32 - BitOperations.LeadingZeroCount((uint)pnm.MaxValue),
+            ColorEncoding = pfm ? LinearFloat : ColorEncoding.AssumedSrgb,
+        };
 
     public static IDecodedImage Decode(ReadOnlySpan<byte> data, bool pfm, DecodeOptions? options,
         CancellationToken cancellationToken)
