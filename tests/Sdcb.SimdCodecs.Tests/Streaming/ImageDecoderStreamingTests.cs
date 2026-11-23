@@ -223,10 +223,29 @@ public sealed class ImageDecoderStreamingTests : IDisposable
         var data = Real(name);
         foreach (var source in Enum.GetValues<Source>())
         {
-            foreach (var forwardOnly in new[] { false, true })
-            {
-                using var decoder = ImageDecoder.Open(Make(source, data), leaveOpen: false, forwardOnly);
+            using (var decoder = ImageDecoder.Open(Make(source, data), leaveOpen: false, forwardOnly: false))
                 ShouldMatchMemory(decoder, data, PixelFormat.Rgba32);
+
+            // Forward-only: the first decode equals memory; a codec that streamed it (PNG, JPEG) has kept no bytes, so a
+            // second decode needs the whole file and throws, while a codec that read the file whole decodes again.
+            using var forward = ImageDecoder.Open(Make(source, data), leaveOpen: false, forwardOnly: true);
+            using var expected = ImageDecoder.Open(data.AsMemory());
+            var info = expected.GetFrame(0).Info;
+            var want = new byte[info.Width * info.Height * 4];
+            expected.GetFrame(0).CopyPixels(null, PixelFormat.Rgba32, want, 0, cancellationToken: Token);
+            var got = new byte[want.Length];
+            var frame = forward.GetFrame(0);
+            frame.Info.ShouldBe(info);
+            frame.CopyPixels(null, PixelFormat.Rgba32, got, 0, cancellationToken: Token);
+            got.ShouldBe(want, $"{source}");
+            var streams = ImageCodecs.RegistrySnapshot.First(r => r.Format == expected.Format).CreateRowReader is not null;
+            if (streams && source != Source.Seekable && source != Source.File)
+                Should.Throw<InvalidOperationException>(() => frame.Decode(cancellationToken: Token).Dispose(), $"{source}");
+            else
+            {
+                using var image = frame.Decode(cancellationToken: Token);
+                using var memory = expected.GetFrame(0).Decode(cancellationToken: Token);
+                image.Pixels.SequenceEqual(memory.Pixels).ShouldBeTrue($"{source}");
             }
         }
     }

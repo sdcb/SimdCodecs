@@ -132,6 +132,32 @@ internal static class Matrix
             }
         }
 
+        if (rows.Any(r => r.Ms.ContainsKey(Names.Streaming)))
+        {
+            sb.AppendLine();
+            sb.AppendLine("Streaming = `PngImageDecoder.OpenRowReader` over a forward-only stream of the file, every row read into the " +
+                          "same RGBA buffer (rows identical to current, checked before timing).");
+            sb.AppendLine();
+            sb.AppendLine("| Case | current | streaming | streaming ÷ current |");
+            sb.AppendLine("|---|---:|---:|---:|");
+            foreach ((DecodeSetup s, Dictionary<string, double> ms) in rows)
+            {
+                if (ms.ContainsKey(Names.Streaming))
+                {
+                    sb.AppendLine($"| `{s.Case.Name}` | {Ms(ms, Names.Current)} | {Ms(ms, Names.Streaming)} | {Ratio(ms, Names.Streaming, Names.Current)} |");
+                }
+            }
+
+            foreach (string content in SourceImage.Contents)
+            {
+                var subset = rows.Where(r => r.Setup.Case.Content == content).Select(r => r.Ms).ToList();
+                if (GeoMean(subset, Names.Streaming, Names.Current) is { } g)
+                {
+                    sb.AppendLine($"- streaming ÷ current, {content}: {g.ToString("F3", CultureInfo.InvariantCulture)}× ({subset.Count(m => m.ContainsKey(Names.Streaming) && m.ContainsKey(Names.Current))} cases)");
+                }
+            }
+        }
+
         if (rows.Any(r => r.Ms.ContainsKey(Names.InflateOnly)))
         {
             sb.AppendLine();
@@ -154,7 +180,7 @@ internal static class Matrix
         }
 
         AppendAllocations(sb, rows.Select(r => (r.Setup.Case.Name, r.Setup.Allocated)).ToList(),
-            [Names.Current, Names.CurrentNative, Names.Baseline, Names.ImageSharp, Names.LibPng]);
+            [Names.Current, Names.CurrentNative, Names.Streaming, Names.Baseline, Names.ImageSharp, Names.LibPng]);
         AppendNotes(sb, notes);
         return sb.ToString();
     }

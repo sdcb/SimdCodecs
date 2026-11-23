@@ -101,24 +101,10 @@ public static partial class PngReader
             throw new InvalidDataException("PNG signature missing — not a PNG file");
 
         int pos = Signature.Length;
-        int? width = null, height = null, bitDepth = null, colorType = null,
-             compressionMethod = null, filterMethod = null, interlaceMethod = null;
         // Where each IDAT's payload lies in the input: read in place, never copied out.
         var idatChunks = new List<(int Offset, int Length)>();
-        byte[]? palette = null;             // PLTE: 3 bytes (RGB) per entry
-        byte[]? trns = null;                // tRNS as stored; read by colour type below
-        PngPhysicalDimensions? physical = null;
-        byte[]? iccProfileRaw = null;       // zlib-deflated, as on disk
-        string? iccProfileName = null;
-        byte[]? rawExif = null;
-        List<PngText>? text = null;
-        bool sawSrgb = false;
-        byte srgbRenderingIntent = 0;
-        uint? gamma100k = null;
-        ChromaticityChunk? chrm = null;
-        CicpChunk? cicp = null;
-        MdcvChunk? mdcv = null;
-        ClliChunk? clli = null;
+        var header = new HeaderBuilder();
+        long compressed = 0;
 
         while (pos < data.Length)
         {
@@ -140,10 +126,73 @@ public static partial class PngReader
             var declaredCrc = BinaryPrimitives.ReadUInt32BigEndian(data.Slice(pos + 8 + len, 4));
             var computedCrc = verifyCrc ? Crc32(typeBytes, chunkData) : declaredCrc;
             if (declaredCrc != computedCrc)
-                throw new InvalidDataException(
-                    $"CRC mismatch on chunk '{TypeAscii(typeBytes)}' at byte {pos}: " +
-                    $"declared 0x{declaredCrc:X8}, computed 0x{computedCrc:X8}");
+                throw CrcMismatch(typeBytes, pos, declaredCrc, computedCrc);
 
+            if (typeBytes.SequenceEqual("IDAT"u8))
+            {
+                header.AddIdat();
+                idatChunks.Add((pos + 8, len));
+                compressed += len;
+            }
+            else if (typeBytes.SequenceEqual("IEND"u8))
+            {
+                pos += 8 + len + 4;
+                break;
+            }
+            else
+            {
+                header.Add(typeBytes, chunkData);
+            }
+
+            pos += 8 + len + 4;
+        }
+
+        // The IDAT chunks are one zlib stream — the spec lets a producer split IDATs anywhere, even
+        // mid-deflate-token — inflated by the caller, a row at a time.
+        idat = idatChunks;
+        return header.Build(compressed);
+    }
+
+    private static InvalidDataException CrcMismatch(ReadOnlySpan<byte> typeBytes, long pos, uint declaredCrc, uint computedCrc) =>
+        new($"CRC mismatch on chunk '{TypeAscii(typeBytes)}' at byte {pos}: " +
+            $"declared 0x{declaredCrc:X8}, computed 0x{computedCrc:X8}");
+
+    /// <summary>
+    /// The chunks other than IDAT and IEND, read one at a time as <see cref="ReadHeader"/> walks the file (and as the
+    /// streaming reader meets them, <see cref="RowReader"/>): each chunk's own checks as it is added, the whole file's in
+    /// <see cref="Build"/>. Every chunk passed in has had its CRC checked.
+    /// </summary>
+    private sealed class HeaderBuilder
+    {
+        private int? width, height, bitDepth, colorType, interlaceMethod;
+        private bool sawIdat;
+        private byte[]? palette;             // PLTE: 3 bytes (RGB) per entry
+        private byte[]? trns;                // tRNS as stored; read by colour type below
+        private PngPhysicalDimensions? physical;
+        private byte[]? iccProfileRaw;       // zlib-deflated, as on disk
+        private string? iccProfileName;
+        private byte[]? rawExif;
+        private List<PngText>? text;
+        private bool sawSrgb;
+        private byte srgbRenderingIntent;
+        private uint? gamma100k;
+        private ChromaticityChunk? chrm;
+        private CicpChunk? cicp;
+        private MdcvChunk? mdcv;
+        private ClliChunk? clli;
+
+        /// <summary>An IDAT chunk (its payload is the caller's): refused before IHDR.</summary>
+        public void AddIdat()
+        {
+            if (width is null)
+                throw new InvalidDataException("IDAT before IHDR");
+            sawIdat = true;
+        }
+
+        /// <summary>Any chunk but IDAT and IEND.</summary>
+        public void Add(ReadOnlySpan<byte> typeBytes, ReadOnlySpan<byte> chunkData)
+        {
+            var len = chunkData.Length;
             // --- chunk dispatch -----------------------------------------------------
             // Critical chunks (uppercase first letter) must be understood; ancillary
             // chunks (lowercase first letter) can be skipped if unrecognised.
@@ -157,8 +206,8 @@ public static partial class PngReader
                 height = (int)BinaryPrimitives.ReadUInt32BigEndian(chunkData.Slice(4, 4));
                 bitDepth = chunkData[8];
                 colorType = chunkData[9];
-                compressionMethod = chunkData[10];
-                filterMethod = chunkData[11];
+                int compressionMethod = chunkData[10];
+                int filterMethod = chunkData[11];
                 interlaceMethod = chunkData[12];
 
                 if (width <= 0 || height <= 0)
@@ -170,17 +219,6 @@ public static partial class PngReader
                 if (interlaceMethod > 1)
                     throw new InvalidDataException($"Unknown interlace method {interlaceMethod} (PNG defines 0 and 1)");
                 ValidateColorTypeAndBitDepth(colorType.Value, bitDepth.Value);
-            }
-            else if (typeBytes.SequenceEqual("IDAT"u8))
-            {
-                if (width is null)
-                    throw new InvalidDataException("IDAT before IHDR");
-                idatChunks.Add((pos + 8, len));
-            }
-            else if (typeBytes.SequenceEqual("IEND"u8))
-            {
-                pos += 8 + len + 4;
-                break;
             }
             else if (typeBytes.SequenceEqual("PLTE"u8))
             {
@@ -267,75 +305,93 @@ public static partial class PngReader
             // Any other chunk — silently skip. PNG is forwards-compatible by design:
             // ancillary unknown chunks are explicitly permitted, and critical unknown
             // chunks have a leading uppercase letter we'd need to reject. We defer the
-            // critical-chunk rejection until we encounter a real one.
-
-            pos += 8 + len + 4;
+            // critical-chunk rejection until we encounter a real one. (Reads lists the types read here.)
         }
 
-        if (width is null) throw new InvalidDataException("No IHDR chunk found");
-        if (idatChunks.Count == 0) throw new InvalidDataException("No IDAT chunks found");
-        if (colorType == 3 && palette is null)
-            throw new InvalidDataException("Indexed-color PNG missing required PLTE chunk");
+        /// <summary>
+        /// True for a chunk type <see cref="Add"/> reads (and may refuse); false for one it skips, whose payload a
+        /// streaming reader therefore need not hold.
+        /// </summary>
+        public static bool Reads(ReadOnlySpan<byte> typeBytes) =>
+            typeBytes.SequenceEqual("IHDR"u8) || typeBytes.SequenceEqual("PLTE"u8) || typeBytes.SequenceEqual("tRNS"u8)
+            || typeBytes.SequenceEqual("pHYs"u8) || typeBytes.SequenceEqual("iCCP"u8) || typeBytes.SequenceEqual("sRGB"u8)
+            || typeBytes.SequenceEqual("gAMA"u8) || typeBytes.SequenceEqual("cHRM"u8) || typeBytes.SequenceEqual("eXIf"u8)
+            || typeBytes.SequenceEqual("tEXt"u8) || typeBytes.SequenceEqual("zTXt"u8) || typeBytes.SequenceEqual("iTXt"u8)
+            || typeBytes.SequenceEqual("cICP"u8) || typeBytes.SequenceEqual("mDCV"u8) || typeBytes.SequenceEqual("mDCv"u8)
+            || typeBytes.SequenceEqual("cLLI"u8);
 
-        // Deflate cannot expand more than 1032:1, so image data that would need more than that is cut
-        // short or the header lies. Refusing here keeps a forged header (2^30 × 2^30 over a few bytes)
-        // from reaching an allocation, or an int overflow, at all.
-        long compressed = 0;
-        foreach (var (_, length) in idatChunks)
-            compressed += length;
-        var inflatedSize = InflatedSize(width.Value, height!.Value, bitDepth!.Value, colorType!.Value, interlaceMethod == 1);
-        if (inflatedSize > compressed * 1032 + 1024)
-            throw new InvalidDataException(
-                $"{compressed} bytes of image data cannot inflate to the {inflatedSize} a {width}×{height} image needs");
-
-        // tRNS (PNG §11.3.1.1): for indexed colour one alpha byte per palette entry, entries past its
-        // end opaque; for greyscale and truecolour one colour, every sample in two bytes of which only
-        // the low bit depth's worth count (decoders mask the rest), marking the pixels of exactly that
-        // colour fully transparent. Colour types 4 and 6 have alpha already and may not carry one; one
-        // there, or one of the wrong length, is ignored, as an ancillary chunk can be.
-        byte[]? paletteAlpha = null;
-        ushort[]? transparentColor = null;
-        if (trns is not null)
+        /// <summary>
+        /// The whole file's checks, once every chunk is in (<paramref name="compressed"/> the IDAT payloads' total
+        /// length), then <see cref="Snapshot"/>.
+        /// </summary>
+        public PngImage Build(long compressed)
         {
-            var sampleMask = (ushort)((1 << bitDepth!.Value) - 1);
-            if (colorType == 3)
-                paletteAlpha = trns;
-            else if ((colorType == 0 && trns.Length == 2) || (colorType == 2 && trns.Length == 6))
+            if (width is null) throw new InvalidDataException("No IHDR chunk found");
+            if (!sawIdat) throw new InvalidDataException("No IDAT chunks found");
+            if (colorType == 3 && palette is null)
+                throw new InvalidDataException("Indexed-color PNG missing required PLTE chunk");
+
+            // Deflate cannot expand more than 1032:1, so image data that would need more than that is cut
+            // short or the header lies. Refusing here keeps a forged header (2^30 × 2^30 over a few bytes)
+            // from reaching an allocation, or an int overflow, at all.
+            var inflatedSize = InflatedSize(width.Value, height!.Value, bitDepth!.Value, colorType!.Value, interlaceMethod == 1);
+            if (inflatedSize > compressed * 1032 + 1024)
+                throw new InvalidDataException(
+                    $"{compressed} bytes of image data cannot inflate to the {inflatedSize} a {width}×{height} image needs");
+            return Snapshot();
+        }
+
+        /// <summary>The header and metadata of the chunks added so far, without the whole file's checks; needs IHDR.</summary>
+        public PngImage Snapshot()
+        {
+            if (width is null) throw new InvalidDataException("No IHDR chunk found");
+
+            // tRNS (PNG §11.3.1.1): for indexed colour one alpha byte per palette entry, entries past its
+            // end opaque; for greyscale and truecolour one colour, every sample in two bytes of which only
+            // the low bit depth's worth count (decoders mask the rest), marking the pixels of exactly that
+            // colour fully transparent. Colour types 4 and 6 have alpha already and may not carry one; one
+            // there, or one of the wrong length, is ignored, as an ancillary chunk can be.
+            byte[]? paletteAlpha = null;
+            ushort[]? transparentColor = null;
+            if (trns is not null)
             {
-                transparentColor = new ushort[trns.Length / 2];
-                for (var i = 0; i < transparentColor.Length; i++)
-                    transparentColor[i] = (ushort)(BinaryPrimitives.ReadUInt16BigEndian(trns.AsSpan(2 * i)) & sampleMask);
+                var sampleMask = (ushort)((1 << bitDepth!.Value) - 1);
+                if (colorType == 3)
+                    paletteAlpha = trns;
+                else if ((colorType == 0 && trns.Length == 2) || (colorType == 2 && trns.Length == 6))
+                {
+                    transparentColor = new ushort[trns.Length / 2];
+                    for (var i = 0; i < transparentColor.Length; i++)
+                        transparentColor[i] = (ushort)(BinaryPrimitives.ReadUInt16BigEndian(trns.AsSpan(2 * i)) & sampleMask);
+                }
             }
-        }
 
-        // The IDAT chunks are one zlib stream — the spec lets a producer split IDATs anywhere, even
-        // mid-deflate-token — inflated by the caller, a row at a time.
-        idat = idatChunks;
-        return new PngImage
-        {
-            Width = width.Value,
-            Height = height!.Value,
-            // A sub-byte image's samples come back unpacked, one byte each: they are 8-bit samples now.
-            BitDepth = bitDepth!.Value < 8 ? 8 : bitDepth.Value,
-            SourceBitDepth = bitDepth.Value,
-            ColorType = colorType!.Value,
-            Interlaced = interlaceMethod == 1,
-            Pixels = [],
-            Palette = palette,
-            PaletteAlpha = paletteAlpha,
-            TransparentColor = transparentColor,
-            PhysicalDimensions = physical,
-            IccProfile = iccProfileRaw,
-            IccProfileName = iccProfileName,
-            SrgbRenderingIntent = sawSrgb ? srgbRenderingIntent : null,
-            Gamma = gamma100k.HasValue ? gamma100k.Value / 100_000.0 : null,
-            Chromaticity = chrm,
-            Exif = rawExif,
-            Text = text is null ? [] : [.. text],
-            Cicp = cicp,
-            Mdcv = mdcv,
-            Clli = clli,
-        };
+            return new PngImage
+            {
+                Width = width.Value,
+                Height = height!.Value,
+                // A sub-byte image's samples come back unpacked, one byte each: they are 8-bit samples now.
+                BitDepth = bitDepth!.Value < 8 ? 8 : bitDepth.Value,
+                SourceBitDepth = bitDepth.Value,
+                ColorType = colorType!.Value,
+                Interlaced = interlaceMethod == 1,
+                Pixels = [],
+                Palette = palette,
+                PaletteAlpha = paletteAlpha,
+                TransparentColor = transparentColor,
+                PhysicalDimensions = physical,
+                IccProfile = iccProfileRaw,
+                IccProfileName = iccProfileName,
+                SrgbRenderingIntent = sawSrgb ? srgbRenderingIntent : null,
+                Gamma = gamma100k.HasValue ? gamma100k.Value / 100_000.0 : null,
+                Chromaticity = chrm,
+                Exif = rawExif,
+                Text = text is null ? [] : [.. text],
+                Cicp = cicp,
+                Mdcv = mdcv,
+                Clli = clli,
+            };
+        }
     }
 
     /// <summary>
@@ -989,11 +1045,19 @@ public static partial class PngReader
         using var output = new MemoryStream();
         var buffer = new byte[81920];
         int read;
-        while ((read = z.Read(buffer)) > 0)
+        try
         {
-            if (output.Length + read > maxBytes)
-                return null;
-            output.Write(buffer, 0, read);
+            while ((read = z.Read(buffer)) > 0)
+            {
+                if (output.Length + read > maxBytes)
+                    return null;
+                output.Write(buffer, 0, read);
+            }
+        }
+        catch (IOException e)
+        {
+            // zlib's own error codes (a corrupt stream that is none of the cases DeflateStream names) arrive as an IOException.
+            throw new InvalidDataException("A compressed chunk is not a valid zlib stream", e);
         }
         return output.ToArray();
     }

@@ -34,6 +34,9 @@ public class PngDecodeBenchmarks
     public void Baseline() => _run[Names.Baseline]();
 
     [Benchmark]
+    public void Streaming() => _run[Names.Streaming]();
+
+    [Benchmark]
     public void ImageSharp() => _run[Names.ImageSharp]();
 
     [Benchmark]
@@ -51,7 +54,7 @@ public class PngDecodeBenchmarks
     [Benchmark]
     public void InflateOnly() => _run[Names.InflateOnly]();
 
-    public static readonly string[] Methods = [Names.Current, Names.CurrentNative, Names.Baseline, Names.ImageSharp, Names.LibPng];
+    public static readonly string[] Methods = [Names.Current, Names.CurrentNative, Names.Streaming, Names.Baseline, Names.ImageSharp, Names.LibPng];
 }
 
 /// <summary>BenchmarkDotNet over the encode cases; see <see cref="PngDecodeBenchmarks"/>.</summary>

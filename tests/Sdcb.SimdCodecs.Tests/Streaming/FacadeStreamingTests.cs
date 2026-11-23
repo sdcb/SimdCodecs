@@ -204,8 +204,9 @@ public sealed class FacadeStreamingTests : IDisposable
         }
         var corrupt = (byte[])png.Clone();
         corrupt[^20] ^= 0xFF;
-        Should.Throw<InvalidDataException>(() => ImageCodecs.OpenRowReader(new MemoryStream(corrupt), PixelFormat.Rgba32))
-            .Message.ShouldStartWith("The PNG file cannot be decoded");
+        // PNG streams, so the corrupt IDAT is found when its rows are read, not at open.
+        foreach (var feed in StreamingAssert.AllFeeds)
+            await Should.ThrowAsync<InvalidDataException>(async () => await ReadAllAsync(corrupt, feed, PixelFormat.Rgba32), $"corrupt, {feed}");
     }
 
     [Fact]
