@@ -40,56 +40,26 @@ public static class JpegEncoder
     /// <exception cref="ArgumentOutOfRangeException">A dimension, channel count, or quality is out of range.</exception>
     public static byte[] Encode(ReadOnlySpan<byte> pixels, int width, int height, int channels, JpegEncodeOptions? options = null)
     {
-        if (width is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(width), width, "Width must be 1..65535.");
-        if (height is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(height), height, "Height must be 1..65535.");
-        if (channels is < 1 or > 4) throw new ArgumentOutOfRangeException(nameof(channels), channels, "Channels must be 1..4.");
         options ??= new JpegEncodeOptions();
-        if (options.Quality is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(options), options.Quality, "Quality must be 1..100.");
-        if (options.RestartInterval is < 0 or > 65535)
-            throw new ArgumentOutOfRangeException(nameof(options), options.RestartInterval, "RestartInterval must be 0..65535.");
-
-        var exif = ValidateExif(options.Exif);
-        var xmp = options.Xmp is { } xmpOptions ? BuildXmpPacket(xmpOptions) : default;
-        var icc = ValidateIcc(options.IccProfile);
+        var setup = Prepare(width, height, channels, options);
 
         var required = (long)width * height * channels;
         if (pixels.Length < required)
             throw new ArgumentException($"Pixel buffer too small: {pixels.Length} < {required} (width*height*channels).", nameof(pixels));
 
-        var gray = channels <= 2;
-        var subsample = !gray && options.Subsampling switch
-        {
-            JpegSubsampling.Chroma444 => false,
-            JpegSubsampling.Chroma420 => true,
-            _ => options.Quality <= 90,
-        };
-
-        // libjpeg-style quality → quantiser scale percentage.
-        var q = options.Quality;
-        var scale = q < 50 ? 5000 / q : 200 - q * 2;
-        var lumaQuant = ScaleQuant(LumaQuant, scale);
-        var chromaQuant = ScaleQuant(ChromaQuant, scale);
-
-        var frame = new Frame(width, height, gray, subsample) { RestartInterval = options.RestartInterval };
-        frame.Components[0].Recip = Reciprocals(lumaQuant);
-        for (var c = 1; c < frame.Components.Length; c++) frame.Components[c].Recip = Reciprocals(chromaQuant);
-
+        var frame = setup.Frame;
         var stored = options.Progressive || options.OptimizeHuffman;
         var w = new JpegBitWriter(EstimateCapacity(width, height, channels));
         try
         {
-            WriteHeaders(ref w, exif.Span, xmp, icc.Span, lumaQuant, gray ? null : chromaQuant);
             if (!stored)
             {
-                WriteFrame(ref w, frame, progressive: false);
-                var (dcL, acL, dcC, acC) = (StdDcLuma, StdAcLuma, StdDcChroma, StdAcChroma);
-                WriteHuffmanTables(ref w, gray ? [(0, 0, dcL), (1, 0, acL)] : [(0, 0, dcL), (1, 0, acL), (0, 1, dcC), (1, 1, acC)]);
-                WriteRestartInterval(ref w, frame.RestartInterval);
-                WriteBaselineScanHeader(ref w, frame);
-                Transform(pixels, channels, frame, ref w, [dcL, dcC], [acL, acC]);
+                WriteBaselinePreamble(ref w, setup);
+                Transform(pixels, channels, frame, ref w, StdDcTables, StdAcTables);
             }
             else
             {
+                WriteHeaders(ref w, setup);
                 foreach (var comp in frame.Components)
                     comp.Coefficients = ArrayPool<short>.Shared.Rent(checked(comp.BlocksW * comp.BlocksH * 64));
                 Transform(pixels, channels, frame, ref w, null, null);
@@ -98,7 +68,7 @@ public static class JpegEncoder
                 {
                     WriteFrame(ref w, frame, progressive: true);
                     WriteRestartInterval(ref w, frame.RestartInterval);
-                    JpegProgressiveEncoder.Encode(ref w, frame, gray ? JpegProgressiveEncoder.GrayScript : JpegProgressiveEncoder.ColorScript);
+                    JpegProgressiveEncoder.Encode(ref w, frame, frame.Components.Length == 1 ? JpegProgressiveEncoder.GrayScript : JpegProgressiveEncoder.ColorScript);
                 }
                 else
                 {
@@ -122,6 +92,73 @@ public static class JpegEncoder
             }
         }
     }
+
+    /// <summary>What every coding mode needs before a sample is read: the checked options, metadata and tables.</summary>
+    internal sealed class Setup(Frame frame, ReadOnlyMemory<byte> exif, byte[]? xmp, ReadOnlyMemory<byte> icc, byte[] lumaQuant, byte[]? chromaQuant)
+    {
+        public readonly Frame Frame = frame;
+        public readonly ReadOnlyMemory<byte> Exif = exif, Icc = icc;
+        public readonly byte[]? Xmp = xmp;
+        public readonly byte[] LumaQuant = lumaQuant;
+
+        /// <summary>Null for grey.</summary>
+        public readonly byte[]? ChromaQuant = chromaQuant;
+    }
+
+    /// <summary>
+    /// Checks the geometry and <paramref name="options"/> (in this order: width, height, channels, quality, restart
+    /// interval, EXIF, XMP, ICC) and builds the frame and its quantisation tables.
+    /// </summary>
+    internal static Setup Prepare(int width, int height, int channels, JpegEncodeOptions options)
+    {
+        if (width is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(width), width, "Width must be 1..65535.");
+        if (height is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(height), height, "Height must be 1..65535.");
+        if (channels is < 1 or > 4) throw new ArgumentOutOfRangeException(nameof(channels), channels, "Channels must be 1..4.");
+        if (options.Quality is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(options), options.Quality, "Quality must be 1..100.");
+        if (options.RestartInterval is < 0 or > 65535)
+            throw new ArgumentOutOfRangeException(nameof(options), options.RestartInterval, "RestartInterval must be 0..65535.");
+
+        var exif = ValidateExif(options.Exif);
+        var xmp = options.Xmp is { } xmpOptions ? BuildXmpPacket(xmpOptions) : null;
+        var icc = ValidateIcc(options.IccProfile);
+
+        var gray = channels <= 2;
+        var subsample = !gray && options.Subsampling switch
+        {
+            JpegSubsampling.Chroma444 => false,
+            JpegSubsampling.Chroma420 => true,
+            _ => options.Quality <= 90,
+        };
+
+        // libjpeg-style quality → quantiser scale percentage.
+        var q = options.Quality;
+        var scale = q < 50 ? 5000 / q : 200 - q * 2;
+        var lumaQuant = ScaleQuant(LumaQuant, scale);
+        var chromaQuant = ScaleQuant(ChromaQuant, scale);
+
+        var frame = new Frame(width, height, gray, subsample) { RestartInterval = options.RestartInterval };
+        frame.Components[0].Recip = Reciprocals(lumaQuant);
+        for (var c = 1; c < frame.Components.Length; c++) frame.Components[c].Recip = Reciprocals(chromaQuant);
+        return new Setup(frame, exif, xmp, icc, lumaQuant, gray ? null : chromaQuant);
+    }
+
+    /// <summary>
+    /// Everything a baseline file with the Annex K Huffman tables holds before its entropy-coded data: SOI, the
+    /// metadata segments, DQT, SOF0, DHT, DRI and SOS.
+    /// </summary>
+    internal static void WriteBaselinePreamble(ref JpegBitWriter w, Setup setup)
+    {
+        var frame = setup.Frame;
+        WriteHeaders(ref w, setup);
+        WriteFrame(ref w, frame, progressive: false);
+        var (dcL, acL, dcC, acC) = (StdDcLuma, StdAcLuma, StdDcChroma, StdAcChroma);
+        WriteHuffmanTables(ref w, frame.Components.Length == 1 ? [(0, 0, dcL), (1, 0, acL)] : [(0, 0, dcL), (1, 0, acL), (0, 1, dcC), (1, 1, acC)]);
+        WriteRestartInterval(ref w, frame.RestartInterval);
+        WriteBaselineScanHeader(ref w, frame);
+    }
+
+    private static void WriteHeaders(ref JpegBitWriter w, Setup setup) =>
+        WriteHeaders(ref w, setup.Exif.Span, setup.Xmp, setup.Icc.Span, setup.LumaQuant, setup.ChromaQuant);
 
     // -------------------------------------------------------------- frame geometry
 
@@ -181,6 +218,9 @@ public static class JpegEncoder
     private static readonly JpegHuffmanEncodeTable StdDcChroma = JpegHuffmanEncodeTable.FromSpec(DcChromaBits, DcChromaValues);
     private static readonly JpegHuffmanEncodeTable StdAcChroma = JpegHuffmanEncodeTable.FromSpec(AcChromaBits, AcChromaValues);
 
+    /// <summary>The Annex K tables by <see cref="Component.TableId"/> (declared after the tables they hold).</summary>
+    internal static readonly JpegHuffmanEncodeTable[] StdDcTables = [StdDcLuma, StdDcChroma], StdAcTables = [StdAcLuma, StdAcChroma];
+
     private static byte[] ScaleQuant(ReadOnlySpan<byte> basis, int scale)
     {
         var t = new byte[64];
@@ -214,195 +254,235 @@ public static class JpegEncoder
 
     /// <summary>
     /// Runs colour conversion and the forward DCT over the whole image, one MCU row at a time
-    /// in chunks of <see cref="ChunkWidth"/> columns. With Huffman tables given, every block is
-    /// entropy coded straight after its transform; otherwise the quantised coefficients are
-    /// stored in each component's grid.
+    /// (<see cref="McuRowEncoder"/>). With Huffman tables given, every block is entropy coded straight
+    /// after its transform; otherwise the quantised coefficients are stored in each component's grid.
     /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void Transform(ReadOnlySpan<byte> pixels, int channels, Frame f, ref JpegBitWriter w,
         JpegHuffmanEncodeTable[]? dcTables, JpegHuffmanEncodeTable[]? acTables)
     {
-        var comps = f.Components;
-        var gray = comps.Length == 1;
-        var subsample = f.HMax == 2;
-        var rows = 8 * f.VMax;
-        var mcuWidth = 8 * f.HMax;
-        var chunkMcus = ChunkWidth / mcuWidth;
-        const int stride = ChunkWidth;
-        const int halfStride = ChunkWidth / 2;
+        using var rows = new McuRowEncoder(f, channels, dcTables, acTables);
         var rowBytes = f.Width * channels;
+        for (var my = 0; my < f.McusY; my++)
+            rows.Encode(pixels[(my * rows.Rows * rowBytes)..], rowBytes, my, ref w);
+    }
 
-        var planeLength = rows * stride;
-        var y = ArrayPool<float>.Shared.Rent(planeLength);
-        var fullChroma = !gray && !subsample;
-        float[] cb = fullChroma ? ArrayPool<float>.Shared.Rent(planeLength) : [];
-        float[] cr = fullChroma ? ArrayPool<float>.Shared.Rent(planeLength) : [];
-        float[] cb2 = subsample ? ArrayPool<float>.Shared.Rent(8 * halfStride) : [];
-        float[] cr2 = subsample ? ArrayPool<float>.Shared.Rent(8 * halfStride) : [];
-        Span<short> scratch = stackalloc short[64];
-        Span<int> pred = stackalloc int[3];
-        pred.Clear();
-        var restart = f.RestartInterval;
-        var mcusDone = 0; // MCUs entropy coded so far, for the restart intervals
-        var restartIndex = 0;
-        var store = dcTables is null;
-        var dcCodes = new uint[comps.Length][];
-        var acCodes = new uint[comps.Length][];
-        if (!store)
+    /// <summary>
+    /// The transform pipeline for one MCU row at a time (8 image rows, or 16 for 4:2:0), in chunks of
+    /// <see cref="ChunkWidth"/> columns so the float planes stay cache-resident. It holds the state one MCU
+    /// row hands to the next (DC predictors, restart count), so the buffered encoder and the streaming
+    /// session code the same bytes from the same rows.
+    /// </summary>
+    internal sealed class McuRowEncoder : IDisposable
+    {
+        private readonly Frame _f;
+        private readonly int _channels;
+        private readonly float[] _y, _cb, _cr, _cb2, _cr2;
+        private readonly int[] _pred = new int[3];
+        private readonly uint[][] _dcCodes, _acCodes;
+        private readonly bool _store;
+        private int _mcusDone; // MCUs entropy coded so far, for the restart intervals
+        private int _restartIndex;
+        private bool _disposed;
+
+        /// <param name="f">The frame (its components' <see cref="Component.Recip"/> set; with no tables, their
+        /// <see cref="Component.Coefficients"/> allocated).</param>
+        /// <param name="channels">Interleaved samples per pixel of the rows given to <see cref="Encode"/>.</param>
+        /// <param name="dcTables">DC tables by <see cref="Component.TableId"/>; null to store coefficients.</param>
+        /// <param name="acTables">AC tables by <see cref="Component.TableId"/>; null to store coefficients.</param>
+        public McuRowEncoder(Frame f, int channels, JpegHuffmanEncodeTable[]? dcTables, JpegHuffmanEncodeTable[]? acTables)
         {
-            for (var c = 0; c < comps.Length; c++)
+            _f = f;
+            _channels = channels;
+            var comps = f.Components;
+            var gray = comps.Length == 1;
+            var subsample = f.HMax == 2;
+            var planeLength = Rows * ChunkWidth;
+            var fullChroma = !gray && !subsample;
+            _y = ArrayPool<float>.Shared.Rent(planeLength);
+            _cb = fullChroma ? ArrayPool<float>.Shared.Rent(planeLength) : [];
+            _cr = fullChroma ? ArrayPool<float>.Shared.Rent(planeLength) : [];
+            _cb2 = subsample ? ArrayPool<float>.Shared.Rent(8 * (ChunkWidth / 2)) : [];
+            _cr2 = subsample ? ArrayPool<float>.Shared.Rent(8 * (ChunkWidth / 2)) : [];
+            _store = dcTables is null;
+            _dcCodes = new uint[comps.Length][];
+            _acCodes = new uint[comps.Length][];
+            if (!_store)
             {
-                dcCodes[c] = dcTables![comps[c].TableId].Packed;
-                acCodes[c] = acTables![comps[c].TableId].AcCombined;
+                for (var c = 0; c < comps.Length; c++)
+                {
+                    _dcCodes[c] = dcTables![comps[c].TableId].Packed;
+                    _acCodes[c] = acTables![comps[c].TableId].AcCombined;
+                }
             }
         }
 
-        try
+        /// <summary>Image rows per MCU row: 8, or 16 for 4:2:0.</summary>
+        public int Rows => 8 * _f.VMax;
+
+        /// <summary>
+        /// Transforms (and codes, or stores) MCU row <paramref name="my"/>. Row <c>r</c> of <paramref name="band"/>,
+        /// <paramref name="bandStride"/> bytes apart, is image row <c>my × Rows + r</c>; the band holds every image row
+        /// of the MCU row (fewer than <see cref="Rows"/> only in the last, whose missing rows replicate the image's last).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        public void Encode(ReadOnlySpan<byte> band, int bandStride, int my, ref JpegBitWriter w)
         {
-            for (var my = 0; my < f.McusY; my++)
+            var f = _f;
+            var comps = f.Components;
+            var gray = comps.Length == 1;
+            var subsample = f.HMax == 2;
+            var rows = 8 * f.VMax;
+            var mcuWidth = 8 * f.HMax;
+            var chunkMcus = ChunkWidth / mcuWidth;
+            const int stride = ChunkWidth;
+            const int halfStride = ChunkWidth / 2;
+            var channels = _channels;
+            var (y, cb, cr, cb2, cr2) = (_y, _cb, _cr, _cb2, _cr2);
+            var lastRow = Math.Min(rows, f.Height - my * rows) - 1; // the band's last row, ≥ 0
+            Span<short> scratch = stackalloc short[64];
+            Span<int> pred = _pred;
+            var restart = f.RestartInterval;
+            var dcCodes = _dcCodes;
+            var acCodes = _acCodes;
+
+            for (var cx = 0; cx < f.McusX; cx += chunkMcus)
             {
-                for (var cx = 0; cx < f.McusX; cx += chunkMcus)
+                var mcus = Math.Min(chunkMcus, f.McusX - cx);
+                var x0 = cx * mcuWidth;
+                var width = mcus * mcuWidth;
+                var valid = Math.Min(width, f.Width - x0); // ≥ 1: McusX = ceil(Width / mcuWidth)
+
+                // Level-shifted planes for this chunk, rows past the bottom replicating the last
+                // image row and columns past the right edge the last column (the last chroma
+                // column for 4:2:0).
+                if (subsample)
                 {
-                    var mcus = Math.Min(chunkMcus, f.McusX - cx);
-                    var x0 = cx * mcuWidth;
-                    var width = mcus * mcuWidth;
-                    var valid = Math.Min(width, f.Width - x0); // ≥ 1: McusX = ceil(Width / mcuWidth)
-
-                    // Level-shifted planes for this chunk, rows past the bottom replicating the last
-                    // image row and columns past the right edge the last column (the last chroma
-                    // column for 4:2:0).
-                    if (subsample)
+                    var cValid = (valid + 1) / 2;
+                    for (var r = 0; r < 8; r++)
                     {
-                        var cValid = (valid + 1) / 2;
-                        for (var r = 0; r < 8; r++)
-                        {
-                            var row0 = Math.Min(my * 16 + 2 * r, f.Height - 1);
-                            var row1 = Math.Min(my * 16 + 2 * r + 1, f.Height - 1);
-                            var ys0 = y.AsSpan(2 * r * stride, width);
-                            var ys1 = y.AsSpan((2 * r + 1) * stride, width);
-                            var cbs = cb2.AsSpan(r * halfStride, width / 2);
-                            var crs = cr2.AsSpan(r * halfStride, width / 2);
-                            JpegEncoderKernels.ConvertRowPair420(
-                                pixels.Slice(row0 * rowBytes + x0 * channels, valid * channels),
-                                pixels.Slice(row1 * rowBytes + x0 * channels, valid * channels),
-                                channels, valid, ys0, ys1, cbs, crs);
-                            if (valid < width)
-                            {
-                                ys0[valid..].Fill(ys0[valid - 1]);
-                                ys1[valid..].Fill(ys1[valid - 1]);
-                                cbs[cValid..].Fill(cbs[cValid - 1]);
-                                crs[cValid..].Fill(crs[cValid - 1]);
-                            }
-                        }
-                    }
-
-                    var prevSrc = -1;
-                    for (var r = 0; !subsample && r < rows; r++)
-                    {
-                        var srcRow = Math.Min(my * rows + r, f.Height - 1);
-                        var o = r * stride;
-                        if (srcRow == prevSrc)
-                        {
-                            y.AsSpan(o - stride, width).CopyTo(y.AsSpan(o, width));
-                            if (!gray)
-                            {
-                                cb.AsSpan(o - stride, width).CopyTo(cb.AsSpan(o, width));
-                                cr.AsSpan(o - stride, width).CopyTo(cr.AsSpan(o, width));
-                            }
-
-                            continue;
-                        }
-
-                        prevSrc = srcRow;
-                        var src = pixels.Slice(srcRow * rowBytes + x0 * channels, valid * channels);
-                        var ys = y.AsSpan(o, width);
-                        Span<float> cbs = gray ? [] : cb.AsSpan(o, width);
-                        Span<float> crs = gray ? [] : cr.AsSpan(o, width);
-                        JpegEncoderKernels.ConvertRow(src, channels, valid, ys, cbs, crs);
+                        var row0 = Math.Min(2 * r, lastRow);
+                        var row1 = Math.Min(2 * r + 1, lastRow);
+                        var ys0 = y.AsSpan(2 * r * stride, width);
+                        var ys1 = y.AsSpan((2 * r + 1) * stride, width);
+                        var cbs = cb2.AsSpan(r * halfStride, width / 2);
+                        var crs = cr2.AsSpan(r * halfStride, width / 2);
+                        JpegEncoderKernels.ConvertRowPair420(
+                            band.Slice(row0 * bandStride + x0 * channels, valid * channels),
+                            band.Slice(row1 * bandStride + x0 * channels, valid * channels),
+                            channels, valid, ys0, ys1, cbs, crs);
                         if (valid < width)
                         {
-                            ys[valid..].Fill(ys[valid - 1]);
-                            if (!gray)
-                            {
-                                cbs[valid..].Fill(cbs[valid - 1]);
-                                crs[valid..].Fill(crs[valid - 1]);
-                            }
+                            ys0[valid..].Fill(ys0[valid - 1]);
+                            ys1[valid..].Fill(ys1[valid - 1]);
+                            cbs[cValid..].Fill(cbs[cValid - 1]);
+                            crs[cValid..].Fill(crs[cValid - 1]);
                         }
                     }
+                }
 
-
-                    if (!store)
+                var prevSrc = -1;
+                for (var r = 0; !subsample && r < rows; r++)
+                {
+                    var srcRow = Math.Min(r, lastRow);
+                    var o = r * stride;
+                    if (srcRow == prevSrc)
                     {
-                        var c1 = subsample ? cb2 : cb;
-                        var c2 = subsample ? cr2 : cr;
-                        var cStride = subsample ? halfStride : stride;
-                        if (restart == 0)
+                        y.AsSpan(o - stride, width).CopyTo(y.AsSpan(o, width));
+                        if (!gray)
                         {
-                            EncodeChunk(ref w, comps, 0, mcus, y, c1, c2, stride, cStride, pred, dcCodes, acCodes, scratch);
-                            continue;
-                        }
-
-                        // Restart intervals: the chunk is coded in runs that end on an interval boundary, so
-                        // the per-MCU loop stays free of the check. A marker goes before an interval's first
-                        // MCU, never after the image's last (T.81 B.2.4.4, F.1.2.3).
-                        for (var s = 0; s < mcus;)
-                        {
-                            if (mcusDone > 0 && mcusDone % restart == 0)
-                            {
-                                w.WriteRestart(restartIndex++);
-                                pred.Clear();
-                            }
-
-                            var run = Math.Min(mcus - s, restart - mcusDone % restart);
-                            EncodeChunk(ref w, comps, s, s + run, y, c1, c2, stride, cStride, pred, dcCodes, acCodes, scratch);
-                            s += run;
-                            mcusDone += run;
+                            cb.AsSpan(o - stride, width).CopyTo(cb.AsSpan(o, width));
+                            cr.AsSpan(o - stride, width).CopyTo(cr.AsSpan(o, width));
                         }
 
                         continue;
                     }
 
-                    for (var mx = 0; mx < mcus; mx++)
+                    prevSrc = srcRow;
+                    var src = band.Slice(srcRow * bandStride + x0 * channels, valid * channels);
+                    var ys = y.AsSpan(o, width);
+                    Span<float> cbs = gray ? [] : cb.AsSpan(o, width);
+                    Span<float> crs = gray ? [] : cr.AsSpan(o, width);
+                    JpegEncoderKernels.ConvertRow(src, channels, valid, ys, cbs, crs);
+                    if (valid < width)
                     {
-                        for (var c = 0; c < comps.Length; c++)
+                        ys[valid..].Fill(ys[valid - 1]);
+                        if (!gray)
                         {
-                            var comp = comps[c];
-                            float[] plane;
-                            int planeStride;
-                            if (c == 0) { plane = y; planeStride = stride; }
-                            else if (subsample) { plane = c == 1 ? cb2 : cr2; planeStride = halfStride; }
-                            else { plane = c == 1 ? cb : cr; planeStride = stride; }
+                            cbs[valid..].Fill(cbs[valid - 1]);
+                            crs[valid..].Fill(crs[valid - 1]);
+                        }
+                    }
+                }
 
-                            for (var v = 0; v < comp.V; v++)
+                if (!_store)
+                {
+                    var c1 = subsample ? cb2 : cb;
+                    var c2 = subsample ? cr2 : cr;
+                    var cStride = subsample ? halfStride : stride;
+                    if (restart == 0)
+                    {
+                        EncodeChunk(ref w, comps, 0, mcus, y, c1, c2, stride, cStride, pred, dcCodes, acCodes, scratch);
+                        continue;
+                    }
+
+                    // Restart intervals: the chunk is coded in runs that end on an interval boundary, so
+                    // the per-MCU loop stays free of the check. A marker goes before an interval's first
+                    // MCU, never after the image's last (T.81 B.2.4.4, F.1.2.3).
+                    for (var s = 0; s < mcus;)
+                    {
+                        if (_mcusDone > 0 && _mcusDone % restart == 0)
+                        {
+                            w.WriteRestart(_restartIndex++);
+                            pred.Clear();
+                        }
+
+                        var run = Math.Min(mcus - s, restart - _mcusDone % restart);
+                        EncodeChunk(ref w, comps, s, s + run, y, c1, c2, stride, cStride, pred, dcCodes, acCodes, scratch);
+                        s += run;
+                        _mcusDone += run;
+                    }
+
+                    continue;
+                }
+
+                for (var mx = 0; mx < mcus; mx++)
+                {
+                    for (var c = 0; c < comps.Length; c++)
+                    {
+                        var comp = comps[c];
+                        float[] plane;
+                        int planeStride;
+                        if (c == 0) { plane = y; planeStride = stride; }
+                        else if (subsample) { plane = c == 1 ? cb2 : cr2; planeStride = halfStride; }
+                        else { plane = c == 1 ? cb : cr; planeStride = stride; }
+
+                        for (var v = 0; v < comp.V; v++)
+                        {
+                            for (var h = 0; h < comp.H; h++)
                             {
-                                for (var h = 0; h < comp.H; h++)
-                                {
-                                    var local = mx * comp.H + h;
-                                    JpegEncoderKernels.ForwardDct(plane.AsSpan(v * 8 * planeStride + local * 8), planeStride, comp.Recip,
-                                        comp.Block(my * comp.V + v, cx * comp.H + local));
-                                }
+                                var local = mx * comp.H + h;
+                                JpegEncoderKernels.ForwardDct(plane.AsSpan(v * 8 * planeStride + local * 8), planeStride, comp.Recip,
+                                    comp.Block(my * comp.V + v, cx * comp.H + local));
                             }
                         }
                     }
                 }
             }
         }
-        finally
-        {
-            ArrayPool<float>.Shared.Return(y);
-            if (fullChroma)
-            {
-                ArrayPool<float>.Shared.Return(cb);
-                ArrayPool<float>.Shared.Return(cr);
-            }
 
-            if (subsample)
-            {
-                ArrayPool<float>.Shared.Return(cb2);
-                ArrayPool<float>.Shared.Return(cr2);
-            }
+        /// <summary>Returns the float planes to the pool.</summary>
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            ArrayPool<float>.Shared.Return(_y);
+            if (_cb.Length > 0) ArrayPool<float>.Shared.Return(_cb);
+            if (_cr.Length > 0) ArrayPool<float>.Shared.Return(_cr);
+            if (_cb2.Length > 0) ArrayPool<float>.Shared.Return(_cb2);
+            if (_cr2.Length > 0) ArrayPool<float>.Shared.Return(_cr2);
         }
     }
+
     // -------------------------------------------------------------- sequential entropy coding
 
     /// <summary>

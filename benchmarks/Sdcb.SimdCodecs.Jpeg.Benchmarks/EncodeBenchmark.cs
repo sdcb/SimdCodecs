@@ -1,6 +1,8 @@
+using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
+using Sdcb.SimdCodecs.Abstractions;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
@@ -85,6 +87,13 @@ internal static class EncodeBenchmark
             contestants.Insert(1, new("baseline", baseline));
         if (mode == "baseline")
         {
+            // The same encoder through the streaming session, fed 16-row bands: its bytes must equal "ours".
+            var sink = new ArrayBufferWriter<byte>();
+            contestants.Insert(1, new("streamed", (img, c) => EncodeStreamed(sink, img, new JpegEncodeOptions
+            {
+                Quality = c.Quality,
+                Subsampling = c.Subsample420 ? JpegSubsampling.Chroma420 : JpegSubsampling.Chroma444,
+            })));
             contestants.Add(new("ImageSharp", (img, c) =>
             {
                 using var image = SixLabors.ImageSharp.Image.LoadPixelData<Rgb24>(img.Rgb, img.Width, img.Height);
@@ -120,10 +129,14 @@ internal static class EncodeBenchmark
             var tallies = contestants.ToDictionary(c => c.Name, _ => new Tally());
             foreach (var image in images)
             {
+                byte[] oursJpeg = [];
                 foreach (var c in contestants)
                 {
                     var t = tallies[c.Name];
                     var jpeg = c.Encode(image, config); // also the warm-up
+                    if (c.Name == "ours") oursJpeg = jpeg;
+                    else if (c.Name == "streamed" && !jpeg.AsSpan().SequenceEqual(oursJpeg))
+                        throw new InvalidOperationException($"{image.Name} {config}: the streaming session's bytes differ from JpegEncoder.Encode's");
                     var times = new double[reps];
                     for (var r = 0; r < reps; r++)
                     {
@@ -165,6 +178,22 @@ internal static class EncodeBenchmark
         }
 
         return ok;
+    }
+
+    /// <summary>Encodes through <see cref="JpegImageEncoder"/>'s streaming session, 16 rows per <c>WriteRows</c>.</summary>
+    private static byte[] EncodeStreamed(ArrayBufferWriter<byte> sink, Image img, JpegEncodeOptions options)
+    {
+        sink.ResetWrittenCount();
+        using var session = JpegImageEncoder.Create(sink, options);
+        var frame = session.AddFrame(img.Width, img.Height, PixelFormat.Rgb24);
+        var rowBytes = img.Width * 3;
+        for (var y = 0; y < img.Height; y += 16)
+        {
+            var n = Math.Min(16, img.Height - y);
+            frame.WriteRows(img.Rgb.AsSpan(y * rowBytes, n * rowBytes), n);
+        }
+        session.Commit();
+        return sink.WrittenSpan.ToArray();
     }
 
     // ---------------------------------------------------------------- inputs

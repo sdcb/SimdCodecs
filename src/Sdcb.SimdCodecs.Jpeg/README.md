@@ -32,6 +32,20 @@ byte[] jpeg = JpegEncoder.Encode(rgba, width, height, quality: 85);
 
 `JpegEncodeOptions` selects chroma subsampling, optimised Huffman tables, progressive mode, a restart interval (`RestartInterval`, in MCUs: DRI plus RST0..RST7 markers in every scan, decoded pixels unchanged), and an optional Exif blob.
 
+## Streaming encode
+
+`JpegImageEncoder.Create` returns a streaming session for baseline encoding with the standard tables (every option except `OptimizeHuffman` and `Progressive`): the headers reach the writer at `AddFrame`, and each MCU row (8 image rows, 16 for 4:2:0) is coded and handed over as soon as its last row is written. The session holds one MCU row of pixels and of output, so a large image can be encoded from a row source straight to a file. Its bytes are exactly `JpegEncoder.Encode`'s for the same pixels and options, however the rows are split across `WriteRows` calls.
+
+```csharp
+using var session = JpegImageEncoder.Create(writer, new JpegEncodeOptions { Quality = 85 });
+var frame = session.AddFrame(width, height, PixelFormat.Rgb24);
+while (source.ReadBand(band, out int rows))      // any band height
+    frame.WriteRows(band, rows);
+session.Commit();
+```
+
+`OptimizeHuffman` and `Progressive` need every coefficient before the first scan is written; with either set the session collects the image and encodes it at `Commit` (`IsStreaming` is false), with the same output as before.
+
 ## JPEG inside another container
 
 A container that stores JPEG streams can carry their tables apart from them and say itself what the components mean, as TIFF does (JPEGTables and PhotometricInterpretation, TIFF Technical Note 2). `JpegDecodeOptions` takes both:
