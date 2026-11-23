@@ -18,7 +18,7 @@ Every bitmap is `1920×1080` (`--size WxH`), cut from the PNG benchmark's two so
 |---|---|---|
 | decode | `rgb24`, `bgra32` (32-bit with alpha), `rgb16`, `p8`, `p4`, `p1` | ImageSharp, a foreign encoder |
 | decode | `rgb24-topdown`, `argb32-v4` (V4 alpha mask), `rgb565`, `rle8`, `rle4`, `ico256-bmp32`, `ico256-png`, `ico48-bmp8` | ours (layouts ImageSharp does not write) |
-| encode | `rgb24`, `argb32`, `rgb565`, `p8`, `rle8` from RGBA; `ico-set` (16, 32, 48 as DIB, 256 as PNG) | — |
+| encode | `rgb24`, `argb32`, `rgb24-topdown`, `argb32-topdown` (the layouts the encoder session streams), `rgb565`, `p8`, `rle8` from RGBA; `ico-set` (16, 32, 48 as DIB, 256 as PNG) | — |
 
 ## Contestants
 
@@ -26,6 +26,7 @@ Every bitmap is `1920×1080` (`--size WxH`), cut from the PNG benchmark's two so
 |---|---|---|
 | `current` | `BmpImageDecoder` / `IcoImageDecoder.TryDecodeInto` to RGBA in a reused buffer | `BmpEncoder` / `IcoEncoder`, from RGBA |
 | `current BGR(A)` | the same to BGRA, WIC's layout | the same from the B, G, R(, A) input WIC gets |
+| `current rows ← stream` / `current session → writer` | `BmpImageDecoder.CreateRowReader` over a seekable `MemoryStream`, RGBA rows 64 at a time (bitmaps only) | `BmpImageEncoder.Create`, 64 rows per `WriteRows` into a reused `ArrayBufferWriter` (the cases whose options stream) |
 | `baseline` | the previous commit's decoder, same process (`baseline [git-ref]`) | the previous commit's encoder, to an array and (`baseline → stream`) into a reused stream |
 | ImageSharp 3.1.12 | `Image.Load<Rgba32>` + `CopyPixelDataTo`, `MaxDegreeOfParallelism = 1` (no icons: it has no ICO codec) | `BmpEncoder` with the same bits per pixel, into a reused stream (no RLE) |
 | WIC | WPF's `BitmapDecoder` + `FormatConvertedBitmap` to BGRA (Windows only) | WPF's `BmpBitmapEncoder` from B, G, R(, A) into a reused stream (24- and 32-bit) |

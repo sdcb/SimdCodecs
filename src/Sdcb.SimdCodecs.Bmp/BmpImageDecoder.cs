@@ -11,7 +11,7 @@ namespace Sdcb.SimdCodecs.Bmp;
 /// writes the caller's buffer directly. Malformed data makes the <c>Try</c> methods return false rather
 /// than throw.
 /// </summary>
-public sealed class BmpImageDecoder : IImageDecoder
+public sealed class BmpImageDecoder : IStreamingImageDecoder
 {
     /// <summary>The registration for <c>ImageCodecs.Register</c>, built from this type's method groups.</summary>
     public static ImageDecoderRegistration Registration { get; } = new()
@@ -25,6 +25,7 @@ public sealed class BmpImageDecoder : IImageDecoder
         TryDecodeInto = TryDecodeInto,
         TryReadMetadata = TryReadMetadata,
         TryDecodeThumbnail = TryDecodeThumbnail,
+        CreateRowReader = CreateRowReader,
     };
 
     /// <inheritdoc />
@@ -44,16 +45,7 @@ public sealed class BmpImageDecoder : IImageDecoder
     {
         try
         {
-            var header = BmpHeader.ReadFile(data);
-            var bmp = BmpDecoder.Info(data, header);
-            info = new ImageInfo(bmp.Width, bmp.Height, bmp.Channels, SampleFormat.UInt8)
-            {
-                Format = ImageFormat.Bmp,
-                ColorEncoding = ColorOf(data, header),
-                BitDepth = BmpDecoder.BitDepth(header),
-                Resolution = header.XPelsPerMeter == 0 && header.YPelsPerMeter == 0 ? null
-                    : new Resolution(header.XPelsPerMeter, header.YPelsPerMeter, ResolutionUnit.PerMeter),
-            };
+            info = InfoOf(data, BmpHeader.ReadFile(data));
             return true;
         }
         catch (InvalidDataException)
@@ -63,6 +55,31 @@ public sealed class BmpImageDecoder : IImageDecoder
         }
     }
 
+    // The header as ImageInfo; `data` holds the file from its start, at least through the profile when there is one.
+    internal static ImageInfo InfoOf(ReadOnlySpan<byte> data, BmpHeader header)
+    {
+        var bmp = BmpDecoder.Info(data, header);
+        return new ImageInfo(bmp.Width, bmp.Height, bmp.Channels, SampleFormat.UInt8)
+        {
+            Format = ImageFormat.Bmp,
+            ColorEncoding = ColorOf(data, header),
+            BitDepth = BmpDecoder.BitDepth(header),
+            Resolution = header.XPelsPerMeter == 0 && header.YPelsPerMeter == 0 ? null
+                : new Resolution(header.XPelsPerMeter, header.YPelsPerMeter, ResolutionUnit.PerMeter),
+        };
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Uncompressed bitmaps (every depth, palettes and channel masks) stream to the 8-bit basic formats at full size: a
+    /// top-down bitmap from any stream; a bottom-up one, or a 32-bit <c>BI_RGB</c> one decoded with alpha (whose fourth
+    /// byte is alpha only if some pixel's is not 0), from a seekable stream, which the reader reads forward once and then
+    /// seeks back a band of rows at a time. Memory is a band of rows either way. RLE, Huffman 1D, <c>BI_PNG</c>, other
+    /// formats or options, a V5 profile stored after the pixels, and the cases above on a stream that cannot seek, are
+    /// decoded whole behind the same reader (<see cref="IImageRowReader.IsStreaming"/> false).
+    /// </remarks>
+    public static StreamingRowReader CreateRowReader(StreamInput input, PixelFormat format, DecodeOptions? options) =>
+        new BmpRowReader(input, format, options);
     /// <inheritdoc />
     public static bool TryGetClosestSize(ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight,
         out int width, out int height, out int scaleDenominator) =>

@@ -39,7 +39,13 @@ public class BmpDecodeBenchmarks
     [Benchmark]
     public void Wic() => _run[Names.Wic]();
 
-    public static readonly string[] Methods = [Names.Current, Names.CurrentBgra, Names.Baseline, Names.ImageSharp, Names.Wic];
+    [Benchmark]
+    public void CurrentRows() => _run[Names.CurrentRows]();
+
+    [Benchmark]
+    public void CurrentReadAll() => _run[Names.CurrentReadAll]();
+
+    public static readonly string[] Methods = [Names.Current, Names.CurrentRows, Names.CurrentReadAll, Names.CurrentBgra, Names.Baseline, Names.ImageSharp, Names.Wic];
 }
 
 /// <summary>BenchmarkDotNet over the encode cases; see <see cref="BmpDecodeBenchmarks"/>.</summary>
@@ -76,7 +82,10 @@ public class BmpEncodeBenchmarks
     [Benchmark]
     public void BaselineStream() => _run[Names.BaselineStream]();
 
-    public static readonly string[] Methods = [Names.Current, Names.CurrentStream, Names.CurrentBgra, Names.Baseline, Names.BaselineStream, Names.ImageSharp, Names.Wic];
+    [Benchmark]
+    public void CurrentSession() => _run[Names.CurrentSession]();
+
+    public static readonly string[] Methods = [Names.Current, Names.CurrentStream, Names.CurrentSession, Names.CurrentBgra, Names.Baseline, Names.BaselineStream, Names.ImageSharp, Names.Wic];
 }
 
 /// <summary>Runs every contestant of a case back to back before the next case, in the matrix's order.</summary>

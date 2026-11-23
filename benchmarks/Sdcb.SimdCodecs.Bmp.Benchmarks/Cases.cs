@@ -117,7 +117,7 @@ internal sealed record EncodeCase(string Content, string Format)
     public static IReadOnlyList<EncodeCase> All { get; } =
     [
         .. from content in SourceImage.Contents
-           from format in new[] { "rgb24", "argb32", "rgb565", "p8", "rle8", "ico-set" }
+           from format in new[] { "rgb24", "argb32", "rgb24-topdown", "argb32-topdown", "rgb565", "p8", "rle8", "ico-set" }
            select new EncodeCase(content, format),
     ];
 
@@ -125,15 +125,18 @@ internal sealed record EncodeCase(string Content, string Format)
 
     public static EncodeCase Find(string name) => All.Single(c => c.Name == name);
 
-    public bool Alpha => Format is "argb32" or "ico-set";
+    public bool Alpha => Format is "argb32" or "argb32-topdown" or "ico-set";
 
     /// <summary>Whether a decode of the output must give the source back exactly.</summary>
-    public bool Lossless => Format is "rgb24" or "argb32" or "ico-set";
+    public bool Lossless => Format is "rgb24" or "argb32" or "rgb24-topdown" or "argb32-topdown" or "ico-set";
 
     public BmpEncodeOptions Options => Format switch
     {
         "rgb24" => new BmpEncodeOptions { Format = BmpEncodeFormat.Rgb24 },
         "argb32" => new BmpEncodeOptions { Format = BmpEncodeFormat.Argb32 },
+        // Top-down direct colour: the layouts the encoder session streams.
+        "rgb24-topdown" => new BmpEncodeOptions { Format = BmpEncodeFormat.Rgb24, TopDown = true },
+        "argb32-topdown" => new BmpEncodeOptions { Format = BmpEncodeFormat.Argb32, TopDown = true },
         "rgb565" => new BmpEncodeOptions { Format = BmpEncodeFormat.Rgb565 },
         "p8" => new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed8 },
         _ => new BmpEncodeOptions { Format = BmpEncodeFormat.Indexed8, Rle = true },

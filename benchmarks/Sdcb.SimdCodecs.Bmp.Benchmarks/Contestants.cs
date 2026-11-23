@@ -67,6 +67,41 @@ internal sealed class DecodeSetup
         if (Want(Names.Current)) setup.Contestants.Add(new(Names.Current, () => Current(rgba, PixelFormat.Rgba32)));
         if (Want(Names.CurrentBgra)) setup.Contestants.Add(new(Names.CurrentBgra, () => Current(bgra, PixelFormat.Bgra32)));
 
+        // The streaming reader over a seekable stream (a bottom-up bitmap streams by seeking back a band at a time), RGBA
+        // rows a band of 64 at a time into the same kind of buffer: what reading a file costs next to decoding its bytes.
+        if (!icon && Want(Names.CurrentRows))
+        {
+            var buffer = new byte[w * h * 4];
+            void Rows()
+            {
+                using var reader = BmpImageDecoder.CreateRowReader(
+                    new Abstractions.CodecSupport.StreamInput(new MemoryStream(data, writable: false)), PixelFormat.Rgba32, null);
+                reader.Initialize();
+                while (reader.RowsRead < reader.Height)
+                    reader.ReadRows(buffer.AsSpan(reader.RowsRead * w * 4), 64);
+            }
+            if (only is null)
+            {
+                Rows();
+                if (!buffer.AsSpan().SequenceEqual(rgba))
+                    throw new InvalidOperationException($"{c.Name}: the streaming reader's rows differ from TryDecodeInto's; refusing to benchmark.");
+            }
+            setup.Contestants.Add(new(Names.CurrentRows, Rows));
+        }
+
+        // What a caller without the reader does with a stream: read it whole (into a reused buffer of the right size,
+        // the cheapest way), then decode the bytes.
+        if (!icon && Want(Names.CurrentReadAll))
+        {
+            var file = new byte[data.Length];
+            setup.Contestants.Add(new(Names.CurrentReadAll, () =>
+            {
+                using var stream = new MemoryStream(data, writable: false);
+                stream.ReadExactly(file);
+                BmpImageDecoder.TryDecodeInto(file, rgba, 0, PixelFormat.Rgba32);
+            }));
+        }
+
         if (Baseline.IsBuilt && Want(Names.Baseline) && Baseline.CanDecode(icon))
         {
             var buffer = new byte[w * h * 4];
@@ -184,14 +219,38 @@ internal sealed class EncodeSetup
             }));
         }
 
+        // The encoder session, 64 rows at a time into a reused writer: it streams for the top-down cases.
+        if (Want(Names.CurrentSession) && BmpEncoder.CanStream(options))
+        {
+            var writer = new System.Buffers.ArrayBufferWriter<byte>();
+            void Session()
+            {
+                writer.ResetWrittenCount();
+                using var session = BmpImageEncoder.Create(writer, options);
+                var frame = session.AddFrame(w, h, PixelFormat.Rgba32);
+                for (var y = 0; y < h; y += 64)
+                {
+                    var n = Math.Min(64, h - y);
+                    frame.WriteRows(rgba.AsSpan(y * w * 4, n * w * 4), n);
+                }
+                session.Commit();
+            }
+            Session();
+            var file = writer.WrittenSpan.ToArray();
+            if (only is null && !file.AsSpan().SequenceEqual(BmpEncoder.Encode(rgba, w, h, PixelFormat.Rgba32, options)))
+                throw new InvalidOperationException($"{c.Name}: the session's bytes differ from BmpEncoder.Encode's; refusing to benchmark.");
+            Check(Names.CurrentSession, file);
+            setup.Contestants.Add(new(Names.CurrentSession, Session));
+        }
+
         // B, G, R(, A) input, for the layouts WIC writes.
         byte[]? native = c.Format switch
         {
-            "rgb24" => Swizzle(rgba, 3),
-            "argb32" => Swizzle(rgba, 4),
+            "rgb24" or "rgb24-topdown" => Swizzle(rgba, 3),
+            "argb32" or "argb32-topdown" => Swizzle(rgba, 4),
             _ => null,
         };
-        var nativeFormat = c.Format == "rgb24" ? PixelFormat.Bgr24 : PixelFormat.Bgra32;
+        var nativeFormat = c.Format is "rgb24" or "rgb24-topdown" ? PixelFormat.Bgr24 : PixelFormat.Bgra32;
         if (native is not null && Want(Names.CurrentBgra))
         {
             var stream = new MemoryStream();
@@ -225,8 +284,8 @@ internal sealed class EncodeSetup
 
         IsBits? bits = c.Format switch
         {
-            "rgb24" => IsBits.Pixel24,
-            "argb32" => IsBits.Pixel32,
+            "rgb24" or "rgb24-topdown" => IsBits.Pixel24,
+            "argb32" or "argb32-topdown" => IsBits.Pixel32,
             "rgb565" => IsBits.Pixel16,
             "p8" => IsBits.Pixel8,
             _ => null, // ImageSharp writes no RLE
