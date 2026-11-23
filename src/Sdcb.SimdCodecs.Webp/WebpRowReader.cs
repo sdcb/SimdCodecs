@@ -322,7 +322,18 @@ internal sealed class WebpRowReader : StreamingRowReader
 
                 if (rowsWritten == rowCount)
                     return OperationStatus.Done;
-                if (!DecodeMacroblockRow(input, isFinal, ref consumed))
+
+                // RGBA rows the caller asked for go straight into its buffer, skipping the band copy; the image's
+                // last row never does (it waits for the container check).
+                Span<byte> direct = default;
+                if (_frameStarted && Format == PixelFormat.Rgba32)
+                {
+                    int end = _frame.MacroblockY == _frame.MacroblockHeight - 1 ? _height : _frame.MacroblockY * 16 + 8;
+                    if (end < _height && end - _frame.Emitted <= rowCount - rowsWritten)
+                        direct = destination[(rowsWritten * stride)..];
+                }
+
+                if (!DecodeMacroblockRow(input, isFinal, ref consumed, direct, stride, ref rowsWritten))
                     return OperationStatus.NeedMoreData;
             }
         }
@@ -334,7 +345,9 @@ internal sealed class WebpRowReader : StreamingRowReader
 
     // Decodes the next macroblock row into the band (or, first, reads the frame header). False when the input ends
     // inside what it needs; nothing is consumed or changed then.
-    private bool DecodeMacroblockRow(ReadOnlySpan<byte> input, bool isFinal, ref int consumed)
+    // A non-empty direct takes the row's output (RGBA, at directStride), counted in rowsWritten, instead of the band.
+    private bool DecodeMacroblockRow(ReadOnlySpan<byte> input, bool isFinal, ref int consumed, Span<byte> direct,
+        int directStride, ref int rowsWritten)
     {
         ReadOnlySpan<byte> data = input[consumed..];
         if (!_frameStarted)
@@ -415,12 +428,26 @@ internal sealed class WebpRowReader : StreamingRowReader
             cursor.Save(tokens);
         }
 
-        _bandFirst = _frame.Emitted;
-        var sink = new WebpDecoder.RgbaSink(_band, _width * 4, _width, _height, fancy: true,
-            _alpha is null ? default : _alpha.AsSpan(0, _width * _height), _tRows!, _chromaRows!, outputRow0: _bandFirst);
-        _frame.FinishRow(ref sink, int.MaxValue);
-        _bandEnd = _frame.Emitted;
-        _bandNext = _bandFirst;
+        int first = _frame.Emitted;
+        ReadOnlySpan<byte> alpha = _alpha is null ? default : _alpha.AsSpan(0, _width * _height);
+        if (direct.IsEmpty)
+        {
+            var sink = new WebpDecoder.RgbaSink(_band, _width * 4, _width, _height, fancy: true, alpha, _tRows!, _chromaRows!,
+                outputRow0: first);
+            _frame.FinishRow(ref sink, int.MaxValue);
+            (_bandFirst, _bandEnd, _bandNext) = (first, _frame.Emitted, first);
+        }
+        else
+        {
+            // DecodeRows chose direct only when the rows this macroblock row emits, [first, end), fit the rows left
+            // in the request, and the base checked the destination for all of those at directStride: every row
+            // the sink writes (it indexes from first) is inside direct.
+            var sink = new WebpDecoder.RgbaSink(direct, directStride, _width, _height, fancy: true, alpha, _tRows!,
+                _chromaRows!, outputRow0: first);
+            _frame.FinishRow(ref sink, int.MaxValue);
+            rowsWritten += _frame.Emitted - first;
+            (_bandFirst, _bandEnd, _bandNext) = (_frame.Emitted, _frame.Emitted, _frame.Emitted);
+        }
         if (_frame.MacroblockY == _frame.MacroblockHeight)
         {
             _frame.Dispose();
