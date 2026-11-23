@@ -363,7 +363,7 @@ public sealed class PngApngEncoderTests
     {
         var input = PngApngOracleTests.Sequence(W, H, 4, false);
         var file = Session([.. input.Select((f, i) => (f, PixelFormat.Rgba32, (TimeSpan?)TimeSpan.FromMilliseconds(30 + 10 * i)))],
-            new PngWriteOptions { LoopCount = 2 });
+            new PngWriteOptions { LoopCount = 2, Animation = true });
         ImageCodecs.DetectFormat(file).ShouldBe(ImageFormat.Png);
         ImageCodecs.TryOpenFrames(file, out var reader).ShouldBeTrue();
         using (reader)
@@ -394,7 +394,7 @@ public sealed class PngApngEncoderTests
         var opaque0 = (byte[])a[0].Clone();
         for (var i = 0; i < W * H; i++) opaque0[i * 4 + 3] = 255;
         var wideFrame = Wide(a[1]);
-        var file = Session([(rgb, PixelFormat.Rgb24, null), (wideFrame, PixelFormat.Rgba64, null)]);
+        var file = Session([(rgb, PixelFormat.Rgb24, null), (wideFrame, PixelFormat.Rgba64, null)], new PngWriteOptions { Animation = true });
         var decoder = new PngAnimationDecoder(file);
         decoder.BitDepth.ShouldBe(16);
         decoder.FrameCount.ShouldBe(2);
@@ -419,7 +419,7 @@ public sealed class PngApngEncoderTests
     public void ASessionWhoseFramesDifferInSizeIsRefused()
     {
         var writer = new ArrayBufferWriter<byte>();
-        using var session = ImageCodecs.CreateEncoder(ImageFormat.Png, writer);
+        using var session = ImageCodecs.CreateEncoder(ImageFormat.Png, writer, new PngWriteOptions { Animation = true });
         session.AddFrame(4, 4, PixelFormat.Rgba32).WriteRows(new byte[64], 4, 0, TestContext.Current.CancellationToken);
         session.AddFrame(5, 4, PixelFormat.Rgba32).WriteRows(new byte[80], 4, 0, TestContext.Current.CancellationToken);
         Should.Throw<ArgumentException>(() => session.Commit(TestContext.Current.CancellationToken));

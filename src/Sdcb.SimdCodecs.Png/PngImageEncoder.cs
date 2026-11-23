@@ -14,8 +14,20 @@ namespace Sdcb.SimdCodecs.Png;
 /// and an XMP <c>iTXt</c> chunk, and a non-sRGB <see cref="ColorEncoding"/> a <c>cICP</c> chunk.
 /// <para>
 /// The output is exactly the file <see cref="PngWriter"/> writes for the converted pixels and the
-/// <see cref="PngWriteOptions"/> given (a still format: one frame). PNG needs the whole image for its filter pass and
-/// deflate stream, so the session collects the rows (<see cref="BufferedEncoderSession"/>).
+/// <see cref="PngWriteOptions"/> given, packaged in <c>IDAT</c> chunks of 64 KiB (see below).
+/// </para>
+/// <para>
+/// <b>Streaming.</b> By default a session holds one frame and streams it (<see cref="IImageEncoderSession.IsStreaming"/>):
+/// the header goes out at <c>AddFrame</c>, each band of rows is filtered and deflated as it arrives and leaves as complete
+/// <c>IDAT</c> chunks, and memory is a band of rows. The zlib stream is the one <see cref="PngWriter"/> writes; it is
+/// split into 64 KiB <c>IDAT</c> chunks (12 bytes each) where <see cref="PngWriter"/> writes one, so a file whose zlib
+/// stream fits 64 KiB is <see cref="PngWriter"/>'s byte for byte. With <see cref="PngWriteOptions.ParallelFragments"/>
+/// each band is one of <see cref="PngWriter"/>'s fragments, compressed in parallel, up to 2 MiB of rows a fragment; an
+/// image whose fragments would be larger is cut into 2 MiB bands instead, so its zlib stream has more fragments than
+/// <see cref="PngWriter"/>'s (the pixels never differ). Memory is then <c>min(ParallelFragments, ProcessorCount)</c> bands. <see cref="PngWriteOptions.LosslessReduction"/> and <see cref="PngWriteOptions.Quantize"/>
+/// pick the layout from the whole image, and <see cref="PngWriteOptions.Animation"/> takes several frames (an APNG); with
+/// any of them the session collects the frames and writes <see cref="PngWriter"/>'s (or <see cref="PngAnimationEncoder"/>'s)
+/// file at <c>Commit</c>, <see cref="IImageEncoderSession.IsStreaming"/> false.
 /// </para>
 /// </summary>
 public sealed class PngImageEncoder : IImageEncoder
@@ -39,15 +51,23 @@ public sealed class PngImageEncoder : IImageEncoder
     /// <remarks><paramref name="options"/> is a <see cref="PngWriteOptions"/> (null means the defaults; any other type
     /// throws <see cref="ArgumentException"/>). Metadata and colour given to <see cref="IImageEncoderSession.AddFrame"/> override the matching
     /// options.</remarks>
-    public static IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null) =>
-        new Session(output, options switch
+    public static IImageEncoderSession Create(IBufferWriter<byte> output, EncodeOptions? options = null)
+    {
+        var o = options switch
         {
             null => new PngWriteOptions(),
-            PngWriteOptions o => o,
+            PngWriteOptions p => p,
             _ => throw new ArgumentException($"PNG encoding takes PngWriteOptions, not {options.GetType().Name}.", nameof(options)),
-        });
+        };
+        return Streams(o) ? new PngStreamingSession(output, o) : new Session(output, o);
+    }
 
-    private static PixelFormat Native(PixelFormat f) => f.Layout switch
+    /// <summary>Whether a session with <paramref name="options"/> streams: all but an animation and the two options that
+    /// pick the layout from the whole image.</summary>
+    internal static bool Streams(PngWriteOptions options) =>
+        !options.Animation && !options.LosslessReduction && options.Quantize is null;
+
+    internal static PixelFormat Native(PixelFormat f) => f.Layout switch
     {
         ChannelLayout.Rgba or ChannelLayout.Bgra => new PixelFormat(ChannelLayout.Rgba, f.Sample),
         ChannelLayout.Rgb or ChannelLayout.Bgr => new PixelFormat(ChannelLayout.Rgb, f.Sample),
@@ -57,7 +77,8 @@ public sealed class PngImageEncoder : IImageEncoder
 
     private sealed class Session(IBufferWriter<byte> output, PngWriteOptions options) : BufferedEncoderSession(output)
     {
-        public override int MaxFrames => int.MaxValue;
+        // Several frames are an APNG, which the caller asks for: every option set holds the same number of frames.
+        public override int MaxFrames => options.Animation ? int.MaxValue : 1;
 
         protected override void Encode(IReadOnlyList<BufferedFrame> frames, CancellationToken cancellationToken)
         {
@@ -70,7 +91,7 @@ public sealed class PngImageEncoder : IImageEncoder
             var frame = frames[0];
             var native = Native(frame.Format);
             var pixels = frame.PixelsAs(native);
-            var o = WithFrame(options, frame);
+            var o = WithFrame(options, frame.Metadata, frame.Color);
             int w = frame.Width, h = frame.Height;
             byte[] file = native.Sample == SampleFormat.UInt16
                 ? native.Layout switch
@@ -96,7 +117,7 @@ public sealed class PngImageEncoder : IImageEncoder
         {
             var first = frames[0];
             var wide = frames.Any(f => f.Format.Sample == SampleFormat.UInt16);
-            var encoder = new PngAnimationEncoder(first.Width, first.Height, WithFrame(options, first), wide);
+            var encoder = new PngAnimationEncoder(first.Width, first.Height, WithFrame(options, first.Metadata, first.Color), wide);
             for (var i = 0; i < frames.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -107,26 +128,26 @@ public sealed class PngImageEncoder : IImageEncoder
             }
             WriteOutput(encoder.Encode());
         }
+    }
 
-        // The frame's metadata and colour override the options': ICC, Exif, an XMP iTXt, cICP.
-        private static PngWriteOptions WithFrame(PngWriteOptions options, BufferedFrame frame)
+    // The frame's metadata and colour override the options': ICC, Exif, an XMP iTXt, cICP.
+    internal static PngWriteOptions WithFrame(PngWriteOptions options, ImageMetadata? metadata, ColorEncoding? color)
+    {
+        var o = options;
+        if (metadata is { } m)
         {
-            var o = options;
-            if (frame.Metadata is { } m)
+            if (!m.Icc.IsEmpty)
+                o = o with { IccProfile = m.Icc.ToArray() };
+            if (!m.Exif.IsEmpty)
+                o = o with { Exif = m.Exif.ToArray() };
+            if (!m.Xmp.IsEmpty)
             {
-                if (!m.Icc.IsEmpty)
-                    o = o with { IccProfile = m.Icc.ToArray() };
-                if (!m.Exif.IsEmpty)
-                    o = o with { Exif = m.Exif.ToArray() };
-                if (!m.Xmp.IsEmpty)
-                {
-                    var text = new List<PngText>(o.Text ?? []) { new("XML:com.adobe.xmp", Encoding.UTF8.GetString(m.Xmp.Span)) };
-                    o = o with { Text = text };
-                }
+                var text = new List<PngText>(o.Text ?? []) { new("XML:com.adobe.xmp", Encoding.UTF8.GetString(m.Xmp.Span)) };
+                o = o with { Text = text };
             }
-            if (frame.Color is { } c && c != ColorEncoding.AssumedSrgb && o.Cicp is null)
-                o = o with { Cicp = new CicpChunk(c.Primaries, c.Transfer, MatrixCoefficients.Identity, c.FullRange) };
-            return o;
         }
+        if (color is { } c && c != ColorEncoding.AssumedSrgb && o.Cicp is null)
+            o = o with { Cicp = new CicpChunk(c.Primaries, c.Transfer, MatrixCoefficients.Identity, c.FullRange) };
+        return o;
     }
 }

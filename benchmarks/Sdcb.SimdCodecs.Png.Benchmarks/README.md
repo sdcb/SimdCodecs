@@ -27,6 +27,7 @@ Decode inputs are encoded by ImageSharp (adaptive filters, zlib level 6) — a f
 | `current` | `PngImageDecoder.TryDecodeIntoRgba8` into a reused buffer | `PngWriter.Encode*` with `PngWriteOptions.CompressionLevel` |
 | `native` (decode) | `PngReader.Decode`: samples as stored, no RGBA expansion | — |
 | `parallel` (encode) | — | the same with `ParallelFragments = Environment.ProcessorCount`; reported in its own table, never in the single-thread ratios |
+| `streaming` / `streaming parallel` (encode) | — | the `PngImageEncoder` session (streaming: `IDAT` chunks leave per band), rows pushed 16 at a time, without and with `ParallelFragments`; its own table against `current` and `parallel` |
 | `reduced` (encode) | — | the same with `LosslessReduction = true` (the smallest exact layout: indexed, sub-byte grey, tRNS, ...); its own table, with the layout chosen |
 | `baseline` | the previous commit's decoder, same process (see below) | the previous commit's encoder |
 | ImageSharp 3.1.12 | `Image.Load<Rgba32>` + `CopyPixelDataTo`, `MaxDegreeOfParallelism = 1` | `PngEncoder` with the same colour type, depth and zlib level (0 / 1 / 6 / 9), adaptive filters |

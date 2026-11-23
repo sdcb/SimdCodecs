@@ -184,4 +184,13 @@ public sealed record PngWriteOptions : Sdcb.SimdCodecs.Abstractions.EncodeOption
     /// <c>num_plays</c> of the <c>acTL</c> chunk. 0 (the default) is forever. Ignored for a still image.
     /// </summary>
     public int LoopCount { get; init; }
+
+    /// <summary>
+    /// For a <see cref="PngImageEncoder"/> session: take several frames and write them as an animated PNG. The session then
+    /// collects whole frames and writes the file at <c>Commit</c> (<c>IsStreaming</c> false), since an APNG's frame count
+    /// precedes its first image data. Off by default: the session holds one frame and, unless
+    /// <see cref="LosslessReduction"/> or <see cref="Quantize"/> needs the whole image, streams it, writing image data as
+    /// the rows arrive. Ignored by <see cref="PngWriter"/> and <see cref="PngAnimationEncoder"/>.
+    /// </summary>
+    public bool Animation { get; init; }
 }

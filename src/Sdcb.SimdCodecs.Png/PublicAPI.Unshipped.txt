@@ -1,1 +1,3 @@
 #nullable enable
+Sdcb.SimdCodecs.Png.PngWriteOptions.Animation.get -> bool
+Sdcb.SimdCodecs.Png.PngWriteOptions.Animation.init -> void
