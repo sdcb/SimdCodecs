@@ -54,6 +54,12 @@ Pushing a tag `vMAJOR.MINOR.PATCH[-prerelease]` publishes every package at that 
 1. Move each package's `PublicAPI.Unshipped.txt` entries into `PublicAPI.Shipped.txt`.
 2. Write the release notes, naming every API break.
 
+## Streaming
+
+- A codec that can decode as its input arrives implements `IStreamingImageDecoder` and sets `Registration.CreateRowReader`; its reader derives from `CodecSupport.StreamingRowReader` (one suspendable step, driven by both `ReadRows` and `ReadRowsAsync`) and reads through `CodecSupport.StreamInput`. A codec that can encode row bands as they arrive derives its session from `CodecSupport.StreamingEncoderSession`.
+- A variant or option a codec cannot stream falls back behind the same API (`UseBufferedFallback`, `BufferedRowReader`, `BufferedEncoderSession`) and says so through `IsStreaming`; it never throws `NotSupportedException` for being unstreamable.
+- A streaming reader's rows equal `TryDecodeInto`'s byte for byte, under every feed in `tests/.../Streaming/StreamingAssert` (one byte per read, random chunks, async-only, whole). A streaming encoder's output decodes to exactly the buffered session's pixels, and its bytes reach the writer before `Commit`.
+
 ## Output contracts
 
 - **Never regenerate a golden to make a test pass.** A golden (`Fixtures/*-golden.tsv`) moves only for an intentional, reviewed output change, with the diff as part of the review. Pinned oracle versions (OpenJPEG, libjpeg-turbo, libwebp) are contract too.

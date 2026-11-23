@@ -74,6 +74,9 @@ public abstract class BufferedEncoderSession : IImageEncoderSession
     protected IBufferWriter<byte> Output { get; }
 
     /// <inheritdoc />
+    public bool IsStreaming => false;
+
+    /// <inheritdoc />
     public abstract int MaxFrames { get; }
 
     /// <summary>The largest width and height the format stores (checked by <see cref="AddFrame"/>).</summary>
