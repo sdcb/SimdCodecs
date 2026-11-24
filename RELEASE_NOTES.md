@@ -11,9 +11,13 @@
 - `ImageDecoder.Open` and `OpenAsync` can decode frame zero from a forward-only stream as rows arrive. Use `forwardOnly: true` when the stream must not retain bytes for later frame operations.
 - The streaming implementation has dedicated equivalence, cancellation, truncation, async-only, facade, and benchmark coverage.
 
+## Breaking changes
+
+- **PNG encoder sessions take one frame unless `PngWriteOptions.Animation` is set.** `PngImageEncoder.Create` (and `ImageCodecs.CreateEncoder(ImageFormat.Png, …)`) now streams a still image by default, writing image data as rows arrive, so `MaxFrames` is 1 and a second `AddFrame` throws `InvalidOperationException`. In 2.0 the same session collected any number of frames and wrote an APNG at `Commit`. To write an animated PNG through a session, pass `new PngWriteOptions { Animation = true }`; that session buffers whole frames and writes the file at `Commit` (`IsStreaming` false), as before. `PngAnimationEncoder` and `PngWriter` are unaffected.
+
 ## Compatibility
 
-The existing 2.0 decode, encode, metadata, frame, and facade entry points remain available. The new public members are recorded in each package's public API baseline. Applications that only use the existing byte-array and buffered stream methods do not need source changes.
+Apart from the change above, the existing 2.0 decode, encode, metadata, frame, and facade entry points remain available. The new public members are recorded in each package's public API baseline. Applications that only use the existing byte-array and buffered stream methods do not need source changes.
 
 Third-party codec registrations can omit `CreateRowReader`. The facade then provides a buffered row reader. Codec authors implementing the new streaming abstractions should expose the concrete static method through `ImageDecoderRegistration.CreateRowReader` so NativeAOT and browser-wasm keep the same delegate binding rules.
 
