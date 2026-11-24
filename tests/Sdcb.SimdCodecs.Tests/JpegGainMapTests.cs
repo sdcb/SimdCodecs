@@ -369,6 +369,39 @@ public sealed class JpegGainMapTests
         gmLength.ShouldBeGreaterThan(mapJpeg.Length); // map + its injected XMP
     }
 
+    /// <summary>Appends <paramref name="nuls"/> zero bytes to an APP1 segment's XMP
+    /// packet, fixing up the length field — the padding real writers leave.</summary>
+    private static byte[] NulPadApp1(byte[] segment, int nuls)
+    {
+        var padded = new byte[segment.Length + nuls];
+        segment.CopyTo(padded, 0);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(padded.AsSpan(2), (ushort)(padded.Length - 2));
+        return padded;
+    }
+
+    /// <summary>Inserts a segment directly after SOI.</summary>
+    private static byte[] InsertAfterSoi(byte[] jpeg, byte[] segment) =>
+        [.. jpeg.AsSpan(0, 2), .. segment, .. jpeg.AsSpan(2)];
+
+    [Fact]
+    public void TrySplit_And_CanDecode_Accept_Nul_Padded_Xmp_Without_Mpf()
+    {
+        // Hand-built MPF-less container (no Assemble): both XMP packets end in NUL
+        // padding, the shape of the customer files that made XDocument throw.
+        var baseJpeg = EncodeJpeg(GrayRampRgb(32, 16), 32, 16);
+        var mapJpeg = EncodeJpeg(GrayToRgb(new byte[8 * 4]), 8, 4);
+        var gainMap = InsertAfterSoi(mapJpeg, NulPadApp1(GainMapXmp.WriteGainMapApp1(Boost4X), 300));
+        var primary = InsertAfterSoi(baseJpeg, NulPadApp1(GainMapXmp.WritePrimaryApp1(gainMap.Length), 1));
+        byte[] file = [.. primary, .. gainMap];
+
+        JpegGainMap.TrySplit(file, out var baseRange, out var gainMapRange, out var metadata).ShouldBeTrue();
+        metadata.ShouldNotBeNull();
+        metadata.GainMapMax.ShouldBe(4.0, tolerance: 1e-9);
+        baseRange.GetOffsetAndLength(file.Length).ShouldBe((0, primary.Length));
+        gainMapRange.GetOffsetAndLength(file.Length).ShouldBe((primary.Length, gainMap.Length));
+        GainMapImageDecoder.CanDecode(file).ShouldBeTrue();
+    }
+
     [Fact]
     public void TrySplit_Rejects_Plain_Jpegs_And_Garbage()
     {
