@@ -26,9 +26,15 @@ namespace Sdcb.SimdCodecs.Abstractions.CodecSupport;
 /// <see cref="UseBufferedFallback"/> from there: the driver then reads the whole stream, decodes it with the codec's
 /// span decoder, and hands out its rows (<see cref="IsStreaming"/> false).
 /// </para>
+/// <para>
+/// The driver checks the cancellation token between steps and asks one step for at most about 1 MiB of rows, so a
+/// codec needs no token of its own: a read of a whole large image is cancellable a band at a time.
+/// </para>
 /// </summary>
 public abstract class StreamingRowReader : IImageRowReader
 {
+    private const int MaxStepBytes = 1 << 20;
+
     private ImageDecoderRegistration.TryDecodeIntoHandler? _fallback;
     private DecodeOptions? _fallbackOptions;
     private byte[]? _frame;           // the fallback's decoded rows, tightly packed
@@ -74,9 +80,42 @@ public abstract class StreamingRowReader : IImageRowReader
     /// </summary>
     public static bool IsFullImage(DecodeOptions? options) => options is null || (options.IsFullImage && !options.ApplyOrientation);
 
-    /// <summary>Reads the header (synchronously) if it is not read yet.</summary>
-    /// <exception cref="InvalidDataException">The header is malformed or the stream ends inside it.</exception>
+    /// <summary>
+    /// Reads the header (synchronously) if it is not read yet, and, for a reader that falls back
+    /// (<see cref="IsStreaming"/> false), reads the rest of the stream and decodes the image.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The header is malformed or the stream ends inside it, or the fallback
+    /// decode fails.</exception>
     public void Initialize(CancellationToken cancellationToken = default)
+    {
+        ReadHeader(cancellationToken);
+        if (_fallback is not null && _frame is null)
+        {
+            Input.ReadToEnd();
+            DecodeFallback(cancellationToken);
+        }
+    }
+
+    /// <summary><see cref="Initialize"/>, reading the stream asynchronously.</summary>
+    /// <inheritdoc cref="Initialize" path="/exception"/>
+    public async ValueTask InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        await ReadHeaderAsync(cancellationToken).ConfigureAwait(false);
+        if (_fallback is not null && _frame is null)
+        {
+            await Input.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+            DecodeFallback(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Reads the header (synchronously) if it is not read yet, and nothing more: <see cref="Info"/>, the size and
+    /// <see cref="IsStreaming"/> are then known. A reader that falls back reads the rest of the stream and decodes the
+    /// image at the first <see cref="ReadRows"/> (or <see cref="Initialize"/>), so a caller that only needs the header,
+    /// or that decodes an unstreamable file another way, does not pay for that decode.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The header is malformed or the stream ends inside it.</exception>
+    public void ReadHeader(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         while (!_initialized)
@@ -85,16 +124,11 @@ public abstract class StreamingRowReader : IImageRowReader
             if (StepHeader())
                 Input.Fill(checked(Input.Buffered.Length + 1));
         }
-        if (_fallback is not null && _frame is null)
-        {
-            Input.ReadToEnd();
-            DecodeFallback(cancellationToken);
-        }
     }
 
-    /// <summary>Reads the header (asynchronously) if it is not read yet.</summary>
-    /// <exception cref="InvalidDataException">The header is malformed or the stream ends inside it.</exception>
-    public async ValueTask InitializeAsync(CancellationToken cancellationToken = default)
+    /// <summary><see cref="ReadHeader"/>, reading the stream asynchronously.</summary>
+    /// <inheritdoc cref="ReadHeader" path="/exception"/>
+    public async ValueTask ReadHeaderAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         while (!_initialized)
@@ -102,11 +136,6 @@ public abstract class StreamingRowReader : IImageRowReader
             cancellationToken.ThrowIfCancellationRequested();
             if (StepHeader())
                 await Input.FillAsync(checked(Input.Buffered.Length + 1), cancellationToken).ConfigureAwait(false);
-        }
-        if (_fallback is not null && _frame is null)
-        {
-            await Input.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
-            DecodeFallback(cancellationToken);
         }
     }
 
@@ -251,21 +280,23 @@ public abstract class StreamingRowReader : IImageRowReader
         return false;
     }
 
-    // One row attempt. True when more input is needed before the next.
+    // One row attempt. True when more input is needed before the next. A step asks for at most about MaxStepBytes of
+    // rows, so a large read checks its cancellation token between steps without the codecs checking it themselves.
     private bool StepRows(Span<byte> destination, int step, int count, ref int written)
     {
         var final = Input.IsCompleted;
+        var ask = Math.Min(count - written, Math.Max(1, MaxStepBytes / (Width * Format.BytesPerPixel)));
         var status = DecodeRows(Input.Buffered, final, out var consumed, destination[(written * step)..], step,
-            count - written, out var rows);
-        if ((uint)rows > (uint)(count - written))
-            throw new InvalidOperationException($"The codec wrote {rows} rows of {count - written} asked for.");
+            ask, out var rows);
+        if ((uint)rows > (uint)ask)
+            throw new InvalidOperationException($"The codec wrote {rows} rows of {ask} asked for.");
         Input.Consume(consumed);
         written += rows;
         RowsRead += rows;
         if (status == OperationStatus.Done)
         {
-            if (written < count)
-                throw new InvalidOperationException($"The codec reported Done after {written} of {count} rows.");
+            if (rows < ask)
+                throw new InvalidOperationException($"The codec reported Done after {rows} of {ask} rows.");
             return false;
         }
         if (status != OperationStatus.NeedMoreData)
@@ -292,6 +323,9 @@ public abstract class StreamingRowReader : IImageRowReader
         return (count, step);
     }
 
+    // The whole stream is read before the frame is allocated, so the size a header declares is paid for only once the
+    // file has arrived; the frame is then what ImageCodecs.Decode allocates for the same bytes and format, before the
+    // same TryDecodeInto (no compression-ratio bound: a blank page legitimately decodes to thousands of times its size).
     private void DecodeFallback(CancellationToken cancellationToken)
     {
         var rowBytes = (long)Width * Format.BytesPerPixel;

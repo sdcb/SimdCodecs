@@ -158,6 +158,12 @@ public static partial class ImageCodecs
     /// only asynchronously (an ASP.NET Core response body). Commit flushes the stream. Disposing a session that was not
     /// committed leaves the bytes already written in the stream: an incomplete file.
     /// </para>
+    /// <para>
+    /// A format whose streaming writer patches earlier bytes (TIFF: <see cref="ImageEncoderRegistration.CreateSeekable"/>)
+    /// streams only to a seekable stream, which its session then writes and seeks itself, synchronously even from the
+    /// asynchronous members (a file or memory stream allows that). To a non-seekable stream it encodes at
+    /// <see cref="StreamEncoderSession.Commit"/>, as above.
+    /// </para>
     /// </summary>
     /// <param name="format">The format to write.</param>
     /// <param name="output">Where the file is written, from its current position.</param>
@@ -174,6 +180,21 @@ public static partial class ImageCodecs
         if (!output.CanWrite)
             throw new ArgumentException("The stream cannot be written.", nameof(output));
         var encoder = RequireEncoder(format);
+        if (output.CanSeek && encoder.CreateSeekable is { } createSeekable)
+        {
+            // The format's own stream session (TIFF patches its forward offsets by seeking). The stream session owns
+            // the stream; the inner one is told to leave it open.
+            try
+            {
+                return new StreamEncoderSession(createSeekable(output, options, leaveOpen: true), null, output, leaveOpen);
+            }
+            catch
+            {
+                if (!leaveOpen)
+                    output.Dispose();
+                throw;
+            }
+        }
         var writer = new StreamBufferWriter(output);
         try
         {

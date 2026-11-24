@@ -8,9 +8,9 @@ namespace Sdcb.SimdCodecs.Tiff;
 /// <see cref="TiffImageDecoder.CreateRowReader"/>: the first page of a TIFF from a seekable stream, a band (one strip,
 /// or one row of tiles) at a time.
 /// <para>
-/// A TIFF is read by offset, so the reader moves its <see cref="StreamInput"/> itself: back by
-/// <see cref="StreamInput.Rewind"/> (a seek, or nothing when the bytes are still buffered) and forward by consuming
-/// what lies in between. Each step asks for one range; when the input does not hold it yet, the step returns
+/// A TIFF is read by offset, so the reader moves its <see cref="StreamInput"/> itself with <see cref="StreamInput.Seek"/>,
+/// back or forward: nothing when the bytes are still buffered, otherwise a seek, so the bytes between the ranges are
+/// never read and a page whose planes are stored one after another streams too. Each step asks for one range; when the input does not hold it yet, the step returns
 /// <see cref="System.Buffers.OperationStatus.NeedMoreData"/> and the driver reads more, synchronously or asynchronously,
 /// so neither path blocks the other. A range is never asked for past the stream's length (it is checked against
 /// <see cref="StreamInput.Length"/> first), so the input never reaches its end and a stale end-of-stream flag cannot
@@ -36,15 +36,13 @@ internal sealed class TiffRowReader(StreamInput input, PixelFormat format, Decod
 
     private readonly WindowBytes _windows = new();
     private int _fetches;
-    private long _skipped;      // bytes read through, not used, to reach a range further on
-    private long _skipBudget;
-    private bool _whole;        // read the file whole after all
     private TiffPageLayout? _layout;
     private TiffColor? _plan;
 
     // The IFD chain walk behind ImageInfo.FrameCount, resumable between fetches.
     private HashSet<long>? _visited;
     private long _walkIfd;
+    private ulong? _walkCount;  // the entry count of _walkIfd, once read (its next pointer may need another seek)
     private int _pages;
 
     // Rows: the band being handed out and the coded segments of the next one.
@@ -65,10 +63,9 @@ internal sealed class TiffRowReader(StreamInput input, PixelFormat format, Decod
         info = default;
         width = height = 0;
         var length = Input.Length;
-        if (length < 0 || _whole)
+        if (length < 0)
         {
-            // Read whole and decoded as a span: a stream that cannot seek (the directory may be anywhere), or a file
-            // whose streaming would read far more than the file (see EnterWholeMode).
+            // Read whole and decoded as a span: a stream that cannot seek (the directory may be anywhere).
             if (!isFinal)
                 return OperationStatus.NeedMoreData;
             if (!TiffImageDecoder.TryReadInfo(input, out info))
@@ -77,7 +74,6 @@ internal sealed class TiffRowReader(StreamInput input, PixelFormat format, Decod
         }
 
         _windows.Length = length;
-        _skipBudget = (2 * length) + (1 << 20);
         if (_layout is null)
         {
             while (true)
@@ -91,7 +87,7 @@ internal sealed class TiffRowReader(StreamInput input, PixelFormat format, Decod
                 catch (MissingBytesException missing)
                 {
                     if (!FetchWindow(missing.Offset, missing.Count))
-                        return NeedMoreHeader();
+                        return OperationStatus.NeedMoreData;
                 }
                 catch (ArgumentOutOfRangeException e) when (e.ParamName == "pageIndex")
                 {
@@ -117,17 +113,21 @@ internal sealed class TiffRowReader(StreamInput input, PixelFormat format, Decod
         {
             if (_walkIfd <= 0 || _walkIfd > length - f.CountSize)
                 break;
-            if (!Fetch(_walkIfd, f.CountSize))
-                return NeedMoreHeader();
-            var countBytes = Input.Buffered[..f.CountSize];
-            var count = f.BigTiff ? TiffIfdParser.U64(countBytes, f.LittleEndian) : TiffIfdParser.U16(countBytes, f.LittleEndian);
+            if (_walkCount is not { } count)
+            {
+                if (!Fetch(_walkIfd, f.CountSize))
+                    return OperationStatus.NeedMoreData;
+                var countBytes = Input.Buffered[..f.CountSize];
+                count = f.BigTiff ? TiffIfdParser.U64(countBytes, f.LittleEndian) : TiffIfdParser.U16(countBytes, f.LittleEndian);
+                _walkCount = count;
+            }
             // count <= MaxEntries, so the directory's extent cannot overflow a long.
             if (count > TiffIfdParser.MaxEntries
                 || _walkIfd + f.CountSize + ((long)count * f.EntrySize) + f.OffsetSize > length)
                 break;
             var nextAt = _walkIfd + f.CountSize + ((long)count * f.EntrySize);
             if (!Fetch(nextAt, f.OffsetSize))
-                return NeedMoreHeader();
+                return OperationStatus.NeedMoreData;
             long next;
             try
             {
@@ -140,16 +140,16 @@ internal sealed class TiffRowReader(StreamInput input, PixelFormat format, Decod
             _visited.Add(_walkIfd);
             _pages++;
             _walkIfd = next;
+            _walkCount = null;
         }
         _walkIfd = 0;
 
         var layout = _layout;
         info = TiffImageDecoder.InfoOf(layout, _plan!) with { FrameCount = Math.Max(1, _pages) };
-        if (_plan!.OutFormat == SampleFormat.Float32 || !IsFullImage(options) || ForwardBytes(layout) > _skipBudget)
+        if (_plan!.OutFormat == SampleFormat.Float32 || !IsFullImage(options))
         {
             // Float output is defined through the decoded image, and options other than the whole image are the
-            // span decoder's; a page whose bands lie scattered (planes stored one after another) would have to be read
-            // through for every band. Decode the file whole, from its first byte.
+            // span decoder's. Decode the file whole, from its first byte.
             Input.Rewind(0);
             return Fallback(info, out width, out height);
         }
@@ -164,48 +164,6 @@ internal sealed class TiffRowReader(StreamInput input, PixelFormat format, Decod
         width = layout.Width;
         height = layout.Height;
         return OperationStatus.Done;
-    }
-
-    /// <summary>
-    /// NeedMoreData from the header, unless reaching the bytes it wants has read through more than twice the file
-    /// (a directory, or an IFD chain, that jumps back and forth): then the file is read whole instead.
-    /// </summary>
-    private OperationStatus NeedMoreHeader()
-    {
-        if (_skipped > _skipBudget)
-        {
-            // The input never reached the stream's end (no range past Length is asked for), so the driver's
-            // end-of-stream flag is still false; it reads on from the first byte.
-            _whole = true;
-            _windows.Clear();
-            Input.Rewind(0);
-        }
-        return OperationStatus.NeedMoreData;
-    }
-
-    /// <summary>
-    /// The bytes the bands would read through without using them: the forward gaps between their ranges, in the order
-    /// the reader fetches them (a backward jump is a seek, and costs no reading). Without a forward seek on the input,
-    /// that is what streaming costs beyond the segments themselves.
-    /// </summary>
-    private long ForwardBytes(TiffPageLayout layout)
-    {
-        var ranges = new List<(long Offset, int Count)>();
-        long position = 0, gaps = 0;
-        for (var down = 0; down < layout.Geometry.SegmentsDown; down++)
-        {
-            ranges.Clear();
-            CollectRanges(layout, down, ranges);
-            foreach (var (offset, count) in ranges)
-            {
-                if (offset > position)
-                    gaps += offset - position;
-                position = offset + count;
-            }
-            if (gaps > _skipBudget)
-                break;
-        }
-        return gaps;
     }
 
     protected override OperationStatus DecodeRows(ReadOnlySpan<byte> input, bool isFinal, out int consumed,
@@ -363,23 +321,10 @@ internal sealed class TiffRowReader(StreamInput input, PixelFormat format, Decod
     /// Moves the input to <paramref name="offset"/> and reports whether <paramref name="count"/> bytes from there are
     /// buffered; false means the driver must read more first. The range lies inside the stream.
     /// </summary>
-    private bool Fetch(long offset, int count)
-    {
-        var position = Input.Position;
-        if (offset < position)
-        {
-            Input.Rewind(offset);
-        }
-        else if (offset > position)
-        {
-            var skip = (int)Math.Min(offset - position, Input.Buffered.Length);
-            Input.Consume(skip);
-            _skipped += skip;
-            if (Input.Position < offset)
-                return false;
-        }
-        return Input.Buffered.Length >= count;
-    }
+    private bool Fetch(long offset, int count) =>
+        // The stream seeks (the reader streams no other kind): a range before or after the input is reached without
+        // reading what lies between.
+        Input.Seek(offset, count) && Input.Buffered.Length >= count;
 
     /// <summary>A read outside the bytes fetched so far: what the directory parser needs next.</summary>
     private sealed class MissingBytesException(long offset, int count) : Exception

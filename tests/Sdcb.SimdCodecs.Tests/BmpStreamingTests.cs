@@ -302,11 +302,46 @@ public sealed class BmpStreamingTests
         }, "streaming a 8192x4096 bitmap");
     }
 
-    private static byte[] TopDown(int width, int height, int bits)
+    /// <summary>
+    /// A bottom-up bitmap from a seekable stream: the reader seeks to its last band and back a band at a time, each seek
+    /// reading just the band, so the pixels are read once (not a forward pass and then the bands).
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Bottom_up_from_a_seekable_stream_reads_each_byte_once(bool async)
+    {
+        const int width = 700, height = 900;
+        var file = Raw(width, height, 24, topDown: false);
+        var expected = new byte[width * 4 * height];
+        Decoder.TryDecodeInto(file, expected, 0, PixelFormat.Bgra32, null, TestContext.Current.CancellationToken).ShouldBeTrue();
+        var stream = new CountingStream(file);
+        using var reader = (StreamingRowReader)Decoder.CreateRowReader!(new StreamInput(stream), PixelFormat.Bgra32, null);
+        var rows = new byte[expected.Length];
+        if (async)
+        {
+            await reader.InitializeAsync(TestContext.Current.CancellationToken);
+            for (var y = 0; y < height; y += 37)
+                await reader.ReadRowsAsync(rows.AsMemory(y * width * 4), 37, 0, TestContext.Current.CancellationToken);
+        }
+        else
+        {
+            reader.Initialize(TestContext.Current.CancellationToken);
+            for (var y = 0; y < height; y += 37)
+                reader.ReadRows(rows.AsSpan(y * width * 4), 37, 0, TestContext.Current.CancellationToken);
+        }
+        reader.IsStreaming.ShouldBeTrue();
+        rows.ShouldBe(expected);
+        stream.BytesRead.ShouldBeLessThan(file.Length + StreamInput.DefaultCapacity, $"bytes read for a {file.Length}-byte file");
+    }
+
+    private static byte[] TopDown(int width, int height, int bits) => Raw(width, height, bits, topDown: true);
+
+    private static byte[] Raw(int width, int height, int bits, bool topDown)
     {
         var stride = (int)(((long)width * bits + 31) / 32 * 4);
         var file = new byte[54 + (long)stride * height];
-        TestBmpWriter.InfoHeader(40, width, -height, bits, 0).CopyTo(file, 14);
+        TestBmpWriter.InfoHeader(40, width, topDown ? -height : height, bits, 0).CopyTo(file, 14);
         file[0] = (byte)'B';
         file[1] = (byte)'M';
         BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(2), (uint)file.Length);

@@ -31,6 +31,7 @@ public sealed class StreamInput : IDisposable
     private int _start;           // first unconsumed byte in _buffer
     private int _end;             // one past the last byte read into _buffer
     private bool _completed;
+    private long _readLimitEnd;   // after a seek with a length: the stream offset reads stop at until reached; 0 for none
     private bool _disposed;
 
     /// <summary>An input over <paramref name="stream"/>, positioned at the start of the image.</summary>
@@ -89,7 +90,7 @@ public sealed class StreamInput : IDisposable
         CheckMinimum(minimumBytes);
         while (_end - _start < minimumBytes && !_completed)
         {
-            var free = PrepareSpace();
+            var free = ReadSize(minimumBytes);
             var n = _stream.Read(_buffer, _end, free);
             Advance(n);
         }
@@ -104,7 +105,7 @@ public sealed class StreamInput : IDisposable
         CheckMinimum(minimumBytes);
         while (_end - _start < minimumBytes && !_completed)
         {
-            var free = PrepareSpace();
+            var free = ReadSize(minimumBytes);
             var n = await _stream.ReadAsync(_buffer.AsMemory(_end, free), cancellationToken).ConfigureAwait(false);
             Advance(n);
         }
@@ -147,10 +148,51 @@ public sealed class StreamInput : IDisposable
         }
         if (!_stream.CanSeek)
             throw new NotSupportedException("The stream cannot seek and the bytes asked for were not retained.");
-        _stream.Position = _origin + position;
-        _bufferOffset = position;
-        _start = _end = 0;
-        _completed = false;
+        SeekStream(position, 0);
+    }
+
+    /// <summary>
+    /// Moves <see cref="Position"/> to <paramref name="position"/>, back or forward, and reports whether it is there. Back
+    /// is <see cref="Rewind"/>. Forward is within the buffer when the bytes are buffered, and otherwise a seek on a
+    /// seekable stream that does not retain its bytes, which reads nothing in between. Any other stream has to read
+    /// through: what is buffered is consumed and the call returns false, so the caller fills (synchronously or
+    /// asynchronously) and calls again. False with <see cref="IsCompleted"/> set means the stream ends before
+    /// <paramref name="position"/>.
+    /// </summary>
+    /// <param name="position">The offset, from the start of the image, to move to.</param>
+    /// <param name="length">The bytes the caller wants from <paramref name="position"/>, or 0 if it does not know. When the
+    /// move seeks the stream, the reads after it stop at that many bytes until they are buffered, instead of filling the
+    /// buffer: a reader that jumps between scattered ranges (TIFF segments, bottom-up BMP bands) then reads each byte it
+    /// uses about once and few it does not.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="position"/> or <paramref name="length"/> is negative.</exception>
+    /// <exception cref="NotSupportedException">Going back, the bytes are gone and the stream cannot seek.</exception>
+    public bool Seek(long position, int length = 0)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentOutOfRangeException.ThrowIfNegative(position);
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        if (position <= Position)
+        {
+            if (position >= _bufferOffset)
+                _start = (int)(position - _bufferOffset);
+            else if (_stream.CanSeek)
+                SeekStream(position, length);
+            else
+                Rewind(position); // throws: the bytes are gone
+            return true;
+        }
+        if (position <= _bufferOffset + _end)
+        {
+            _start = (int)(position - _bufferOffset);
+            return true;
+        }
+        if (_stream.CanSeek && !_retain)
+        {
+            SeekStream(position, length);
+            return true;
+        }
+        _start = _end;
+        return false;
     }
 
     /// <summary>Returns the buffer to the pool and, unless asked to leave it open, disposes the stream.</summary>
@@ -191,6 +233,31 @@ public sealed class StreamInput : IDisposable
             _end -= keep;
         }
         return _buffer.Length - _end;
+    }
+
+    private void SeekStream(long position, int length)
+    {
+        _stream.Position = _origin + position;
+        _bufferOffset = position;
+        _start = _end = 0;
+        _completed = false;
+        _readLimitEnd = length > 0 ? position + length : 0;
+    }
+
+    // The bytes the next read asks for: the free space, or after a seek with a length, what is left of that length (and
+    // never less than the fill needs).
+    private int ReadSize(int minimumBytes)
+    {
+        var free = PrepareSpace();
+        if (_readLimitEnd == 0)
+            return free;
+        var left = _readLimitEnd - (_bufferOffset + _end);
+        if (left <= 0)
+        {
+            _readLimitEnd = 0;
+            return free;
+        }
+        return (int)Math.Min(free, Math.Max(left, minimumBytes - (_end - _start)));
     }
 
     private static void CheckMinimum(int minimumBytes)

@@ -136,6 +136,12 @@ public sealed class ImageEncoderRegistration
         }
     }
 
+    /// <summary>A session factory writing straight to a writable, seekable stream.</summary>
+    /// <param name="output">The stream; the file starts at its current position.</param>
+    /// <param name="options">The format's options; null for its defaults.</param>
+    /// <param name="leaveOpen">Keep <paramref name="output"/> open when the session is disposed.</param>
+    public delegate IImageEncoderSession CreateSeekableHandler(Stream output, EncodeOptions? options, bool leaveOpen);
+
     /// <summary>The encoder's session factory.</summary>
     public required CreateHandler Create
     {
@@ -146,4 +152,11 @@ public sealed class ImageEncoderRegistration
             field = value;
         }
     }
+
+    /// <summary>
+    /// Optional: a session that writes a seekable stream itself, for a format whose streaming writer patches what it
+    /// wrote earlier (a TIFF's forward offsets) and so cannot stream into an <see cref="IBufferWriter{T}"/>. The facade's
+    /// stream encoder uses it for a seekable stream; the file must be byte for byte what <see cref="Create"/> writes.
+    /// </summary>
+    public CreateSeekableHandler? CreateSeekable { get; init; }
 }
