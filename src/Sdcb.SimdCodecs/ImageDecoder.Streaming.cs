@@ -111,7 +111,7 @@ public sealed partial class ImageDecoder
             var reader = codec.CreateRowReader!(HeaderInput(), PixelFormat.Rgba32, null);
             try
             {
-                reader.Initialize();
+                reader.ReadHeader();
             }
             catch (InvalidDataException)
             {
@@ -138,7 +138,7 @@ public sealed partial class ImageDecoder
             var reader = codec.CreateRowReader!(HeaderInput(), PixelFormat.Rgba32, null);
             try
             {
-                await reader.InitializeAsync(cancellationToken).ConfigureAwait(false);
+                await reader.ReadHeaderAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (InvalidDataException)
             {
@@ -191,7 +191,8 @@ public sealed partial class ImageDecoder
     {
         if (reader is null)
             return false;
-        // A reader that fell back has read and decoded the whole file already; the span path takes it from there.
+        // A reader that would fall back has read only its header (the whole file, for some codecs) and decoded nothing;
+        // the span path decodes it once.
         if (!reader.IsStreaming || (codec.TryOpenFrames is not null && reader.Info.FrameCount != 1))
         {
             reader.Dispose();
@@ -447,7 +448,7 @@ public sealed partial class ImageDecoder
         var reader = _codec.CreateRowReader!(new StreamInput(new TapStream(_tap!)), format, null);
         try
         {
-            reader.Initialize(cancellationToken);
+            reader.ReadHeader(cancellationToken);
             return CheckSize(reader);
         }
         catch
@@ -464,7 +465,7 @@ public sealed partial class ImageDecoder
         var reader = _codec.CreateRowReader!(new StreamInput(new TapStream(_tap!)), format, null);
         try
         {
-            await reader.InitializeAsync(cancellationToken).ConfigureAwait(false);
+            await reader.ReadHeaderAsync(cancellationToken).ConfigureAwait(false);
             return CheckSize(reader);
         }
         catch

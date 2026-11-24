@@ -191,11 +191,11 @@ public sealed class TiffStreamingDecodeTests
 
     /// <summary>
     /// libtiff's separate planes put each plane's strips after the previous plane's, so every band of rows needs bytes
-    /// from three far-apart places; without a forward seek that means reading through the file per band, and the
-    /// reader decodes such a file whole instead. A small planar page (the corpus) still streams.
+    /// from three far-apart places. The reader seeks to each (StreamInput.Seek with the segment's length), so it streams
+    /// and reads the file about once, never through the gaps per band.
     /// </summary>
     [Fact]
-    public void Planes_stored_far_apart_fall_back_when_large()
+    public void Planes_stored_far_apart_stream_by_seeking()
     {
         const int w = 1500, h = 1200;
         var rgb = new byte[w * h * 3];
@@ -207,16 +207,31 @@ public sealed class TiffStreamingDecodeTests
         image.Settings.SetDefine(MagickFormat.Tiff, "rows-per-strip", "8");
         var file = image.ToByteArray(MagickFormat.Tiff);
         TiffReader.ReadLayout(file).IsPlanar.ShouldBeTrue();
-        StreamingAssert.RowsEqualDecodeInto(TiffImageDecoder.Registration, file, PixelFormat.Rgb24,
-            expectStreaming: false, feeds: [Feed.Whole]);
+        var expected = StreamingAssert.RowsEqualDecodeInto(TiffImageDecoder.Registration, file, PixelFormat.Rgb24,
+            expectStreaming: true, feeds: [Feed.Whole]);
+        var (rows, read) = ReadCounting(file, PixelFormat.Rgb24);
+        rows.ShouldBe(expected);
+        read.ShouldBeLessThan(file.Length + (128 << 10), $"bytes read for a {file.Length}-byte file");
+    }
+
+    // Reads every row from a seekable stream that counts the bytes it hands out.
+    private static (byte[] Rows, long Read) ReadCounting(byte[] file, PixelFormat format)
+    {
+        var stream = new CountingStream(file);
+        using var reader = TiffImageDecoder.CreateRowReader(new StreamInput(stream), format, null);
+        reader.Initialize(Ct);
+        reader.IsStreaming.ShouldBeTrue();
+        var rows = new byte[reader.Width * format.BytesPerPixel * reader.Height];
+        reader.ReadRows(rows, reader.Height, 0, Ct).ShouldBe(reader.Height);
+        return (rows, stream.BytesRead);
     }
 
     /// <summary>
-    /// An IFD chain that jumps between the start and the end of the file: every forward jump reads through the gap, so
-    /// once that passes twice the file the reader stops and decodes the file whole (no unbounded reading).
+    /// An IFD chain that jumps between the start and the end of the file: the reader seeks over the gap between, so it
+    /// counts the pages and streams without reading the gap (the 300 KB between the two halves).
     /// </summary>
     [Fact]
-    public void A_chain_jumping_back_and_forth_is_read_whole()
+    public void A_chain_jumping_back_and_forth_seeks_over_the_gap()
     {
         const int pages = 20, spacing = 128, gap = 300_000;
         long IfdAt(int k) => k % 2 == 0 ? 64 + (k / 2 * spacing) : 64 + (pages * spacing) + gap + (k / 2 * spacing);
@@ -248,12 +263,14 @@ public sealed class TiffStreamingDecodeTests
         }
         TiffReader.CountPages(file).ShouldBe(pages);
         StreamingAssert.RowsEqualDecodeInto(TiffImageDecoder.Registration, file, PixelFormat.Gray8,
-            expectStreaming: false, feeds: [Feed.Whole]);
-        using var reader = TiffImageDecoder.CreateRowReader(new StreamInput(new MemoryStream(file), initialCapacity: 4096),
+            expectStreaming: true, feeds: [Feed.Whole]);
+        var stream = new CountingStream(file);
+        using var reader = TiffImageDecoder.CreateRowReader(new StreamInput(stream, initialCapacity: 4096),
             PixelFormat.Gray8, null);
         reader.Initialize(Ct);
         reader.Info.FrameCount.ShouldBe(pages);
-        reader.IsStreaming.ShouldBeFalse();
+        reader.IsStreaming.ShouldBeTrue();
+        stream.BytesRead.ShouldBeLessThan(gap, "the reader read through the gap");
     }
 
     [Fact]

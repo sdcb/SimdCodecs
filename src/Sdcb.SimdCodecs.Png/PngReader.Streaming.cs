@@ -186,7 +186,7 @@ public static partial class PngReader
             PngImage header;
             try
             {
-                header = ReadHeader(input, out _);
+                header = PngReader.ReadHeader(input, out _);
             }
             catch (Exception e) when (e is ArgumentException or NotSupportedException)
             {

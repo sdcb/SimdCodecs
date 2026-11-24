@@ -24,6 +24,7 @@ public sealed class TiffImageEncoder : IImageEncoder
         Format = ImageFormat.Tiff,
         GetClosestInputFormat = GetClosestInputFormat,
         Create = Create,
+        CreateSeekable = Create,
     };
 
     /// <inheritdoc />
