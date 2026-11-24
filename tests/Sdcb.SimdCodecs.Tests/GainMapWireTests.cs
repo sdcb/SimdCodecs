@@ -174,6 +174,60 @@ public sealed class GainMapWireTests
         items[1].Attribute(item + "Length")!.Value.ShouldBe("48213");
     }
 
+    [Fact]
+    public void Xmp_Parsers_Accept_Nul_Padded_Packets()
+    {
+        // Writers pad the packet with NULs (or end it with one); 0x00 is not an XML
+        // character, and before the fix both parsers threw-and-caught on it.
+        var container = PacketOf(GainMapXmp.WritePrimaryApp1(48213));
+        var hdrgm = PacketOf(GainMapXmp.WriteGainMapApp1(Sample));
+        GainMapXmp.TryParseGainMapMetadata(hdrgm, out var unpadded).ShouldBeTrue();
+        foreach (var padding in new byte[][] { [0], new byte[512], [.. " \r\n"u8, 0, 0, .. "\n"u8, 0] })
+        {
+            GainMapXmp.TryParseContainerGainMapLength([.. container, .. padding], out var length).ShouldBeTrue();
+            length.ShouldBe(48213);
+            GainMapXmp.TryParseGainMapMetadata([.. hdrgm, .. padding], out var parsed).ShouldBeTrue();
+            parsed.ShouldBe(unpadded);
+        }
+    }
+
+    [Fact]
+    public void Xmp_Parsers_Reject_Packets_Without_Their_Namespace()
+    {
+        var plain = """
+            <x:xmpmeta xmlns:x="adobe:ns:meta/">
+              <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" dc:format="image/jpeg"/>
+              </rdf:RDF>
+            </x:xmpmeta>
+            """u8.ToArray();
+        GainMapXmp.TryParseContainerGainMapLength(plain, out _).ShouldBeFalse();
+        GainMapXmp.TryParseGainMapMetadata(plain, out _).ShouldBeFalse();
+        GainMapXmp.TryParseContainerGainMapLength([.. plain, 0, 0], out _).ShouldBeFalse();
+        GainMapXmp.TryParseGainMapMetadata([.. plain, 0, 0], out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Xmp_Parsers_Accept_Namespaces_Spelled_With_Character_References()
+    {
+        // No literal URI bytes: the prefilter must still let the parser resolve them.
+        var hdrgm = """
+            <x:xmpmeta xmlns:x="adobe:ns:meta/">
+              <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                <rdf:Description rdf:about="" xmlns:hdrgm="http&#x3A;//ns.adobe.com/hdr-gain-map/1.0/" hdrgm:Version="1.0" hdrgm:GainMapMax="2" hdrgm:HDRCapacityMax="2"/>
+              </rdf:RDF>
+            </x:xmpmeta>
+            """u8.ToArray();
+        GainMapXmp.TryParseGainMapMetadata(hdrgm, out var parsed).ShouldBeTrue();
+        parsed!.GainMapMax.ShouldBe(4.0);
+
+        var container = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(PacketOf(GainMapXmp.WritePrimaryApp1(48213)))
+            .Replace("\"http://ns.google.com/photos/1.0/container/\"", "\"http&#58;//ns.google.com/photos/1.0/container/\""));
+        container.AsSpan().IndexOf("http://ns.google.com/photos/1.0/container/\""u8).ShouldBe(-1);
+        GainMapXmp.TryParseContainerGainMapLength(container, out var length).ShouldBeTrue();
+        length.ShouldBe(48213);
+    }
+
     // ------------------------------------------------------------------- MPF
 
     [Fact]

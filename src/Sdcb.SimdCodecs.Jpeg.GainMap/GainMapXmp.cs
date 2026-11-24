@@ -84,7 +84,7 @@ public static class GainMapXmp
     public static bool TryParseGainMapMetadata(ReadOnlySpan<byte> xmpPacket, [NotNullWhen(true)] out GainMapMetadata? metadata)
     {
         metadata = null;
-        if (!TryLoadPacket(xmpPacket, out var doc))
+        if (!TryLoadPacket(xmpPacket, HdrgmUri, out var doc))
             return false;
 
         foreach (var description in doc!.Descendants(Rdf + "Description"))
@@ -135,7 +135,7 @@ public static class GainMapXmp
     public static bool TryParseContainerGainMapLength(ReadOnlySpan<byte> xmpPacket, out int gainMapLength)
     {
         gainMapLength = 0;
-        if (!TryLoadPacket(xmpPacket, out var doc))
+        if (!TryLoadPacket(xmpPacket, ContainerUri, out var doc))
             return false;
 
         foreach (var item in doc!.Descendants(Container + "Item"))
@@ -168,12 +168,32 @@ public static class GainMapXmp
         return segment;
     }
 
-    private static bool TryLoadPacket(ReadOnlySpan<byte> xmpPacket, out XDocument? doc)
+    // The namespace URIs as they appear on the wire. Every element or attribute
+    // either parser reads is qualified by one of them, so a packet that lacks the
+    // URI bytes cannot match and is rejected without building a document — the
+    // common case for camera photos sniffed by GainMapImageDecoder.CanDecode.
+    private static ReadOnlySpan<byte> HdrgmUri => "http://ns.adobe.com/hdr-gain-map/1.0/"u8;
+    private static ReadOnlySpan<byte> ContainerUri => "http://ns.google.com/photos/1.0/container/"u8;
+
+    private static bool TryLoadPacket(ReadOnlySpan<byte> xmpPacket, ReadOnlySpan<byte> requiredNamespace, out XDocument? doc)
     {
         doc = null;
+        // A URI spelled with character references (&#x3A; …) has no literal bytes,
+        // so a packet containing "&#" is parsed regardless; the predefined entities
+        // cannot spell the URI.
+        if (xmpPacket.IndexOf(requiredNamespace) < 0 && xmpPacket.IndexOf("&#"u8) < 0)
+            return false;
+
+        // Writers pad or terminate the packet with NUL bytes after the closing
+        // processing instruction; 0x00 is not a legal XML character, so strip the
+        // tail (NULs and the whitespace padding XMP allows) before parsing.
+        var end = xmpPacket.Length;
+        while (end > 0 && xmpPacket[end - 1] is 0x00 or 0x20 or 0x09 or 0x0A or 0x0D)
+            end--;
+
         try
         {
-            doc = XDocument.Parse(Encoding.UTF8.GetString(xmpPacket));
+            doc = XDocument.Parse(Encoding.UTF8.GetString(xmpPacket[..end]));
             return true;
         }
         catch (XmlException)
