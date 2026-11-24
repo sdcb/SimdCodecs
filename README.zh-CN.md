@@ -89,7 +89,7 @@ for (int n; (n = await reader.ReadRowsAsync(band, 16)) > 0;)
     await frame.WriteRowsAsync(band.AsMemory(0, n * reader.Width * 4), n);
 await png.CommitAsync();
 ```
-从 1.x 升级：见 [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md)。从 2.0 升级到 2.1：见 [docs/migrating-to-2.1.md](docs/migrating-to-2.1.md)。发布摘要见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
+从 1.x 升级：见 [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md)。从 2.0 升级到 2.1：见 [docs/migrating-to-2.1.md](docs/migrating-to-2.1.md)。发布摘要见 [docs/releases](docs/releases/index.md)。
 
 ## 支持的格式
 

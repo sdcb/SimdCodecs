@@ -40,4 +40,4 @@ Custom `ImageDecoderRegistration` values remain valid without a `CreateRowReader
 
 Streaming rows are byte-for-byte equivalent to `TryDecodeInto` for the same input, format, and options. Truncated or malformed input throws `InvalidDataException`, and cancelled operations throw `OperationCanceledException`, matching the existing decode and encode contracts.
 
-See [RELEASE_NOTES.md](../RELEASE_NOTES.md), [docs/known-gaps.md](known-gaps.md), and each codec package README for the variants that stream and the variants that use the buffered fallback.
+See [release notes](releases/2.1.0.md), [docs/known-gaps.md](known-gaps.md), and each codec package README for the variants that stream and the variants that use the buffered fallback.
