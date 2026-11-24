@@ -646,3 +646,10 @@ virtual Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.EndFra
 virtual Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.MaxDimension.get -> int
 virtual Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.Dispose(bool disposing) -> void
 virtual Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.CreateRowReaderHandler.Invoke(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.Seek(long position, int length = 0) -> bool
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.ReadHeader(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.ReadHeaderAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration.CreateSeekable.get -> Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration.CreateSeekableHandler?
+Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration.CreateSeekable.init -> void
+Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration.CreateSeekableHandler
+virtual Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration.CreateSeekableHandler.Invoke(System.IO.Stream! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options, bool leaveOpen) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!
