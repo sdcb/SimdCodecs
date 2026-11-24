@@ -301,3 +301,4 @@ static Sdcb.SimdCodecs.Webp.WebpLossyEncodeOptions.operator ==(Sdcb.SimdCodecs.W
 ~override Sdcb.SimdCodecs.Webp.WebpFrameInfo.ToString() -> string
 ~override Sdcb.SimdCodecs.Webp.WebpInfo.Equals(object obj) -> bool
 ~override Sdcb.SimdCodecs.Webp.WebpInfo.ToString() -> string
+static Sdcb.SimdCodecs.Webp.WebpImageDecoder.CreateRowReader(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!

@@ -103,3 +103,4 @@ static Sdcb.SimdCodecs.Pnm.PnmInfo.operator !=(Sdcb.SimdCodecs.Pnm.PnmInfo left,
 static Sdcb.SimdCodecs.Pnm.PnmInfo.operator ==(Sdcb.SimdCodecs.Pnm.PnmInfo left, Sdcb.SimdCodecs.Pnm.PnmInfo right) -> bool
 ~override Sdcb.SimdCodecs.Pnm.PnmInfo.Equals(object obj) -> bool
 ~override Sdcb.SimdCodecs.Pnm.PnmInfo.ToString() -> string
+static Sdcb.SimdCodecs.Pnm.PnmImageDecoder.CreateRowReader(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!

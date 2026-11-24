@@ -356,3 +356,8 @@ static Sdcb.SimdCodecs.Png.PngWriter.Save(string! path, System.ReadOnlySpan<byte
 static Sdcb.SimdCodecs.Png.PngWriter.Save(string! path, System.ReadOnlySpan<byte> rgba, int width, int height, System.ReadOnlySpan<byte> iccProfile) -> void
 ~override Sdcb.SimdCodecs.Png.PngFrameInfo.Equals(object obj) -> bool
 ~override Sdcb.SimdCodecs.Png.PngFrameInfo.ToString() -> string
+Sdcb.SimdCodecs.Png.PngWriteOptions.Animation.get -> bool
+Sdcb.SimdCodecs.Png.PngWriteOptions.Animation.init -> void
+static Sdcb.SimdCodecs.Png.PngImageDecoder.CreateRowReader(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!
+static Sdcb.SimdCodecs.Png.PngImageDecoder.OpenRowReader(System.IO.Stream! stream, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, bool leaveOpen = false) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!
+static Sdcb.SimdCodecs.Png.PngImageDecoder.OpenRowReaderAsync(System.IO.Stream! stream, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, bool leaveOpen = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!>

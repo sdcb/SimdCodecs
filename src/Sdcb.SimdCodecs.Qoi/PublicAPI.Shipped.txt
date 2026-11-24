@@ -53,3 +53,4 @@ static Sdcb.SimdCodecs.Qoi.QoiInfo.operator !=(Sdcb.SimdCodecs.Qoi.QoiInfo left,
 static Sdcb.SimdCodecs.Qoi.QoiInfo.operator ==(Sdcb.SimdCodecs.Qoi.QoiInfo left, Sdcb.SimdCodecs.Qoi.QoiInfo right) -> bool
 ~override Sdcb.SimdCodecs.Qoi.QoiInfo.Equals(object obj) -> bool
 ~override Sdcb.SimdCodecs.Qoi.QoiInfo.ToString() -> string
+static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.CreateRowReader(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!
