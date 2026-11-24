@@ -124,3 +124,4 @@ static Sdcb.SimdCodecs.Bmp.BmpInfo.operator !=(Sdcb.SimdCodecs.Bmp.BmpInfo left,
 static Sdcb.SimdCodecs.Bmp.BmpInfo.operator ==(Sdcb.SimdCodecs.Bmp.BmpInfo left, Sdcb.SimdCodecs.Bmp.BmpInfo right) -> bool
 ~override Sdcb.SimdCodecs.Bmp.BmpInfo.Equals(object obj) -> bool
 ~override Sdcb.SimdCodecs.Bmp.BmpInfo.ToString() -> string
+static Sdcb.SimdCodecs.Bmp.BmpImageDecoder.CreateRowReader(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!

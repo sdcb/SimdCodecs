@@ -90,7 +90,7 @@ for (int n; (n = await reader.ReadRowsAsync(band, 16)) > 0;)
     await frame.WriteRowsAsync(band.AsMemory(0, n * reader.Width * 4), n);
 await png.CommitAsync();
 ```
-Upgrading from 1.x: [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md).
+Upgrading from 1.x: [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md). From 2.0 to 2.1: [docs/migrating-to-2.1.md](docs/migrating-to-2.1.md). See [docs/releases](docs/releases/index.md) for the release summary.
 
 ## Formats
 

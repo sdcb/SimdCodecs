@@ -1,3 +1,1 @@
 #nullable enable
-static Sdcb.SimdCodecs.Tiff.TiffImageDecoder.CreateRowReader(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!
-static Sdcb.SimdCodecs.Tiff.TiffImageEncoder.Create(System.IO.Stream! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options = null, bool leaveOpen = false) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!

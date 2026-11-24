@@ -1,2 +1,1 @@
 #nullable enable
-static Sdcb.SimdCodecs.Qoi.QoiImageDecoder.CreateRowReader(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!

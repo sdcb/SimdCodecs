@@ -574,3 +574,82 @@ virtual Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration.GetClosestInputFor
 ~override Sdcb.SimdCodecs.Abstractions.PlanarInfo.ToString() -> string
 ~override Sdcb.SimdCodecs.Abstractions.Resolution.Equals(object obj) -> bool
 ~override Sdcb.SimdCodecs.Abstractions.Resolution.ToString() -> string
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BufferedEncoderSession.IsStreaming.get -> bool
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BufferedRowReader
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BufferedRowReader.BufferedRowReader(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options, Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration! codec) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.BufferedRowReader.BufferedRowReader(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options, Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.TryReadInfoHandler! readInfo, Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.TryDecodeIntoHandler! decodeInto) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.Buffered.get -> System.ReadOnlySpan<byte>
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.BufferedMemory.get -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.CanRewind.get -> bool
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.Consume(int count) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.Dispose() -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.Fill(int minimumBytes) -> bool
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.FillAsync(int minimumBytes, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<bool>
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.IsCompleted.get -> bool
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.Length.get -> long
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.Position.get -> long
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.ReadToEnd() -> System.ReadOnlyMemory<byte>
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.ReadToEndAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>>
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.Rewind(long position) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.StreamInput(System.IO.Stream! stream, bool leaveOpen = false, bool retainConsumed = false, int initialCapacity = 65536) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.AddFrame(int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.ColorEncoding? color = null, Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata = null, System.TimeSpan? duration = null) -> Sdcb.SimdCodecs.Abstractions.IImageFrameEncoder!
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.Commit(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.Dispose() -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.IsStreaming.get -> bool
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.Output.get -> System.Buffers.IBufferWriter<byte>!
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.StreamingEncoderSession(System.Buffers.IBufferWriter<byte>! output) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.WriteOutput(System.ReadOnlySpan<byte> bytes) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.Dispose() -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.Format.get -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.Height.get -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.Info.get -> Sdcb.SimdCodecs.Abstractions.ImageInfo
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.Initialize(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.InitializeAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.Input.get -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput!
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.IsInitialized.get -> bool
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.IsStreaming.get -> bool
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.ReadRows(System.Span<byte> destination, int rowCount, int stride = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.ReadRowsAsync(System.Memory<byte> destination, int rowCount, int stride = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<int>
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.RowsRead.get -> int
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.StreamingRowReader(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.UseBufferedFallback(Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.TryDecodeIntoHandler! decode, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.Width.get -> int
+Sdcb.SimdCodecs.Abstractions.IImageEncoderSession.IsStreaming.get -> bool
+Sdcb.SimdCodecs.Abstractions.IImageRowReader
+Sdcb.SimdCodecs.Abstractions.IImageRowReader.Format.get -> Sdcb.SimdCodecs.Abstractions.PixelFormat
+Sdcb.SimdCodecs.Abstractions.IImageRowReader.Height.get -> int
+Sdcb.SimdCodecs.Abstractions.IImageRowReader.Info.get -> Sdcb.SimdCodecs.Abstractions.ImageInfo
+Sdcb.SimdCodecs.Abstractions.IImageRowReader.IsStreaming.get -> bool
+Sdcb.SimdCodecs.Abstractions.IImageRowReader.ReadRows(System.Span<byte> destination, int rowCount, int stride = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> int
+Sdcb.SimdCodecs.Abstractions.IImageRowReader.ReadRowsAsync(System.Memory<byte> destination, int rowCount, int stride = 0, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<int>
+Sdcb.SimdCodecs.Abstractions.IImageRowReader.RowsRead.get -> int
+Sdcb.SimdCodecs.Abstractions.IImageRowReader.Width.get -> int
+Sdcb.SimdCodecs.Abstractions.IStreamingImageDecoder
+Sdcb.SimdCodecs.Abstractions.IStreamingImageDecoder.CreateRowReader(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!
+Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.CreateRowReader.get -> Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.CreateRowReaderHandler?
+Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.CreateRowReader.init -> void
+Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.CreateRowReaderHandler
+abstract Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.BeginFrame(int index, int width, int height, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.ColorEncoding? color, Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata, System.TimeSpan? duration) -> void
+abstract Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.EncodeRows(System.ReadOnlySpan<byte> rows, int rowCount, int stride, System.Threading.CancellationToken cancellationToken) -> void
+abstract Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.Finish(System.Threading.CancellationToken cancellationToken) -> void
+abstract Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.MaxFrames.get -> int
+abstract Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.DecodeHeader(System.ReadOnlySpan<byte> input, bool isFinal, out int consumed, out Sdcb.SimdCodecs.Abstractions.ImageInfo info, out int width, out int height) -> System.Buffers.OperationStatus
+abstract Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.DecodeRows(System.ReadOnlySpan<byte> input, bool isFinal, out int consumed, System.Span<byte> destination, int stride, int rowCount, out int rowsWritten) -> System.Buffers.OperationStatus
+const Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.DefaultCapacity = 65536 -> int
+static Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.IsFullImage(Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> bool
+virtual Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.Dispose(bool disposing) -> void
+virtual Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.EndFrame(System.Threading.CancellationToken cancellationToken) -> void
+virtual Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingEncoderSession.MaxDimension.get -> int
+virtual Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.Dispose(bool disposing) -> void
+virtual Sdcb.SimdCodecs.Abstractions.ImageDecoderRegistration.CreateRowReaderHandler.Invoke(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput.Seek(long position, int length = 0) -> bool
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.ReadHeader(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> void
+Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader.ReadHeaderAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration.CreateSeekable.get -> Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration.CreateSeekableHandler?
+Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration.CreateSeekable.init -> void
+Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration.CreateSeekableHandler
+virtual Sdcb.SimdCodecs.Abstractions.ImageEncoderRegistration.CreateSeekableHandler.Invoke(System.IO.Stream! output, Sdcb.SimdCodecs.Abstractions.EncodeOptions? options, bool leaveOpen) -> Sdcb.SimdCodecs.Abstractions.IImageEncoderSession!

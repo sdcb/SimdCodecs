@@ -202,3 +202,6 @@ static Sdcb.SimdCodecs.Jpeg.LosslessJpegResult.operator ==(Sdcb.SimdCodecs.Jpeg.
 ~override Sdcb.SimdCodecs.Jpeg.JpegComponentInfo.ToString() -> string
 ~override Sdcb.SimdCodecs.Jpeg.JpegSegment.Equals(object obj) -> bool
 ~override Sdcb.SimdCodecs.Jpeg.JpegSegment.ToString() -> string
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.CreateRowReader(Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamInput! input, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.OpenRowReader(System.IO.Stream! stream, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, bool leaveOpen = false) -> Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!
+static Sdcb.SimdCodecs.Jpeg.JpegImageDecoder.OpenRowReaderAsync(System.IO.Stream! stream, Sdcb.SimdCodecs.Abstractions.PixelFormat format, Sdcb.SimdCodecs.Abstractions.DecodeOptions? options = null, bool leaveOpen = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Sdcb.SimdCodecs.Abstractions.CodecSupport.StreamingRowReader!>
