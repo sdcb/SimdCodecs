@@ -14,14 +14,15 @@ namespace Sdcb.SimdCodecs.Bmp;
 /// <list type="bullet">
 /// <item>A top-down bitmap streams from any stream, front to back.</item>
 /// <item>
-/// A bottom-up bitmap stores its top row last. From a seekable stream the reader reads forward to the end of the pixels,
-/// then seeks back a band of stored rows at a time (about <see cref="BandBytes"/>) and hands the band out last stored row
-/// first: memory stays a band, at the cost of reading the pixels twice. From a stream that cannot seek it falls back.
+/// A bottom-up bitmap stores its top row last. From a seekable stream the reader seeks to the last band of stored rows
+/// (about <see cref="BandBytes"/>), then back a band at a time, and hands each band out last stored row first: memory
+/// stays a band and each pixel byte is read once. From a stream whose bytes the input retains it reads through to the last
+/// band; from a stream that cannot seek it falls back.
 /// </item>
 /// <item>
 /// A 32-bit <c>BI_RGB</c> bitmap's fourth byte is alpha unless it is 0 in every pixel, which only the last pixel can
 /// settle. Decoded to a format with alpha from a seekable stream, the reader scans every pixel's fourth byte first
-/// (in the forward pass a bottom-up bitmap makes anyway), then streams; from a stream that cannot seek it falls back. To a
+/// (one forward pass over the pixels), then streams; from a stream that cannot seek it falls back. To a
 /// format without alpha the byte is never read, and the bitmap streams as any other.
 /// </item>
 /// <item>
@@ -54,8 +55,8 @@ internal sealed class BmpRowReader(StreamInput input, PixelFormat format, Decode
     private int _stride, _lastRowLength;
     private long _regionLength; // the pixel bytes the decode reads: every stored row, the last one possibly short
 
-    // The forward pass of a bottom-up bitmap or an alpha scan.
-    private bool _scanning, _scanAlpha, _forceOpaque;
+    // The alpha scan's forward pass, and a bottom-up bitmap's first move to its last band.
+    private bool _scanning, _scanAlpha, _forceOpaque, _seekPending;
     private long _scanned;
     private uint _alphaSeen;
 
@@ -140,9 +141,10 @@ internal sealed class BmpRowReader(StreamInput input, PixelFormat format, Decode
         }
         _regionLength = (long)_stride * (h.Height - 1) + _lastRowLength;
         _scanAlpha = scanAlpha;
-        // A bottom-up bitmap passes over its pixels even without the alpha scan: the input goes back, never forward,
-        // so the last band is reached by reading up to it.
-        _scanning = !h.TopDown || scanAlpha;
+        // A bottom-up bitmap without the scan starts at its last band: a seek forward, or a read through when the
+        // stream cannot seek (StreamInput.Seek).
+        _scanning = scanAlpha;
+        _seekPending = !h.TopDown && !scanAlpha;
         return true;
     }
 
@@ -190,6 +192,14 @@ internal sealed class BmpRowReader(StreamInput input, PixelFormat format, Decode
             {
                 StartBand(_h.Height);
             }
+            input = Input.Buffered;
+        }
+        if (_seekPending)
+        {
+            // Nothing is consumed: the seek moved the input itself, or consumed what it read through.
+            if (!StartBand(_h.Height))
+                return OperationStatus.NeedMoreData;
+            _seekPending = false;
             input = Input.Buffered;
         }
         return _h.TopDown
@@ -244,13 +254,13 @@ internal sealed class BmpRowReader(StreamInput input, PixelFormat format, Decode
         return OperationStatus.Done;
     }
 
-    // Moves the input back to the band that ends before stored row `end`.
-    private void StartBand(int end)
+    // Moves the input to the band that ends before stored row `end`; false while a read-through is still on its way.
+    private bool StartBand(int end)
     {
         var rows = Math.Max(1, BandBytes / _stride);
         _bandStart = Math.Max(0, end - rows);
         _next = end - 1;
-        Input.Rewind(_h.PixelOffset + (long)_bandStart * _stride);
+        return Input.Seek(_h.PixelOffset + (long)_bandStart * _stride, BandLength(_bandStart, _next));
     }
 
     // The bytes from stored row `start` through `last` (the file's last row possibly short).

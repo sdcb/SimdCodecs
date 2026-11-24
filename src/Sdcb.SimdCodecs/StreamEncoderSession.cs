@@ -13,12 +13,12 @@ namespace Sdcb.SimdCodecs;
 public sealed class StreamEncoderSession : IImageEncoderSession, IAsyncDisposable
 {
     private readonly IImageEncoderSession _inner;
-    private readonly StreamBufferWriter _writer;
+    private readonly StreamBufferWriter? _writer; // null: the inner session writes the stream itself
     private readonly Stream _stream;
     private readonly bool _leaveOpen;
     private bool _disposed;
 
-    internal StreamEncoderSession(IImageEncoderSession inner, StreamBufferWriter writer, Stream stream, bool leaveOpen)
+    internal StreamEncoderSession(IImageEncoderSession inner, StreamBufferWriter? writer, Stream stream, bool leaveOpen)
     {
         _inner = inner;
         _writer = writer;
@@ -45,7 +45,8 @@ public sealed class StreamEncoderSession : IImageEncoderSession, IAsyncDisposabl
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         // A header the encoder writes here is written to the stream with the frame's first rows.
-        _writer.FlushWhenFull = false;
+        if (_writer is not null)
+            _writer.FlushWhenFull = false;
         return new StreamFrameEncoder(this, _inner.AddFrame(width, height, format, color, metadata, duration));
     }
 
@@ -59,9 +60,10 @@ public sealed class StreamEncoderSession : IImageEncoderSession, IAsyncDisposabl
     public void Commit(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _writer.FlushWhenFull = true;
+        if (_writer is not null)
+            _writer.FlushWhenFull = true;
         _inner.Commit(cancellationToken);
-        _writer.Flush();
+        _writer?.Flush();
         _stream.Flush();
     }
 
@@ -70,9 +72,11 @@ public sealed class StreamEncoderSession : IImageEncoderSession, IAsyncDisposabl
     public async ValueTask CommitAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _writer.FlushWhenFull = false;
+        if (_writer is not null)
+            _writer.FlushWhenFull = false;
         _inner.Commit(cancellationToken);
-        await _writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+        if (_writer is not null)
+            await _writer.FlushAsync(cancellationToken).ConfigureAwait(false);
         await _stream.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -103,7 +107,7 @@ public sealed class StreamEncoderSession : IImageEncoderSession, IAsyncDisposabl
         }
         finally
         {
-            _writer.Dispose();
+            _writer?.Dispose();
         }
         return true;
     }
@@ -112,9 +116,10 @@ public sealed class StreamEncoderSession : IImageEncoderSession, IAsyncDisposabl
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _writer.FlushWhenFull = true;
+        if (_writer is not null)
+            _writer.FlushWhenFull = true;
         frame.WriteRows(rows, rowCount, stride, cancellationToken);
-        if (_writer.ChunkReady)
+        if (_writer is { ChunkReady: true })
             _writer.Flush();
     }
 
@@ -122,9 +127,10 @@ public sealed class StreamEncoderSession : IImageEncoderSession, IAsyncDisposabl
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _writer.FlushWhenFull = false;
+        if (_writer is not null)
+            _writer.FlushWhenFull = false;
         frame.WriteRows(rows.Span, rowCount, stride, cancellationToken);
-        if (_writer.ChunkReady)
+        if (_writer is { ChunkReady: true })
             await _writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 }

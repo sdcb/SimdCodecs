@@ -294,6 +294,58 @@ public sealed class FacadeStreamingTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// TIFF to a seekable stream takes the codec's own stream session (it patches its forward offsets), which streams;
+    /// the bytes are the buffer-writer session's, written from the stream's position. A non-seekable stream keeps the
+    /// buffered session.
+    /// </summary>
+    [Fact]
+    public async Task CreateEncoderStream_TiffToASeekableStreamStreams()
+    {
+        const int w = 300, h = 220;
+        var rgb = Pattern(w, h, 3, 8);
+        var expected = new ArrayBufferWriter<byte>();
+        using (var session = ImageCodecs.CreateEncoder(ImageFormat.Tiff, expected))
+        {
+            session.IsStreaming.ShouldBeFalse();
+            session.AddFrame(w, h, PixelFormat.Rgb24).WriteRows(rgb, h, 0, Ct);
+            session.Commit(Ct);
+        }
+        foreach (var async in new[] { false, true })
+        {
+            var target = new MemoryStream();
+            target.Write("prefix"u8);
+            await using (var session = ImageCodecs.CreateEncoder(ImageFormat.Tiff, target, leaveOpen: true))
+            {
+                session.IsStreaming.ShouldBeTrue();
+                var frame = session.AddFrame(w, h, PixelFormat.Rgb24);
+                for (var y = 0; y < h; y += 19)
+                {
+                    if (async)
+                        await frame.WriteRowsAsync(rgb.AsMemory(y * w * 3), Math.Min(19, h - y), 0, Ct);
+                    else
+                        frame.WriteRows(rgb.AsSpan(y * w * 3), Math.Min(19, h - y), 0, Ct);
+                }
+                target.Length.ShouldBeGreaterThan(6, "bytes reached the stream before Commit");
+                if (async) await session.CommitAsync(Ct);
+                else session.Commit(Ct);
+            }
+            target.ToArray().AsSpan(6).ToArray().ShouldBe(expected.WrittenSpan.ToArray(), async ? "async" : "sync");
+            target.CanWrite.ShouldBeTrue("leaveOpen");
+        }
+
+        var owned = new MemoryStream();
+        using (var session = ImageCodecs.CreateEncoder(ImageFormat.Tiff, owned))
+        {
+            session.AddFrame(w, h, PixelFormat.Rgb24).WriteRows(rgb, h, 0, Ct);
+            session.Commit(Ct);
+        }
+        owned.CanWrite.ShouldBeFalse("the session disposes a stream it was not told to leave open");
+
+        using (var session = ImageCodecs.CreateEncoder(ImageFormat.Tiff, new WriteLog(asyncOnly: false)))
+            session.IsStreaming.ShouldBeFalse();
+    }
+
     [Fact]
     public async Task CreateEncoderStream_AStreamingEncodersBytesReachTheStreamBeforeCommit()
     {
