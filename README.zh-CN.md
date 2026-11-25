@@ -40,7 +40,7 @@ ImageCodecs.Encode(image, ImageFormat.Jpeg, output);                            
 | Blazor WebAssembly | ✅ | ✅ | ✅ | ❌ | ❌ |
 | HEIC 解码 | ✅（独立包） | ❌ | 取决于操作系统 | ✅ | ❌ |
 | 缩放、绘制、滤镜 | ❌（需要时解码到 SkiaSharp 或 OpenCV） | ✅ | ✅ | ✅ | ✅ |
-| 许可证 | MIT | [Six Labors Split License](https://github.com/SixLabors/ImageSharp/blob/main/LICENSE)：年收入 100 万美元以上的公司在闭源软件中直接使用需购买商业许可 | MIT | Apache 2.0 | MIT |
+| 许可证 | MIT | [Six Labors Split License](https://github.com/SixLabors/ImageSharp/blob/main/LICENSE "年收入 100 万美元以上的公司在闭源软件中直接使用需购买商业许可") | MIT | Apache 2.0 | MIT |
 
 从 ImageSharp 迁移过来？[从 ImageSharp 迁移](#从-imagesharp-迁移)一节列出了每个调用的对应写法。
 

@@ -40,7 +40,7 @@ ImageCodecs.Encode(image, ImageFormat.Jpeg, output);                            
 | Blazor WebAssembly | ✅ | ✅ | ✅ | ❌ | ❌ |
 | HEIC decode | ✅ (opt-in package) | ❌ | depends on the OS | ✅ | ❌ |
 | Resize, draw, filter | ❌ (decode into SkiaSharp or OpenCV for that) | ✅ | ✅ | ✅ | ✅ |
-| Licence | MIT | [Six Labors Split License](https://github.com/SixLabors/ImageSharp/blob/main/LICENSE): a paid licence for direct use in closed-source software by a company with US$1M+ annual revenue | MIT | Apache 2.0 | MIT |
+| Licence | MIT | [Six Labors Split License](https://github.com/SixLabors/ImageSharp/blob/main/LICENSE "A paid licence for direct use in closed-source software by a company with US$1M+ annual revenue") | MIT | Apache 2.0 | MIT |
 
 Coming from ImageSharp? [Migrating from ImageSharp](#migrating-from-imagesharp) maps each call to its counterpart.
 
