@@ -4,22 +4,47 @@
 
 [English](README.md) | **简体中文**
 
-纯托管的 .NET 10 图像编解码库：JPEG、PNG、TIFF、WebP、GIF、BMP、ICO / CUR、QOI、Netpbm、JPEG 2000、JBIG2，外加 EXIF 和 ICC；HEIF / HEIC 解码是需要自行启用的独立包。
+纯 C# 实现的 .NET 10 图像编解码库，速度与 libjpeg-turbo、libpng、libwebp 相当或更快，没有原生依赖：JPEG、PNG、TIFF、WebP、GIF、BMP、ICO / CUR、QOI、Netpbm、JPEG 2000、JBIG2，外加 EXIF 和 ICC；HEIF / HEIC 解码是需要自行启用的独立包。
 
-- **没有原生依赖。** .NET 能跑的地方都能跑，包括 NativeAOT 和 browser-wasm，各平台输出完全一致。
-- **和原生库一样快。** SIMD（AVX2、SSE、AdvSimd）加速，带标量回退：JPEG 解码耗时是 libjpeg-turbo 的 0.82×，PNG 解码照片是 libpng 的 0.88×，WebP 解码是 libwebp 的 0.53–0.88×（见[性能](#性能)）。
-- **结果精确。** WebP 解码与 libwebp 逐字节一致，HEIF 的 HEVC 平面与 ffmpeg 一致，PNG 和无损 JPEG 2000 逐位一致；在需要色度上采样的图上，JPEG 解码比 libjpeg-turbo 默认设置的精度高约 1 dB。
-- **内存占用低。** 可以按任意像素布局直接解进你自己的缓冲区；JPEG 解码不分配托管内存。
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://cv-public.sdcb.ai/simdcodecs/readme/speed-v1-dark.png">
+  <img src="https://cv-public.sdcb.ai/simdcodecs/readme/speed-v1-light.png" alt="解码速度（以原生库为 1×）：JPEG 是 libjpeg-turbo 的 1.22×（ImageSharp 0.56×），PNG 是 libpng 的 1.14×（ImageSharp 1.10×），WebP 是 libwebp 的 1.14× / 1.89× / 1.39×，HEIF 8 核是 libheif 的 3.1–5.0×">
+</picture>
 
-![JPEG、PNG、WebP、TIFF、JPEG 2000 和 JBIG2 图片，全部由 Sdcb.SimdCodecs 解码](https://cv-public.sdcb.ai/simdcodecs/readme/showcase-v1.jpg)
-
-<sub>上图每一格都由本库解码，图片来自 LINQPad 样例素材（[生成方式](tools/sample-assets/README.md)）。</sub>
-
-## 快速上手
+<sub>数据来自[性能](#性能)一节的表格，每一行都链接到对应的测试集和测量方法。</sub>
 
 ```bash
 dotnet add package Sdcb.SimdCodecs
 ```
+
+```csharp
+using Sdcb.SimdCodecs;
+using Sdcb.SimdCodecs.Abstractions;
+
+using IDecodedImage image = ImageCodecs.Decode(File.ReadAllBytes("photo.webp"));   // 自动识别格式
+using FileStream output = File.Create("photo.jpg");
+ImageCodecs.Encode(image, ImageFormat.Jpeg, output);                                // 保留 ICC、Exif、XMP
+```
+
+- **没有原生依赖。** 同一套托管 DLL 可以跑在 Windows、Linux、macOS、容器、NativeAOT 和 Blazor WebAssembly 上，各平台输出完全一致。
+- **快。** SIMD（AVX2、SSE、AdvSimd）加速，带标量回退。JPEG 解码速度是 libjpeg-turbo 的 1.22 倍、ImageSharp 的 2.2 倍，且不分配托管内存。
+- **结果精确。** WebP 解码与 libwebp 逐字节一致，HEIF 的 HEVC 平面与 ffmpeg 一致，PNG 和无损 JPEG 2000 逐位一致；在需要色度上采样的图上，JPEG 解码比 libjpeg-turbo 默认设置的精度高约 1 dB。
+- **内存占用低。** 可以按任意像素布局直接解进你自己的缓冲区，也可以对请求体逐个行带解码，不必持有整个文件。
+
+### 和其他库的对比
+
+| | Sdcb.SimdCodecs | ImageSharp 3 | SkiaSharp | Magick.NET | System.Drawing |
+|---|---|---|---|---|---|
+| 原生依赖 | 无 | 无 | Skia | ImageMagick | GDI+ |
+| Linux / macOS | ✅ | ✅ | ✅ | ✅ | 仅 Windows |
+| Blazor WebAssembly | ✅ | ✅ | ✅ | ❌ | ❌ |
+| HEIC 解码 | ✅（独立包） | ❌ | 取决于操作系统 | ✅ | ❌ |
+| 缩放、绘制、滤镜 | ❌（需要时解码到 SkiaSharp 或 OpenCV） | ✅ | ✅ | ✅ | ✅ |
+| 许可证 | MIT | [Six Labors Split License](https://github.com/SixLabors/ImageSharp/blob/main/LICENSE)：年收入 100 万美元以上的公司在闭源软件中直接使用需购买商业许可 | MIT | Apache 2.0 | MIT |
+
+从 ImageSharp 迁移过来？[从 ImageSharp 迁移](#从-imagesharp-迁移)一节列出了每个调用的对应写法。
+
+## 用法
 
 ```csharp
 using Sdcb.SimdCodecs;
@@ -89,9 +114,12 @@ for (int n; (n = await reader.ReadRowsAsync(band, 16)) > 0;)
     await frame.WriteRowsAsync(band.AsMemory(0, n * reader.Width * 4), n);
 await png.CommitAsync();
 ```
-从 1.x 升级：见 [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md)。从 2.0 升级到 2.1：见 [docs/migrating-to-2.1.md](docs/migrating-to-2.1.md)。发布摘要见 [docs/releases](docs/releases/index.md)。
 
 ## 支持的格式
+
+![JPEG、PNG、WebP、TIFF、JPEG 2000 和 JBIG2 图片，全部由 Sdcb.SimdCodecs 解码](https://cv-public.sdcb.ai/simdcodecs/readme/showcase-v1.jpg)
+
+<sub>上图每一格都由本库解码，图片来自 LINQPad 样例素材（[生成方式](tools/sample-assets/README.md)）。</sub>
 
 | 格式 | 包 | 解码 | 编码 | 特性 |
 |---|---|:-:|:-:|---|
@@ -196,6 +224,10 @@ Sdcb.SimdCodecs 只负责读写图像，不做缩放、绘制和滤镜。这些�
 | `Sdcb.SimdCodecs.Heif` | `decode`（手机拍摄的网格图、Main 10、`clap` 裁剪；`ReadInfo` / `Decode` / `DecodeTo`）、`facade`（注册到门面；带行填充的 BGRA、Gray8） |
 
 样例图片从 `https://cv-public.sdcb.ai/simdcodecs/samples/v1/` 下载；它们的生成方式和来源见 [tools/sample-assets](tools/sample-assets/README.md)。HEIF 样例使用 HEIF 测试图片（`…/test-images/heif/`，CC0；见 `tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh`）。
+
+## 升级
+
+从 1.x 升级：见 [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md)。从 2.0 升级到 2.1：见 [docs/migrating-to-2.1.md](docs/migrating-to-2.1.md)。发布摘要见 [docs/releases](docs/releases/index.md)。
 
 ## 构建和测试
 
