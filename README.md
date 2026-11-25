@@ -4,22 +4,47 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-Pure-managed image codecs for .NET 10: JPEG, PNG, TIFF, WebP, GIF, BMP, ICO / CUR, QOI, Netpbm, JPEG 2000 and JBIG2, plus EXIF and ICC, and HEIF / HEIC decoding as an opt-in package.
+Pure C# image codecs for .NET 10, as fast as libjpeg-turbo, libpng and libwebp, with no native binaries: JPEG, PNG, TIFF, WebP, GIF, BMP, ICO / CUR, QOI, Netpbm, JPEG 2000 and JBIG2, plus EXIF and ICC, and HEIF / HEIC decoding as an opt-in package.
 
-- **No native dependencies.** Runs wherever .NET does, including NativeAOT and browser-wasm, with identical output on every target.
-- **As fast as the native libraries.** SIMD (AVX2, SSE, AdvSimd) with a scalar fallback: JPEG decode is 0.82× libjpeg-turbo's time, PNG decode 0.88× libpng's on photos, WebP decode 0.53–0.88× libwebp's (see [Performance](#performance)).
-- **Exact.** WebP decode is byte-identical to libwebp, HEIF's HEVC planes to ffmpeg, PNG and lossless JPEG 2000 are bit-exact; the JPEG decoder is about 1 dB more accurate than libjpeg-turbo's default where chroma is upsampled.
-- **Low memory.** Decode straight into your own buffer in any pixel layout; JPEG decode allocates 0 bytes of managed memory.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://cv-public.sdcb.ai/simdcodecs/readme/speed-v1-dark.png">
+  <img src="https://cv-public.sdcb.ai/simdcodecs/readme/speed-v1-light.png" alt="Decode speed relative to the native library: JPEG 1.22x libjpeg-turbo (ImageSharp 0.56x), PNG 1.14x libpng (ImageSharp 1.10x), WebP 1.14x / 1.89x / 1.39x libwebp, HEIF 3.1-5.0x libheif on 8 cores">
+</picture>
 
-![JPEG, PNG, WebP, TIFF, JPEG 2000 and JBIG2 images, all decoded by Sdcb.SimdCodecs](https://cv-public.sdcb.ai/simdcodecs/readme/showcase-v1.jpg)
-
-<sub>Every tile above was decoded by this library; the files are the LINQPad samples' images ([how they were made](tools/sample-assets/README.md)).</sub>
-
-## Quick start
+<sub>The numbers come from the [Performance](#performance) table; each row there links to its corpus and method.</sub>
 
 ```bash
 dotnet add package Sdcb.SimdCodecs
 ```
+
+```csharp
+using Sdcb.SimdCodecs;
+using Sdcb.SimdCodecs.Abstractions;
+
+using IDecodedImage image = ImageCodecs.Decode(File.ReadAllBytes("photo.webp"));   // the format is sniffed
+using FileStream output = File.Create("photo.jpg");
+ImageCodecs.Encode(image, ImageFormat.Jpeg, output);                                // ICC, Exif and XMP kept
+```
+
+- **No native binaries.** The same managed DLLs run on Windows, Linux, macOS, in a container, under NativeAOT and in Blazor WebAssembly, with identical output on every target.
+- **Fast.** SIMD (AVX2, SSE, AdvSimd) with a scalar fallback. JPEG decode runs at 1.22× libjpeg-turbo's speed and 2.2× ImageSharp's while allocating 0 bytes of managed memory.
+- **Exact.** WebP decode is byte-identical to libwebp, HEIF's HEVC planes to ffmpeg, PNG and lossless JPEG 2000 are bit-exact; the JPEG decoder is about 1 dB more accurate than libjpeg-turbo's default where chroma is upsampled.
+- **Low memory.** Decode straight into your own buffer in any pixel layout, or a request body a band of rows at a time without holding the file.
+
+### How it compares
+
+| | Sdcb.SimdCodecs | ImageSharp 3 | SkiaSharp | Magick.NET | System.Drawing |
+|---|---|---|---|---|---|
+| Native binaries | none | none | Skia | ImageMagick | GDI+ |
+| Linux / macOS | ✅ | ✅ | ✅ | ✅ | Windows only |
+| Blazor WebAssembly | ✅ | ✅ | ✅ | ❌ | ❌ |
+| HEIC decode | ✅ (opt-in package) | ❌ | depends on the OS | ✅ | ❌ |
+| Resize, draw, filter | ❌ (decode into SkiaSharp or OpenCV for that) | ✅ | ✅ | ✅ | ✅ |
+| Licence | MIT | [Six Labors Split License](https://github.com/SixLabors/ImageSharp/blob/main/LICENSE "A paid licence for direct use in closed-source software by a company with US$1M+ annual revenue") | MIT | Apache 2.0 | MIT |
+
+Coming from ImageSharp? [Migrating from ImageSharp](#migrating-from-imagesharp) maps each call to its counterpart.
+
+## Usage
 
 ```csharp
 using Sdcb.SimdCodecs;
@@ -90,9 +115,12 @@ for (int n; (n = await reader.ReadRowsAsync(band, 16)) > 0;)
     await frame.WriteRowsAsync(band.AsMemory(0, n * reader.Width * 4), n);
 await png.CommitAsync();
 ```
-Upgrading from 1.x: [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md). From 2.0 to 2.1: [docs/migrating-to-2.1.md](docs/migrating-to-2.1.md). See [docs/releases](docs/releases/index.md) for the release summary.
 
 ## Formats
+
+![JPEG, PNG, WebP, TIFF, JPEG 2000 and JBIG2 images, all decoded by Sdcb.SimdCodecs](https://cv-public.sdcb.ai/simdcodecs/readme/showcase-v1.jpg)
+
+<sub>Every tile above was decoded by this library; the files are the LINQPad samples' images ([how they were made](tools/sample-assets/README.md)).</sub>
 
 | Format | Package | Decode | Encode | Highlights |
 |---|---|:-:|:-:|---|
@@ -198,6 +226,10 @@ Each package ships runnable samples in `linqpad-samples/`, which LINQPad lists i
 
 They download their images from `https://cv-public.sdcb.ai/simdcodecs/samples/v1/`; how those were made and where they come from is in [tools/sample-assets](tools/sample-assets/README.md). The HEIF samples use the HEIF test images (`…/test-images/heif/`, CC0; see `tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh`).
 
+## Upgrading
+
+From 1.x: [docs/migrating-to-2.0.md](docs/migrating-to-2.0.md). From 2.0 to 2.1: [docs/migrating-to-2.1.md](docs/migrating-to-2.1.md). See [docs/releases](docs/releases/index.md) for the release summary.
+
 ## Build and test
 
 ```bash
@@ -243,7 +275,7 @@ The MQ arithmetic decoder (JBIG2, JPEG 2000), the T.4 fax code tables (JBIG2, TI
 
 ## Contact
 
-![WeChat group QR code](https://io.starworks.cc:88/cv-public/2026/ocr-wxg-qr.png?1109)
+![WeChat group QR code](https://io.starworks.cc:88/cv-public/2026/ocr-wxg-qr.png?1125)
 
 If the WeChat group is full or the QR code has expired, join the QQ group [C#/.NET Computer Vision 579060605](https://qm.qq.com/q/bPw5jAK4qk).
 
