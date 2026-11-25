@@ -275,7 +275,7 @@ The MQ arithmetic decoder (JBIG2, JPEG 2000), the T.4 fax code tables (JBIG2, TI
 
 ## Contact
 
-![WeChat group QR code](https://io.starworks.cc:88/cv-public/2026/ocr-wxg-qr.png?1109)
+![WeChat group QR code](https://io.starworks.cc:88/cv-public/2026/ocr-wxg-qr.png?1125)
 
 If the WeChat group is full or the QR code has expired, join the QQ group [C#/.NET Computer Vision 579060605](https://qm.qq.com/q/bPw5jAK4qk).
 

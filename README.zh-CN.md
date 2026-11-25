@@ -274,7 +274,7 @@ MQ 算术解码器（JBIG2、JPEG 2000）、T.4 传真码表（JBIG2、TIFF、BM
 
 ## 交流
 
-![微信群二维码](https://io.starworks.cc:88/cv-public/2026/ocr-wxg-qr.png?1109)
+![微信群二维码](https://io.starworks.cc:88/cv-public/2026/ocr-wxg-qr.png?1125)
 
 如果微信群满了或二维码过期了，请加入 QQ 群 [C#/.NET计算机视觉技术交流 579060605](https://qm.qq.com/q/bPw5jAK4qk)。
 
