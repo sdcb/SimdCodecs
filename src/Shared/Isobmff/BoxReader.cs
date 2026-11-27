@@ -2,10 +2,12 @@ using System.Runtime.CompilerServices;
 
 #if SIMDCODECS_HEIF
 namespace Sdcb.SimdCodecs.Heif.Isobmff;
+#elif SIMDCODECS_AVIF
+namespace Sdcb.SimdCodecs.Avif.Isobmff;
 #elif SIMDCODECS_EXIF
 namespace Sdcb.SimdCodecs.Exif.Isobmff;
 #else
-#error BoxReader.cs is shared source for the ISOBMFF-based packages (Sdcb.SimdCodecs.Heif, Sdcb.SimdCodecs.Exif).
+#error BoxReader.cs is shared source for the ISOBMFF-based packages (Sdcb.SimdCodecs.Heif, Sdcb.SimdCodecs.Avif, Sdcb.SimdCodecs.Exif).
 #endif
 
 /// <summary>

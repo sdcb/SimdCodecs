@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <NoWarn>$(NoWarn);NU1901;NU1902;NU1903;NU1904</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+    <!-- Black-box decode competitor only. Never read or decompile its source (see AGENTS.md). -->
+    <PackageReference Include="Magick.NET-Q16-HDRI-AnyCPU" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Avif\Sdcb.SimdCodecs.Avif.csproj" />
+  </ItemGroup>
+
+  <!--
+    Native competitors copied from the pinned vcpkg build so every run (including BenchmarkDotNet's
+    child processes) loads the same bytes. Override AvifNativeSource to use another build.
+  -->
+  <PropertyGroup>
+    <AvifNativeSource Condition="'$(AvifNativeSource)' == ''">C:\_\3rd\vcpkg\installed\x64-windows\bin</AvifNativeSource>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(AvifNativeSource)\avif.dll')">
+    <None Include="$(AvifNativeSource)\avif.dll" CopyToOutputDirectory="PreserveNewest" Link="avif.dll" />
+    <None Include="$(AvifNativeSource)\dav1d.dll" CopyToOutputDirectory="PreserveNewest" Link="dav1d.dll" />
+    <None Include="$(AvifNativeSource)\aom.dll" CopyToOutputDirectory="PreserveNewest" Link="aom.dll" />
+    <None Include="$(AvifNativeSource)\SvtAv1Enc.dll" CopyToOutputDirectory="PreserveNewest" Link="SvtAv1Enc.dll" />
+    <None Condition="Exists('$(AvifNativeSource)\fastfeat.dll')" Include="$(AvifNativeSource)\fastfeat.dll" CopyToOutputDirectory="PreserveNewest" Link="fastfeat.dll" />
+    <None Condition="Exists('$(AvifNativeSource)\libsharpyuv.dll')" Include="$(AvifNativeSource)\libsharpyuv.dll" CopyToOutputDirectory="PreserveNewest" Link="libsharpyuv.dll" />
+  </ItemGroup>
+
+</Project>

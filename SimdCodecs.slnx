@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Sdcb.SimdCodecs.Abstractions/Sdcb.SimdCodecs.Abstractions.csproj" />
+    <Project Path="src/Sdcb.SimdCodecs.Avif/Sdcb.SimdCodecs.Avif.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Bmp/Sdcb.SimdCodecs.Bmp.csproj" />
     <Project Path="src/Sdcb.SimdCodecs.Color.Icc/Sdcb.SimdCodecs.Color.Icc.csproj" />
     <Project Path="src/Sdcb.SimdCodecs/Sdcb.SimdCodecs.csproj" />
@@ -20,6 +21,7 @@
     <Project Path="src/Sdcb.SimdCodecs.Webp/Sdcb.SimdCodecs.Webp.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Sdcb.SimdCodecs.Avif.Benchmarks/Sdcb.SimdCodecs.Avif.Benchmarks.csproj" />
     <Project Path="benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks/Sdcb.SimdCodecs.Bmp.Benchmarks.csproj" />
     <Project Path="benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks.csproj" />
     <Project Path="benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks/Sdcb.SimdCodecs.Jpeg.Benchmarks.csproj" />

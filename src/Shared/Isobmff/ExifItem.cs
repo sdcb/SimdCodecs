@@ -3,10 +3,12 @@ using System.Buffers.Binary;
 // Compiled into each package that reads an ISOBMFF item model, under that package's namespace.
 #if SIMDCODECS_HEIF
 namespace Sdcb.SimdCodecs.Heif.Isobmff;
+#elif SIMDCODECS_AVIF
+namespace Sdcb.SimdCodecs.Avif.Isobmff;
 #elif SIMDCODECS_EXIF
 namespace Sdcb.SimdCodecs.Exif.Isobmff;
 #else
-#error ExifItem.cs is shared source for the ISOBMFF-based packages (Sdcb.SimdCodecs.Heif, Sdcb.SimdCodecs.Exif).
+#error ExifItem.cs is shared source for the ISOBMFF-based packages (Sdcb.SimdCodecs.Heif, Sdcb.SimdCodecs.Avif, Sdcb.SimdCodecs.Exif).
 #endif
 
 /// <summary>

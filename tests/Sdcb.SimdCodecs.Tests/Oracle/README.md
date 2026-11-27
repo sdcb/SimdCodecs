@@ -21,8 +21,9 @@ Every oracle test **skips** when its tool is missing, so a clean clone stays gre
 | libpng (binary only, optional) | PNG benchmark | any libpng16 shared library via `LIBPNG_PATH` (see the PNG benchmark README) |
 
 | libheif `heif-convert` / `heif-info` (LGPL, binary only) | HEIF / HEIC decode oracle: byte-exact YUV comparison against our HEVC decoder (`HeifOracleTests`); the decoded-YUV digests in `Fixtures/heif/*-golden.tsv` run without the oracle | Windows: `vcpkg install libheif` then `bash tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch-oracle.sh`; Linux: `apt-get install libheif-examples`; or set `HEIF_CONVERT` + `HEIF_INFO` env vars to the full binary paths |
+| libavif 1.4.2 + dav1d 1.5.5 (BSD-2, binary only) | AVIF decode oracle & benchmark competitor: byte-exact Y / Cb / Cr / Alpha plane digests in `Fixtures/avif/avif-golden.tsv` (run without the oracle) and in-process `Sdcb.SimdCodecs.Avif.Benchmarks` | Windows: `vcpkg install "libavif[aom,dav1d,svt]:x64-windows"`; fixtures via `bash tests/Sdcb.SimdCodecs.Tests/Oracle/avif/fetch.sh` |
 
-Per-codec details: [`jbig2/`](jbig2/README.md), [`jpeg2000/`](jpeg2000/README.md), [`webp/`](webp/README.md), [`heif/`](heif/README.md).
+Per-codec details: [`jbig2/`](jbig2/README.md), [`jpeg2000/`](jpeg2000/README.md), [`webp/`](webp/README.md), [`heif/`](heif/README.md), [`avif/`](avif/README.md).
 
 ## Goldens
 

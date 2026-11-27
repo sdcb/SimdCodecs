@@ -282,4 +282,9 @@ tests/Sdcb.SimdCodecs.Tests/Fixtures/heif/*.heic
 tests/Sdcb.SimdCodecs.Tests/Fixtures/heif/*.heics
 benchmarks/Sdcb.SimdCodecs.Heif.Benchmarks/heif-inputs/
 tools/heif-fixtures/out/
+# AVIF fixtures and benchmark inputs: downloaded by tests/Sdcb.SimdCodecs.Tests/Oracle/avif/fetch.sh (never committed).
+tests/Sdcb.SimdCodecs.Tests/Fixtures/avif/*.avif
+benchmarks/Sdcb.SimdCodecs.Avif.Benchmarks/avif-inputs/
+tools/avif-fixtures/in/
+tools/avif-fixtures/out/
 .claude/worktrees/

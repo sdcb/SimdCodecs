@@ -12,6 +12,8 @@ namespace Sdcb.SimdCodecs.Png;
 namespace Sdcb.SimdCodecs.Webp;
 #elif SIMDCODECS_HEIF
 namespace Sdcb.SimdCodecs.Heif;
+#elif SIMDCODECS_AVIF
+namespace Sdcb.SimdCodecs.Avif;
 #elif SIMDCODECS_EXIF
 namespace Sdcb.SimdCodecs.Exif;
 #elif SIMDCODECS_ABSTRACTIONS
@@ -19,7 +21,7 @@ namespace Sdcb.SimdCodecs.Abstractions;
 #elif SIMDCODECS_FACADE
 namespace Sdcb.SimdCodecs;
 #else
-#error ExifOrientation.cs is shared source for Sdcb.SimdCodecs.Abstractions, Sdcb.SimdCodecs, Sdcb.SimdCodecs.Jpeg, Sdcb.SimdCodecs.Png, Sdcb.SimdCodecs.Webp, Sdcb.SimdCodecs.Heif and Sdcb.SimdCodecs.Exif only.
+#error ExifOrientation.cs is shared source for Sdcb.SimdCodecs.Abstractions, Sdcb.SimdCodecs, Sdcb.SimdCodecs.Jpeg, Sdcb.SimdCodecs.Png, Sdcb.SimdCodecs.Webp, Sdcb.SimdCodecs.Heif, Sdcb.SimdCodecs.Avif and Sdcb.SimdCodecs.Exif only.
 #endif
 
 /// <summary>

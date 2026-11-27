@@ -12,6 +12,8 @@ namespace Sdcb.SimdCodecs.Png;
 namespace Sdcb.SimdCodecs.Webp;
 #elif SIMDCODECS_HEIF
 namespace Sdcb.SimdCodecs.Heif;
+#elif SIMDCODECS_AVIF
+namespace Sdcb.SimdCodecs.Avif;
 #elif SIMDCODECS_TIFF
 namespace Sdcb.SimdCodecs.Tiff;
 #elif SIMDCODECS_JPEG2000
@@ -21,7 +23,7 @@ namespace Sdcb.SimdCodecs.Bmp;
 #elif SIMDCODECS_COLOR_ICC
 namespace Sdcb.SimdCodecs.Color.Icc;
 #else
-#error IccPrimaries.cs is shared source for the Jpeg, Png, Webp, Heif, Tiff, Jpeg2000, Bmp and Color.Icc packages only.
+#error IccPrimaries.cs is shared source for the Jpeg, Png, Webp, Heif, Avif, Tiff, Jpeg2000, Bmp and Color.Icc packages only.
 #endif
 
 /// <summary>

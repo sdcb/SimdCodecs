@@ -1,0 +1,31 @@
+#nullable enable
+Sdcb.SimdCodecs.Avif.AvifDecoder
+Sdcb.SimdCodecs.Avif.AvifImage
+Sdcb.SimdCodecs.Avif.AvifImage.BitDepth.get -> int
+Sdcb.SimdCodecs.Avif.AvifImage.Dispose() -> void
+Sdcb.SimdCodecs.Avif.AvifImage.HasAlpha.get -> bool
+Sdcb.SimdCodecs.Avif.AvifImage.Height.get -> int
+Sdcb.SimdCodecs.Avif.AvifImage.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Avif.AvifImage.Rgba.get -> System.ReadOnlySpan<byte>
+Sdcb.SimdCodecs.Avif.AvifImage.Width.get -> int
+Sdcb.SimdCodecs.Avif.AvifInfo
+Sdcb.SimdCodecs.Avif.AvifInfo.AvifInfo() -> void
+Sdcb.SimdCodecs.Avif.AvifInfo.BitDepth.get -> int
+Sdcb.SimdCodecs.Avif.AvifInfo.BitDepth.init -> void
+Sdcb.SimdCodecs.Avif.AvifInfo.FrameCount.get -> int
+Sdcb.SimdCodecs.Avif.AvifInfo.FrameCount.init -> void
+Sdcb.SimdCodecs.Avif.AvifInfo.HasAlpha.get -> bool
+Sdcb.SimdCodecs.Avif.AvifInfo.HasAlpha.init -> void
+Sdcb.SimdCodecs.Avif.AvifInfo.Height.get -> int
+Sdcb.SimdCodecs.Avif.AvifInfo.Height.init -> void
+Sdcb.SimdCodecs.Avif.AvifInfo.IccProfile.get -> byte[]?
+Sdcb.SimdCodecs.Avif.AvifInfo.IccProfile.init -> void
+Sdcb.SimdCodecs.Avif.AvifInfo.Orientation.get -> Sdcb.SimdCodecs.Abstractions.ImageOrientation
+Sdcb.SimdCodecs.Avif.AvifInfo.Orientation.init -> void
+Sdcb.SimdCodecs.Avif.AvifInfo.TileCount.get -> int
+Sdcb.SimdCodecs.Avif.AvifInfo.TileCount.init -> void
+Sdcb.SimdCodecs.Avif.AvifInfo.Width.get -> int
+Sdcb.SimdCodecs.Avif.AvifInfo.Width.init -> void
+static Sdcb.SimdCodecs.Avif.AvifDecoder.Decode(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Avif.AvifImage!
+static Sdcb.SimdCodecs.Avif.AvifDecoder.DecodeTo(System.ReadOnlySpan<byte> data, System.Span<byte> rgbaDestination) -> (int Width, int Height)
+static Sdcb.SimdCodecs.Avif.AvifDecoder.ReadInfo(System.ReadOnlySpan<byte> data) -> Sdcb.SimdCodecs.Avif.AvifInfo!
