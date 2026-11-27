@@ -247,6 +247,11 @@ public sealed class AvifImageDecoder : IPlanarImageDecoder, IMultiFrameImageDeco
 
         try
         {
+            if (options is null || options.IsFullImage)
+            {
+                DecodeContainerInto(data, container, destination, rowStride, format, cancellationToken);
+                return true;
+            }
             using var full = DecodeContainerToRaster(data, container, colorEncoding, ImageMetadata.Empty, cancellationToken);
             using var final = DecodeOptions.Apply(full, options);
             return final.TryCopyTo(destination, rowStride, format);
@@ -366,14 +371,37 @@ public sealed class AvifImageDecoder : IPlanarImageDecoder, IMultiFrameImageDeco
             return RasterImage.Wrap(w, h, 4, SampleFormat.UInt16, rgba16Bytes, colorEncoding, bitDepth: depth < 16 ? depth : 0, metadata: metadata);
 
         var rgb16Bytes = new byte[checked((long)w * h * 3 * sizeof(ushort))];
-        var rgb16 = MemoryMarshal.Cast<byte, ushort>(rgb16Bytes.AsSpan());
-        for (int i = 0; i < w * h; i++)
-        {
-            rgb16[i * 3] = rgba16[i * 4];
-            rgb16[i * 3 + 1] = rgba16[i * 4 + 1];
-            rgb16[i * 3 + 2] = rgba16[i * 4 + 2];
-        }
+        PixelConverter.Convert(rgba16Bytes, w * 8, PixelFormat.Rgba64, rgb16Bytes, w * 6, PixelFormat.Rgb48, w, h);
         return RasterImage.Wrap(w, h, 3, SampleFormat.UInt16, rgb16Bytes, colorEncoding, bitDepth: depth < 16 ? depth : 0, metadata: metadata);
+    }
+
+    /// <summary>
+    /// The whole image straight into a <c>TryDecodeInto</c> destination (laid out by
+    /// <see cref="PixelConverter.TryGetLayout"/>): decoded to RGBA (8-bit straight into the destination when it is
+    /// packed <see cref="PixelFormat.Rgba32"/>), then converted once. The RGBA of an image without alpha is opaque,
+    /// so converting it gives what converting the RGB raster of <see cref="DecodeContainerToRaster"/> gives.
+    /// </summary>
+    private static void DecodeContainerInto(ReadOnlySpan<byte> data, AvifContainer container, Span<byte> destination,
+        int rowStride, PixelFormat format, CancellationToken cancellationToken)
+    {
+        var (w, h) = container.DisplaySize();
+        if (container.BitDepth <= 8)
+        {
+            int row = w * 4;
+            if (format == PixelFormat.Rgba32 && rowStride == row)
+            {
+                AvifDecoder.DecodeContainerToRgba8(data, container, destination[..checked(row * h)], w, h, cancellationToken);
+                return;
+            }
+            var rgba = GC.AllocateUninitializedArray<byte>(checked(row * h));
+            AvifDecoder.DecodeContainerToRgba8(data, container, rgba, w, h, cancellationToken);
+            PixelConverter.Convert(rgba, row, PixelFormat.Rgba32, destination, rowStride, format, w, h);
+            return;
+        }
+
+        var rgba16 = GC.AllocateUninitializedArray<byte>(checked(w * h * 4 * sizeof(ushort)));
+        AvifDecoder.DecodeContainerToRgba16(data, container, MemoryMarshal.Cast<byte, ushort>(rgba16.AsSpan()), w, h, cancellationToken);
+        PixelConverter.Convert(rgba16, w * 8, PixelFormat.Rgba64, destination, rowStride, format, w, h);
     }
 
     private static bool HasSdrGainMap(AvifContainer container) =>

@@ -339,6 +339,49 @@ public sealed class AvifTests
         }
     }
 
+    public static IEnumerable<object[]> SmallDecodable() =>
+        M1Fixtures.Where(static f => !f.StartsWith("perf-", StringComparison.Ordinal)).Select(static f => new object[] { f });
+
+    /// <summary>
+    /// <c>TryDecodeInto</c> converts the decoded RGBA once, straight into the destination; it must write exactly what
+    /// converting the decoded image does (<c>Decode</c> + <c>TryCopyTo</c>), in every pixel format, through a padded
+    /// stride whose padding stays untouched, over a destination that starts dirty.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SmallDecodable))]
+    public void TryDecodeInto_EveryFormat_MatchesDecodedImage(string fixture)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        byte[] data = ReadFixture(fixture);
+        using var image = AvifImageDecoder.Decode(data, cancellationToken: ct);
+        foreach (var format in Abstractions.PixelFormat.All)
+        {
+            int row = image.Width * format.BytesPerPixel;
+            int stride = row + 3;
+            var expected = new byte[stride * image.Height];
+            expected.AsSpan().Fill(0xA5);
+            var actual = expected.AsSpan().ToArray();
+            bool ok = AvifImageDecoder.TryDecodeInto(data, actual, stride, format, cancellationToken: ct);
+            if (image.ColorEncoding.Transfer is Abstractions.TransferFunction.Pq or Abstractions.TransferFunction.Hlg)
+            {
+                ok.ShouldBeFalse(fixture);
+                continue;
+            }
+            ok.ShouldBeTrue($"{fixture} {format}");
+            image.TryCopyTo(expected, stride, format).ShouldBeTrue($"{fixture} {format}");
+            actual.AsSpan().SequenceEqual(expected).ShouldBeTrue($"{fixture} {format}");
+
+            if (format == Abstractions.PixelFormat.Rgba32)
+            {
+                var packed = new byte[row * image.Height];
+                packed.AsSpan().Fill(0xA5);
+                AvifImageDecoder.TryDecodeInto(data, packed, 0, format, cancellationToken: ct).ShouldBeTrue(fixture);
+                for (int y = 0; y < image.Height; y++)
+                    packed.AsSpan(y * row, row).SequenceEqual(expected.AsSpan(y * stride, row)).ShouldBeTrue($"{fixture} row {y}");
+            }
+        }
+    }
+
     [Fact]
     public void Facade_HdrPqAndHlg_Preserves10BitAndRefusesTryDecodeInto()
     {
