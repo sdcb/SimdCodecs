@@ -96,6 +96,10 @@ jobs:
     # dev box would then quietly disagree about what the reference is.
     - name: Fetch JPEG 2000 oracle (OpenJPEG)
       run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/jpeg2000/fetch.sh
+    # The AVIF corpus (CC0 / PD, URL + SHA-256, ~28 MB): the AVIF goldens run here on Vector256, and the facade tests
+    # (ImageFormatTests) read one of its files.
+    - name: Fetch AVIF fixtures
+      run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/avif/fetch.sh
     # libjpeg-turbo's official release (pinned, SHA-256 checked), binary only: TurboJpegOracle
     # decodes the encoder's restart-interval streams with it (JpegEncoderRestartTests).
     - name: Fetch JPEG oracle (libjpeg-turbo)
@@ -146,8 +150,8 @@ jobs:
     # - heif-api: the rest of the HEIF suite (scaled, region, adapter, transforms, robustness, fuzz, planar output).
     #   It checks logic that does not depend on the tier, so it runs once, on the Vector256 tier.
     # - avif: the whole AVIF suite (planes against the dav1d goldens, container, fuzz); it is fast, so every tier runs
-    #   all of it. Like HEIF, its fixtures are fetched only here, so this matrix is where AVIF's goldens run.
-    # The build job already runs core and webp on Vector256 with every oracle, so this matrix skips them there; it is
+    #   all of it.
+    # The build job already runs core, webp and avif on Vector256 with every oracle, so this matrix skips them there; it is
     # the only place HEIF's goldens run on Vector256, because the build job does not fetch the HEIF fixtures.
     name: simd-tiers (${{ matrix.tier }}, ${{ matrix.group }})
     strategy:
@@ -158,6 +162,7 @@ jobs:
         exclude:
         - { tier: x64 Vector256, group: core }
         - { tier: x64 Vector256, group: webp }
+        - { tier: x64 Vector256, group: avif }
         - { tier: x64 Vector128, group: heif-api }
         - { tier: x64 scalar, group: heif-api }
         - { tier: arm64 AdvSimd, group: heif-api }
