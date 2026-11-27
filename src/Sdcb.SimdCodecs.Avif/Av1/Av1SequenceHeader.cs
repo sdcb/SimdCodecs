@@ -62,6 +62,15 @@ internal sealed class Av1SequenceHeader
     internal bool SeparateUvDeltaQ { get; private set; }
     internal bool FilmGrainParamsPresent { get; private set; }
 
+    /// <summary>AV1 §5.9.3 get_relative_dist(a, b).</summary>
+    internal int GetRelativeDist(int a, int b)
+    {
+        if (!EnableOrderHint) return 0;
+        int diff = a - b;
+        int m = 1 << (OrderHintBits - 1);
+        return (diff & (m - 1)) - (diff & m);
+    }
+
     internal static Av1SequenceHeader Parse(ReadOnlySpan<byte> payload)
     {
         var br = new Av1BitReader(payload);

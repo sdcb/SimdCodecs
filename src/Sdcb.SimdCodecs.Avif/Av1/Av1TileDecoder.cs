@@ -51,6 +51,8 @@ internal sealed class Av1TileDecoder
     private readonly Av1FrameHeader _fh;
     private readonly Av1Picture _pic;
     private readonly Av1FrameState _st;
+    private readonly Av1DecoderSession _session;
+    private readonly Av1InterPredict _interPred;
     private readonly Av1CdfState _cdf = new();
 
     private int _miRowStart, _miRowEnd, _miColStart, _miColEnd;
@@ -67,6 +69,8 @@ internal sealed class Av1TileDecoder
     private readonly byte[][] _aboveDcContext;
     private readonly byte[][] _leftLevelContext;
     private readonly byte[][] _leftDcContext;
+    private readonly byte[] _aboveSegPredContext;
+    private readonly byte[] _leftSegPredContext;
 
     // BlockDecoded[plane][(y+1) * bdStride + (x+1)], max sbSize4 = 32 -> 34x34
     private readonly bool[][] _blockDecoded;
@@ -93,7 +97,7 @@ internal sealed class Av1TileDecoder
     // Current block state
     private int _miRow, _miCol, _miSize;
     private bool _hasChroma, _availU, _availL, _availUChroma, _availLChroma;
-    private bool _skip, _lossless, _isInter, _useIntrabc;
+    private bool _skip, _skipMode, _lossless, _isInter, _useIntrabc;
     private int _segmentId;
     private int _yMode, _uvMode;
     private int _angleDeltaY, _angleDeltaUv;
@@ -104,21 +108,44 @@ internal sealed class Av1TileDecoder
     private int _txSize;
     private int _planeTxType;
     private int _maxLumaW, _maxLumaH;
-    private int _mv0Y, _mv0X;
 
-    // IntraBC / MV stack scratch
-    private readonly int[] _refStackMvY = new int[Av1Constants.MaxRefMvStackSize];
-    private readonly int[] _refStackMvX = new int[Av1Constants.MaxRefMvStackSize];
+    // Inter block state
+    private int _leftRef0, _leftRef1, _aboveRef0, _aboveRef1;
+    private bool _leftIntra, _aboveIntra, _leftSingle, _aboveSingle;
+    private int _refFrame0, _refFrame1;
+    private int _mv0Y, _mv0X, _mv1Y, _mv1X;
+    private int _globalMv0Y, _globalMv0X, _globalMv1Y, _globalMv1X;
+    private int _refMvIdx;
+    private int _newMvContext, _zeroMvContext, _refMvContext;
+    private bool _foundMatch;
+    private int _newMvCount;
+    private int _motionMode;
+    private bool _isInterIntra;
+    private int _interIntraMode;
+    private bool _wedgeInterIntra;
+    private int _wedgeIndex, _wedgeSign;
+    private int _compGroupIdx, _compoundIdx, _compoundType, _maskType;
+    private int _interpFilterV, _interpFilterH;
+
+    // MV stack & warp sample scratch
+    private readonly int[] _refStackMv0Y = new int[Av1Constants.MaxRefMvStackSize];
+    private readonly int[] _refStackMv0X = new int[Av1Constants.MaxRefMvStackSize];
+    private readonly int[] _refStackMv1Y = new int[Av1Constants.MaxRefMvStackSize];
+    private readonly int[] _refStackMv1X = new int[Av1Constants.MaxRefMvStackSize];
     private readonly int[] _weightStack = new int[Av1Constants.MaxRefMvStackSize];
+    private readonly int[] _drlCtxStack = new int[Av1Constants.MaxRefMvStackSize];
     private int _numMvFound;
-    private readonly int[] _interTmp = new int[136 * 128];
+    private readonly int[] _warpCandList = new int[Av1Constants.LeastSquaresSamplesMax * 4];
+    private int _numWarpSamples, _numWarpSamplesScanned;
 
-    internal Av1TileDecoder(Av1SequenceHeader seq, Av1FrameHeader fh, Av1Picture pic, Av1FrameState st)
+    internal Av1TileDecoder(Av1SequenceHeader seq, Av1FrameHeader fh, Av1Picture pic, Av1FrameState st, Av1DecoderSession session)
     {
         _seq = seq;
         _fh = fh;
         _pic = pic;
         _st = st;
+        _session = session;
+        _interPred = new Av1InterPredict(seq, fh, pic, st, session);
 
         int numPlanes = seq.NumPlanes;
         _aboveLevelContext = new byte[numPlanes][];
@@ -140,6 +167,8 @@ internal sealed class Av1TileDecoder
             _blockDecoded[p] = new bool[BdStride * BdStride];
         }
 
+        _aboveSegPredContext = new byte[fh.MiCols + 32];
+        _leftSegPredContext = new byte[fh.MiRows + 32];
         _txTypes = new byte[fh.MiRows * fh.MiCols];
 
         if (fh.AllowScreenContentTools)
@@ -152,7 +181,7 @@ internal sealed class Av1TileDecoder
         }
     }
 
-    internal void DecodeTile(int tileRow, int tileCol, ReadOnlySpan<byte> tileBytes)
+    internal void DecodeTile(int tileRow, int tileCol, ReadOnlySpan<byte> tileBytes, bool saveCdf, ref Av1CdfState? savedUpdateCdf)
     {
         _miRowStart = _fh.MiRowStarts[tileRow];
         _miRowEnd = _fh.MiRowStarts[tileRow + 1];
@@ -160,7 +189,7 @@ internal sealed class Av1TileDecoder
         _miColEnd = _fh.MiColStarts[tileCol + 1];
 
         _currentQIndex = _fh.BaseQIdx;
-        _cdf.InitDefault(_fh.BaseQIdx);
+        _cdf.CopyFrom(_fh.InitialCdfs, resetCounts: false);
         Array.Clear(_deltaLf);
 
         for (int p = 0; p < _seq.NumPlanes; p++)
@@ -194,6 +223,8 @@ internal sealed class Av1TileDecoder
         }
 
         sym.Exit();
+        if (saveCdf)
+            savedUpdateCdf = _cdf.Clone();
     }
 
     private void ClearAboveContext()
@@ -206,6 +237,7 @@ internal sealed class Av1TileDecoder
             _aboveLevelContext[p].AsSpan(x0, x1 - x0).Clear();
             _aboveDcContext[p].AsSpan(x0, x1 - x0).Clear();
         }
+        _aboveSegPredContext.AsSpan(_miColStart, _miColEnd - _miColStart).Clear();
     }
 
     private void ClearLeftContext()
@@ -218,6 +250,7 @@ internal sealed class Av1TileDecoder
             _leftLevelContext[p].AsSpan(y0, y1 - y0).Clear();
             _leftDcContext[p].AsSpan(y0, y1 - y0).Clear();
         }
+        _leftSegPredContext.AsSpan(_miRowStart, _miRowEnd - _miRowStart).Clear();
     }
 
     private void ClearCdef(int r, int c)
@@ -419,14 +452,17 @@ internal sealed class Av1TileDecoder
             _availLChroma = false;
         }
 
-        IntraFrameModeInfo(ref sym);
+        if (_fh.FrameIsIntra)
+            IntraFrameModeInfo(ref sym);
+        else
+            InterFrameModeInfo(ref sym);
         PaletteTokens(ref sym);
         ReadBlockTxSize(ref sym, bw4, bh4);
 
         if (_skip)
             ResetBlockContext(bw4, bh4);
 
-        // Store YMode / UVMode / RefFrames / Mvs before compute_prediction & residual (§5.11.5)
+        // Store per-MI block metadata BEFORE ComputePrediction & Residual (§5.11.5)
         int miCols = _st.MiCols;
         int rEnd = Math.Min(r + bh4, _st.MiRows);
         int cEnd = Math.Min(c + bw4, miCols);
@@ -436,35 +472,27 @@ internal sealed class Av1TileDecoder
             for (int cc = c; cc < cEnd; cc++)
             {
                 int idx = rowBase + cc;
+                _st.IsInters[idx] = _isInter ? (byte)1 : (byte)0;
+                _st.SkipModes[idx] = _skipMode ? (byte)1 : (byte)0;
+                _st.Skips[idx] = _skip ? (byte)1 : (byte)0;
+                _st.MiSizes[idx] = (byte)subSize;
+                _st.SegmentIds[idx] = (byte)_segmentId;
                 _st.YModes[idx] = (byte)_yMode;
                 if (_hasChroma)
                     _st.UvModes[idx] = (byte)_uvMode;
-                _st.RefFrames[idx * 2] = Av1Constants.IntraFrame;
-                _st.RefFrames[idx * 2 + 1] = Av1Constants.NoneFrame;
+                _st.RefFrames[idx * 2] = (sbyte)_refFrame0;
+                _st.RefFrames[idx * 2 + 1] = (sbyte)_refFrame1;
                 if (_isInter)
                 {
                     _st.Mvs[idx * 4] = (short)_mv0Y;
                     _st.Mvs[idx * 4 + 1] = (short)_mv0X;
+                    _st.Mvs[idx * 4 + 2] = (short)_mv1Y;
+                    _st.Mvs[idx * 4 + 3] = (short)_mv1X;
+                    _st.InterpFilters[idx * 2] = (byte)_interpFilterV;
+                    _st.InterpFilters[idx * 2 + 1] = (byte)_interpFilterH;
+                    _st.CompGroupIdxs[idx] = (byte)_compGroupIdx;
+                    _st.CompoundIdxs[idx] = (byte)_compoundIdx;
                 }
-            }
-        }
-
-        if (_useIntrabc)
-            ComputePredictionIntrabc();
-
-        Residual(ref sym);
-
-        // Store remaining per-MI state
-        for (int rr = r; rr < rEnd; rr++)
-        {
-            int rowBase = rr * miCols;
-            for (int cc = c; cc < cEnd; cc++)
-            {
-                int idx = rowBase + cc;
-                _st.IsInters[idx] = _isInter ? (byte)1 : (byte)0;
-                _st.Skips[idx] = _skip ? (byte)1 : (byte)0;
-                _st.MiSizes[idx] = (byte)subSize;
-                _st.SegmentIds[idx] = (byte)_segmentId;
                 if (_fh.DeltaLfPresent)
                 {
                     int lfOff = idx * 4;
@@ -484,6 +512,11 @@ internal sealed class Av1TileDecoder
                 }
             }
         }
+
+        if (_isInter)
+            ComputePrediction();
+
+        Residual(ref sym);
     }
 
     private void ResetBlockContext(int bw4, int bh4)
@@ -513,6 +546,18 @@ internal sealed class Av1TileDecoder
     private void IntraFrameModeInfo(ref Av1SymbolDecoder sym)
     {
         _skip = false;
+        _skipMode = false;
+        _refFrame0 = Av1Constants.IntraFrame;
+        _refFrame1 = Av1Constants.NoneFrame;
+        _motionMode = Av1Constants.MotionSimple;
+        _isInterIntra = false;
+        _compoundType = Av1Constants.CompoundAverage;
+        _compGroupIdx = 0;
+        _compoundIdx = 1;
+        _interpFilterV = Av1Constants.Bilinear;
+        _interpFilterH = Av1Constants.Bilinear;
+        _mv0Y = _mv0X = _mv1Y = _mv1X = 0;
+
         if (_fh.SegIdPreSkip)
             IntraSegmentId(ref sym);
 
@@ -540,8 +585,8 @@ internal sealed class Av1TileDecoder
             _paletteSizeUv = 0;
             _useFilterIntra = false;
             _filterIntraMode = 0;
-            FindMvStackIntrabc();
-            AssignMvIntrabc(ref sym);
+            FindMvStack(isCompound: false);
+            AssignMv(ref sym, isCompound: false);
             return;
         }
 
@@ -549,7 +594,11 @@ internal sealed class Av1TileDecoder
         int aboveMode = Av1Constants.IntraModeContext[_availU ? _st.YModes[(_miRow - 1) * _st.MiCols + _miCol] : Av1Constants.DcPred];
         int leftMode = Av1Constants.IntraModeContext[_availL ? _st.YModes[_miRow * _st.MiCols + (_miCol - 1)] : Av1Constants.DcPred];
         _yMode = sym.ReadSymbol(_cdf.IntraFrameYMode.AsSpan((aboveMode * 5 + leftMode) * 14, 14));
+        ReadIntraBlockTail(ref sym);
+    }
 
+    private void ReadIntraBlockTail(ref Av1SymbolDecoder sym)
+    {
         _angleDeltaY = 0;
         if (_miSize >= Av1Constants.Block8x8 && IsDirectionalMode(_yMode))
             _angleDeltaY = sym.ReadSymbol(_cdf.AngleDelta.AsSpan((_yMode - Av1Constants.VPred) * 8, 8)) - 3;
@@ -598,33 +647,40 @@ internal sealed class Av1TileDecoder
     private void IntraSegmentId(ref Av1SymbolDecoder sym)
     {
         if (!_fh.SegmentationEnabled)
-        {
             _segmentId = 0;
+        else
+            ReadSegmentId(ref sym);
+        _lossless = _fh.LosslessArray[_segmentId];
+    }
+
+    private void ReadSegmentId(ref Av1SymbolDecoder sym)
+    {
+        int prevUL = (_availU && _availL) ? _st.SegmentIds[(_miRow - 1) * _st.MiCols + (_miCol - 1)] : -1;
+        int prevU = _availU ? _st.SegmentIds[(_miRow - 1) * _st.MiCols + _miCol] : -1;
+        int prevL = _availL ? _st.SegmentIds[_miRow * _st.MiCols + (_miCol - 1)] : -1;
+        int pred = prevU == -1 ? (prevL == -1 ? 0 : prevL)
+                 : prevL == -1 ? prevU
+                 : (prevUL == prevU ? prevU : prevL);
+
+        if (_skip)
+        {
+            _segmentId = pred;
         }
         else
         {
-            int prevUL = (_availU && _availL) ? _st.SegmentIds[(_miRow - 1) * _st.MiCols + (_miCol - 1)] : -1;
-            int prevU = _availU ? _st.SegmentIds[(_miRow - 1) * _st.MiCols + _miCol] : -1;
-            int prevL = _availL ? _st.SegmentIds[_miRow * _st.MiCols + (_miCol - 1)] : -1;
-            int pred = prevU == -1 ? (prevL == -1 ? 0 : prevL)
-                     : prevL == -1 ? prevU
-                     : (prevUL == prevU ? prevU : prevL);
-
-            if (_skip)
-            {
-                _segmentId = pred;
-            }
-            else
-            {
-                int ctx = prevUL < 0 ? 0
-                        : (prevUL == prevU && prevUL == prevL) ? 2
-                        : (prevUL == prevU || prevUL == prevL || prevU == prevL) ? 1
-                        : 0;
-                int diff = sym.ReadSymbol(_cdf.SegmentId.AsSpan(ctx * 9, 9));
-                _segmentId = NegDeinterleave(diff, pred, _fh.LastActiveSegId + 1);
-            }
+            int ctx = prevUL < 0 ? 0
+                    : (prevUL == prevU && prevUL == prevL) ? 2
+                    : (prevUL == prevU || prevUL == prevL || prevU == prevL) ? 1
+                    : 0;
+            int diff = sym.ReadSymbol(_cdf.SegmentId.AsSpan(ctx * 9, 9));
+            int maxSeg = _fh.LastActiveSegId + 1;
+            if ((uint)diff >= (uint)maxSeg)
+                throw new InvalidDataException($"AV1 segment_id symbol {diff} exceeds LastActiveSegId {_fh.LastActiveSegId}.");
+            int seg = NegDeinterleave(diff, Math.Min(pred, maxSeg - 1), maxSeg);
+            if ((uint)seg >= (uint)Av1Constants.MaxSegments)
+                throw new InvalidDataException($"AV1 segment_id {seg} is out of range.");
+            _segmentId = seg;
         }
-        _lossless = _fh.LosslessArray[_segmentId];
     }
 
     private static int NegDeinterleave(int diff, int r, int max)
@@ -1097,7 +1153,10 @@ internal sealed class Av1TileDecoder
 
     private bool IsSmooth(int r, int c, int plane)
     {
-        int mode = plane == 0 ? _st.YModes[r * _st.MiCols + c] : _st.UvModes[r * _st.MiCols + c];
+        int idx = r * _st.MiCols + c;
+        if (_st.RefFrames[idx * 2] != Av1Constants.IntraFrame)
+            return false;
+        int mode = plane == 0 ? _st.YModes[idx] : _st.UvModes[idx];
         return mode is Av1Constants.SmoothPred or Av1Constants.SmoothVPred or Av1Constants.SmoothHPred;
     }
 
@@ -1883,43 +1942,602 @@ internal sealed class Av1TileDecoder
         return (v << 1) - m + sym.ReadBool();
     }
 
-    // --- IntraBC MV stack, decoding & prediction (§5.11.26, §5.11.31-32, §7.10.2, §7.11.3) ---
+    // --- Inter frame mode info, MV stack, decoding & prediction (§5.11.18–33, §7.10, §7.11.3) ---
 
-    private void FindMvStackIntrabc()
+    private bool SegFeatureActive(int feature) =>
+        _fh.SegmentationEnabled && _fh.FeatureEnabled[_segmentId, feature];
+
+    private void InterFrameModeInfo(ref Av1SymbolDecoder sym)
+    {
+        _useIntrabc = false;
+        int miCols = _st.MiCols;
+        int leftIdx = _miRow * miCols + (_miCol - 1);
+        int aboveIdx = (_miRow - 1) * miCols + _miCol;
+        _leftRef0 = _availL ? _st.RefFrames[leftIdx * 2] : Av1Constants.IntraFrame;
+        _aboveRef0 = _availU ? _st.RefFrames[aboveIdx * 2] : Av1Constants.IntraFrame;
+        _leftRef1 = _availL ? _st.RefFrames[leftIdx * 2 + 1] : Av1Constants.NoneFrame;
+        _aboveRef1 = _availU ? _st.RefFrames[aboveIdx * 2 + 1] : Av1Constants.NoneFrame;
+        _leftIntra = _leftRef0 <= Av1Constants.IntraFrame;
+        _aboveIntra = _aboveRef0 <= Av1Constants.IntraFrame;
+        _leftSingle = _leftRef1 <= Av1Constants.IntraFrame;
+        _aboveSingle = _aboveRef1 <= Av1Constants.IntraFrame;
+
+        _skip = false;
+        _skipMode = false;
+        _isInterIntra = false;
+        _motionMode = Av1Constants.MotionSimple;
+        _compoundType = Av1Constants.CompoundAverage;
+        _compGroupIdx = 0;
+        _compoundIdx = 1;
+        _mv0Y = _mv0X = _mv1Y = _mv1X = 0;
+
+        InterSegmentId(ref sym, preSkip: true);
+        ReadSkipMode(ref sym);
+        if (_skipMode)
+            _skip = true;
+        else
+            ReadSkip(ref sym);
+
+        if (!_fh.SegIdPreSkip)
+            InterSegmentId(ref sym, preSkip: false);
+
+        _lossless = _fh.LosslessArray[_segmentId];
+        ReadCdef(ref sym);
+        ReadDeltaQIndex(ref sym);
+        ReadDeltaLf(ref sym);
+        _readDeltas = false;
+
+        ReadIsInter(ref sym);
+        if (_isInter)
+            InterBlockModeInfo(ref sym);
+        else
+            IntraBlockModeInfo(ref sym);
+    }
+
+    private void InterSegmentId(ref Av1SymbolDecoder sym, bool preSkip)
+    {
+        if (!_fh.SegmentationEnabled)
+        {
+            _segmentId = 0;
+            return;
+        }
+        int predictedSegId = GetPredictedSegmentId();
+        if (_fh.SegmentationUpdateMap)
+        {
+            if (preSkip && !_fh.SegIdPreSkip)
+            {
+                _segmentId = 0;
+                return;
+            }
+            int bw4 = Av1Constants.Num4x4BlocksWide[_miSize];
+            int bh4 = Av1Constants.Num4x4BlocksHigh[_miSize];
+            if (!preSkip && _skip)
+            {
+                _aboveSegPredContext.AsSpan(_miCol, bw4).Clear();
+                _leftSegPredContext.AsSpan(_miRow, bh4).Clear();
+                ReadSegmentId(ref sym);
+                return;
+            }
+            if (_fh.SegmentationTemporalUpdate)
+            {
+                int ctx = _leftSegPredContext[_miRow] + _aboveSegPredContext[_miCol];
+                int segIdPred = sym.ReadSymbol(_cdf.SegmentIdPredicted.AsSpan(ctx * 3, 3));
+                if (segIdPred != 0)
+                    _segmentId = predictedSegId;
+                else
+                    ReadSegmentId(ref sym);
+                _aboveSegPredContext.AsSpan(_miCol, bw4).Fill((byte)segIdPred);
+                _leftSegPredContext.AsSpan(_miRow, bh4).Fill((byte)segIdPred);
+            }
+            else
+            {
+                ReadSegmentId(ref sym);
+            }
+        }
+        else
+        {
+            _segmentId = predictedSegId;
+        }
+    }
+
+    private int GetPredictedSegmentId()
+    {
+        int bw4 = Math.Min(_fh.MiCols - _miCol, Av1Constants.Num4x4BlocksWide[_miSize]);
+        int bh4 = Math.Min(_fh.MiRows - _miRow, Av1Constants.Num4x4BlocksHigh[_miSize]);
+        int seg = 7;
+        for (int y = 0; y < bh4; y++)
+        {
+            int rowOff = (_miRow + y) * _fh.MiCols + _miCol;
+            for (int x = 0; x < bw4; x++)
+                seg = Math.Min(seg, _fh.PrevSegmentIds[rowOff + x]);
+        }
+        return seg;
+    }
+
+    private void ReadSkipMode(ref Av1SymbolDecoder sym)
+    {
+        if (SegFeatureActive(Av1Constants.SegLvlSkip)
+            || SegFeatureActive(Av1Constants.SegLvlRefFrame)
+            || SegFeatureActive(Av1Constants.SegLvlGlobalMv)
+            || !_fh.SkipModePresent
+            || Av1Constants.BlockWidth[_miSize] < 8
+            || Av1Constants.BlockHeight[_miSize] < 8)
+        {
+            _skipMode = false;
+            return;
+        }
+        int ctx = 0;
+        if (_availU) ctx += _st.SkipModes[(_miRow - 1) * _st.MiCols + _miCol];
+        if (_availL) ctx += _st.SkipModes[_miRow * _st.MiCols + (_miCol - 1)];
+        _skipMode = sym.ReadSymbol(_cdf.SkipMode.AsSpan(ctx * 3, 3)) != 0;
+    }
+
+    private void ReadIsInter(ref Av1SymbolDecoder sym)
+    {
+        if (_skipMode)
+        {
+            _isInter = true;
+        }
+        else if (SegFeatureActive(Av1Constants.SegLvlRefFrame))
+        {
+            _isInter = _fh.FeatureData[_segmentId, Av1Constants.SegLvlRefFrame] != Av1Constants.IntraFrame;
+        }
+        else if (SegFeatureActive(Av1Constants.SegLvlGlobalMv))
+        {
+            _isInter = true;
+        }
+        else
+        {
+            int ctx;
+            if (_availU && _availL)
+                ctx = (_leftIntra && _aboveIntra) ? 3 : ((_leftIntra || _aboveIntra) ? 1 : 0);
+            else if (_availU || _availL)
+                ctx = 2 * ((_availU ? _aboveIntra : _leftIntra) ? 1 : 0);
+            else
+                ctx = 0;
+            _isInter = sym.ReadSymbol(_cdf.IsInter.AsSpan(ctx * 3, 3)) != 0;
+        }
+    }
+
+    private void IntraBlockModeInfo(ref Av1SymbolDecoder sym)
+    {
+        _refFrame0 = Av1Constants.IntraFrame;
+        _refFrame1 = Av1Constants.NoneFrame;
+        int ctx = Av1Constants.SizeGroup[_miSize];
+        _yMode = sym.ReadSymbol(_cdf.YMode.AsSpan(ctx * 14, 14));
+        ReadIntraBlockTail(ref sym);
+    }
+
+    private void InterBlockModeInfo(ref Av1SymbolDecoder sym)
+    {
+        _paletteSizeY = 0;
+        _paletteSizeUv = 0;
+        _useFilterIntra = false;
+        _filterIntraMode = 0;
+
+        ReadRefFrames(ref sym);
+        bool isCompound = _refFrame1 > Av1Constants.IntraFrame;
+        FindMvStack(isCompound);
+
+        if (_skipMode)
+        {
+            _yMode = Av1Constants.NearestNearestMv;
+        }
+        else if (SegFeatureActive(Av1Constants.SegLvlSkip) || SegFeatureActive(Av1Constants.SegLvlGlobalMv))
+        {
+            _yMode = Av1Constants.GlobalMv;
+        }
+        else if (isCompound)
+        {
+            int ctx = Av1Constants.CompoundModeCtxMap[(_refMvContext >> 1) * 5 + Math.Min(_newMvContext, 4)];
+            _yMode = Av1Constants.NearestNearestMv + sym.ReadSymbol(_cdf.CompoundMode.AsSpan(ctx * 9, 9));
+        }
+        else
+        {
+            int newMv = sym.ReadSymbol(_cdf.NewMv.AsSpan(_newMvContext * 3, 3));
+            if (newMv == 0)
+            {
+                _yMode = Av1Constants.NewMv;
+            }
+            else
+            {
+                int zeroMv = sym.ReadSymbol(_cdf.ZeroMv.AsSpan(_zeroMvContext * 3, 3));
+                if (zeroMv == 0)
+                {
+                    _yMode = Av1Constants.GlobalMv;
+                }
+                else
+                {
+                    int refMv = sym.ReadSymbol(_cdf.RefMv.AsSpan(_refMvContext * 3, 3));
+                    _yMode = refMv == 0 ? Av1Constants.NearestMv : Av1Constants.NearMv;
+                }
+            }
+        }
+
+        _refMvIdx = 0;
+        if (_yMode is Av1Constants.NewMv or Av1Constants.NewNewMv)
+        {
+            for (int idx = 0; idx < 2; idx++)
+            {
+                if (_numMvFound > idx + 1)
+                {
+                    int drl = sym.ReadSymbol(_cdf.DrlMode.AsSpan(_drlCtxStack[idx] * 3, 3));
+                    if (drl == 0) { _refMvIdx = idx; break; }
+                    _refMvIdx = idx + 1;
+                }
+            }
+        }
+        else if (_yMode is Av1Constants.NearMv or Av1Constants.NearNearMv or Av1Constants.NearNewMv or Av1Constants.NewNearMv)
+        {
+            _refMvIdx = 1;
+            for (int idx = 1; idx < 3; idx++)
+            {
+                if (_numMvFound > idx + 1)
+                {
+                    int drl = sym.ReadSymbol(_cdf.DrlMode.AsSpan(_drlCtxStack[idx] * 3, 3));
+                    if (drl == 0) { _refMvIdx = idx; break; }
+                    _refMvIdx = idx + 1;
+                }
+            }
+        }
+
+        AssignMv(ref sym, isCompound);
+        ReadInterIntraMode(ref sym, isCompound);
+        ReadMotionMode(ref sym, isCompound);
+        ReadCompoundType(ref sym, isCompound);
+
+        if (_fh.InterpolationFilter == Av1Constants.Switchable)
+        {
+            int dirs = _seq.EnableDualFilter ? 2 : 1;
+            for (int dir = 0; dir < dirs; dir++)
+            {
+                int f = NeedsInterpFilter() ? sym.ReadSymbol(GetInterpFilterCdf(dir)) : Av1Constants.EightTap;
+                if (dir == 0) _interpFilterV = f;
+                else _interpFilterH = f;
+            }
+            if (!_seq.EnableDualFilter)
+                _interpFilterH = _interpFilterV;
+        }
+        else
+        {
+            _interpFilterV = _fh.InterpolationFilter;
+            _interpFilterH = _fh.InterpolationFilter;
+        }
+    }
+
+    private bool NeedsInterpFilter()
+    {
+        bool large = Math.Min(Av1Constants.BlockWidth[_miSize], Av1Constants.BlockHeight[_miSize]) >= 8;
+        if (_skipMode || _motionMode == Av1Constants.MotionLocalWarp)
+            return false;
+        if (large && _yMode == Av1Constants.GlobalMv)
+            return _fh.GmType[_refFrame0] == Av1Constants.GmTranslation;
+        if (large && _yMode == Av1Constants.GlobalGlobalMv)
+            return _fh.GmType[_refFrame0] == Av1Constants.GmTranslation || _fh.GmType[_refFrame1] == Av1Constants.GmTranslation;
+        return true;
+    }
+
+    private Span<ushort> GetInterpFilterCdf(int dir)
+    {
+        int ctx = ((dir & 1) * 2 + (_refFrame1 > Av1Constants.IntraFrame ? 1 : 0)) * 4;
+        int leftType = 3;
+        int aboveType = 3;
+        int miCols = _st.MiCols;
+        if (_availL)
+        {
+            int idx = _miRow * miCols + (_miCol - 1);
+            if (_st.RefFrames[idx * 2] == _refFrame0 || _st.RefFrames[idx * 2 + 1] == _refFrame0)
+                leftType = _st.InterpFilters[idx * 2 + dir];
+        }
+        if (_availU)
+        {
+            int idx = (_miRow - 1) * miCols + _miCol;
+            if (_st.RefFrames[idx * 2] == _refFrame0 || _st.RefFrames[idx * 2 + 1] == _refFrame0)
+                aboveType = _st.InterpFilters[idx * 2 + dir];
+        }
+        if (leftType == aboveType) ctx += leftType;
+        else if (leftType == 3) ctx += aboveType;
+        else if (aboveType == 3) ctx += leftType;
+        else ctx += 3;
+        return _cdf.InterpFilter.AsSpan(ctx * 4, 4);
+    }
+
+    // §5.11.25 Ref frames syntax
+    private void ReadRefFrames(ref Av1SymbolDecoder sym)
+    {
+        if (_skipMode)
+        {
+            _refFrame0 = _fh.SkipModeFrame[0];
+            _refFrame1 = _fh.SkipModeFrame[1];
+            return;
+        }
+        if (SegFeatureActive(Av1Constants.SegLvlRefFrame))
+        {
+            _refFrame0 = _fh.FeatureData[_segmentId, Av1Constants.SegLvlRefFrame];
+            _refFrame1 = Av1Constants.NoneFrame;
+            return;
+        }
+        if (SegFeatureActive(Av1Constants.SegLvlSkip) || SegFeatureActive(Av1Constants.SegLvlGlobalMv))
+        {
+            _refFrame0 = Av1Constants.LastFrame;
+            _refFrame1 = Av1Constants.NoneFrame;
+            return;
+        }
+
+        int bw4 = Av1Constants.Num4x4BlocksWide[_miSize];
+        int bh4 = Av1Constants.Num4x4BlocksHigh[_miSize];
+        int compMode = (_fh.ReferenceSelect && Math.Min(bw4, bh4) >= 2)
+            ? sym.ReadSymbol(GetCompModeCdf())
+            : Av1Constants.SingleReference;
+
+        if (compMode == Av1Constants.CompoundReference)
+        {
+            int compRefType = sym.ReadSymbol(GetCompRefTypeCdf());
+            if (compRefType == Av1Constants.UnidirCompReference)
+            {
+                int uni = sym.ReadSymbol(_cdf.UniCompRef.AsSpan((GetSingleRefP1Ctx() * 3 + 0) * 3, 3));
+                if (uni != 0)
+                {
+                    _refFrame0 = Av1Constants.BwdRefFrame;
+                    _refFrame1 = Av1Constants.AltRefFrame;
+                }
+                else
+                {
+                    int p1Ctx = RefCountCtx(CountRefs(Av1Constants.Last2Frame), CountRefs(Av1Constants.Last3Frame) + CountRefs(Av1Constants.GoldenFrame));
+                    int p1 = sym.ReadSymbol(_cdf.UniCompRef.AsSpan((p1Ctx * 3 + 1) * 3, 3));
+                    if (p1 != 0)
+                    {
+                        int p2 = sym.ReadSymbol(_cdf.UniCompRef.AsSpan((GetCompRefP2Ctx() * 3 + 2) * 3, 3));
+                        _refFrame0 = Av1Constants.LastFrame;
+                        _refFrame1 = p2 != 0 ? Av1Constants.GoldenFrame : Av1Constants.Last3Frame;
+                    }
+                    else
+                    {
+                        _refFrame0 = Av1Constants.LastFrame;
+                        _refFrame1 = Av1Constants.Last2Frame;
+                    }
+                }
+            }
+            else
+            {
+                int compRef = sym.ReadSymbol(_cdf.CompRef.AsSpan((GetCompRefCtx() * 3 + 0) * 3, 3));
+                if (compRef == 0)
+                {
+                    int p1 = sym.ReadSymbol(_cdf.CompRef.AsSpan((GetCompRefP1Ctx() * 3 + 1) * 3, 3));
+                    _refFrame0 = p1 != 0 ? Av1Constants.Last2Frame : Av1Constants.LastFrame;
+                }
+                else
+                {
+                    int p2 = sym.ReadSymbol(_cdf.CompRef.AsSpan((GetCompRefP2Ctx() * 3 + 2) * 3, 3));
+                    _refFrame0 = p2 != 0 ? Av1Constants.GoldenFrame : Av1Constants.Last3Frame;
+                }
+
+                int bwd = sym.ReadSymbol(_cdf.CompBwdRef.AsSpan((GetCompBwdRefCtx() * 2 + 0) * 3, 3));
+                if (bwd == 0)
+                {
+                    int p1 = sym.ReadSymbol(_cdf.CompBwdRef.AsSpan((GetCompBwdRefP1Ctx() * 2 + 1) * 3, 3));
+                    _refFrame1 = p1 != 0 ? Av1Constants.AltRef2Frame : Av1Constants.BwdRefFrame;
+                }
+                else
+                {
+                    _refFrame1 = Av1Constants.AltRefFrame;
+                }
+            }
+        }
+        else
+        {
+            int p1 = sym.ReadSymbol(_cdf.SingleRef.AsSpan((GetSingleRefP1Ctx() * 6 + 0) * 3, 3));
+            if (p1 != 0)
+            {
+                int p2 = sym.ReadSymbol(_cdf.SingleRef.AsSpan((GetCompBwdRefCtx() * 6 + 1) * 3, 3));
+                if (p2 == 0)
+                {
+                    int p6 = sym.ReadSymbol(_cdf.SingleRef.AsSpan((GetCompBwdRefP1Ctx() * 6 + 5) * 3, 3));
+                    _refFrame0 = p6 != 0 ? Av1Constants.AltRef2Frame : Av1Constants.BwdRefFrame;
+                }
+                else
+                {
+                    _refFrame0 = Av1Constants.AltRefFrame;
+                }
+            }
+            else
+            {
+                int p3 = sym.ReadSymbol(_cdf.SingleRef.AsSpan((GetCompRefCtx() * 6 + 2) * 3, 3));
+                if (p3 != 0)
+                {
+                    int p5 = sym.ReadSymbol(_cdf.SingleRef.AsSpan((GetCompRefP2Ctx() * 6 + 4) * 3, 3));
+                    _refFrame0 = p5 != 0 ? Av1Constants.GoldenFrame : Av1Constants.Last3Frame;
+                }
+                else
+                {
+                    int p4 = sym.ReadSymbol(_cdf.SingleRef.AsSpan((GetCompRefP1Ctx() * 6 + 3) * 3, 3));
+                    _refFrame0 = p4 != 0 ? Av1Constants.Last2Frame : Av1Constants.LastFrame;
+                }
+            }
+            _refFrame1 = Av1Constants.NoneFrame;
+        }
+    }
+
+    private static bool CheckBackward(int rf) => rf >= Av1Constants.BwdRefFrame && rf <= Av1Constants.AltRefFrame;
+    private static bool IsSameDirRefPair(int r0, int r1) => (r0 >= Av1Constants.BwdRefFrame) == (r1 >= Av1Constants.BwdRefFrame);
+
+    private int CountRefs(int rf)
+    {
+        int c = 0;
+        if (_availU) { if (_aboveRef0 == rf) c++; if (_aboveRef1 == rf) c++; }
+        if (_availL) { if (_leftRef0 == rf) c++; if (_leftRef1 == rf) c++; }
+        return c;
+    }
+
+    private static int RefCountCtx(int c0, int c1) => c0 < c1 ? 0 : c0 == c1 ? 1 : 2;
+    private int GetCompRefCtx() => RefCountCtx(CountRefs(Av1Constants.LastFrame) + CountRefs(Av1Constants.Last2Frame), CountRefs(Av1Constants.Last3Frame) + CountRefs(Av1Constants.GoldenFrame));
+    private int GetCompRefP1Ctx() => RefCountCtx(CountRefs(Av1Constants.LastFrame), CountRefs(Av1Constants.Last2Frame));
+    private int GetCompRefP2Ctx() => RefCountCtx(CountRefs(Av1Constants.Last3Frame), CountRefs(Av1Constants.GoldenFrame));
+    private int GetCompBwdRefCtx() => RefCountCtx(CountRefs(Av1Constants.BwdRefFrame) + CountRefs(Av1Constants.AltRef2Frame), CountRefs(Av1Constants.AltRefFrame));
+    private int GetCompBwdRefP1Ctx() => RefCountCtx(CountRefs(Av1Constants.BwdRefFrame), CountRefs(Av1Constants.AltRef2Frame));
+    private int GetSingleRefP1Ctx() => RefCountCtx(
+        CountRefs(Av1Constants.LastFrame) + CountRefs(Av1Constants.Last2Frame) + CountRefs(Av1Constants.Last3Frame) + CountRefs(Av1Constants.GoldenFrame),
+        CountRefs(Av1Constants.BwdRefFrame) + CountRefs(Av1Constants.AltRef2Frame) + CountRefs(Av1Constants.AltRefFrame));
+
+    private Span<ushort> GetCompModeCdf()
+    {
+        int ctx;
+        if (_availU && _availL)
+        {
+            if (_aboveSingle && _leftSingle)
+                ctx = (CheckBackward(_aboveRef0) ^ CheckBackward(_leftRef0)) ? 1 : 0;
+            else if (_aboveSingle)
+                ctx = 2 + ((CheckBackward(_aboveRef0) || _aboveIntra) ? 1 : 0);
+            else if (_leftSingle)
+                ctx = 2 + ((CheckBackward(_leftRef0) || _leftIntra) ? 1 : 0);
+            else
+                ctx = 4;
+        }
+        else if (_availU)
+        {
+            ctx = _aboveSingle ? (CheckBackward(_aboveRef0) ? 1 : 0) : 3;
+        }
+        else if (_availL)
+        {
+            ctx = _leftSingle ? (CheckBackward(_leftRef0) ? 1 : 0) : 3;
+        }
+        else
+        {
+            ctx = 1;
+        }
+        return _cdf.CompMode.AsSpan(ctx * 3, 3);
+    }
+
+    private Span<ushort> GetCompRefTypeCdf()
+    {
+        bool aboveCompInter = _availU && !_aboveIntra && !_aboveSingle;
+        bool leftCompInter = _availL && !_leftIntra && !_leftSingle;
+        bool aboveUniComp = aboveCompInter && IsSameDirRefPair(_aboveRef0, _aboveRef1);
+        bool leftUniComp = leftCompInter && IsSameDirRefPair(_leftRef0, _leftRef1);
+
+        int ctx;
+        if (_availU && !_aboveIntra && _availL && !_leftIntra)
+        {
+            int samedir = IsSameDirRefPair(_aboveRef0, _leftRef0) ? 1 : 0;
+            if (!aboveCompInter && !leftCompInter)
+                ctx = 1 + 2 * samedir;
+            else if (!aboveCompInter)
+                ctx = !leftUniComp ? 1 : 3 + samedir;
+            else if (!leftCompInter)
+                ctx = !aboveUniComp ? 1 : 3 + samedir;
+            else if (!aboveUniComp && !leftUniComp)
+                ctx = 0;
+            else if (!aboveUniComp || !leftUniComp)
+                ctx = 2;
+            else
+                ctx = 3 + ((_aboveRef0 == Av1Constants.BwdRefFrame) == (_leftRef0 == Av1Constants.BwdRefFrame) ? 1 : 0);
+        }
+        else if (_availU && _availL)
+        {
+            if (aboveCompInter) ctx = 1 + 2 * (aboveUniComp ? 1 : 0);
+            else if (leftCompInter) ctx = 1 + 2 * (leftUniComp ? 1 : 0);
+            else ctx = 2;
+        }
+        else if (aboveCompInter)
+        {
+            ctx = 4 * (aboveUniComp ? 1 : 0);
+        }
+        else if (leftCompInter)
+        {
+            ctx = 4 * (leftUniComp ? 1 : 0);
+        }
+        else
+        {
+            ctx = 2;
+        }
+        return _cdf.CompRefType.AsSpan(ctx * 3, 3);
+    }
+
+    // §7.10.2 Full Find MV Stack (handles both Inter and IntraBC)
+    private void FindMvStack(bool isCompound)
     {
         int bw4 = Av1Constants.Num4x4BlocksWide[_miSize];
         int bh4 = Av1Constants.Num4x4BlocksHigh[_miSize];
         _numMvFound = 0;
+        _newMvCount = 0;
 
-        ScanRowIntrabc(-1, bw4);
-        ScanColIntrabc(-1, bh4);
+        SetupGlobalMv(0, out _globalMv0Y, out _globalMv0X);
+        if (isCompound)
+            SetupGlobalMv(1, out _globalMv1Y, out _globalMv1X);
+        else
+            _globalMv1Y = _globalMv1X = 0;
+
+        _foundMatch = false;
+        ScanRow(-1, bw4, isCompound);
+        int foundAbove = _foundMatch ? 1 : 0;
+        _foundMatch = false;
+        ScanCol(-1, bh4, isCompound);
+        int foundLeft = _foundMatch ? 1 : 0;
+        _foundMatch = false;
         if (Math.Max(bw4, bh4) <= 16)
-            ScanPointIntrabc(-1, bw4);
+            ScanPoint(-1, bw4, isCompound);
+        if (_foundMatch) foundAbove = 1;
 
+        int closeMatches = foundAbove + foundLeft;
         int numNearest = _numMvFound;
+        int numNew = _newMvCount;
         if (numNearest > 0)
         {
             for (int idx = 0; idx < numNearest; idx++)
                 _weightStack[idx] += Av1Constants.RefCatLevel;
         }
 
-        ScanPointIntrabc(-1, -1);
-        ScanRowIntrabc(-3, bw4);
-        ScanColIntrabc(-3, bh4);
-        if (bh4 > 1) ScanRowIntrabc(-5, bw4);
-        if (bw4 > 1) ScanColIntrabc(-5, bh4);
+        _zeroMvContext = 0;
+        if (_fh.UseRefFrameMvs)
+            TemporalScan(bw4, bh4, isCompound);
 
-        SortMvStack(0, numNearest);
-        SortMvStack(numNearest, _numMvFound);
+        _foundMatch = false;
+        ScanPoint(-1, -1, isCompound);
+        if (_foundMatch) foundAbove = 1;
 
-        // Extra search (§7.10.2.12): in intra frames no neighbor has ref > INTRA_FRAME, so pad up to 2 with GlobalMv (0, 0).
-        for (int idx = _numMvFound; idx < 2; idx++)
+        _foundMatch = false;
+        ScanRow(-3, bw4, isCompound);
+        if (_foundMatch) foundAbove = 1;
+
+        _foundMatch = false;
+        ScanCol(-3, bh4, isCompound);
+        if (_foundMatch) foundLeft = 1;
+
+        _foundMatch = false;
+        if (bh4 > 1) ScanRow(-5, bw4, isCompound);
+        if (_foundMatch) foundAbove = 1;
+
+        _foundMatch = false;
+        if (bw4 > 1) ScanCol(-5, bh4, isCompound);
+        if (_foundMatch) foundLeft = 1;
+
+        int totalMatches = foundAbove + foundLeft;
+        SortMvStack(0, numNearest, isCompound);
+        SortMvStack(numNearest, _numMvFound, isCompound);
+
+        if (_numMvFound < 2)
+            ExtraSearch(isCompound);
+
+        // §7.10.2.14 Context & Clamping
+        for (int idx = 0; idx < _numMvFound; idx++)
         {
-            _refStackMvY[idx] = 0;
-            _refStackMvX[idx] = 0;
+            int z = 0;
+            if (idx + 1 < _numMvFound)
+            {
+                int w0 = _weightStack[idx];
+                int w1 = _weightStack[idx + 1];
+                if (w0 >= Av1Constants.RefCatLevel)
+                {
+                    if (w1 < Av1Constants.RefCatLevel) z = 1;
+                }
+                else
+                {
+                    z = 2;
+                }
+            }
+            _drlCtxStack[idx] = z;
         }
 
-        // Clamp (§7.10.2.14)
         int bw = Av1Constants.BlockWidth[_miSize];
         int bh = Av1Constants.BlockHeight[_miSize];
         int borderY = Av1Constants.MvBorder + bh * 8;
@@ -1931,12 +2549,94 @@ internal sealed class Av1TileDecoder
 
         for (int idx = 0; idx < _numMvFound; idx++)
         {
-            _refStackMvY[idx] = Av1Constants.Clip3(topEdge, botEdge, _refStackMvY[idx]);
-            _refStackMvX[idx] = Av1Constants.Clip3(leftEdge, rightEdge, _refStackMvX[idx]);
+            _refStackMv0Y[idx] = Av1Constants.Clip3(topEdge, botEdge, _refStackMv0Y[idx]);
+            _refStackMv0X[idx] = Av1Constants.Clip3(leftEdge, rightEdge, _refStackMv0X[idx]);
+            if (isCompound)
+            {
+                _refStackMv1Y[idx] = Av1Constants.Clip3(topEdge, botEdge, _refStackMv1Y[idx]);
+                _refStackMv1X[idx] = Av1Constants.Clip3(leftEdge, rightEdge, _refStackMv1X[idx]);
+            }
+        }
+
+        if (closeMatches == 0)
+        {
+            _newMvContext = Math.Min(totalMatches, 1);
+            _refMvContext = totalMatches;
+        }
+        else if (closeMatches == 1)
+        {
+            _newMvContext = 3 - Math.Min(numNew, 1);
+            _refMvContext = 2 + totalMatches;
+        }
+        else
+        {
+            _newMvContext = 5 - Math.Min(numNew, 1);
+            _refMvContext = 5;
         }
     }
 
-    private void ScanRowIntrabc(int deltaRow, int bw4)
+    // §7.10.2.1 Setup global MV
+    private void SetupGlobalMv(int refList, out int mvY, out int mvX)
+    {
+        int rf = refList == 0 ? _refFrame0 : _refFrame1;
+        int typ = rf != Av1Constants.IntraFrame ? _fh.GmType[rf] : Av1Constants.GmIdentity;
+        if (rf == Av1Constants.IntraFrame || typ == Av1Constants.GmIdentity)
+        {
+            mvY = 0;
+            mvX = 0;
+        }
+        else if (typ == Av1Constants.GmTranslation)
+        {
+            mvY = _fh.GmParams[rf, 0] >> (Av1Constants.WarpedModelPrecBits - 3);
+            mvX = _fh.GmParams[rf, 1] >> (Av1Constants.WarpedModelPrecBits - 3);
+        }
+        else
+        {
+            int bw = Av1Constants.BlockWidth[_miSize];
+            int bh = Av1Constants.BlockHeight[_miSize];
+            long x = _miCol * 4 + bw / 2 - 1;
+            long y = _miRow * 4 + bh / 2 - 1;
+            long xc = (_fh.GmParams[rf, 2] - (1L << Av1Constants.WarpedModelPrecBits)) * x
+                    + _fh.GmParams[rf, 3] * y
+                    + _fh.GmParams[rf, 0];
+            long yc = _fh.GmParams[rf, 4] * x
+                    + (_fh.GmParams[rf, 5] - (1L << Av1Constants.WarpedModelPrecBits)) * y
+                    + _fh.GmParams[rf, 1];
+            if (_fh.AllowHighPrecisionMv)
+            {
+                mvY = (int)Av1Constants.Round2Signed(yc, Av1Constants.WarpedModelPrecBits - 3);
+                mvX = (int)Av1Constants.Round2Signed(xc, Av1Constants.WarpedModelPrecBits - 3);
+            }
+            else
+            {
+                mvY = (int)Av1Constants.Round2Signed(yc, Av1Constants.WarpedModelPrecBits - 2) * 2;
+                mvX = (int)Av1Constants.Round2Signed(xc, Av1Constants.WarpedModelPrecBits - 2) * 2;
+            }
+        }
+        LowerMvPrecision(ref mvY, ref mvX);
+    }
+
+    private void LowerMvPrecision(ref int mvY, ref int mvX)
+    {
+        if (_fh.AllowHighPrecisionMv) return;
+        mvY = LowerMvComp(mvY);
+        mvX = LowerMvComp(mvX);
+    }
+
+    private int LowerMvComp(int v)
+    {
+        if (_fh.ForceIntegerMv)
+        {
+            int a = Math.Abs(v);
+            int aInt = (a + 3) >> 3;
+            return v > 0 ? (aInt << 3) : -(aInt << 3);
+        }
+        if ((v & 1) != 0)
+            return v > 0 ? v - 1 : v + 1;
+        return v;
+    }
+
+    private void ScanRow(int deltaRow, int bw4, bool isCompound)
     {
         int end4 = Math.Min(Math.Min(bw4, _fh.MiCols - _miCol), 16);
         int deltaCol = 0;
@@ -1951,17 +2651,16 @@ internal sealed class Av1TileDecoder
         {
             int mvRow = _miRow + deltaRow;
             int mvCol = _miCol + deltaCol + i;
-            if (!IsInside(mvRow, mvCol))
-                break;
+            if (!IsInside(mvRow, mvCol)) break;
             int len = Math.Min(bw4, Av1Constants.Num4x4BlocksWide[_st.MiSizes[mvRow * _st.MiCols + mvCol]]);
             if (Math.Abs(deltaRow) > 1) len = Math.Max(2, len);
             if (useStep16) len = Math.Max(4, len);
-            AddRefMvCandidateIntrabc(mvRow, mvCol, len * 2);
+            AddRefMvCandidate(mvRow, mvCol, isCompound, len * 2);
             i += len;
         }
     }
 
-    private void ScanColIntrabc(int deltaCol, int bh4)
+    private void ScanCol(int deltaCol, int bh4, bool isCompound)
     {
         int end4 = Math.Min(Math.Min(bh4, _fh.MiRows - _miRow), 16);
         int deltaRow = 0;
@@ -1976,43 +2675,198 @@ internal sealed class Av1TileDecoder
         {
             int mvRow = _miRow + deltaRow + i;
             int mvCol = _miCol + deltaCol;
-            if (!IsInside(mvRow, mvCol))
-                break;
+            if (!IsInside(mvRow, mvCol)) break;
             int len = Math.Min(bh4, Av1Constants.Num4x4BlocksHigh[_st.MiSizes[mvRow * _st.MiCols + mvCol]]);
             if (Math.Abs(deltaCol) > 1) len = Math.Max(2, len);
             if (useStep16) len = Math.Max(4, len);
-            AddRefMvCandidateIntrabc(mvRow, mvCol, len * 2);
+            AddRefMvCandidate(mvRow, mvCol, isCompound, len * 2);
             i += len;
         }
     }
 
-    private void ScanPointIntrabc(int deltaRow, int deltaCol)
+    private void ScanPoint(int deltaRow, int deltaCol, bool isCompound)
     {
         int mvRow = _miRow + deltaRow;
         int mvCol = _miCol + deltaCol;
         if (IsInside(mvRow, mvCol) && _st.RefFrames[(mvRow * _st.MiCols + mvCol) * 2] != Av1Constants.NoneFrame)
-            AddRefMvCandidateIntrabc(mvRow, mvCol, 4);
+            AddRefMvCandidate(mvRow, mvCol, isCompound, 4);
     }
 
-    private void AddRefMvCandidateIntrabc(int mvRow, int mvCol, int weight)
+    // §7.10.2.5–6 Temporal scan
+    private void TemporalScan(int bw4, int bh4, bool isCompound)
+    {
+        int stepW4 = bw4 >= 16 ? 4 : 2;
+        int stepH4 = bh4 >= 16 ? 4 : 2;
+        int limH = Math.Min(bh4, 16);
+        int limW = Math.Min(bw4, 16);
+        for (int dr = 0; dr < limH; dr += stepH4)
+            for (int dc = 0; dc < limW; dc += stepW4)
+                AddTplRefMv(dr, dc, isCompound);
+
+        if (bh4 >= 2 && bh4 < 16 && bw4 >= 2 && bw4 < 16)
+        {
+            CheckAndAddTpl(bh4, -2, isCompound);
+            CheckAndAddTpl(bh4, bw4, isCompound);
+            CheckAndAddTpl(bh4 - 2, bw4, isCompound);
+        }
+    }
+
+    private void CheckAndAddTpl(int dr, int dc, bool isCompound)
+    {
+        int r = (_miRow & 15) + dr;
+        int c = (_miCol & 15) + dc;
+        if (r >= 0 && r < 16 && c >= 0 && c < 16)
+            AddTplRefMv(dr, dc, isCompound);
+    }
+
+    private void AddTplRefMv(int dr, int dc, bool isCompound)
+    {
+        int mvRow = (_miRow + dr) | 1;
+        int mvCol = (_miCol + dc) | 1;
+        if (!IsInside(mvRow, mvCol)) return;
+        int x8 = mvCol >> 1;
+        int y8 = mvRow >> 1;
+        int pos = (y8 * _fh.MotionFieldW8 + x8) * 2;
+        var mfmv = _fh.MotionFieldMvs!;
+
+        if (dr == 0 && dc == 0)
+            _zeroMvContext = 1;
+
+        if (!isCompound)
+        {
+            int mvY = mfmv[_refFrame0][pos];
+            if (mvY == short.MinValue) return;
+            int mvX = mfmv[_refFrame0][pos + 1];
+            LowerMvPrecision(ref mvY, ref mvX);
+            if (dr == 0 && dc == 0)
+            {
+                _zeroMvContext = (Math.Abs(mvY - _globalMv0Y) >= 16 || Math.Abs(mvX - _globalMv0X) >= 16) ? 1 : 0;
+            }
+            for (int idx = 0; idx < _numMvFound; idx++)
+            {
+                if (_refStackMv0Y[idx] == mvY && _refStackMv0X[idx] == mvX)
+                {
+                    _weightStack[idx] += 2;
+                    return;
+                }
+            }
+            if (_numMvFound < Av1Constants.MaxRefMvStackSize)
+            {
+                _refStackMv0Y[_numMvFound] = mvY;
+                _refStackMv0X[_numMvFound] = mvX;
+                _weightStack[_numMvFound] = 2;
+                _numMvFound++;
+            }
+        }
+        else
+        {
+            int mv0Y = mfmv[_refFrame0][pos];
+            if (mv0Y == short.MinValue) return;
+            int mv0X = mfmv[_refFrame0][pos + 1];
+            int mv1Y = mfmv[_refFrame1][pos];
+            if (mv1Y == short.MinValue) return;
+            int mv1X = mfmv[_refFrame1][pos + 1];
+            LowerMvPrecision(ref mv0Y, ref mv0X);
+            LowerMvPrecision(ref mv1Y, ref mv1X);
+            if (dr == 0 && dc == 0)
+            {
+                _zeroMvContext = (Math.Abs(mv0Y - _globalMv0Y) >= 16 || Math.Abs(mv0X - _globalMv0X) >= 16
+                    || Math.Abs(mv1Y - _globalMv1Y) >= 16 || Math.Abs(mv1X - _globalMv1X) >= 16) ? 1 : 0;
+            }
+            for (int idx = 0; idx < _numMvFound; idx++)
+            {
+                if (_refStackMv0Y[idx] == mv0Y && _refStackMv0X[idx] == mv0X
+                    && _refStackMv1Y[idx] == mv1Y && _refStackMv1X[idx] == mv1X)
+                {
+                    _weightStack[idx] += 2;
+                    return;
+                }
+            }
+            if (_numMvFound < Av1Constants.MaxRefMvStackSize)
+            {
+                _refStackMv0Y[_numMvFound] = mv0Y;
+                _refStackMv0X[_numMvFound] = mv0X;
+                _refStackMv1Y[_numMvFound] = mv1Y;
+                _refStackMv1X[_numMvFound] = mv1X;
+                _weightStack[_numMvFound] = 2;
+                _numMvFound++;
+            }
+        }
+    }
+
+    private void AddRefMvCandidate(int mvRow, int mvCol, bool isCompound, int weight)
     {
         int idx = mvRow * _st.MiCols + mvCol;
-        if (_st.IsInters[idx] == 0)
-            return;
-        for (int candList = 0; candList < 2; candList++)
+        if (_st.IsInters[idx] == 0) return;
+
+        if (!isCompound)
         {
-            if (_st.RefFrames[idx * 2 + candList] != Av1Constants.IntraFrame)
-                continue;
-            int mvY = _st.Mvs[idx * 4 + candList * 2];
-            int mvX = _st.Mvs[idx * 4 + candList * 2 + 1];
-            // lower_mv_precision with force_integer_mv == 1 (§7.10.2.10)
-            mvY = LowerMvPrecisionInt(mvY);
-            mvX = LowerMvPrecisionInt(mvX);
+            for (int candList = 0; candList < 2; candList++)
+            {
+                if (_st.RefFrames[idx * 2 + candList] != _refFrame0) continue;
+                int candMode = _st.YModes[idx];
+                int candSize = _st.MiSizes[idx];
+                bool large = Math.Min(Av1Constants.BlockWidth[candSize], Av1Constants.BlockHeight[candSize]) >= 8;
+                int mvY, mvX;
+                if ((candMode == Av1Constants.GlobalMv || candMode == Av1Constants.GlobalGlobalMv)
+                    && _refFrame0 > Av1Constants.IntraFrame
+                    && _fh.GmType[_refFrame0] > Av1Constants.GmTranslation
+                    && large)
+                {
+                    mvY = _globalMv0Y;
+                    mvX = _globalMv0X;
+                }
+                else
+                {
+                    mvY = _st.Mvs[idx * 4 + candList * 2];
+                    mvX = _st.Mvs[idx * 4 + candList * 2 + 1];
+                }
+                LowerMvPrecision(ref mvY, ref mvX);
+                if (HasNewMv(candMode)) _newMvCount++;
+                _foundMatch = true;
+
+                bool found = false;
+                for (int k = 0; k < _numMvFound; k++)
+                {
+                    if (_refStackMv0Y[k] == mvY && _refStackMv0X[k] == mvX)
+                    {
+                        _weightStack[k] += weight;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found && _numMvFound < Av1Constants.MaxRefMvStackSize)
+                {
+                    _refStackMv0Y[_numMvFound] = mvY;
+                    _refStackMv0X[_numMvFound] = mvX;
+                    _weightStack[_numMvFound] = weight;
+                    _numMvFound++;
+                }
+            }
+        }
+        else
+        {
+            if (_st.RefFrames[idx * 2] != _refFrame0 || _st.RefFrames[idx * 2 + 1] != _refFrame1)
+                return;
+            int candMode = _st.YModes[idx];
+            int mv0Y = _st.Mvs[idx * 4];
+            int mv0X = _st.Mvs[idx * 4 + 1];
+            int mv1Y = _st.Mvs[idx * 4 + 2];
+            int mv1X = _st.Mvs[idx * 4 + 3];
+            if (candMode == Av1Constants.GlobalGlobalMv)
+            {
+                if (_fh.GmType[_refFrame0] > Av1Constants.GmTranslation) { mv0Y = _globalMv0Y; mv0X = _globalMv0X; }
+                if (_fh.GmType[_refFrame1] > Av1Constants.GmTranslation) { mv1Y = _globalMv1Y; mv1X = _globalMv1X; }
+            }
+            LowerMvPrecision(ref mv0Y, ref mv0X);
+            LowerMvPrecision(ref mv1Y, ref mv1X);
+            _foundMatch = true;
 
             bool found = false;
             for (int k = 0; k < _numMvFound; k++)
             {
-                if (_refStackMvY[k] == mvY && _refStackMvX[k] == mvX)
+                if (_refStackMv0Y[k] == mv0Y && _refStackMv0X[k] == mv0X
+                    && _refStackMv1Y[k] == mv1Y && _refStackMv1X[k] == mv1X)
                 {
                     _weightStack[k] += weight;
                     found = true;
@@ -2021,22 +2875,21 @@ internal sealed class Av1TileDecoder
             }
             if (!found && _numMvFound < Av1Constants.MaxRefMvStackSize)
             {
-                _refStackMvY[_numMvFound] = mvY;
-                _refStackMvX[_numMvFound] = mvX;
+                _refStackMv0Y[_numMvFound] = mv0Y;
+                _refStackMv0X[_numMvFound] = mv0X;
+                _refStackMv1Y[_numMvFound] = mv1Y;
+                _refStackMv1X[_numMvFound] = mv1X;
                 _weightStack[_numMvFound] = weight;
                 _numMvFound++;
             }
+            if (HasNewMv(candMode)) _newMvCount++;
         }
     }
 
-    private static int LowerMvPrecisionInt(int v)
-    {
-        int a = Math.Abs(v);
-        int aInt = (a + 3) >> 3;
-        return v > 0 ? (aInt << 3) : -(aInt << 3);
-    }
+    private static bool HasNewMv(int mode) => mode is Av1Constants.NewMv or Av1Constants.NewNewMv
+        or Av1Constants.NearNewMv or Av1Constants.NewNearMv or Av1Constants.NearestNewMv or Av1Constants.NewNearestMv;
 
-    private void SortMvStack(int start, int end)
+    private void SortMvStack(int start, int end, bool isCompound)
     {
         while (end > start)
         {
@@ -2046,8 +2899,13 @@ internal sealed class Av1TileDecoder
                 if (_weightStack[i - 1] < _weightStack[i])
                 {
                     (_weightStack[i - 1], _weightStack[i]) = (_weightStack[i], _weightStack[i - 1]);
-                    (_refStackMvY[i - 1], _refStackMvY[i]) = (_refStackMvY[i], _refStackMvY[i - 1]);
-                    (_refStackMvX[i - 1], _refStackMvX[i]) = (_refStackMvX[i], _refStackMvX[i - 1]);
+                    (_refStackMv0Y[i - 1], _refStackMv0Y[i]) = (_refStackMv0Y[i], _refStackMv0Y[i - 1]);
+                    (_refStackMv0X[i - 1], _refStackMv0X[i]) = (_refStackMv0X[i], _refStackMv0X[i - 1]);
+                    if (isCompound)
+                    {
+                        (_refStackMv1Y[i - 1], _refStackMv1Y[i]) = (_refStackMv1Y[i], _refStackMv1Y[i - 1]);
+                        (_refStackMv1X[i - 1], _refStackMv1X[i]) = (_refStackMv1X[i], _refStackMv1X[i - 1]);
+                    }
                     newEnd = i;
                 }
             }
@@ -2055,31 +2913,503 @@ internal sealed class Av1TileDecoder
         }
     }
 
-    private void AssignMvIntrabc(ref Av1SymbolDecoder sym)
+    // §7.10.2.12–13 Extra search
+    private void ExtraSearch(bool isCompound)
     {
-        int predY = _refStackMvY[0];
-        int predX = _refStackMvX[0];
-        if (predY == 0 && predX == 0)
+        Span<int> refIdCount = stackalloc int[2];
+        Span<int> refDiffCount = stackalloc int[2];
+        Span<int> refIdY = stackalloc int[4];
+        Span<int> refIdX = stackalloc int[4];
+        Span<int> refDiffY = stackalloc int[4];
+        Span<int> refDiffX = stackalloc int[4];
+
+        int w4 = Math.Min(16, Av1Constants.Num4x4BlocksWide[_miSize]);
+        int h4 = Math.Min(16, Av1Constants.Num4x4BlocksHigh[_miSize]);
+        w4 = Math.Min(w4, _fh.MiCols - _miCol);
+        h4 = Math.Min(h4, _fh.MiRows - _miRow);
+        int num4x4 = Math.Min(w4, h4);
+
+        for (int pass = 0; pass < 2; pass++)
         {
-            predY = _refStackMvY[1];
-            predX = _refStackMvX[1];
-        }
-        if (predY == 0 && predX == 0)
-        {
-            int sbSize4 = _seq.Use128x128Superblock ? 32 : 16;
-            if (_miRow - sbSize4 < _miRowStart)
+            int pIdx = 0;
+            while (pIdx < num4x4 && _numMvFound < 2)
             {
-                predY = 0;
-                predX = -(sbSize4 * 4 + Av1Constants.IntrabcDelayPixels) * 8;
-            }
-            else
-            {
-                predY = -(sbSize4 * 4 * 8);
-                predX = 0;
+                int mvRow = pass == 0 ? _miRow - 1 : _miRow + pIdx;
+                int mvCol = pass == 0 ? _miCol + pIdx : _miCol - 1;
+                if (!IsInside(mvRow, mvCol)) break;
+
+                int cell = mvRow * _st.MiCols + mvCol;
+                if (isCompound)
+                {
+                    for (int candList = 0; candList < 2; candList++)
+                    {
+                        int candRef = _st.RefFrames[cell * 2 + candList];
+                        if (candRef <= Av1Constants.IntraFrame) continue;
+                        for (int list = 0; list < 2; list++)
+                        {
+                            int my = _st.Mvs[cell * 4 + candList * 2];
+                            int mx = _st.Mvs[cell * 4 + candList * 2 + 1];
+                            int targetRef = list == 0 ? _refFrame0 : _refFrame1;
+                            if (candRef == targetRef && refIdCount[list] < 2)
+                            {
+                                refIdY[list * 2 + refIdCount[list]] = my;
+                                refIdX[list * 2 + refIdCount[list]] = mx;
+                                refIdCount[list]++;
+                            }
+                            else if (refDiffCount[list] < 2)
+                            {
+                                if (_fh.RefFrameSignBias[candRef] != _fh.RefFrameSignBias[targetRef])
+                                {
+                                    my = -my;
+                                    mx = -mx;
+                                }
+                                refDiffY[list * 2 + refDiffCount[list]] = my;
+                                refDiffX[list * 2 + refDiffCount[list]] = mx;
+                                refDiffCount[list]++;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    for (int candList = 0; candList < 2; candList++)
+                    {
+                        int candRef = _st.RefFrames[cell * 2 + candList];
+                        if (candRef <= Av1Constants.IntraFrame) continue;
+                        int my = _st.Mvs[cell * 4 + candList * 2];
+                        int mx = _st.Mvs[cell * 4 + candList * 2 + 1];
+                        if (_fh.RefFrameSignBias[candRef] != _fh.RefFrameSignBias[_refFrame0])
+                        {
+                            my = -my;
+                            mx = -mx;
+                        }
+                        bool dup = false;
+                        for (int k = 0; k < _numMvFound; k++)
+                        {
+                            if (_refStackMv0Y[k] == my && _refStackMv0X[k] == mx) { dup = true; break; }
+                        }
+                        if (!dup && _numMvFound < Av1Constants.MaxRefMvStackSize)
+                        {
+                            _refStackMv0Y[_numMvFound] = my;
+                            _refStackMv0X[_numMvFound] = mx;
+                            _weightStack[_numMvFound] = 2;
+                            _numMvFound++;
+                        }
+                    }
+                }
+
+                int sz = _st.MiSizes[cell];
+                pIdx += pass == 0 ? Av1Constants.Num4x4BlocksWide[sz] : Av1Constants.Num4x4BlocksHigh[sz];
             }
         }
 
-        ReadMv(ref sym, Av1Constants.MvIntrabcContext, predY, predX, out _mv0Y, out _mv0X);
+        if (isCompound)
+        {
+            Span<int> combY = stackalloc int[4];
+            Span<int> combX = stackalloc int[4];
+            for (int list = 0; list < 2; list++)
+            {
+                int cc = 0;
+                for (int k = 0; k < refIdCount[list]; k++)
+                {
+                    combY[cc * 2 + list] = refIdY[list * 2 + k];
+                    combX[cc * 2 + list] = refIdX[list * 2 + k];
+                    cc++;
+                }
+                for (int k = 0; k < refDiffCount[list] && cc < 2; k++)
+                {
+                    combY[cc * 2 + list] = refDiffY[list * 2 + k];
+                    combX[cc * 2 + list] = refDiffX[list * 2 + k];
+                    cc++;
+                }
+                while (cc < 2)
+                {
+                    combY[cc * 2 + list] = list == 0 ? _globalMv0Y : _globalMv1Y;
+                    combX[cc * 2 + list] = list == 0 ? _globalMv0X : _globalMv1X;
+                    cc++;
+                }
+            }
+
+            if (_numMvFound == 1)
+            {
+                int pick = (combY[0] == _refStackMv0Y[0] && combX[0] == _refStackMv0X[0]
+                         && combY[1] == _refStackMv1Y[0] && combX[1] == _refStackMv1X[0]) ? 1 : 0;
+                _refStackMv0Y[1] = combY[pick * 2];
+                _refStackMv0X[1] = combX[pick * 2];
+                _refStackMv1Y[1] = combY[pick * 2 + 1];
+                _refStackMv1X[1] = combX[pick * 2 + 1];
+                _weightStack[1] = 2;
+                _numMvFound++;
+            }
+            else
+            {
+                for (int k = 0; k < 2; k++)
+                {
+                    _refStackMv0Y[_numMvFound] = combY[k * 2];
+                    _refStackMv0X[_numMvFound] = combX[k * 2];
+                    _refStackMv1Y[_numMvFound] = combY[k * 2 + 1];
+                    _refStackMv1X[_numMvFound] = combX[k * 2 + 1];
+                    _weightStack[_numMvFound] = 2;
+                    _numMvFound++;
+                }
+            }
+        }
+        else
+        {
+            for (int k = _numMvFound; k < 2; k++)
+            {
+                _refStackMv0Y[k] = _globalMv0Y;
+                _refStackMv0X[k] = _globalMv0X;
+            }
+        }
+    }
+
+    // §5.11.26 Assign MV
+    private void AssignMv(ref Av1SymbolDecoder sym, bool isCompound)
+    {
+        int numLists = isCompound ? 2 : 1;
+        for (int i = 0; i < numLists; i++)
+        {
+            int compMode = _useIntrabc ? Av1Constants.NewMv : GetMode(i);
+            int predY, predX;
+            if (_useIntrabc)
+            {
+                predY = _refStackMv0Y[0];
+                predX = _refStackMv0X[0];
+                if (predY == 0 && predX == 0)
+                {
+                    predY = _refStackMv0Y[1];
+                    predX = _refStackMv0X[1];
+                }
+                if (predY == 0 && predX == 0)
+                {
+                    int sbSize4 = _seq.Use128x128Superblock ? 32 : 16;
+                    if (_miRow - sbSize4 < _miRowStart)
+                    {
+                        predY = 0;
+                        predX = -(sbSize4 * 4 + Av1Constants.IntrabcDelayPixels) * 8;
+                    }
+                    else
+                    {
+                        predY = -(sbSize4 * 4 * 8);
+                        predX = 0;
+                    }
+                }
+            }
+            else if (compMode == Av1Constants.GlobalMv)
+            {
+                predY = i == 0 ? _globalMv0Y : _globalMv1Y;
+                predX = i == 0 ? _globalMv0X : _globalMv1X;
+            }
+            else
+            {
+                int pos = compMode == Av1Constants.NearestMv ? 0 : _refMvIdx;
+                if (compMode == Av1Constants.NewMv && _numMvFound <= 1)
+                    pos = 0;
+                predY = i == 0 ? _refStackMv0Y[pos] : _refStackMv1Y[pos];
+                predX = i == 0 ? _refStackMv0X[pos] : _refStackMv1X[pos];
+            }
+
+            int outY, outX;
+            if (compMode == Av1Constants.NewMv)
+            {
+                int mvCtx = _useIntrabc ? Av1Constants.MvIntrabcContext : 0;
+                ReadMv(ref sym, mvCtx, predY, predX, out outY, out outX);
+            }
+            else
+            {
+                outY = predY;
+                outX = predX;
+            }
+
+            if (i == 0) { _mv0Y = outY; _mv0X = outX; }
+            else { _mv1Y = outY; _mv1X = outX; }
+        }
+    }
+
+    private int GetMode(int refList)
+    {
+        if (refList == 0)
+        {
+            if (_yMode < Av1Constants.NearestNearestMv) return _yMode;
+            return _yMode switch
+            {
+                Av1Constants.NewNewMv or Av1Constants.NewNearestMv or Av1Constants.NewNearMv => Av1Constants.NewMv,
+                Av1Constants.NearestNearestMv or Av1Constants.NearestNewMv => Av1Constants.NearestMv,
+                Av1Constants.NearNearMv or Av1Constants.NearNewMv => Av1Constants.NearMv,
+                _ => Av1Constants.GlobalMv,
+            };
+        }
+        return _yMode switch
+        {
+            Av1Constants.NewNewMv or Av1Constants.NearestNewMv or Av1Constants.NearNewMv => Av1Constants.NewMv,
+            Av1Constants.NearestNearestMv or Av1Constants.NewNearestMv => Av1Constants.NearestMv,
+            Av1Constants.NearNearMv or Av1Constants.NewNearMv => Av1Constants.NearMv,
+            _ => Av1Constants.GlobalMv,
+        };
+    }
+
+    // §5.11.28 Read interintra mode
+    private void ReadInterIntraMode(ref Av1SymbolDecoder sym, bool isCompound)
+    {
+        _isInterIntra = false;
+        _wedgeInterIntra = false;
+        if (!_skipMode && _seq.EnableInterIntraCompound && !isCompound
+            && _miSize >= Av1Constants.Block8x8 && _miSize <= Av1Constants.Block32x32)
+        {
+            int ctx = Av1Constants.SizeGroup[_miSize] - 1;
+            _isInterIntra = sym.ReadSymbol(_cdf.InterIntra.AsSpan(ctx * 3, 3)) != 0;
+            if (_isInterIntra)
+            {
+                _interIntraMode = sym.ReadSymbol(_cdf.InterIntraMode.AsSpan(ctx * 5, 5));
+                _refFrame1 = Av1Constants.IntraFrame;
+                _angleDeltaY = 0;
+                _angleDeltaUv = 0;
+                _useFilterIntra = false;
+                _wedgeInterIntra = sym.ReadSymbol(_cdf.WedgeInterIntra.AsSpan(_miSize * 3, 3)) != 0;
+                if (_wedgeInterIntra)
+                {
+                    _wedgeIndex = sym.ReadSymbol(_cdf.WedgeIndex.AsSpan(_miSize * 17, 17));
+                    _wedgeSign = 0;
+                }
+            }
+        }
+    }
+
+    // §5.11.27 Read motion mode + §7.10.3 + §7.10.4
+    private void ReadMotionMode(ref Av1SymbolDecoder sym, bool isCompound)
+    {
+        if (_skipMode
+            || !_fh.IsMotionModeSwitchable
+            || Math.Min(Av1Constants.BlockWidth[_miSize], Av1Constants.BlockHeight[_miSize]) < 8)
+        {
+            _motionMode = Av1Constants.MotionSimple;
+            return;
+        }
+        if (!_fh.ForceIntegerMv && (_yMode is Av1Constants.GlobalMv or Av1Constants.GlobalGlobalMv)
+            && _fh.GmType[_refFrame0] > Av1Constants.GmTranslation)
+        {
+            _motionMode = Av1Constants.MotionSimple;
+            return;
+        }
+        if (isCompound || _refFrame1 == Av1Constants.IntraFrame || !HasOverlappableCandidates())
+        {
+            _motionMode = Av1Constants.MotionSimple;
+            return;
+        }
+
+        FindWarpSamples();
+        if (_fh.ForceIntegerMv || _numWarpSamples == 0 || !_fh.AllowWarpedMotion || _interPred.IsScaled(_refFrame0))
+        {
+            int useObmc = sym.ReadSymbol(_cdf.UseObmc.AsSpan(_miSize * 3, 3));
+            _motionMode = useObmc != 0 ? Av1Constants.MotionObmc : Av1Constants.MotionSimple;
+        }
+        else
+        {
+            _motionMode = sym.ReadSymbol(_cdf.MotionMode.AsSpan(_miSize * 4, 4));
+        }
+    }
+
+    private bool HasOverlappableCandidates()
+    {
+        if (_availU)
+        {
+            int w4 = Av1Constants.Num4x4BlocksWide[_miSize];
+            int lim = Math.Min(_fh.MiCols, _miCol + w4);
+            for (int x4 = _miCol; x4 < lim; x4 += 2)
+                if (_st.RefFrames[((_miRow - 1) * _st.MiCols + (x4 | 1)) * 2] > Av1Constants.IntraFrame)
+                    return true;
+        }
+        if (_availL)
+        {
+            int h4 = Av1Constants.Num4x4BlocksHigh[_miSize];
+            int lim = Math.Min(_fh.MiRows, _miRow + h4);
+            for (int y4 = _miRow; y4 < lim; y4 += 2)
+                if (_st.RefFrames[((y4 | 1) * _st.MiCols + (_miCol - 1)) * 2] > Av1Constants.IntraFrame)
+                    return true;
+        }
+        return false;
+    }
+
+    private void FindWarpSamples()
+    {
+        _numWarpSamples = 0;
+        _numWarpSamplesScanned = 0;
+        int w4 = Av1Constants.Num4x4BlocksWide[_miSize];
+        int h4 = Av1Constants.Num4x4BlocksHigh[_miSize];
+        bool doTopLeft = true;
+        bool doTopRight = true;
+
+        if (_availU)
+        {
+            int srcW = Av1Constants.Num4x4BlocksWide[_st.MiSizes[(_miRow - 1) * _st.MiCols + _miCol]];
+            if (w4 <= srcW)
+            {
+                int colOffset = -(_miCol & (srcW - 1));
+                if (colOffset < 0) doTopLeft = false;
+                if (colOffset + srcW > w4) doTopRight = false;
+                AddWarpSample(-1, 0);
+            }
+            else
+            {
+                int lim = Math.Min(w4, _fh.MiCols - _miCol);
+                for (int i = 0; i < lim;)
+                {
+                    int sw = Av1Constants.Num4x4BlocksWide[_st.MiSizes[(_miRow - 1) * _st.MiCols + _miCol + i]];
+                    AddWarpSample(-1, i);
+                    i += Math.Min(w4, sw);
+                }
+            }
+        }
+
+        if (_availL)
+        {
+            int srcH = Av1Constants.Num4x4BlocksHigh[_st.MiSizes[_miRow * _st.MiCols + (_miCol - 1)]];
+            if (h4 <= srcH)
+            {
+                int rowOffset = -(_miRow & (srcH - 1));
+                if (rowOffset < 0) doTopLeft = false;
+                AddWarpSample(0, -1);
+            }
+            else
+            {
+                int lim = Math.Min(h4, _fh.MiRows - _miRow);
+                for (int i = 0; i < lim;)
+                {
+                    int sh = Av1Constants.Num4x4BlocksHigh[_st.MiSizes[(_miRow + i) * _st.MiCols + (_miCol - 1)]];
+                    AddWarpSample(i, -1);
+                    i += Math.Min(h4, sh);
+                }
+            }
+        }
+
+        if (doTopLeft) AddWarpSample(-1, -1);
+        if (doTopRight && Math.Max(w4, h4) <= 16) AddWarpSample(-1, w4);
+
+        if (_numWarpSamples == 0 && _numWarpSamplesScanned > 0)
+            _numWarpSamples = 1;
+    }
+
+    private void AddWarpSample(int deltaRow, int deltaCol)
+    {
+        if (_numWarpSamplesScanned >= Av1Constants.LeastSquaresSamplesMax) return;
+        int mvRow = _miRow + deltaRow;
+        int mvCol = _miCol + deltaCol;
+        if (!IsInside(mvRow, mvCol)) return;
+        int idx = mvRow * _st.MiCols + mvCol;
+        if (_st.RefFrames[idx * 2] != _refFrame0) return;
+        if (_st.RefFrames[idx * 2 + 1] != Av1Constants.NoneFrame) return;
+
+        int candSz = _st.MiSizes[idx];
+        int candW4 = Av1Constants.Num4x4BlocksWide[candSz];
+        int candH4 = Av1Constants.Num4x4BlocksHigh[candSz];
+        int candRow = mvRow & ~(candH4 - 1);
+        int candCol = mvCol & ~(candW4 - 1);
+        int midY = candRow * 4 + candH4 * 2 - 1;
+        int midX = candCol * 4 + candW4 * 2 - 1;
+        int threshold = Av1Constants.Clip3(16, 112, Math.Max(Av1Constants.BlockWidth[_miSize], Av1Constants.BlockHeight[_miSize]));
+        int candCell = candRow * _st.MiCols + candCol;
+        int candMvY = _st.Mvs[candCell * 4];
+        int candMvX = _st.Mvs[candCell * 4 + 1];
+        bool valid = (Math.Abs(candMvY - _mv0Y) + Math.Abs(candMvX - _mv0X)) <= threshold;
+
+        _numWarpSamplesScanned++;
+        if (!valid && _numWarpSamplesScanned > 1) return;
+
+        int dst = _numWarpSamples * 4;
+        _warpCandList[dst] = midY * 8;
+        _warpCandList[dst + 1] = midX * 8;
+        _warpCandList[dst + 2] = midY * 8 + candMvY;
+        _warpCandList[dst + 3] = midX * 8 + candMvX;
+        if (valid) _numWarpSamples++;
+    }
+
+    // §5.11.29 Read compound type
+    private void ReadCompoundType(ref Av1SymbolDecoder sym, bool isCompound)
+    {
+        _compGroupIdx = 0;
+        _compoundIdx = 1;
+        if (_skipMode)
+        {
+            _compoundType = Av1Constants.CompoundAverage;
+            return;
+        }
+        if (isCompound)
+        {
+            int n = Av1Constants.WedgeBits[_miSize];
+            if (_seq.EnableMaskedCompound)
+                _compGroupIdx = sym.ReadSymbol(GetCompGroupIdxCdf());
+
+            if (_compGroupIdx == 0)
+            {
+                if (_seq.EnableJntComp)
+                {
+                    _compoundIdx = sym.ReadSymbol(GetCompoundIdxCdf());
+                    _compoundType = _compoundIdx != 0 ? Av1Constants.CompoundAverage : Av1Constants.CompoundDistance;
+                }
+                else
+                {
+                    _compoundType = Av1Constants.CompoundAverage;
+                }
+            }
+            else
+            {
+                _compoundType = n == 0
+                    ? Av1Constants.CompoundDiffWtd
+                    : sym.ReadSymbol(_cdf.CompoundType.AsSpan(_miSize * 3, 3));
+            }
+
+            if (_compoundType == Av1Constants.CompoundWedge)
+            {
+                _wedgeIndex = sym.ReadSymbol(_cdf.WedgeIndex.AsSpan(_miSize * 17, 17));
+                _wedgeSign = sym.ReadLiteral(1);
+            }
+            else if (_compoundType == Av1Constants.CompoundDiffWtd)
+            {
+                _maskType = sym.ReadLiteral(1);
+            }
+        }
+        else
+        {
+            _compoundType = _isInterIntra
+                ? (_wedgeInterIntra ? Av1Constants.CompoundWedge : Av1Constants.CompoundIntra)
+                : Av1Constants.CompoundAverage;
+        }
+    }
+
+    private Span<ushort> GetCompGroupIdxCdf()
+    {
+        int ctx = 0;
+        if (_availU)
+        {
+            if (!_aboveSingle) ctx += _st.CompGroupIdxs[(_miRow - 1) * _st.MiCols + _miCol];
+            else if (_aboveRef0 == Av1Constants.AltRefFrame) ctx += 3;
+        }
+        if (_availL)
+        {
+            if (!_leftSingle) ctx += _st.CompGroupIdxs[_miRow * _st.MiCols + (_miCol - 1)];
+            else if (_leftRef0 == Av1Constants.AltRefFrame) ctx += 3;
+        }
+        ctx = Math.Min(5, ctx);
+        return _cdf.CompGroupIdx.AsSpan(ctx * 3, 3);
+    }
+
+    private Span<ushort> GetCompoundIdxCdf()
+    {
+        int fwd = Math.Abs(_seq.GetRelativeDist(_fh.OrderHints[_refFrame0], _fh.OrderHint));
+        int bck = Math.Abs(_seq.GetRelativeDist(_fh.OrderHints[_refFrame1], _fh.OrderHint));
+        int ctx = fwd == bck ? 3 : 0;
+        if (_availU)
+        {
+            if (!_aboveSingle) ctx += _st.CompoundIdxs[(_miRow - 1) * _st.MiCols + _miCol];
+            else if (_aboveRef0 == Av1Constants.AltRefFrame) ctx++;
+        }
+        if (_availL)
+        {
+            if (!_leftSingle) ctx += _st.CompoundIdxs[_miRow * _st.MiCols + (_miCol - 1)];
+            else if (_leftRef0 == Av1Constants.AltRefFrame) ctx++;
+        }
+        return _cdf.CompoundIdx.AsSpan(ctx * 3, 3);
     }
 
     private void ReadMv(ref Av1SymbolDecoder sym, int mvCtx, int predY, int predX, out int mvY, out int mvX)
@@ -2103,7 +3433,7 @@ internal sealed class Av1TileDecoder
         {
             int bit = sym.ReadSymbol(_cdf.MvClass0Bit.AsSpan(cc * 3, 3));
             int fr = _fh.ForceIntegerMv ? 3 : sym.ReadSymbol(_cdf.MvClass0Fr.AsSpan((cc * 2 + bit) * 5, 5));
-            int hp = 1; // allow_high_precision_mv is 0 for intra frames
+            int hp = _fh.AllowHighPrecisionMv ? sym.ReadSymbol(_cdf.MvClass0Hp.AsSpan(cc * 3, 3)) : 1;
             mag = ((bit << 3) | (fr << 1) | hp) + 1;
         }
         else
@@ -2116,88 +3446,113 @@ internal sealed class Av1TileDecoder
             }
             mag = Av1Constants.Class0Size << (mvClass + 2);
             int fr = _fh.ForceIntegerMv ? 3 : sym.ReadSymbol(_cdf.MvFr.AsSpan(cc * 5, 5));
-            int hp = 1;
+            int hp = _fh.AllowHighPrecisionMv ? sym.ReadSymbol(_cdf.MvHp.AsSpan(cc * 3, 3)) : 1;
             mag += ((d << 3) | (fr << 1) | hp) + 1;
         }
         return sign != 0 ? -mag : mag;
     }
 
-    private void ComputePredictionIntrabc()
+    // §5.11.33 Compute prediction (Inter + InterIntra + IntraBC)
+    private void ComputePrediction()
     {
-        int bitDepth = _seq.BitDepth;
-        int interRound0 = bitDepth == 12 ? 5 : 3;
-        int interRound1 = bitDepth == 12 ? 9 : 11;
+        int sbMask = _seq.Use128x128Superblock ? 31 : 15;
+        int subBlockMiRow = _miRow & sbMask;
+        int subBlockMiCol = _miCol & sbMask;
         int planes = _hasChroma ? 3 : 1;
 
         for (int plane = 0; plane < planes; plane++)
         {
+            int planeSz = GetPlaneResidualSize(_miSize, plane);
+            int num4x4W = Av1Constants.Num4x4BlocksWide[planeSz];
+            int num4x4H = Av1Constants.Num4x4BlocksHigh[planeSz];
+            int log2W = 2 + Av1Constants.MiWidthLog2[planeSz];
+            int log2H = 2 + Av1Constants.MiHeightLog2[planeSz];
             int subX = plane > 0 ? _seq.SubsamplingX : 0;
             int subY = plane > 0 ? _seq.SubsamplingY : 0;
-            int planeSz = GetPlaneResidualSize(_miSize, plane);
-            int w = Av1Constants.BlockWidth[planeSz];
-            int h = Av1Constants.BlockHeight[planeSz];
             int baseX = (_miCol >> subX) * 4;
             int baseY = (_miRow >> subY) * 4;
+            int candRow = (_miRow >> subY) << subY;
+            int candCol = (_miCol >> subX) << subX;
 
-            // §7.11.3.3 for IntraBC (xScale = yScale = 1 << 14, stepX = stepY = 1024)
-            int subpelX = (baseX << 4) + ((2 * _mv0X) >> subX);
-            int subpelY = (baseY << 4) + ((2 * _mv0Y) >> subY);
-            int srcX0 = subpelX >> 4;
-            int srcY0 = subpelY >> 4;
-            int fracX = subpelX & 15;
-            int fracY = subpelY & 15;
-
-            int lastX = ((_fh.MiCols * 4) >> subX) - 1;
-            int lastY = ((_fh.MiRows * 4) >> subY) - 1;
-            ushort[] buf = _pic.Planes[plane];
-            int stride = _pic.PlaneStrides[plane];
-
-            if (fracX == 0 && fracY == 0)
+            if (_isInterIntra)
             {
-                for (int r = 0; r < h; r++)
+                int mode = _interIntraMode switch
                 {
-                    int sy = Av1Constants.Clip3(0, lastY, srcY0 + r);
-                    int dstRow = (baseY + r) * stride + baseX;
-                    int srcRow = sy * stride;
-                    for (int c = 0; c < w; c++)
-                    {
-                        int sx = Av1Constants.Clip3(0, lastX, srcX0 + c);
-                        buf[dstRow + c] = buf[srcRow + sx];
-                    }
+                    Av1Constants.IiDcPred => Av1Constants.DcPred,
+                    Av1Constants.IiVPred => Av1Constants.VPred,
+                    Av1Constants.IiHPred => Av1Constants.HPred,
+                    _ => Av1Constants.SmoothPred,
+                };
+                bool[] bd = _blockDecoded[plane];
+                int bdY = subBlockMiRow >> subY;
+                int bdX = subBlockMiCol >> subX;
+                bool haveAboveRight = bd[bdY * BdStride + (bdX + num4x4W + 1)];
+                bool haveBelowLeft = bd[(bdY + num4x4H + 1) * BdStride + bdX];
+                int maxX = ((_fh.MiCols * 4) >> subX) - 1;
+                int maxY = ((_fh.MiRows * 4) >> subY) - 1;
+
+                Av1IntraPred.PredictIntra(
+                    _pic.Planes[plane],
+                    _pic.PlaneStrides[plane],
+                    _seq.BitDepth,
+                    _seq.EnableIntraEdgeFilter,
+                    plane,
+                    baseX,
+                    baseY,
+                    plane == 0 ? _availL : _availLChroma,
+                    plane == 0 ? _availU : _availUChroma,
+                    haveAboveRight,
+                    haveBelowLeft,
+                    mode,
+                    angleDelta: 0,
+                    useFilterIntra: false,
+                    filterIntraMode: 0,
+                    GetIntraFilterType(plane),
+                    log2W,
+                    log2H,
+                    maxX,
+                    maxY);
+            }
+
+            int predW = Av1Constants.BlockWidth[_miSize] >> subX;
+            int predH = Av1Constants.BlockHeight[_miSize] >> subY;
+            bool someUseIntra = false;
+            int rLim = Math.Min(num4x4H << subY, _st.MiRows - candRow);
+            int cLim = Math.Min(num4x4W << subX, _st.MiCols - candCol);
+            for (int r = 0; r < rLim; r++)
+            {
+                for (int c = 0; c < cLim; c++)
+                {
+                    if (_st.RefFrames[((candRow + r) * _st.MiCols + (candCol + c)) * 2] == Av1Constants.IntraFrame)
+                        someUseIntra = true;
                 }
             }
-            else
+            if (someUseIntra)
             {
-                // Bilinear interpolation (interpFilter = BILINEAR = 3: w0 = 128 - 8*f, w1 = 8*f)
-                int hx0 = 128 - 8 * fracX;
-                int hx1 = 8 * fracX;
-                int hy0 = 128 - 8 * fracY;
-                int hy1 = 8 * fracY;
-                int interH = h + 1;
-                for (int r = 0; r < interH; r++)
+                predW = num4x4W * 4;
+                predH = num4x4H * 4;
+                candRow = _miRow;
+                candCol = _miCol;
+            }
+
+            int ry = 0;
+            for (int y = 0; y < num4x4H * 4; y += predH)
+            {
+                int cx = 0;
+                for (int x = 0; x < num4x4W * 4; x += predW)
                 {
-                    int sy = Av1Constants.Clip3(0, lastY, srcY0 + r);
-                    int srcRow = sy * stride;
-                    int tmpRow = r * w;
-                    for (int c = 0; c < w; c++)
-                    {
-                        int sx0 = Av1Constants.Clip3(0, lastX, srcX0 + c);
-                        int sx1 = Av1Constants.Clip3(0, lastX, srcX0 + c + 1);
-                        int s = hx0 * buf[srcRow + sx0] + hx1 * buf[srcRow + sx1];
-                        _interTmp[tmpRow + c] = Av1Constants.Round2(s, interRound0);
-                    }
+                    _interPred.PredictInter(
+                        plane, baseX + x, baseY + y, predW, predH,
+                        candRow + ry, candCol + cx,
+                        _miRow, _miCol, _miSize, _yMode,
+                        _motionMode, _compoundType,
+                        _isInterIntra, _interIntraMode, _wedgeInterIntra,
+                        _wedgeIndex, _wedgeSign, _maskType,
+                        _useIntrabc, _availU, _availL,
+                        _numWarpSamples, _warpCandList);
+                    cx++;
                 }
-                for (int r = 0; r < h; r++)
-                {
-                    int dstRow = (baseY + r) * stride + baseX;
-                    int t0 = r * w;
-                    int t1 = (r + 1) * w;
-                    for (int c = 0; c < w; c++)
-                    {
-                        int s = hy0 * _interTmp[t0 + c] + hy1 * _interTmp[t1 + c];
-                        buf[dstRow + c] = (ushort)Av1Constants.Clip1(Av1Constants.Round2(s, interRound1), bitDepth);
-                    }
-                }
+                ry++;
             }
         }
     }

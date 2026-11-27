@@ -59,4 +59,32 @@ internal sealed class Av1Picture
 
     internal int OutputPlaneWidth(int plane) => plane == 0 ? Width : (Width + SubsamplingX) >> SubsamplingX;
     internal int OutputPlaneHeight(int plane) => plane == 0 ? Height : (Height + SubsamplingY) >> SubsamplingY;
+
+    internal Av1Picture Clone()
+    {
+        var copy = new Av1Picture(this);
+        for (int p = 0; p < Planes.Length; p++)
+            Planes[p].CopyTo(copy.Planes[p], 0);
+        return copy;
+    }
+
+    private Av1Picture(Av1Picture src)
+    {
+        Width = src.Width;
+        Height = src.Height;
+        BitDepth = src.BitDepth;
+        SubsamplingX = src.SubsamplingX;
+        SubsamplingY = src.SubsamplingY;
+        Monochrome = src.Monochrome;
+        ColorPrimaries = src.ColorPrimaries;
+        TransferCharacteristics = src.TransferCharacteristics;
+        MatrixCoefficients = src.MatrixCoefficients;
+        FullRange = src.FullRange;
+        ChromaSamplePosition = src.ChromaSamplePosition;
+        PlaneStrides = (int[])src.PlaneStrides.Clone();
+        PlaneHeights = (int[])src.PlaneHeights.Clone();
+        Planes = new ushort[src.Planes.Length][];
+        for (int p = 0; p < Planes.Length; p++)
+            Planes[p] = new ushort[src.Planes[p].Length];
+    }
 }

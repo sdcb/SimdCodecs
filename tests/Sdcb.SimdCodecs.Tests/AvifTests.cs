@@ -56,14 +56,18 @@ public sealed class AvifTests
         "photo-mangrove-1600x1200-superres.avif",
         "photo-night-1280x720-filmgrain-8b.avif",
         "perf-photo-night-3840x2160-grain-10b.avif",
+        // M3 Layered scalable Inter:
+        "container-layered-a1lx-a1op-1280x720.avif",
     ];
 
-    /// <summary>Fixtures outside current milestone (M3 inter / animated): each must fail cleanly with <see cref="InvalidDataException"/>.</summary>
-    private static readonly string[] RejectedFixtures =
+    /// <summary>All 5 animated AVIF sequences (<c>avis</c>) in <c>avif-golden.tsv</c>.</summary>
+    private static readonly string[] AnimatedFixtures =
     [
-        "container-layered-a1lx-a1op-1280x720.avif",
         "anim-alltools-320x240-8f.avif",
         "anim-alpha-640x360-24f-varfps.avif",
+        "anim-mandelbrot-1280x720-60f-inter.avif",
+        "anim-photo-fuji-1920x1080-30f-10b.avif",
+        "anim-screen-testsrc2-1280x720-24f-444.avif",
     ];
 
     private static readonly string[] RgbaCompareFixtures =
@@ -85,7 +89,7 @@ public sealed class AvifTests
     ];
 
     public static IEnumerable<object[]> Decodable() => M1Fixtures.Select(static f => new object[] { f });
-    public static IEnumerable<object[]> Rejected() => RejectedFixtures.Select(static f => new object[] { f });
+    public static IEnumerable<object[]> Animated() => AnimatedFixtures.Select(static f => new object[] { f });
     public static IEnumerable<object[]> RgbaFixtures() => RgbaCompareFixtures.Select(static f => new object[] { f });
 
     [Theory]
@@ -170,14 +174,102 @@ public sealed class AvifTests
     }
 
     [Theory]
-    [MemberData(nameof(Rejected))]
-    public void UnsupportedFixture_FailsCleanly(string fixture)
+    [MemberData(nameof(Animated))]
+    public void AnimatedSequence_AllFramesPlanesDigest_MatchesGolden(string fixture)
     {
-        string path = FixturePath(fixture);
-        if (!File.Exists(path)) Assert.Skip($"{fixture} is not downloaded; run Oracle/avif/fetch.sh.");
-        byte[] data = File.ReadAllBytes(path);
-        var err = Should.Throw<InvalidDataException>(() => AvifDecoder.Decode(data));
-        err.Message.ShouldNotBeNullOrWhiteSpace();
+        byte[] data = ReadFixture(fixture);
+        var golden = LoadGolden();
+        golden.TryGetValue(fixture, out var expected).ShouldBeTrue($"{GoldenFileName} has no entry for {fixture}.");
+
+        AvifSequence.TryParse(data, out var seq).ShouldBeTrue(fixture);
+        seq!.FrameCount.ShouldBe(expected!.Frames, fixture);
+        seq.HasAlpha.ShouldBe(expected.HasAlpha, fixture);
+
+        var ct = TestContext.Current.CancellationToken;
+        var decoder = new AvifSequenceDecoder(seq, data);
+        using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        Span<byte> hdr = stackalloc byte[12];
+        for (int i = 0; i < seq.FrameCount; i++)
+        {
+            var planes = decoder.DecodeFramePlanes(data, i, ct);
+            if (i == 0)
+            {
+                planes.Width.ShouldBe(expected.Width, fixture);
+                planes.Height.ShouldBe(expected.Height, fixture);
+                planes.BitDepth.ShouldBe(expected.BitDepth, fixture);
+                string sub = planes.Monochrome ? "400"
+                    : (planes.SubsamplingX, planes.SubsamplingY) switch { (1, 1) => "420", (1, 0) => "422", (0, 0) => "444", _ => "other" };
+                sub.ShouldBe(expected.Subsampling, fixture);
+            }
+            AppendPlanesHash(sha, planes, hdr);
+        }
+
+        string digest = Convert.ToHexStringLower(sha.GetCurrentHash());
+        digest.ShouldBe(expected.Digest, $"{fixture} ({seq.FrameCount} frames)");
+    }
+
+    [Fact]
+    public void AnimatedAvif_OpenFrames_ReportsTimingLoopAndSupportsRandomSeek()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // 1. Variable FPS + auxiliary alpha track + finite loop count (3)
+        byte[] varAlpha = ReadFixture("anim-alpha-640x360-24f-varfps.avif");
+        ImageCodecs.TryReadInfo(varAlpha, out var info).ShouldBeTrue();
+        info.FrameCount.ShouldBe(24);
+        info.Channels.ShouldBe(4);
+
+        using (var dec = ImageDecoder.Open(varAlpha))
+        {
+            dec.FrameCount.ShouldBe(24);
+            dec.LoopCount.ShouldBe(3);
+
+            dec.GetFrame(0).Duration.ShouldBe(TimeSpan.FromMilliseconds(120));
+            dec.GetFrame(1).Duration.ShouldBe(TimeSpan.FromMilliseconds(60));
+            dec.GetFrame(2).Duration.ShouldBe(TimeSpan.FromMilliseconds(60));
+
+            using var img0 = dec.GetFrame(0).Decode(cancellationToken: ct);
+            using var img5 = dec.GetFrame(5).Decode(cancellationToken: ct);
+            img0.Width.ShouldBe(640);
+            img0.Height.ShouldBe(360);
+            img0.Channels.ShouldBe(4);
+            img5.Width.ShouldBe(640);
+
+            var buf = new byte[640 * 360 * 4];
+            dec.GetFrame(5).CopyPixels(null, Abstractions.PixelFormat.Rgba32, buf, 0, cancellationToken: ct);
+            buf.AsSpan().SequenceEqual(img5.ToRgba8()).ShouldBeTrue();
+        }
+
+        // 2. Multi-GOP (stss=[1, 31]) infinite-loop sequence: random seek matches sequential decode byte-for-byte
+        byte[] mandel = ReadFixture("anim-mandelbrot-1280x720-60f-inter.avif");
+        using (var seqDec = ImageDecoder.Open(mandel))
+        using (var seekDec = ImageDecoder.Open(mandel))
+        {
+            seqDec.FrameCount.ShouldBe(60);
+            seqDec.LoopCount.ShouldBe(0); // infinite
+            seqDec.GetFrame(0).Duration.ShouldBe(TimeSpan.FromMilliseconds(50));
+
+            // Jump straight to frame 35 (uses keyframe 30), then backward to frame 5, then forward to 35 again
+            using var seek35 = seekDec.GetFrame(35).Decode(cancellationToken: ct);
+            using var seek5 = seekDec.GetFrame(5).Decode(cancellationToken: ct);
+            using var seek35Again = seekDec.GetFrame(35).Decode(cancellationToken: ct);
+            seek35.Pixels.SequenceEqual(seek35Again.Pixels).ShouldBeTrue();
+
+            using var seq5 = seqDec.GetFrame(5).Decode(cancellationToken: ct);
+            seq5.Pixels.SequenceEqual(seek5.Pixels).ShouldBeTrue();
+        }
+
+        // 3. Still AVIF via ImageDecoder.Open: 1 frame, null loop & duration, matches TryDecode
+        byte[] still = ReadFixture("container-tiny-3x7.avif");
+        using (var stillDec = ImageDecoder.Open(still))
+        {
+            stillDec.FrameCount.ShouldBe(1);
+            stillDec.LoopCount.ShouldBeNull();
+            stillDec.GetFrame(0).Duration.ShouldBeNull();
+            using var frameImg = stillDec.GetFrame(0).Decode(cancellationToken: ct);
+            using var directImg = ImageCodecs.Decode(still, cancellationToken: ct);
+            frameImg.Pixels.SequenceEqual(directImg.Pixels).ShouldBeTrue();
+        }
     }
 
     [Fact]
@@ -358,6 +450,12 @@ public sealed class AvifTests
     {
         using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         Span<byte> hdr = stackalloc byte[12];
+        AppendPlanesHash(sha, p, hdr);
+        return Convert.ToHexStringLower(sha.GetCurrentHash());
+    }
+
+    private static void AppendPlanesHash(IncrementalHash sha, AvifDecodedPlanes p, Span<byte> hdr)
+    {
         int sampleBytes = p.BitDepth > 8 ? 2 : 1;
         HashPlane(sha, p.Y, p.Width, p.Height, sampleBytes, hdr);
         if (!p.Monochrome)
@@ -372,7 +470,6 @@ public sealed class AvifTests
             int alphaBytes = p.AlphaBitDepth > 8 ? 2 : 1;
             HashPlane(sha, p.Alpha, p.Width, p.Height, alphaBytes, hdr);
         }
-        return Convert.ToHexStringLower(sha.GetCurrentHash());
     }
 
     private static void HashPlane(IncrementalHash sha, ushort[] plane, int w, int h, int sampleBytes, Span<byte> hdr)

@@ -15,6 +15,10 @@ internal sealed class Av1FrameState
     internal readonly byte[] YModes;
     internal readonly byte[] UvModes;
     internal readonly byte[] Skips;
+    internal readonly byte[] SkipModes;
+    internal readonly byte[] CompGroupIdxs;
+    internal readonly byte[] CompoundIdxs;
+    internal readonly byte[] InterpFilters; // 2 per MI cell: [vert, horiz]
     internal readonly byte[] SegmentIds;
     internal readonly byte[] InterTxSizes;
     internal readonly byte[] IsInters;
@@ -52,6 +56,10 @@ internal sealed class Av1FrameState
         YModes = new byte[miCount];
         UvModes = new byte[miCount];
         Skips = new byte[miCount];
+        SkipModes = new byte[miCount];
+        CompGroupIdxs = new byte[miCount];
+        CompoundIdxs = new byte[miCount];
+        InterpFilters = new byte[miCount * 2];
         SegmentIds = new byte[miCount];
         InterTxSizes = new byte[miCount];
         IsInters = new byte[miCount];

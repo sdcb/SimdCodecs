@@ -22,13 +22,16 @@ public sealed class AvifFuzzTests
     [
         ("container-tiny-1x1.avif", 35),
         ("container-tiny-3x7.avif", 35),
-        ("screen-text-1280x720-palette-intrabc.avif", 8),
-        ("screen-ui-1920x1080-p1-8b-444-gbr.avif", 3),
-        ("screen-ui-1920x1080-p1-10b-444-bt709.avif", 2),
-        ("screen-testsrc2-1280x720-lr-wiener-sgr.avif", 5),
-        ("color-testsrc2-1280x720-pq-10b-nclx.avif", 3),
-        ("container-iovl-overlay-800x600.avif", 3),
-        ("container-iden-chain-640x480.avif", 2),
+        ("anim-alltools-320x240-8f.avif", 4),
+        ("anim-alpha-640x360-24f-varfps.avif", 2),
+        ("container-layered-a1lx-a1op-1280x720.avif", 2),
+        ("screen-text-1280x720-palette-intrabc.avif", 5),
+        ("screen-ui-1920x1080-p1-8b-444-gbr.avif", 2),
+        ("screen-ui-1920x1080-p1-10b-444-bt709.avif", 1),
+        ("screen-testsrc2-1280x720-lr-wiener-sgr.avif", 3),
+        ("color-testsrc2-1280x720-pq-10b-nclx.avif", 2),
+        ("container-iovl-overlay-800x600.avif", 2),
+        ("container-iden-chain-640x480.avif", 1),
         ("container-grid-alpha-1024x768-prem.avif", 1),
         ("photo-night-1280x720-filmgrain-8b.avif", 1),
         ("color-fuji-1280x720-gainmap-tmap.avif", 1),
@@ -38,7 +41,7 @@ public sealed class AvifFuzzTests
     private static readonly TimeSpan CaseLimit = TimeSpan.FromSeconds(15);
 
     private static readonly string[] FieldBoxes =
-        ["iloc", "ispe", "idat", "av1C", "ipma", "infe", "iinf", "dimg", "iref", "pitm", "clap", "irot", "imir", "colr", "ftyp", "auxC", "pixi", "clli", "a1lx", "a1op"];
+        ["iloc", "ispe", "idat", "av1C", "ipma", "infe", "iinf", "dimg", "iref", "pitm", "clap", "irot", "imir", "colr", "ftyp", "auxC", "pixi", "clli", "a1lx", "a1op", "mvhd", "tkhd", "elst", "mdhd", "hdlr", "stsd", "stts", "stsc", "stsz", "stco", "co64", "stss", "auxi"];
 
     private sealed record Box(string Type, int Start, int HeaderSize, int End)
     {
@@ -89,6 +92,8 @@ public sealed class AvifFuzzTests
     [Theory]
     [InlineData("screen-ui-1920x1080-p1-8b-444-gbr.avif", 281, 0x46)]
     [InlineData("container-grid-alpha-1024x768-prem.avif", 894, 0x43)]
+    [InlineData("anim-alltools-320x240-8f.avif", 1009, 0x8C)]
+    [InlineData("anim-alpha-640x360-24f-varfps.avif", 1348, 0x80)]
     public void Regressions_fail_cleanly(string fixture, int offset, byte value)
     {
         string path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "avif", fixture);
@@ -137,6 +142,20 @@ public sealed class AvifFuzzTests
                     var format = PixelConverterTests.Formats[layout];
                     var dst = new byte[(long)info.Width * info.Height * format.BytesPerPixel];
                     ImageCodecs.TryDecodeInto(data, dst, 0, format);
+
+                    if (AvifImageDecoder.TryOpenFrames(data, out var reader))
+                    {
+                        using (reader)
+                        {
+                            int framesToCheck = Math.Min(reader.FrameCount, 2);
+                            for (int f = 0; f < framesToCheck; f++)
+                            {
+                                reader.TryGetFrameInfo(f, out _);
+                                if (reader.TryDecodeFrame(f, out var frameImg))
+                                    frameImg.Dispose();
+                            }
+                        }
+                    }
                 }
             }
             else
@@ -326,7 +345,7 @@ public sealed class AvifFuzzTests
                 mdatStart = pos + hdr;
                 mdatEnd = boxEnd;
             }
-            if (type is "meta" or "iprp" or "ipco" or "iinf" or "iref" or "grpl")
+            if (type is "meta" or "iprp" or "ipco" or "iinf" or "iref" or "grpl" or "moov" or "trak" or "edts" or "mdia" or "minf" or "stbl" or "tref")
             {
                 int sub = pos + hdr;
                 if (type is "meta" or "iref") sub += 4;

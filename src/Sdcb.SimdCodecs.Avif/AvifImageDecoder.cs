@@ -16,7 +16,7 @@ namespace Sdcb.SimdCodecs.Avif;
 /// metadata, HDR PQ/HLG signalling, and ISO/IEC 21496-1 <c>tmap</c> gain maps.
 /// </para>
 /// </summary>
-public sealed class AvifImageDecoder : IPlanarImageDecoder
+public sealed class AvifImageDecoder : IPlanarImageDecoder, IMultiFrameImageDecoder
 {
     /// <summary>
     /// This codec's entry for <c>ImageCodecs</c> — its members bound by concrete method group for Mono AOT safety.
@@ -34,6 +34,7 @@ public sealed class AvifImageDecoder : IPlanarImageDecoder
         TryDecodeThumbnail = TryDecodeThumbnail,
         TryReadPlanarInfo = TryReadPlanarInfo,
         TryDecodePlanes = TryDecodePlanes,
+        TryOpenFrames = TryOpenFrames,
     };
 
     /// <summary>The <c>ftyp</c> box with its compatible brands.</summary>
@@ -60,7 +61,33 @@ public sealed class AvifImageDecoder : IPlanarImageDecoder
     public static bool TryReadInfo(ReadOnlySpan<byte> data, out ImageInfo info)
     {
         info = default;
-        if (!TryParse(data, out var container)) return false;
+        int frameCount = 1;
+        AvifSequence? seq = null;
+        if (CanDecode(data) && AvifSequence.TryParse(data, out seq) && seq.FrameCount > 0)
+            frameCount = seq.FrameCount;
+
+        if (!TryParse(data, out var container))
+        {
+            if (seq is null) return false;
+            try
+            {
+                var (sw, sh) = seq.DisplaySize();
+                int sDepth = seq.BitDepth;
+                int sCh = seq.HasAlpha ? 4 : 3;
+                info = new ImageInfo(sw, sh, sCh, sDepth > 8 ? SampleFormat.UInt16 : SampleFormat.UInt8)
+                {
+                    Format = ImageFormat.Avif,
+                    BitDepth = sDepth,
+                    FrameCount = frameCount,
+                    ColorEncoding = ColorEncodingOfSequence(seq),
+                };
+                return true;
+            }
+            catch (Exception e) when (e is InvalidDataException or ArgumentException or OverflowException)
+            {
+                return false;
+            }
+        }
         try
         {
             AvifDecoder.EnsureCanvasDimensions(data, container);
@@ -73,6 +100,7 @@ public sealed class AvifImageDecoder : IPlanarImageDecoder
                 info = new ImageInfo(width, height, 3, SampleFormat.Float32)
                 {
                     Format = ImageFormat.Avif,
+                    FrameCount = frameCount,
                     ColorEncoding = new ColorEncoding
                     {
                         Primaries = colorEncoding.Primaries,
@@ -90,6 +118,7 @@ public sealed class AvifImageDecoder : IPlanarImageDecoder
             {
                 Format = ImageFormat.Avif,
                 BitDepth = depth,
+                FrameCount = frameCount,
                 ColorEncoding = colorEncoding,
                 HasThumbnail = hasThumb,
             };
@@ -99,6 +128,34 @@ public sealed class AvifImageDecoder : IPlanarImageDecoder
         {
             return false;
         }
+    }
+
+    /// <inheritdoc />
+    public static bool TryOpenFrames(ReadOnlyMemory<byte> data, [NotNullWhen(true)] out IImageFrameReader? reader)
+    {
+        if (AvifFrameReader.TryOpen(data, out var avifReader))
+        {
+            reader = avifReader;
+            return true;
+        }
+        reader = null;
+        return false;
+    }
+
+    private static ColorEncoding ColorEncodingOfSequence(AvifSequence seq)
+    {
+        if (seq.NclxColour is { } nclx)
+        {
+            return new ColorEncoding
+            {
+                Primaries = (ColorPrimaries)(nclx.ColourPrimaries is >= 0 and <= 255 ? nclx.ColourPrimaries : 2),
+                Transfer = (TransferFunction)(nclx.TransferCharacteristics is >= 0 and <= 255 ? nclx.TransferCharacteristics : 2),
+                FullRange = true,
+            };
+        }
+        if (seq.IccProfile is not null)
+            return IccPrimaries.Encoding(seq.IccProfile) ?? ColorEncoding.AssumedSrgb;
+        return ColorEncoding.AssumedSrgb;
     }
 
     /// <inheritdoc />

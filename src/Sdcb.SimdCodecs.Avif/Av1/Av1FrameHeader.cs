@@ -1,10 +1,12 @@
 namespace Sdcb.SimdCodecs.Avif.Av1;
 
 /// <summary>
-/// Parsed AV1 uncompressed frame header (§5.9) for intra still images (M1: KEY_FRAME / INTRA_ONLY_FRAME).
+/// Parsed AV1 uncompressed frame header (§5.9) for all frame types (KEY, INTER, INTRA_ONLY, SWITCH).
 /// </summary>
 internal sealed class Av1FrameHeader
 {
+    internal bool ShowExistingFrame { get; private set; }
+    internal int FrameToShowMapIdx { get; private set; }
     internal int FrameType { get; private set; }
     internal bool FrameIsIntra { get; private set; }
     internal bool ShowFrame { get; private set; }
@@ -15,6 +17,39 @@ internal sealed class Av1FrameHeader
     internal bool AllowScreenContentTools { get; private set; }
     internal bool ForceIntegerMv { get; private set; }
     internal bool AllowIntrabc { get; private set; }
+    internal int CurrentFrameId { get; private set; }
+    internal int OrderHint { get; private set; }
+    internal int PrimaryRefFrame { get; private set; } = Av1Constants.PrimaryRefNone;
+    internal int RefreshFrameFlags { get; private set; }
+
+    // Reference frames & Inter flags (§5.9.2)
+    internal int[] RefFrameIdx { get; } = new int[Av1Constants.RefsPerFrame];
+    internal int[] OrderHints { get; } = new int[Av1Constants.TotalRefsPerFrame];
+    internal bool[] RefFrameSignBias { get; } = new bool[Av1Constants.TotalRefsPerFrame];
+    internal bool AllowHighPrecisionMv { get; private set; }
+    internal int InterpolationFilter { get; private set; }
+    internal bool IsMotionModeSwitchable { get; private set; }
+    internal bool UseRefFrameMvs { get; private set; }
+    internal bool ReferenceSelect { get; private set; }
+    internal bool SkipModePresent { get; private set; }
+    internal int[] SkipModeFrame { get; } = new int[2];
+    internal bool AllowWarpedMotion { get; private set; }
+
+    // Global motion (§5.9.24)
+    internal int[] GmType { get; } = new int[Av1Constants.TotalRefsPerFrame];
+    internal int[,] GmParams { get; } = new int[Av1Constants.TotalRefsPerFrame, 6];
+    internal int[,] PrevGmParams { get; } = new int[Av1Constants.TotalRefsPerFrame, 6];
+
+    // Frame-start CDFs (either default or loaded from primary_ref_frame with counts reset)
+    internal Av1CdfState InitialCdfs { get; } = new();
+
+    // Previous segment IDs (loaded from primary_ref_frame for inter_segment_id)
+    internal byte[] PrevSegmentIds { get; private set; } = [];
+
+    // Motion field MVs (§7.9): [ref (0..7)][(y8 * w8 + x8) * 2 + comp]
+    internal short[][]? MotionFieldMvs { get; private set; }
+    internal int MotionFieldW8 { get; private set; }
+    internal int MotionFieldH8 { get; private set; }
 
     internal int FrameWidth { get; private set; }
     internal int FrameHeight { get; private set; }
@@ -50,6 +85,9 @@ internal sealed class Av1FrameHeader
 
     // Segmentation (§5.9.14)
     internal bool SegmentationEnabled { get; private set; }
+    internal bool SegmentationUpdateMap { get; private set; }
+    internal bool SegmentationTemporalUpdate { get; private set; }
+    internal bool SegmentationUpdateData { get; private set; }
     internal bool[,] FeatureEnabled { get; } = new bool[Av1Constants.MaxSegments, Av1Constants.SegLvlMax];
     internal int[,] FeatureData { get; } = new int[Av1Constants.MaxSegments, Av1Constants.SegLvlMax];
     internal bool SegIdPreSkip { get; private set; }
@@ -93,15 +131,22 @@ internal sealed class Av1FrameHeader
     internal bool ApplyGrain { get; private set; }
     internal Av1FilmGrainParams? FilmGrain { get; private set; }
 
-    internal static Av1FrameHeader Parse(ref Av1BitReader br, Av1SequenceHeader seq, int temporalId = 0, int spatialId = 0)
+    internal static Av1FrameHeader Parse(
+        ref Av1BitReader br,
+        Av1SequenceHeader seq,
+        Av1DecoderSession session,
+        int temporalId = 0,
+        int spatialId = 0)
     {
         var fh = new Av1FrameHeader();
         int idLen = seq.FrameIdNumbersPresent
             ? seq.AdditionalFrameIdLengthMinus1 + seq.DeltaFrameIdLengthMinus2 + 3
             : 0;
+        const int allFrames = (1 << Av1Constants.NumRefFrames) - 1;
 
         if (seq.ReducedStillPictureHeader)
         {
+            fh.ShowExistingFrame = false;
             fh.FrameType = Av1Constants.KeyFrame;
             fh.FrameIsIntra = true;
             fh.ShowFrame = true;
@@ -110,20 +155,46 @@ internal sealed class Av1FrameHeader
         }
         else
         {
-            if (br.ReadBool()) // show_existing_frame
-                throw new InvalidDataException("AV1 show_existing_frame is not supported in M1 still-image decode.");
+            fh.ShowExistingFrame = br.ReadBool();
+            if (fh.ShowExistingFrame)
+            {
+                fh.FrameToShowMapIdx = (int)br.ReadBits(3);
+                if (seq.DecoderModelInfoPresent && !seq.EqualPictureInterval)
+                    _ = br.ReadBits(seq.FramePresentationTimeLengthMinus1 + 1);
+                fh.RefreshFrameFlags = 0;
+                if (seq.FrameIdNumbersPresent)
+                    _ = br.ReadBits(idLen); // display_frame_id
+                var refSlot = session.RefFrames[fh.FrameToShowMapIdx];
+                if (!refSlot.Valid)
+                    throw new InvalidDataException($"AV1 show_existing_frame references invalid slot {fh.FrameToShowMapIdx}.");
+                fh.FrameType = refSlot.FrameType;
+                if (fh.FrameType == Av1Constants.KeyFrame)
+                    fh.RefreshFrameFlags = allFrames;
+                fh.ShowFrame = true;
+                return fh;
+            }
 
             fh.FrameType = (int)br.ReadBits(2);
             fh.FrameIsIntra = fh.FrameType is Av1Constants.KeyFrame or Av1Constants.IntraOnlyFrame;
-            if (!fh.FrameIsIntra)
-                throw new InvalidDataException($"AV1 frame type {fh.FrameType} is not supported in M1 (intra-only).");
-
             fh.ShowFrame = br.ReadBool();
             if (fh.ShowFrame && seq.DecoderModelInfoPresent && !seq.EqualPictureInterval)
                 _ = br.ReadBits(seq.FramePresentationTimeLengthMinus1 + 1);
 
             fh.ShowableFrame = fh.ShowFrame ? fh.FrameType != Av1Constants.KeyFrame : br.ReadBool();
-            fh.ErrorResilientMode = (fh.FrameType == Av1Constants.KeyFrame && fh.ShowFrame) || br.ReadBool();
+            fh.ErrorResilientMode = fh.FrameType == Av1Constants.SwitchFrame
+                || (fh.FrameType == Av1Constants.KeyFrame && fh.ShowFrame)
+                || br.ReadBool();
+        }
+
+        if (fh.FrameType == Av1Constants.KeyFrame && fh.ShowFrame)
+        {
+            for (int i = 0; i < Av1Constants.NumRefFrames; i++)
+            {
+                session.RefFrames[i].Valid = false;
+                session.RefFrames[i].OrderHint = 0;
+            }
+            for (int i = 0; i < Av1Constants.RefsPerFrame; i++)
+                fh.OrderHints[Av1Constants.LastFrame + i] = 0;
         }
 
         fh.DisableCdfUpdate = br.ReadBool();
@@ -141,12 +212,21 @@ internal sealed class Av1FrameHeader
             fh.ForceIntegerMv = true;
 
         if (seq.FrameIdNumbersPresent)
-            _ = br.ReadBits(idLen); // current_frame_id
+        {
+            fh.CurrentFrameId = (int)br.ReadBits(idLen);
+            session.CurrentFrameId = fh.CurrentFrameId;
+            MarkRefFrames(seq, session, fh.CurrentFrameId, idLen);
+        }
 
-        bool frameSizeOverride = !seq.ReducedStillPictureHeader && br.ReadBool();
+        bool frameSizeOverride = fh.FrameType == Av1Constants.SwitchFrame
+            || (!seq.ReducedStillPictureHeader && br.ReadBool());
 
         if (seq.OrderHintBits > 0)
-            _ = br.ReadBits(seq.OrderHintBits); // order_hint
+            fh.OrderHint = (int)br.ReadBits(seq.OrderHintBits);
+
+        fh.PrimaryRefFrame = (fh.FrameIsIntra || fh.ErrorResilientMode)
+            ? Av1Constants.PrimaryRefNone
+            : (int)br.ReadBits(3);
 
         if (seq.DecoderModelInfoPresent)
         {
@@ -165,70 +245,109 @@ internal sealed class Av1FrameHeader
             }
         }
 
-        int refreshFrameFlags = (fh.FrameType == Av1Constants.KeyFrame && fh.ShowFrame)
-            ? 0xFF
+        fh.RefreshFrameFlags = (fh.FrameType == Av1Constants.SwitchFrame || (fh.FrameType == Av1Constants.KeyFrame && fh.ShowFrame))
+            ? allFrames
             : (int)br.ReadBits(8);
 
-        if (refreshFrameFlags != 0xFF && fh.ErrorResilientMode && seq.EnableOrderHint)
+        if (!fh.FrameIsIntra || fh.RefreshFrameFlags != allFrames)
         {
-            for (int i = 0; i < Av1Constants.NumRefFrames; i++)
-                _ = br.ReadBits(seq.OrderHintBits);
+            if (fh.ErrorResilientMode && seq.EnableOrderHint)
+            {
+                for (int i = 0; i < Av1Constants.NumRefFrames; i++)
+                {
+                    int refOh = (int)br.ReadBits(seq.OrderHintBits);
+                    if (refOh != session.RefFrames[i].OrderHint)
+                        session.RefFrames[i].Valid = false;
+                }
+            }
         }
 
-        // Frame size + Superres + Render size (§5.9.5, §5.9.6, §5.9.8)
-        if (frameSizeOverride)
+        if (fh.FrameIsIntra)
         {
-            fh.FrameWidth = (int)br.ReadBits(seq.FrameWidthBitsMinus1 + 1) + 1;
-            fh.FrameHeight = (int)br.ReadBits(seq.FrameHeightBitsMinus1 + 1) + 1;
+            ParseFrameSize(ref br, seq, fh, frameSizeOverride);
+            ParseRenderSize(ref br, fh);
+            if (fh.AllowScreenContentTools && fh.UpscaledWidth == fh.FrameWidth)
+                fh.AllowIntrabc = br.ReadBool();
         }
         else
         {
-            fh.FrameWidth = seq.MaxFrameWidth;
-            fh.FrameHeight = seq.MaxFrameHeight;
-        }
+            bool shortSig = seq.EnableOrderHint && br.ReadBool();
+            if (shortSig)
+            {
+                int lastIdx = (int)br.ReadBits(3);
+                int goldIdx = (int)br.ReadBits(3);
+                SetFrameRefs(seq, session, fh, lastIdx, goldIdx);
+            }
+            for (int i = 0; i < Av1Constants.RefsPerFrame; i++)
+            {
+                if (!shortSig)
+                    fh.RefFrameIdx[i] = (int)br.ReadBits(3);
+                if (seq.FrameIdNumbersPresent)
+                    _ = br.ReadBits(seq.DeltaFrameIdLengthMinus2 + 2);
+            }
 
-        fh.UseSuperres = seq.EnableSuperres && br.ReadBool();
-        if (fh.UseSuperres)
-        {
-            int codedDenom = (int)br.ReadBits(Av1Constants.SuperresDenomBits);
-            fh.SuperresDenom = codedDenom + Av1Constants.SuperresDenomMin;
-        }
-        else
-        {
-            fh.SuperresDenom = Av1Constants.SuperresNum;
-        }
+            if (frameSizeOverride && !fh.ErrorResilientMode)
+                ParseFrameSizeWithRefs(ref br, seq, session, fh);
+            else
+            {
+                ParseFrameSize(ref br, seq, fh, frameSizeOverride);
+                ParseRenderSize(ref br, fh);
+            }
 
-        fh.UpscaledWidth = fh.FrameWidth;
-        fh.FrameWidth = (fh.UpscaledWidth * Av1Constants.SuperresNum + (fh.SuperresDenom / 2)) / fh.SuperresDenom;
-        if (fh.UpscaledWidth <= 0 || fh.FrameHeight <= 0
-            || fh.UpscaledWidth > AvifContainer.MaxDimension || fh.FrameHeight > AvifContainer.MaxDimension
-            || (long)fh.UpscaledWidth * fh.FrameHeight > AvifContainer.MaxPixels)
-        {
-            throw new InvalidDataException($"AV1 frame dimensions {fh.UpscaledWidth}x{fh.FrameHeight} exceed decoder limits.");
-        }
-        fh.MiCols = 2 * ((fh.FrameWidth + 7) >> 3);
-        fh.MiRows = 2 * ((fh.FrameHeight + 7) >> 3);
+            fh.AllowHighPrecisionMv = !fh.ForceIntegerMv && br.ReadBool();
+            fh.InterpolationFilter = br.ReadBool() ? Av1Constants.Switchable : (int)br.ReadBits(2);
+            fh.IsMotionModeSwitchable = br.ReadBool();
+            fh.UseRefFrameMvs = !fh.ErrorResilientMode && seq.EnableRefFrameMvs && br.ReadBool();
 
-        if (br.ReadBool()) // render_and_frame_size_different
-        {
-            fh.RenderWidth = (int)br.ReadBits(16) + 1;
-            fh.RenderHeight = (int)br.ReadBits(16) + 1;
+            for (int i = 0; i < Av1Constants.RefsPerFrame; i++)
+            {
+                int refFrame = Av1Constants.LastFrame + i;
+                int hint = session.RefFrames[fh.RefFrameIdx[i]].OrderHint;
+                fh.OrderHints[refFrame] = hint;
+                fh.RefFrameSignBias[refFrame] = seq.EnableOrderHint && seq.GetRelativeDist(hint, fh.OrderHint) > 0;
+            }
         }
-        else
-        {
-            fh.RenderWidth = fh.UpscaledWidth;
-            fh.RenderHeight = fh.FrameHeight;
-        }
-
-        if (fh.AllowScreenContentTools && fh.UpscaledWidth == fh.FrameWidth)
-            fh.AllowIntrabc = br.ReadBool();
 
         fh.DisableFrameEndUpdateCdf = seq.ReducedStillPictureHeader || fh.DisableCdfUpdate || br.ReadBool();
+
+        if (fh.PrimaryRefFrame == Av1Constants.PrimaryRefNone)
+        {
+            SetupPastIndependence(fh);
+        }
+        else
+        {
+            int prevFrameIdx = fh.RefFrameIdx[fh.PrimaryRefFrame];
+            var prev = session.RefFrames[prevFrameIdx];
+            if (!prev.Valid || prev.SavedCdfs is null)
+                throw new InvalidDataException($"AV1 primary_ref_frame references invalid slot {prevFrameIdx}.");
+            fh.InitialCdfs.CopyFrom(prev.SavedCdfs, resetCounts: true);
+            LoadPrevious(fh, prev);
+        }
+
+        if (fh.UseRefFrameMvs)
+            ComputeMotionFieldEstimation(seq, session, fh);
 
         ParseTileInfo(ref br, seq, fh);
         ParseQuantizationParams(ref br, seq, fh);
         ParseSegmentationParams(ref br, fh);
         ParseDeltaQAndLfParams(ref br, fh);
+
+        if (fh.PrimaryRefFrame == Av1Constants.PrimaryRefNone)
+        {
+            fh.InitialCdfs.InitDefault(fh.BaseQIdx);
+            fh.PrevSegmentIds = new byte[fh.MiRows * fh.MiCols];
+        }
+        else
+        {
+            int prevFrameIdx = fh.RefFrameIdx[fh.PrimaryRefFrame];
+            var prev = session.RefFrames[prevFrameIdx];
+            fh.PrevSegmentIds = new byte[fh.MiRows * fh.MiCols];
+            if (fh.SegmentationEnabled && prev.MiCols == fh.MiCols && prev.MiRows == fh.MiRows
+                && prev.SavedSegmentIds.Length == fh.PrevSegmentIds.Length)
+            {
+                prev.SavedSegmentIds.CopyTo(fh.PrevSegmentIds, 0);
+            }
+        }
 
         // Compute CodedLossless / LosslessArray / SegQmLevel (§5.9.2)
         fh.CodedLossless = true;
@@ -256,29 +375,546 @@ internal sealed class Av1FrameHeader
             ? Av1Constants.Only4x4
             : br.ReadBool() ? Av1Constants.TxModeSelect : Av1Constants.TxModeLargest;
 
+        fh.ReferenceSelect = !fh.FrameIsIntra && br.ReadBool();
+        ParseSkipModeParams(ref br, seq, session, fh);
+        fh.AllowWarpedMotion = !fh.FrameIsIntra && !fh.ErrorResilientMode && seq.EnableWarpedMotion && br.ReadBool();
         fh.ReducedTxSet = br.ReadBool();
+        ParseGlobalMotionParams(ref br, fh);
 
         // Film grain params (§5.9.30)
         if (seq.FilmGrainParamsPresent && (fh.ShowFrame || fh.ShowableFrame))
-            ParseFilmGrainParams(ref br, seq, fh);
+            ParseFilmGrainParams(ref br, seq, session, fh);
 
         return fh;
     }
 
-    private static void ParseFilmGrainParams(ref Av1BitReader br, Av1SequenceHeader seq, Av1FrameHeader fh)
+    private static void MarkRefFrames(Av1SequenceHeader seq, Av1DecoderSession session, int currentFrameId, int idLen)
+    {
+        int diffLen = seq.DeltaFrameIdLengthMinus2 + 2;
+        for (int i = 0; i < Av1Constants.NumRefFrames; i++)
+        {
+            int refId = session.RefFrames[i].FrameId;
+            if (currentFrameId > (1 << diffLen))
+            {
+                if (refId > currentFrameId || refId < currentFrameId - (1 << diffLen))
+                    session.RefFrames[i].Valid = false;
+            }
+            else
+            {
+                if (refId > currentFrameId && refId < (1 << idLen) + currentFrameId - (1 << diffLen))
+                    session.RefFrames[i].Valid = false;
+            }
+        }
+    }
+
+    private static void ParseFrameSize(ref Av1BitReader br, Av1SequenceHeader seq, Av1FrameHeader fh, bool frameSizeOverride)
+    {
+        if (frameSizeOverride)
+        {
+            fh.FrameWidth = (int)br.ReadBits(seq.FrameWidthBitsMinus1 + 1) + 1;
+            fh.FrameHeight = (int)br.ReadBits(seq.FrameHeightBitsMinus1 + 1) + 1;
+        }
+        else
+        {
+            fh.FrameWidth = seq.MaxFrameWidth;
+            fh.FrameHeight = seq.MaxFrameHeight;
+        }
+        ParseSuperresAndComputeSize(ref br, seq, fh);
+    }
+
+    private static void ParseFrameSizeWithRefs(ref Av1BitReader br, Av1SequenceHeader seq, Av1DecoderSession session, Av1FrameHeader fh)
+    {
+        bool foundRef = false;
+        for (int i = 0; i < Av1Constants.RefsPerFrame; i++)
+        {
+            if (br.ReadBool())
+            {
+                var r = session.RefFrames[fh.RefFrameIdx[i]];
+                if (!r.Valid)
+                    throw new InvalidDataException("AV1 frame_size_with_refs references an invalid reference slot.");
+                fh.UpscaledWidth = r.UpscaledWidth;
+                fh.FrameWidth = r.UpscaledWidth;
+                fh.FrameHeight = r.FrameHeight;
+                fh.RenderWidth = r.RenderWidth;
+                fh.RenderHeight = r.RenderHeight;
+                foundRef = true;
+                break;
+            }
+        }
+
+        if (!foundRef)
+        {
+            ParseFrameSize(ref br, seq, fh, frameSizeOverride: true);
+            ParseRenderSize(ref br, fh);
+        }
+        else
+        {
+            ParseSuperresAndComputeSize(ref br, seq, fh);
+        }
+    }
+
+    private static void ParseSuperresAndComputeSize(ref Av1BitReader br, Av1SequenceHeader seq, Av1FrameHeader fh)
+    {
+        fh.UseSuperres = seq.EnableSuperres && br.ReadBool();
+        if (fh.UseSuperres)
+        {
+            int codedDenom = (int)br.ReadBits(Av1Constants.SuperresDenomBits);
+            fh.SuperresDenom = codedDenom + Av1Constants.SuperresDenomMin;
+        }
+        else
+        {
+            fh.SuperresDenom = Av1Constants.SuperresNum;
+        }
+
+        fh.UpscaledWidth = fh.FrameWidth;
+        fh.FrameWidth = (fh.UpscaledWidth * Av1Constants.SuperresNum + (fh.SuperresDenom / 2)) / fh.SuperresDenom;
+        if (fh.UpscaledWidth <= 0 || fh.FrameHeight <= 0
+            || fh.UpscaledWidth > AvifContainer.MaxDimension || fh.FrameHeight > AvifContainer.MaxDimension
+            || (long)fh.UpscaledWidth * fh.FrameHeight > AvifContainer.MaxPixels)
+        {
+            throw new InvalidDataException($"AV1 frame dimensions {fh.UpscaledWidth}x{fh.FrameHeight} exceed decoder limits.");
+        }
+        fh.MiCols = 2 * ((fh.FrameWidth + 7) >> 3);
+        fh.MiRows = 2 * ((fh.FrameHeight + 7) >> 3);
+    }
+
+    private static void ParseRenderSize(ref Av1BitReader br, Av1FrameHeader fh)
+    {
+        if (br.ReadBool())
+        {
+            fh.RenderWidth = (int)br.ReadBits(16) + 1;
+            fh.RenderHeight = (int)br.ReadBits(16) + 1;
+        }
+        else
+        {
+            fh.RenderWidth = fh.UpscaledWidth;
+            fh.RenderHeight = fh.FrameHeight;
+        }
+    }
+
+    // §7.8 Set frame refs process
+    private static void SetFrameRefs(Av1SequenceHeader seq, Av1DecoderSession session, Av1FrameHeader fh, int lastIdx, int goldIdx)
+    {
+        Array.Fill(fh.RefFrameIdx, -1);
+        fh.RefFrameIdx[Av1Constants.LastFrame - Av1Constants.LastFrame] = lastIdx;
+        fh.RefFrameIdx[Av1Constants.GoldenFrame - Av1Constants.LastFrame] = goldIdx;
+
+        Span<bool> usedFrame = stackalloc bool[Av1Constants.NumRefFrames];
+        usedFrame[lastIdx] = true;
+        usedFrame[goldIdx] = true;
+
+        int curFrameHint = 1 << (seq.OrderHintBits - 1);
+        Span<int> shifted = stackalloc int[Av1Constants.NumRefFrames];
+        for (int i = 0; i < Av1Constants.NumRefFrames; i++)
+            shifted[i] = curFrameHint + seq.GetRelativeDist(session.RefFrames[i].OrderHint, fh.OrderHint);
+
+        // ALTREF_FRAME = latest backward
+        int r = FindLatestBackward(shifted, usedFrame, curFrameHint);
+        if (r >= 0) { fh.RefFrameIdx[Av1Constants.AltRefFrame - Av1Constants.LastFrame] = r; usedFrame[r] = true; }
+
+        // BWDREF_FRAME = earliest backward
+        r = FindEarliestBackward(shifted, usedFrame, curFrameHint);
+        if (r >= 0) { fh.RefFrameIdx[Av1Constants.BwdRefFrame - Av1Constants.LastFrame] = r; usedFrame[r] = true; }
+
+        // ALTREF2_FRAME = next earliest backward
+        r = FindEarliestBackward(shifted, usedFrame, curFrameHint);
+        if (r >= 0) { fh.RefFrameIdx[Av1Constants.AltRef2Frame - Av1Constants.LastFrame] = r; usedFrame[r] = true; }
+
+        ReadOnlySpan<int> refList =
+        [
+            Av1Constants.Last2Frame, Av1Constants.Last3Frame,
+            Av1Constants.BwdRefFrame, Av1Constants.AltRef2Frame, Av1Constants.AltRefFrame,
+        ];
+        foreach (int rf in refList)
+        {
+            if (fh.RefFrameIdx[rf - Av1Constants.LastFrame] < 0)
+            {
+                r = FindLatestForward(shifted, usedFrame, curFrameHint);
+                if (r >= 0) { fh.RefFrameIdx[rf - Av1Constants.LastFrame] = r; usedFrame[r] = true; }
+            }
+        }
+
+        int earliest = -1, earliestHint = 0;
+        for (int i = 0; i < Av1Constants.NumRefFrames; i++)
+        {
+            if (earliest < 0 || shifted[i] < earliestHint) { earliest = i; earliestHint = shifted[i]; }
+        }
+        for (int i = 0; i < Av1Constants.RefsPerFrame; i++)
+        {
+            if (fh.RefFrameIdx[i] < 0) fh.RefFrameIdx[i] = earliest;
+        }
+    }
+
+    private static int FindLatestBackward(ReadOnlySpan<int> shifted, ReadOnlySpan<bool> used, int cur)
+    {
+        int r = -1, latest = 0;
+        for (int i = 0; i < Av1Constants.NumRefFrames; i++)
+        {
+            if (!used[i] && shifted[i] >= cur && (r < 0 || shifted[i] >= latest)) { r = i; latest = shifted[i]; }
+        }
+        return r;
+    }
+
+    private static int FindEarliestBackward(ReadOnlySpan<int> shifted, ReadOnlySpan<bool> used, int cur)
+    {
+        int r = -1, earliest = 0;
+        for (int i = 0; i < Av1Constants.NumRefFrames; i++)
+        {
+            if (!used[i] && shifted[i] >= cur && (r < 0 || shifted[i] < earliest)) { r = i; earliest = shifted[i]; }
+        }
+        return r;
+    }
+
+    private static int FindLatestForward(ReadOnlySpan<int> shifted, ReadOnlySpan<bool> used, int cur)
+    {
+        int r = -1, latest = 0;
+        for (int i = 0; i < Av1Constants.NumRefFrames; i++)
+        {
+            if (!used[i] && shifted[i] < cur && (r < 0 || shifted[i] >= latest)) { r = i; latest = shifted[i]; }
+        }
+        return r;
+    }
+
+    private static void SetupPastIndependence(Av1FrameHeader fh)
+    {
+        for (int r = Av1Constants.LastFrame; r <= Av1Constants.AltRefFrame; r++)
+        {
+            for (int j = 0; j < 6; j++)
+                fh.PrevGmParams[r, j] = (j % 3 == 2) ? (1 << Av1Constants.WarpedModelPrecBits) : 0;
+        }
+        fh.LoopFilterRefDeltas[Av1Constants.IntraFrame] = 1;
+        fh.LoopFilterRefDeltas[Av1Constants.LastFrame] = 0;
+        fh.LoopFilterRefDeltas[Av1Constants.Last2Frame] = 0;
+        fh.LoopFilterRefDeltas[Av1Constants.Last3Frame] = 0;
+        fh.LoopFilterRefDeltas[Av1Constants.BwdRefFrame] = 0;
+        fh.LoopFilterRefDeltas[Av1Constants.GoldenFrame] = -1;
+        fh.LoopFilterRefDeltas[Av1Constants.AltRef2Frame] = -1;
+        fh.LoopFilterRefDeltas[Av1Constants.AltRefFrame] = -1;
+        fh.LoopFilterModeDeltas[0] = 0;
+        fh.LoopFilterModeDeltas[1] = 0;
+    }
+
+    private static void LoadPrevious(Av1FrameHeader fh, Av1RefFrame prev)
+    {
+        Array.Copy(prev.SavedGmParams, fh.PrevGmParams, prev.SavedGmParams.Length);
+        Array.Copy(prev.SavedLoopFilterRefDeltas, fh.LoopFilterRefDeltas, Av1Constants.TotalRefsPerFrame);
+        Array.Copy(prev.SavedLoopFilterModeDeltas, fh.LoopFilterModeDeltas, 2);
+        Array.Copy(prev.SavedFeatureEnabled, fh.FeatureEnabled, prev.SavedFeatureEnabled.Length);
+        Array.Copy(prev.SavedFeatureData, fh.FeatureData, prev.SavedFeatureData.Length);
+    }
+
+    // §7.9 Motion field estimation process
+    private static void ComputeMotionFieldEstimation(Av1SequenceHeader seq, Av1DecoderSession session, Av1FrameHeader fh)
+    {
+        int w8 = fh.MiCols >> 1;
+        int h8 = fh.MiRows >> 1;
+        fh.MotionFieldW8 = w8;
+        fh.MotionFieldH8 = h8;
+        var mfmv = new short[Av1Constants.TotalRefsPerFrame][];
+        for (int r = Av1Constants.LastFrame; r <= Av1Constants.AltRefFrame; r++)
+        {
+            mfmv[r] = new short[w8 * h8 * 2];
+            Array.Fill(mfmv[r], short.MinValue);
+        }
+        fh.MotionFieldMvs = mfmv;
+
+        int lastIdx = fh.RefFrameIdx[0];
+        int curGoldOh = fh.OrderHints[Av1Constants.GoldenFrame];
+        int lastAltOh = session.RefFrames[lastIdx].SavedOrderHints[Av1Constants.AltRefFrame];
+        if (lastAltOh != curGoldOh)
+            ProjectMotionField(seq, session, fh, Av1Constants.LastFrame, -1);
+
+        int refStamp = Av1Constants.MfmvStackSize - 2;
+        if (seq.GetRelativeDist(fh.OrderHints[Av1Constants.BwdRefFrame], fh.OrderHint) > 0)
+        {
+            if (ProjectMotionField(seq, session, fh, Av1Constants.BwdRefFrame, 1))
+                refStamp--;
+        }
+        if (seq.GetRelativeDist(fh.OrderHints[Av1Constants.AltRef2Frame], fh.OrderHint) > 0)
+        {
+            if (ProjectMotionField(seq, session, fh, Av1Constants.AltRef2Frame, 1))
+                refStamp--;
+        }
+        if (seq.GetRelativeDist(fh.OrderHints[Av1Constants.AltRefFrame], fh.OrderHint) > 0 && refStamp >= 0)
+        {
+            if (ProjectMotionField(seq, session, fh, Av1Constants.AltRefFrame, 1))
+                refStamp--;
+        }
+        if (refStamp >= 0)
+            ProjectMotionField(seq, session, fh, Av1Constants.Last2Frame, -1);
+    }
+
+    private static bool ProjectMotionField(Av1SequenceHeader seq, Av1DecoderSession session, Av1FrameHeader fh, int src, int dstSign)
+    {
+        int srcIdx = fh.RefFrameIdx[src - Av1Constants.LastFrame];
+        var srcSlot = session.RefFrames[srcIdx];
+        if (!srcSlot.Valid || srcSlot.MiRows != fh.MiRows || srcSlot.MiCols != fh.MiCols
+            || srcSlot.SavedRefFrames.Length < fh.MiRows * fh.MiCols
+            || srcSlot.FrameType is Av1Constants.IntraOnlyFrame or Av1Constants.KeyFrame)
+        {
+            return false;
+        }
+
+        int w8 = fh.MotionFieldW8;
+        int h8 = fh.MotionFieldH8;
+        int miCols = fh.MiCols;
+        var mfmv = fh.MotionFieldMvs!;
+
+        for (int y8 = 0; y8 < h8; y8++)
+        {
+            for (int x8 = 0; x8 < w8; x8++)
+            {
+                int row = 2 * y8 + 1;
+                int col = 2 * x8 + 1;
+                int cell = row * miCols + col;
+                int srcRef = srcSlot.SavedRefFrames[cell];
+                if (srcRef <= Av1Constants.IntraFrame) continue;
+
+                int refToCur = seq.GetRelativeDist(fh.OrderHints[src], fh.OrderHint);
+                int refOffset = seq.GetRelativeDist(fh.OrderHints[src], srcSlot.SavedOrderHints[srcRef]);
+                if (Math.Abs(refToCur) > Av1Constants.MaxFrameDistance
+                    || Math.Abs(refOffset) > Av1Constants.MaxFrameDistance
+                    || refOffset <= 0)
+                {
+                    continue;
+                }
+
+                int mvY = srcSlot.SavedMvs[cell * 2];
+                int mvX = srcSlot.SavedMvs[cell * 2 + 1];
+                GetMvProjection(mvY, mvX, refToCur * dstSign, refOffset, out int projY, out int projX);
+
+                if (GetBlockPosition(x8, y8, dstSign, projY, projX, w8, h8, out int posX8, out int posY8))
+                {
+                    int posIdx = (posY8 * w8 + posX8) * 2;
+                    for (int dst = Av1Constants.LastFrame; dst <= Av1Constants.AltRefFrame; dst++)
+                    {
+                        int refToDst = seq.GetRelativeDist(fh.OrderHint, fh.OrderHints[dst]);
+                        GetMvProjection(mvY, mvX, refToDst, refOffset, out int dY, out int dX);
+                        mfmv[dst][posIdx] = (short)dY;
+                        mfmv[dst][posIdx + 1] = (short)dX;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    private static void GetMvProjection(int mvY, int mvX, int num, int den, out int projY, out int projX)
+    {
+        int cDen = Math.Min(Av1Constants.MaxFrameDistance, den);
+        int cNum = Av1Constants.Clip3(-Av1Constants.MaxFrameDistance, Av1Constants.MaxFrameDistance, num);
+        int mult = Av1Constants.DivMult[cDen];
+        projY = Av1Constants.Clip3(-(1 << 14) + 1, (1 << 14) - 1, Av1Constants.Round2Signed(mvY * cNum * mult, 14));
+        projX = Av1Constants.Clip3(-(1 << 14) + 1, (1 << 14) - 1, Av1Constants.Round2Signed(mvX * cNum * mult, 14));
+    }
+
+    private static bool GetBlockPosition(int x8, int y8, int dstSign, int projY, int projX, int w8, int h8, out int posX8, out int posY8)
+    {
+        bool valid = true;
+        posY8 = ProjectCoord(y8, projY, dstSign, h8, Av1Constants.MaxOffsetHeight, ref valid);
+        posX8 = ProjectCoord(x8, projX, dstSign, w8, Av1Constants.MaxOffsetWidth, ref valid);
+        return valid;
+    }
+
+    private static int ProjectCoord(int v8, int delta, int dstSign, int max8, int maxOff8, ref bool valid)
+    {
+        int base8 = (v8 >> 3) << 3;
+        int offset8 = delta >= 0 ? (delta >> 6) : -((-delta) >> 6);
+        v8 += dstSign * offset8;
+        if (v8 < 0 || v8 >= max8 || v8 < base8 - maxOff8 || v8 >= base8 + 8 + maxOff8)
+            valid = false;
+        return v8;
+    }
+
+    // §5.9.22 Skip mode params
+    private static void ParseSkipModeParams(ref Av1BitReader br, Av1SequenceHeader seq, Av1DecoderSession session, Av1FrameHeader fh)
+    {
+        bool allowed = false;
+        if (!fh.FrameIsIntra && fh.ReferenceSelect && seq.EnableOrderHint)
+        {
+            int fwdIdx = -1, fwdHint = 0;
+            int bwdIdx = -1, bwdHint = 0;
+            for (int i = 0; i < Av1Constants.RefsPerFrame; i++)
+            {
+                int refHint = session.RefFrames[fh.RefFrameIdx[i]].OrderHint;
+                int d = seq.GetRelativeDist(refHint, fh.OrderHint);
+                if (d < 0)
+                {
+                    if (fwdIdx < 0 || seq.GetRelativeDist(refHint, fwdHint) > 0) { fwdIdx = i; fwdHint = refHint; }
+                }
+                else if (d > 0)
+                {
+                    if (bwdIdx < 0 || seq.GetRelativeDist(refHint, bwdHint) < 0) { bwdIdx = i; bwdHint = refHint; }
+                }
+            }
+            if (fwdIdx >= 0 && bwdIdx >= 0)
+            {
+                allowed = true;
+                fh.SkipModeFrame[0] = Av1Constants.LastFrame + Math.Min(fwdIdx, bwdIdx);
+                fh.SkipModeFrame[1] = Av1Constants.LastFrame + Math.Max(fwdIdx, bwdIdx);
+            }
+            else if (fwdIdx >= 0)
+            {
+                int secIdx = -1, secHint = 0;
+                for (int i = 0; i < Av1Constants.RefsPerFrame; i++)
+                {
+                    int refHint = session.RefFrames[fh.RefFrameIdx[i]].OrderHint;
+                    if (seq.GetRelativeDist(refHint, fwdHint) < 0)
+                    {
+                        if (secIdx < 0 || seq.GetRelativeDist(refHint, secHint) > 0) { secIdx = i; secHint = refHint; }
+                    }
+                }
+                if (secIdx >= 0)
+                {
+                    allowed = true;
+                    fh.SkipModeFrame[0] = Av1Constants.LastFrame + Math.Min(fwdIdx, secIdx);
+                    fh.SkipModeFrame[1] = Av1Constants.LastFrame + Math.Max(fwdIdx, secIdx);
+                }
+            }
+        }
+        fh.SkipModePresent = allowed && br.ReadBool();
+    }
+
+    // §5.9.24–§5.9.29 Global motion params
+    private static void ParseGlobalMotionParams(ref Av1BitReader br, Av1FrameHeader fh)
+    {
+        for (int r = Av1Constants.LastFrame; r <= Av1Constants.AltRefFrame; r++)
+        {
+            fh.GmType[r] = Av1Constants.GmIdentity;
+            for (int i = 0; i < 6; i++)
+                fh.GmParams[r, i] = (i % 3 == 2) ? (1 << Av1Constants.WarpedModelPrecBits) : 0;
+        }
+        if (fh.FrameIsIntra) return;
+
+        for (int r = Av1Constants.LastFrame; r <= Av1Constants.AltRefFrame; r++)
+        {
+            int type;
+            if (br.ReadBool()) // is_global
+            {
+                if (br.ReadBool()) // is_rot_zoom
+                    type = Av1Constants.GmRotZoom;
+                else
+                    type = br.ReadBool() ? Av1Constants.GmTranslation : Av1Constants.GmAffine;
+            }
+            else
+            {
+                type = Av1Constants.GmIdentity;
+            }
+            fh.GmType[r] = type;
+            if (type >= Av1Constants.GmRotZoom)
+            {
+                ReadGlobalParam(ref br, fh, type, r, 2);
+                ReadGlobalParam(ref br, fh, type, r, 3);
+                if (type == Av1Constants.GmAffine)
+                {
+                    ReadGlobalParam(ref br, fh, type, r, 4);
+                    ReadGlobalParam(ref br, fh, type, r, 5);
+                }
+                else
+                {
+                    fh.GmParams[r, 4] = -fh.GmParams[r, 3];
+                    fh.GmParams[r, 5] = fh.GmParams[r, 2];
+                }
+            }
+            if (type >= Av1Constants.GmTranslation)
+            {
+                ReadGlobalParam(ref br, fh, type, r, 0);
+                ReadGlobalParam(ref br, fh, type, r, 1);
+            }
+        }
+    }
+
+    private static void ReadGlobalParam(ref Av1BitReader br, Av1FrameHeader fh, int type, int r, int idx)
+    {
+        int absBits = Av1Constants.GmAbsAlphaBits;
+        int precBits = Av1Constants.GmAlphaPrecBits;
+        if (idx < 2)
+        {
+            if (type == Av1Constants.GmTranslation)
+            {
+                absBits = Av1Constants.GmAbsTransOnlyBits - (fh.AllowHighPrecisionMv ? 0 : 1);
+                precBits = Av1Constants.GmTransOnlyPrecBits - (fh.AllowHighPrecisionMv ? 0 : 1);
+            }
+            else
+            {
+                absBits = Av1Constants.GmAbsTransBits;
+                precBits = Av1Constants.GmTransPrecBits;
+            }
+        }
+        int precDiff = Av1Constants.WarpedModelPrecBits - precBits;
+        int round = (idx % 3 == 2) ? (1 << Av1Constants.WarpedModelPrecBits) : 0;
+        int sub = (idx % 3 == 2) ? (1 << precBits) : 0;
+        int mx = 1 << absBits;
+        int prev = (fh.PrevGmParams[r, idx] >> precDiff) - sub;
+        fh.GmParams[r, idx] = (DecodeSignedSubexpWithRef(ref br, -mx, mx + 1, prev) << precDiff) + round;
+    }
+
+    private static int DecodeSignedSubexpWithRef(ref Av1BitReader br, int low, int high, int r)
+        => DecodeUnsignedSubexpWithRef(ref br, high - low, r - low) + low;
+
+    private static int DecodeUnsignedSubexpWithRef(ref Av1BitReader br, int mx, int r)
+    {
+        int v = DecodeSubexp(ref br, mx);
+        return (r << 1) <= mx
+            ? InverseRecenter(r, v)
+            : mx - 1 - InverseRecenter(mx - 1 - r, v);
+    }
+
+    private static int DecodeSubexp(ref Av1BitReader br, int numSyms)
+    {
+        int i = 0, mk = 0;
+        const int k = 3;
+        while (true)
+        {
+            int b2 = i != 0 ? k + i - 1 : k;
+            int a = 1 << b2;
+            if (numSyms <= mk + 3 * a)
+                return br.ReadNs(numSyms - mk) + mk;
+            if (br.ReadBool())
+            {
+                i++;
+                mk += a;
+            }
+            else
+            {
+                return (int)br.ReadBits(b2) + mk;
+            }
+        }
+    }
+
+    private static int InverseRecenter(int r, int v)
+    {
+        if (v > 2 * r) return v;
+        return (v & 1) != 0 ? r - ((v + 1) >> 1) : r + (v >> 1);
+    }
+
+    private static void ParseFilmGrainParams(ref Av1BitReader br, Av1SequenceHeader seq, Av1DecoderSession session, Av1FrameHeader fh)
     {
         fh.ApplyGrain = br.ReadBool();
         if (!fh.ApplyGrain)
             return;
 
+        ushort grainSeed = (ushort)br.ReadBits(16);
+        bool updateGrain = fh.FrameType == Av1Constants.InterFrame ? br.ReadBool() : true;
+        if (!updateGrain)
+        {
+            int refIdx = (int)br.ReadBits(3);
+            var refSlot = session.RefFrames[refIdx];
+            if (!refSlot.Valid || refSlot.SavedFilmGrain is null)
+                throw new InvalidDataException($"AV1 film_grain_params_ref_idx references invalid slot {refIdx}.");
+            var loaded = refSlot.SavedFilmGrain.Clone();
+            loaded.GrainSeed = grainSeed;
+            loaded.ApplyGrain = true;
+            fh.FilmGrain = loaded;
+            return;
+        }
+
         var fg = new Av1FilmGrainParams
         {
             ApplyGrain = true,
-            GrainSeed = (ushort)br.ReadBits(16),
-            UpdateGrain = fh.FrameType == Av1Constants.InterFrame ? br.ReadBool() : true,
+            GrainSeed = grainSeed,
+            UpdateGrain = true,
         };
-        if (!fg.UpdateGrain)
-            throw new InvalidDataException("AV1 inter film_grain_params_ref_idx is not supported in intra still decode.");
 
         fg.NumYPoints = (int)br.ReadBits(4);
         if (fg.NumYPoints > 14)
@@ -499,24 +1135,49 @@ internal sealed class Av1FrameHeader
         fh.SegmentationEnabled = br.ReadBool();
         if (fh.SegmentationEnabled)
         {
-            for (int i = 0; i < Av1Constants.MaxSegments; i++)
+            if (fh.PrimaryRefFrame == Av1Constants.PrimaryRefNone)
             {
-                for (int j = 0; j < Av1Constants.SegLvlMax; j++)
+                fh.SegmentationUpdateMap = true;
+                fh.SegmentationTemporalUpdate = false;
+                fh.SegmentationUpdateData = true;
+            }
+            else
+            {
+                fh.SegmentationUpdateMap = br.ReadBool();
+                fh.SegmentationTemporalUpdate = fh.SegmentationUpdateMap && br.ReadBool();
+                fh.SegmentationUpdateData = br.ReadBool();
+            }
+
+            if (fh.SegmentationUpdateData)
+            {
+                for (int i = 0; i < Av1Constants.MaxSegments; i++)
                 {
-                    bool enabled = br.ReadBool();
-                    fh.FeatureEnabled[i, j] = enabled;
-                    if (enabled)
+                    for (int j = 0; j < Av1Constants.SegLvlMax; j++)
                     {
-                        int bits = Av1Constants.SegmentationFeatureBits[j];
-                        int limit = Av1Constants.SegmentationFeatureMax[j];
-                        int val = bits == 0 ? 0
-                            : Av1Constants.SegmentationFeatureSigned[j]
-                                ? Av1Constants.Clip3(-limit, limit, br.ReadSu(1 + bits))
-                                : Av1Constants.Clip3(0, limit, (int)br.ReadBits(bits));
-                        fh.FeatureData[i, j] = val;
+                        bool enabled = br.ReadBool();
+                        fh.FeatureEnabled[i, j] = enabled;
+                        if (enabled)
+                        {
+                            int bits = Av1Constants.SegmentationFeatureBits[j];
+                            int limit = Av1Constants.SegmentationFeatureMax[j];
+                            int val = bits == 0 ? 0
+                                : Av1Constants.SegmentationFeatureSigned[j]
+                                    ? Av1Constants.Clip3(-limit, limit, br.ReadSu(1 + bits))
+                                    : Av1Constants.Clip3(0, limit, (int)br.ReadBits(bits));
+                            fh.FeatureData[i, j] = val;
+                        }
+                        else
+                        {
+                            fh.FeatureData[i, j] = 0;
+                        }
                     }
                 }
             }
+        }
+        else
+        {
+            Array.Clear(fh.FeatureEnabled);
+            Array.Clear(fh.FeatureData);
         }
 
         fh.SegIdPreSkip = false;
@@ -555,7 +1216,21 @@ internal sealed class Av1FrameHeader
     private static void ParseLoopFilterParams(ref Av1BitReader br, Av1SequenceHeader seq, Av1FrameHeader fh)
     {
         if (fh.CodedLossless || fh.AllowIntrabc)
+        {
+            fh.LoopFilterLevel[0] = 0;
+            fh.LoopFilterLevel[1] = 0;
+            fh.LoopFilterRefDeltas[Av1Constants.IntraFrame] = 1;
+            fh.LoopFilterRefDeltas[Av1Constants.LastFrame] = 0;
+            fh.LoopFilterRefDeltas[Av1Constants.Last2Frame] = 0;
+            fh.LoopFilterRefDeltas[Av1Constants.Last3Frame] = 0;
+            fh.LoopFilterRefDeltas[Av1Constants.BwdRefFrame] = 0;
+            fh.LoopFilterRefDeltas[Av1Constants.GoldenFrame] = -1;
+            fh.LoopFilterRefDeltas[Av1Constants.AltRef2Frame] = -1;
+            fh.LoopFilterRefDeltas[Av1Constants.AltRefFrame] = -1;
+            fh.LoopFilterModeDeltas[0] = 0;
+            fh.LoopFilterModeDeltas[1] = 0;
             return;
+        }
 
         fh.LoopFilterLevel[0] = (int)br.ReadBits(6);
         fh.LoopFilterLevel[1] = (int)br.ReadBits(6);

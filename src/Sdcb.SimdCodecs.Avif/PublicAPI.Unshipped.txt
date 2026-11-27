@@ -40,6 +40,7 @@ static Sdcb.SimdCodecs.Avif.AvifImageDecoder.TryDecodeInto(System.ReadOnlySpan<b
 static Sdcb.SimdCodecs.Avif.AvifImageDecoder.TryDecodePlanes(System.ReadOnlySpan<byte> data, System.Span<ushort> y, System.Span<ushort> cb, System.Span<ushort> cr, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> bool
 static Sdcb.SimdCodecs.Avif.AvifImageDecoder.TryDecodeThumbnail(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.IDecodedImage? thumbnail) -> bool
 static Sdcb.SimdCodecs.Avif.AvifImageDecoder.TryGetClosestSize(System.ReadOnlySpan<byte> data, int requestedWidth, int requestedHeight, out int width, out int height, out int scaleDenominator) -> bool
+static Sdcb.SimdCodecs.Avif.AvifImageDecoder.TryOpenFrames(System.ReadOnlyMemory<byte> data, out Sdcb.SimdCodecs.Abstractions.IImageFrameReader? reader) -> bool
 static Sdcb.SimdCodecs.Avif.AvifImageDecoder.TryReadInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageInfo info) -> bool
 static Sdcb.SimdCodecs.Avif.AvifImageDecoder.TryReadMetadata(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.ImageMetadata? metadata) -> bool
 static Sdcb.SimdCodecs.Avif.AvifImageDecoder.TryReadPlanarInfo(System.ReadOnlySpan<byte> data, out Sdcb.SimdCodecs.Abstractions.PlanarInfo info) -> bool

@@ -33,6 +33,42 @@ internal sealed class Av1FilmGrainParams
     internal int CrOffset;
     internal bool OverlapFlag;
     internal bool ClipToRestrictedRange;
+
+    internal Av1FilmGrainParams Clone()
+    {
+        var c = new Av1FilmGrainParams
+        {
+            ApplyGrain = ApplyGrain,
+            GrainSeed = GrainSeed,
+            UpdateGrain = UpdateGrain,
+            NumYPoints = NumYPoints,
+            ChromaScalingFromLuma = ChromaScalingFromLuma,
+            NumCbPoints = NumCbPoints,
+            NumCrPoints = NumCrPoints,
+            GrainScalingMinus8 = GrainScalingMinus8,
+            ArCoeffLag = ArCoeffLag,
+            ArCoeffShiftMinus6 = ArCoeffShiftMinus6,
+            GrainScaleShift = GrainScaleShift,
+            CbMult = CbMult,
+            CbLumaMult = CbLumaMult,
+            CbOffset = CbOffset,
+            CrMult = CrMult,
+            CrLumaMult = CrLumaMult,
+            CrOffset = CrOffset,
+            OverlapFlag = OverlapFlag,
+            ClipToRestrictedRange = ClipToRestrictedRange,
+        };
+        PointYValue.CopyTo(c.PointYValue, 0);
+        PointYScaling.CopyTo(c.PointYScaling, 0);
+        PointCbValue.CopyTo(c.PointCbValue, 0);
+        PointCbScaling.CopyTo(c.PointCbScaling, 0);
+        PointCrValue.CopyTo(c.PointCrValue, 0);
+        PointCrScaling.CopyTo(c.PointCrScaling, 0);
+        ArCoeffsYPlus128.CopyTo(c.ArCoeffsYPlus128, 0);
+        ArCoeffsCbPlus128.CopyTo(c.ArCoeffsCbPlus128, 0);
+        ArCoeffsCrPlus128.CopyTo(c.ArCoeffsCrPlus128, 0);
+        return c;
+    }
 }
 
 /// <summary>

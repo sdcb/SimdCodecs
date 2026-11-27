@@ -24,6 +24,8 @@ internal static class Av1Constants
 
     // Reference frames
     internal const int NumRefFrames = 8;
+    internal const int RefsPerFrame = 7;
+    internal const int TotalRefsPerFrame = 8;
     internal const int PrimaryRefNone = 7;
     internal const int IntraFrame = 0;
     internal const int LastFrame = 1;
@@ -33,6 +35,89 @@ internal static class Av1Constants
     internal const int BwdRefFrame = 5;
     internal const int AltRef2Frame = 6;
     internal const int AltRefFrame = 7;
+
+    // Inter prediction modes (§6.10.22)
+    internal const int NearestMv = 14;
+    internal const int NearMv = 15;
+    internal const int GlobalMv = 16;
+    internal const int NewMv = 17;
+    internal const int NearestNearestMv = 18;
+    internal const int NearNearMv = 19;
+    internal const int NearestNewMv = 20;
+    internal const int NewNearestMv = 21;
+    internal const int NearNewMv = 22;
+    internal const int NewNearMv = 23;
+    internal const int GlobalGlobalMv = 24;
+    internal const int NewNewMv = 25;
+
+    // Interpolation filters (§6.8.9)
+    internal const int EightTap = 0;
+    internal const int EightTapSmooth = 1;
+    internal const int EightTapSharp = 2;
+    internal const int Bilinear = 3;
+    internal const int Switchable = 4;
+
+    // Reference / compound / motion / interintra / global-motion enums (§6.10)
+    internal const int SingleReference = 0;
+    internal const int CompoundReference = 1;
+    internal const int UnidirCompReference = 0;
+    internal const int BidirCompReference = 1;
+
+    internal const int MotionSimple = 0;
+    internal const int MotionObmc = 1;
+    internal const int MotionLocalWarp = 2;
+
+    internal const int IiDcPred = 0;
+    internal const int IiVPred = 1;
+    internal const int IiHPred = 2;
+    internal const int IiSmoothPred = 3;
+
+    internal const int CompoundWedge = 0;
+    internal const int CompoundDiffWtd = 1;
+    internal const int CompoundAverage = 2;
+    internal const int CompoundIntra = 3;
+    internal const int CompoundDistance = 4;
+
+    internal const int GmIdentity = 0;
+    internal const int GmTranslation = 1;
+    internal const int GmRotZoom = 2;
+    internal const int GmAffine = 3;
+
+    // Inter prediction & warped motion precision constants (§3)
+    internal const int RefScaleShift = 14;
+    internal const int SubpelBits = 4;
+    internal const int SubpelMask = 15;
+    internal const int ScaleSubpelBits = 10;
+    internal const int FilterBits = 7;
+    internal const int RefMvsLimit = (1 << 12) - 1;
+    internal const int MaxFrameDistance = 31;
+    internal const int MaxOffsetWidth = 8;
+    internal const int MaxOffsetHeight = 0;
+    internal const int MfmvStackSize = 3;
+    internal const int WarpedModelPrecBits = 16;
+    internal const int WarpParamReduceBits = 6;
+    internal const int WarpedPixelPrecShifts = 1 << 6;
+    internal const int WarpedDiffPrecBits = 10;
+    internal const int WarpedModelTransClamp = 1 << 23;
+    internal const int WarpedModelNonDiagAffineClamp = 1 << 13;
+    internal const int GmAbsTransBits = 12;
+    internal const int GmAbsTransOnlyBits = 9;
+    internal const int GmAbsAlphaBits = 12;
+    internal const int GmAlphaPrecBits = 15;
+    internal const int GmTransPrecBits = 6;
+    internal const int GmTransOnlyPrecBits = 3;
+    internal const int DivLutPrecBits = 14;
+    internal const int DivLutBits = 8;
+    internal const int LeastSquaresSamplesMax = 8;
+    internal const int LsMvMax = 256;
+    internal const int MaskMasterSize = 64;
+    internal const int WedgeTypes = 16;
+    internal const int WedgeHorizontal = 0;
+    internal const int WedgeVertical = 1;
+    internal const int WedgeOblique27 = 2;
+    internal const int WedgeOblique63 = 3;
+    internal const int WedgeOblique117 = 4;
+    internal const int WedgeOblique153 = 5;
 
     // Block sizes (§3)
     internal const int Block4x4 = 0;
@@ -215,7 +300,22 @@ internal static class Av1Constants
     internal static readonly int[] BlockHeight = [4, 8, 4, 8, 16, 8, 16, 32, 16, 32, 64, 32, 64, 128, 64, 128, 16, 4, 32, 8, 64, 16];
     internal static readonly int[] Num4x4BlocksWide = [1, 1, 2, 2, 2, 4, 4, 4, 8, 8, 8, 16, 16, 16, 32, 32, 1, 4, 2, 8, 4, 16];
     internal static readonly int[] Num4x4BlocksHigh = [1, 2, 1, 2, 4, 2, 4, 8, 4, 8, 16, 8, 16, 32, 16, 32, 4, 1, 8, 2, 16, 4];
-    internal static readonly int[] SizeGroup = [0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 0, 0, 1, 1, 2, 2];
+    internal static readonly int[] SizeGroup = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 0, 0, 1, 1, 2, 2];
+    internal static readonly int[] WedgeBits = [0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 0, 0];
+
+    internal static readonly int[] DivMult =
+    [
+        0, 16384, 8192, 5461, 4096, 3276, 2730, 2340, 2048, 1820, 1638,
+        1489, 1365, 1260, 1170, 1092, 1024, 963, 910, 862, 819, 780,
+        744, 712, 682, 655, 630, 606, 585, 564, 546, 528,
+    ];
+
+    internal static readonly int[] CompoundModeCtxMap =
+    [
+        0, 1, 1, 1, 1,
+        1, 2, 3, 4, 4,
+        4, 4, 5, 6, 7,
+    ];
 
     internal static readonly int[] MaxTxSizeRect =
     [
@@ -414,6 +514,17 @@ internal static class Av1Constants
         return s - 1;
     }
 
+    internal static int FloorLog2(long x)
+    {
+        int s = 0;
+        while (x != 0)
+        {
+            x >>= 1;
+            s++;
+        }
+        return s - 1;
+    }
+
     internal static int CeilLog2(int x)
     {
         if (x < 2) return 0;
@@ -430,7 +541,9 @@ internal static class Av1Constants
     internal static long Round2(long x, int n) => n == 0 ? x : (x + (1L << (n - 1))) >> n;
 
     internal static int Round2Signed(int x, int n) => x >= 0 ? Round2(x, n) : -Round2(-x, n);
+    internal static long Round2Signed(long x, int n) => x >= 0 ? Round2(x, n) : -Round2(-x, n);
 
     internal static int Clip1(int x, int bitDepth) => Math.Clamp(x, 0, (1 << bitDepth) - 1);
     internal static int Clip3(int lo, int hi, int x) => x < lo ? lo : x > hi ? hi : x;
+    internal static long Clip3(long lo, long hi, long x) => x < lo ? lo : x > hi ? hi : x;
 }

@@ -36,6 +36,10 @@ public static class AvifDecoder
     /// </summary>
     public static AvifInfo ReadInfo(ReadOnlySpan<byte> data)
     {
+        int frameCount = 1;
+        if (AvifSequence.TryParse(data, out var seq) && seq.FrameCount > 0)
+            frameCount = seq.FrameCount;
+
         var container = AvifContainer.Parse(data);
         EnsureCanvasDimensions(data, container);
         var (width, height) = container.DisplaySize();
@@ -45,7 +49,7 @@ public static class AvifDecoder
             Height = height,
             BitDepth = container.BitDepth,
             HasAlpha = container.HasAlpha,
-            FrameCount = 1,
+            FrameCount = frameCount,
             TileCount = container.TileCount,
             IccProfile = container.IccProfile,
             Orientation = ImageOrientation.Normal,
@@ -338,10 +342,10 @@ public static class AvifDecoder
         return dst;
     }
 
-    private static (int A, int B, int C, int D, int E, int F) ComposeAffine(AvifContainer container, int width, int height)
+    private static (int A, int B, int C, int D, int E, int F) ComposeAffine(List<AvifContainer.Transform> transforms, int width, int height)
     {
         int a = 1, b = 0, c = 0, d = 0, e = 1, f = 0;
-        foreach (var t in container.Transforms)
+        foreach (var t in transforms)
         {
             switch (t.Type)
             {
@@ -381,8 +385,11 @@ public static class AvifDecoder
     }
 
     private static void RenderRgba(AvifContainer container, AvifDecodedPlanes planes, Span<byte> destination, int outW, int outH)
+        => RenderRgba(container.Transforms, planes, destination, outW, outH);
+
+    internal static void RenderRgba(List<AvifContainer.Transform> transforms, AvifDecodedPlanes planes, Span<byte> destination, int outW, int outH)
     {
-        var (a, b, c, d, e, f) = ComposeAffine(container, planes.Width, planes.Height);
+        var (a, b, c, d, e, f) = ComposeAffine(transforms, planes.Width, planes.Height);
 
         var coeff = AvifColor.For(planes.MatrixCoefficients, planes.FullRange, planes.BitDepth);
         int cw = (planes.Width + planes.SubsamplingX) >> planes.SubsamplingX;
@@ -446,8 +453,11 @@ public static class AvifDecoder
     }
 
     private static void RenderRgba16(AvifContainer container, AvifDecodedPlanes planes, Span<ushort> destination, int outW, int outH)
+        => RenderRgba16(container.Transforms, planes, destination, outW, outH);
+
+    internal static void RenderRgba16(List<AvifContainer.Transform> transforms, AvifDecodedPlanes planes, Span<ushort> destination, int outW, int outH)
     {
-        var (a, b, c, d, e, f) = ComposeAffine(container, planes.Width, planes.Height);
+        var (a, b, c, d, e, f) = ComposeAffine(transforms, planes.Width, planes.Height);
 
         var coeff = AvifColor.For16(planes.MatrixCoefficients, planes.FullRange, planes.BitDepth);
         int cw = (planes.Width + planes.SubsamplingX) >> planes.SubsamplingX;
@@ -579,7 +589,7 @@ public static class AvifDecoder
 
         if (hasTransforms)
         {
-            var (a, b, c, d, e, f) = ComposeAffine(container, cw, ch);
+            var (a, b, c, d, e, f) = ComposeAffine(container.Transforms, cw, ch);
             for (int y = 0; y < ch; y++)
             {
                 for (int x = 0; x < cw; x++)
@@ -663,7 +673,7 @@ public static class AvifDecoder
 
         if (hasTransforms)
         {
-            var (a, b, c, d, e, f) = ComposeAffine(container, cw, ch);
+            var (a, b, c, d, e, f) = ComposeAffine(container.Transforms, cw, ch);
             for (int y = 0; y < ch; y++)
             {
                 for (int x = 0; x < cw; x++)

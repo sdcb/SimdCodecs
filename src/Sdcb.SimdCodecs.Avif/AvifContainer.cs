@@ -34,7 +34,7 @@ internal sealed class AvifContainer
     private const uint ColrProf = 0x70726F66;   // 'prof'
     private const uint ColrRicc = 0x72494343;   // 'rICC'
 
-    private const string AlphaUrn = "urn:mpeg:mpegB:cicp:systems:auxiliary:alpha";
+    internal const string AlphaUrn = "urn:mpeg:mpegB:cicp:systems:auxiliary:alpha";
     private const int MaxDerivedDepth = 16;
 
     internal const long MaxPixels = 1L << 28;
@@ -111,9 +111,6 @@ internal sealed class AvifContainer
     internal static AvifContainer Parse(ReadOnlySpan<byte> data, uint targetItemId = 0)
     {
         var items = ItemContainer.Parse(data);
-        if (items.MajorBrand == BrandAvis && targetItemId == 0)
-            throw new InvalidDataException("Animated AVIF sequences ('avis') are not supported yet (lands in M3).");
-
         uint itemId = targetItemId != 0 ? targetItemId : items.PrimaryItemId;
         if (itemId == 0)
             throw new InvalidDataException("The AVIF file has no primary item ('pitm').");
@@ -392,7 +389,7 @@ internal sealed class AvifContainer
             throw new InvalidDataException("AVIF alpha auxiliary item must be monochrome (4:0:0).");
     }
 
-    private static Av1Config ParseAv1C(ReadOnlySpan<byte> data, int offset, int length)
+    internal static Av1Config ParseAv1C(ReadOnlySpan<byte> data, int offset, int length)
     {
         if (length < 4)
             throw new InvalidDataException("Truncated 'av1C' property.");
@@ -541,10 +538,11 @@ internal sealed class AvifContainer
         return -1;
     }
 
-    internal (int Width, int Height) DisplaySize()
+    internal (int Width, int Height) DisplaySize() => DisplaySize(Primary.CanvasWidth, Primary.CanvasHeight, Transforms);
+
+    internal static (int Width, int Height) DisplaySize(int w, int h, List<Transform> transforms)
     {
-        int w = Primary.CanvasWidth, h = Primary.CanvasHeight;
-        foreach (var t in Transforms)
+        foreach (var t in transforms)
         {
             if (t.Type == PropClap)
             {

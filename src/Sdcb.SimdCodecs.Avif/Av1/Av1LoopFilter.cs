@@ -64,7 +64,16 @@ internal static class Av1LoopFilter
                             : (yP % Av1Constants.TxHeight[txSz]) == 0;
                         if (!isTxEdge) continue;
 
-                        // Intra frames: isIntra is always true, so applyFilter is always true on a tx edge.
+                        int adjIdx = adjRow * miCols + adjCol;
+                        int planeSize = Av1Constants.SubsampledSize(st.MiSizes[adjIdx], subX, subY);
+                        bool isBlockEdge = pass == 0
+                            ? (xP % Av1Constants.BlockWidth[planeSize]) == 0
+                            : (yP % Av1Constants.BlockHeight[planeSize]) == 0;
+                        bool skip = st.Skips[adjIdx] != 0;
+                        bool isIntra = st.RefFrames[adjIdx * 2] <= Av1Constants.IntraFrame;
+                        if (!isBlockEdge && skip && !isIntra)
+                            continue;
+
                         int prevTxSz = lfTx[prevTxRow * lfCols + (prevCol >> subX)];
                         int baseSize = pass == 0
                             ? Math.Min(Av1Constants.TxWidth[prevTxSz], Av1Constants.TxWidth[txSz])
@@ -114,8 +123,17 @@ internal static class Av1LoopFilter
         if (fh.LoopFilterDeltaEnabled)
         {
             int nShift = lvl >> 5;
-            // M1 intra-only: ref == INTRA_FRAME
-            lvl = Av1Constants.Clip3(0, 63, lvl + (fh.LoopFilterRefDeltas[Av1Constants.IntraFrame] << nShift));
+            int refFrame = st.RefFrames[idx * 2];
+            if (refFrame <= Av1Constants.IntraFrame)
+            {
+                lvl = Av1Constants.Clip3(0, 63, lvl + (fh.LoopFilterRefDeltas[Av1Constants.IntraFrame] << nShift));
+            }
+            else
+            {
+                int mode = st.YModes[idx];
+                int modeType = (mode >= Av1Constants.NearestMv && mode != Av1Constants.GlobalMv && mode != Av1Constants.GlobalGlobalMv) ? 1 : 0;
+                lvl = Av1Constants.Clip3(0, 63, lvl + (fh.LoopFilterRefDeltas[refFrame] << nShift) + (fh.LoopFilterModeDeltas[modeType] << nShift));
+            }
         }
         return lvl;
     }
