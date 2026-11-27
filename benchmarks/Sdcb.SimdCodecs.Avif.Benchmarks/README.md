@@ -13,3 +13,14 @@ End-to-end AVIF decode benchmarks comparing `Sdcb.SimdCodecs.Avif` (from M1 onwa
 dotnet run --project benchmarks/Sdcb.SimdCodecs.Avif.Benchmarks -c Release -- info
 dotnet run --project benchmarks/Sdcb.SimdCodecs.Avif.Benchmarks -c Release -- --filter *AvifDecodeBenchmarks*
 ```
+
+The same-process A/B used for every optimisation (see the repository's `benchmarks/README.md`):
+
+```bash
+dotnet run --project benchmarks/Sdcb.SimdCodecs.Avif.Benchmarks -c Release -- baseline HEAD      # build the commit to compare against
+dotnet run --project benchmarks/Sdcb.SimdCodecs.Avif.Benchmarks -c Release -- ab [--multi] [--anim]
+```
+
+## Results
+
+- [2026-11-28, Ryzen 7 5800X, M4](results/2026-11-28-amd-ryzen-7-5800x-m4.md): single-core, multi-core (with Magick.NET), animations, stage timers, ablation, and the A/B history of the M4 round.
