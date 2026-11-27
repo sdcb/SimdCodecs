@@ -40,23 +40,28 @@ public sealed class AvifTests
         "color-testsrc2-1280x720-pq-10b-nclx.avif",
         "color-testsrc2-1280x720-hlg-10b-vui.avif",
         "color-fuji-1280x720-gainmap-tmap.avif",
-    ];
-
-    /// <summary>Fixtures outside M1 (M2/M3): each must fail cleanly with <see cref="InvalidDataException"/>.</summary>
-    private static readonly string[] RejectedFixtures =
-    [
-        "screen-ui-1920x1080-p1-8b-444-gbr.avif",
-        "screen-ui-1920x1080-p1-10b-444-bt709.avif",
+        // M2 Profile 1 & 2 (4:4:4, 4:2:2, 12-bit, lossless WHT):
+        "container-tiny-1x1.avif",
+        "perf-photo-fuji-2560x1440-lossless-444.avif",
         "photo-almsee-1920x1080-p2-8b-422.avif",
         "photo-almsee-1920x1080-p2-12b-420.avif",
         "photo-almsee-960x540-p2-12b-444-lossless.avif",
+        "perf-photo-carter-3840x2560-p2-12b-422.avif",
+        // M2 IntraBC + Screen Content:
+        "screen-ui-1920x1080-p1-8b-444-gbr.avif",
+        "screen-ui-1920x1080-p1-10b-444-bt709.avif",
+        "perf-screen-ui-3840x2160-444-8b.avif",
         "screen-text-1280x720-palette-intrabc.avif",
+        // M2 Superres & Film Grain:
         "photo-mangrove-1600x1200-superres.avif",
         "photo-night-1280x720-filmgrain-8b.avif",
-        "container-iovl-overlay-800x600.avif",
-        "container-iden-chain-640x480.avif",
+        "perf-photo-night-3840x2160-grain-10b.avif",
+    ];
+
+    /// <summary>Fixtures outside current milestone (M3 inter / animated): each must fail cleanly with <see cref="InvalidDataException"/>.</summary>
+    private static readonly string[] RejectedFixtures =
+    [
         "container-layered-a1lx-a1op-1280x720.avif",
-        "container-tiny-1x1.avif",
         "anim-alltools-320x240-8f.avif",
         "anim-alpha-640x360-24f-varfps.avif",
     ];
@@ -72,6 +77,10 @@ public sealed class AvifTests
         "color-fuji-1280x720-icc-exif-xmp-thmb.avif",
         "container-mangrove-1599x1199-odd-clap.avif",
         "container-fuji-1280x720-clap-irot-imir.avif",
+        "container-iden-chain-640x480.avif",
+        "screen-ui-1920x1080-p1-8b-444-gbr.avif",
+        "photo-almsee-1920x1080-p2-8b-422.avif",
+        "photo-almsee-1920x1080-p2-12b-420.avif",
         "perf-photo-fuji-2560x1440-alpha-10b.avif",
     ];
 
@@ -93,7 +102,8 @@ public sealed class AvifTests
         planes.BitDepth.ShouldBe(expected.BitDepth, fixture);
         (planes.Alpha is not null).ShouldBe(expected.HasAlpha, fixture);
 
-        string sub = planes.Monochrome ? "400" : (planes.SubsamplingX == 1 && planes.SubsamplingY == 1 ? "420" : "other");
+        string sub = planes.Monochrome ? "400"
+            : (planes.SubsamplingX, planes.SubsamplingY) switch { (1, 1) => "420", (1, 0) => "422", (0, 0) => "444", _ => "other" };
         sub.ShouldBe(expected.Subsampling, fixture);
 
         string digest = DigestPlanes(planes);
@@ -205,6 +215,143 @@ public sealed class AvifTests
         // 1280x720 cropped by clap then rotated 90 deg CCW -> height/width swapped
         rotMir.Width.ShouldBeGreaterThan(0);
         rotMir.Height.ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public void IovlOverlay_CompositesCanvasFillAndAllThreeLayers()
+    {
+        byte[] data = ReadFixture("container-iovl-overlay-800x600.avif");
+        var info = AvifDecoder.ReadInfo(data);
+        info.Width.ShouldBe(800);
+        info.Height.ShouldBe(600);
+        info.TileCount.ShouldBe(3);
+
+        using var img = AvifDecoder.Decode(data);
+        img.Width.ShouldBe(800);
+        img.Height.ShouldBe(600);
+        var px = img.Rgba;
+
+        // Top-left (0,0) and bottom-right (799,599) are uncovered canvas fill: (0x18, 0x22, 0x33, 0xFF) = (24, 34, 51, 255).
+        (px[0], px[1], px[2], px[3]).ShouldBe(((byte)24, (byte)34, (byte)51, (byte)255));
+        int br = (599 * 800 + 799) * 4;
+        (px[br], px[br + 1], px[br + 2], px[br + 3]).ShouldBe(((byte)24, (byte)34, (byte)51, (byte)255));
+
+        // Each of the 3 overlaid layers covers its expected region with non-background pixels:
+        // Layer 0: 480x360 at (20, 20), Layer 1: 400x300 at (360, 140), Layer 2: 240x180 at (120, 380).
+        foreach (var (x, y) in new[] { (30, 30), (500, 200), (200, 460) })
+        {
+            int off = (y * 800 + x) * 4;
+            bool isFill = px[off] == 24 && px[off + 1] == 34 && px[off + 2] == 51;
+            isFill.ShouldBeFalse($"Layer pixel at ({x},{y}) should overwrite canvas fill.");
+            px[off + 3].ShouldBe((byte)255);
+        }
+    }
+
+    [Fact]
+    public void Facade_HdrPqAndHlg_Preserves10BitAndRefusesTryDecodeInto()
+    {
+        foreach (var (fixture, expectedTransfer) in new[]
+        {
+            ("color-testsrc2-1280x720-pq-10b-nclx.avif", Abstractions.TransferFunction.Pq),
+            ("color-testsrc2-1280x720-hlg-10b-vui.avif", Abstractions.TransferFunction.Hlg),
+        })
+        {
+            byte[] data = ReadFixture(fixture);
+            ImageCodecs.DetectFormat(data).ShouldBe(Abstractions.ImageFormat.Avif);
+            ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue(fixture);
+            info.Width.ShouldBe(1280);
+            info.Height.ShouldBe(720);
+            info.BitDepth.ShouldBe(10);
+            info.SampleFormat.ShouldBe(Abstractions.SampleFormat.UInt16);
+            info.ColorEncoding.Primaries.ShouldBe(Abstractions.ColorPrimaries.BT2020);
+            info.ColorEncoding.Transfer.ShouldBe(expectedTransfer);
+
+            var ct = TestContext.Current.CancellationToken;
+            using var decoded = ImageCodecs.Decode(data, cancellationToken: ct);
+            decoded.SampleFormat.ShouldBe(Abstractions.SampleFormat.UInt16);
+            decoded.BitDepth.ShouldBe(10);
+            decoded.ColorEncoding.Transfer.ShouldBe(expectedTransfer);
+
+            var dst = new byte[1280 * 720 * 4];
+            ImageCodecs.TryDecodeInto(data, dst, 1280 * 4, Abstractions.PixelFormat.Rgba32, cancellationToken: ct).ShouldBeFalse(fixture);
+        }
+    }
+
+    [Fact]
+    public void Facade_GainMapTmap_ReconstructsHdrFloatsAndServesSdrBase()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        byte[] data = ReadFixture("color-fuji-1280x720-gainmap-tmap.avif");
+        ImageCodecs.TryReadInfo(data, out var info).ShouldBeTrue();
+        info.Width.ShouldBe(1280);
+        info.Height.ShouldBe(720);
+        info.SampleFormat.ShouldBe(Abstractions.SampleFormat.Float32);
+        info.ColorEncoding.Transfer.ShouldBe(Abstractions.TransferFunction.Linear);
+        info.ColorEncoding.Float.ShouldBe(Abstractions.FloatSemantics.DisplayReferred);
+
+        using var decoded = ImageCodecs.Decode(data, cancellationToken: ct);
+        decoded.SampleFormat.ShouldBe(Abstractions.SampleFormat.Float32);
+        float[] hdr = decoded.ToFloats();
+        hdr.Length.ShouldBe(1280 * 720 * 4);
+        // HDR highlights should exceed 1.0 SDR white.
+        float maxVal = 0f;
+        for (int i = 0; i < hdr.Length; i += 4)
+        {
+            if (hdr[i] > maxVal) maxVal = hdr[i];
+            if (hdr[i + 1] > maxVal) maxVal = hdr[i + 1];
+            if (hdr[i + 2] > maxVal) maxVal = hdr[i + 2];
+        }
+        maxVal.ShouldBeGreaterThan(1.5f);
+
+        // SDR fallback via ToRgba8 and TryDecodeInto must match AvifDecoder.Decode().
+        byte[] sdr = decoded.ToRgba8();
+        using var direct = AvifDecoder.Decode(data);
+        sdr.AsSpan().SequenceEqual(direct.Rgba).ShouldBeTrue();
+
+        var into = new byte[1280 * 720 * 4];
+        ImageCodecs.TryDecodeInto(data, into, 1280 * 4, Abstractions.PixelFormat.Rgba32, cancellationToken: ct).ShouldBeTrue();
+        into.AsSpan().SequenceEqual(direct.Rgba).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Facade_MetadataThumbnailPlanarAndOptions_WorkEndToEnd()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        byte[] metaFile = ReadFixture("color-fuji-1280x720-icc-exif-xmp-thmb.avif");
+        ImageCodecs.TryReadInfo(metaFile, out var info).ShouldBeTrue();
+        info.HasThumbnail.ShouldBeTrue();
+
+        ImageCodecs.TryReadMetadata(metaFile, out var meta).ShouldBeTrue();
+        meta!.Exif.IsEmpty.ShouldBeFalse();
+        meta.Xmp.IsEmpty.ShouldBeFalse();
+        meta.Icc.IsEmpty.ShouldBeFalse();
+
+        ImageCodecs.TryDecodeThumbnail(metaFile, out var thumb).ShouldBeTrue();
+        using (thumb!)
+        {
+            thumb.Width.ShouldBe(320);
+            thumb.Height.ShouldBe(180);
+        }
+
+        // Planar decode (4:2:0)
+        ImageCodecs.TryReadPlanarInfo(metaFile, out var pInfo).ShouldBeTrue();
+        pInfo.Width.ShouldBe(1280);
+        pInfo.Height.ShouldBe(720);
+        pInfo.BitDepth.ShouldBe(8);
+        var y = new ushort[pInfo.LumaLength];
+        var cb = new ushort[pInfo.ChromaLength];
+        var cr = new ushort[pInfo.ChromaLength];
+        ImageCodecs.TryDecodePlanes(metaFile, y, cb, cr, ct).ShouldBeTrue();
+        var directPlanes = AvifDecoder.DecodePlanes(metaFile);
+        y.AsSpan().SequenceEqual(directPlanes.Y).ShouldBeTrue();
+        cb.AsSpan().SequenceEqual(directPlanes.Cb).ShouldBeTrue();
+        cr.AsSpan().SequenceEqual(directPlanes.Cr).ShouldBeTrue();
+
+        // Region & ScaleDenominator
+        var opts = new Abstractions.DecodeOptions { ScaleDenominator = 2, Region = new Abstractions.PixelRect(10, 20, 100, 80) };
+        using var scaledRegion = ImageCodecs.Decode(metaFile, opts, ct);
+        scaledRegion.Width.ShouldBe(100);
+        scaledRegion.Height.ShouldBe(80);
     }
 
     private static string DigestPlanes(AvifDecodedPlanes p)

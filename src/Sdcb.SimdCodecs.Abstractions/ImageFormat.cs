@@ -42,7 +42,7 @@ public enum ImageFormat
     /// <summary>HEIF (<c>.heic</c> / <c>.heif</c>), usually HEVC-coded. Recognised, not decoded.</summary>
     Heif,
 
-    /// <summary>AVIF. Recognised, not decoded.</summary>
+    /// <summary>AVIF (AV1 Image File Format).</summary>
     Avif,
 
     /// <summary>JPEG XL, as a container or a bare codestream. Recognised, not decoded.</summary>

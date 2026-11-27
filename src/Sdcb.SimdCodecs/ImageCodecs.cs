@@ -3,6 +3,7 @@ using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Abstractions.CodecSupport;
+using Sdcb.SimdCodecs.Avif;
 using Sdcb.SimdCodecs.Bmp;
 using Sdcb.SimdCodecs.Gif;
 using Sdcb.SimdCodecs.Ico;
@@ -107,6 +108,7 @@ public static partial class ImageCodecs
         Jbig2ImageDecoder.Registration,
         Jpeg2000ImageDecoder.Registration,
         WebpImageDecoder.Registration,
+        AvifImageDecoder.Registration,
         GifImageDecoder.Registration,
         BmpImageDecoder.Registration,
         IcoImageDecoder.Registration,

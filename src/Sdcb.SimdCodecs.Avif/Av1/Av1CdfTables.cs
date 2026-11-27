@@ -4053,4 +4053,78 @@ internal static class Av1CdfTables
         8192, 16384, 24576, 32768, 0,
     ];
 
+    // Shape: [5]
+    internal static readonly ushort[] DefaultMvJointCdf = [4096, 11264, 19328, 32768, 0];
+
+    // Shape: [2 x 12]
+    internal static readonly ushort[] DefaultMvClassCdf =
+    [
+        28672, 30976, 31858, 32320, 32551, 32656, 32740, 32757, 32762, 32767, 32768, 0,
+        28672, 30976, 31858, 32320, 32551, 32656, 32740, 32757, 32762, 32767, 32768, 0,
+    ];
+
+    // Shape: [3]
+    internal static readonly ushort[] DefaultMvClass0BitCdf = [27648, 32768, 0];
+
+    // Shape: [2 x 2 x 5]
+    internal static readonly ushort[] DefaultMvClass0FrCdf =
+    [
+        16384, 24576, 26624, 32768, 0,
+        12288, 21248, 24128, 32768, 0,
+        16384, 24576, 26624, 32768, 0,
+        12288, 21248, 24128, 32768, 0,
+    ];
+
+    // Shape: [3]
+    internal static readonly ushort[] DefaultMvClass0HpCdf = [20480, 32768, 0];
+
+    // Shape: [3]
+    internal static readonly ushort[] DefaultMvSignCdf = [16384, 32768, 0];
+
+    // Shape: [10 x 3]
+    internal static readonly ushort[] DefaultMvBitCdf =
+    [
+        17408, 32768, 0,
+        17920, 32768, 0,
+        18944, 32768, 0,
+        20480, 32768, 0,
+        22528, 32768, 0,
+        24576, 32768, 0,
+        28672, 32768, 0,
+        29952, 32768, 0,
+        29952, 32768, 0,
+        30720, 32768, 0,
+    ];
+
+    // Shape: [2 x 5]
+    internal static readonly ushort[] DefaultMvFrCdf =
+    [
+        8192, 17408, 21248, 32768, 0,
+        8192, 17408, 21248, 32768, 0,
+    ];
+
+    // Shape: [3]
+    internal static readonly ushort[] DefaultMvHpCdf = [16384, 32768, 0];
+
+    // Shape: [2 x 17]
+    internal static readonly ushort[] DefaultInterTxTypeSet1Cdf =
+    [
+        4458, 5560, 7695, 9709, 13330, 14789, 17537, 20266, 21504, 22848, 23934, 25474, 27727, 28915, 30631, 32768, 0,
+        1645, 2573, 4778, 5711, 7807, 8622, 10522, 15357, 17674, 20408, 22517, 25010, 27116, 28856, 30749, 32768, 0,
+    ];
+
+    // Shape: [13]
+    internal static readonly ushort[] DefaultInterTxTypeSet2Cdf =
+    [
+        770, 2421, 5225, 12907, 15819, 18927, 21561, 24089, 26595, 28526, 30529, 32768, 0,
+    ];
+
+    // Shape: [4 x 3]
+    internal static readonly ushort[] DefaultInterTxTypeSet3Cdf =
+    [
+        16384, 32768, 0,
+        4167, 32768, 0,
+        1998, 32768, 0,
+        748, 32768, 0,
+    ];
 }

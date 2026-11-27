@@ -2,9 +2,9 @@
 
 Pure-managed AVIF decoder for .NET 10. Reads ISOBMFF containers (ISO/IEC 14496-12), the HEIF / AVIF item and sequence models (ISO/IEC 23008-12, MIAF 23000-22, AOM AVIF v1.1.0), and decodes AV1 bitstreams (AOM AV1 Bitstream & Decoding Process Specification).
 
-## Status (M1)
+## Status (M2)
 
-ISOBMFF / AVIF container (`av01`, `grid`, `av1C`, `ispe`, `colr`, `clap` / `irot` / `imir`, `auxl` alpha including grid alpha, `prem`) and pure-managed AV1 Profile 0 (Main, 8- and 10-bit, 4:2:0 and 4:0:0) intra decoder (OBUs, sequence/frame headers, multi-symbol CDF arithmetic coder, superblock partitions, intra prediction with edge filter / Filter Intra / CFL / Palette, DCT / ADST / FLIPADST / IDTX / WHT transforms with quantization matrices & delta-q & segmentation, deblocking loop filter, CDEF, and Wiener / SGR loop restoration). All 21 Profile 0 fixtures in `Fixtures/avif/avif-golden.tsv` (including 50 MP 16×12 grids, 10-bit grids, 4×4 multi-tile SVT-AV1, 10-bit alpha, monochrome, Wiener/SGR, segmentation/qmatrix, and HDR PQ/HLG streams) match `libavif 1.4.2 + dav1d 1.5.5` plane-for-plane with zero bit error.
+Complete still-image AVIF decoder integrated into the `Sdcb.SimdCodecs` facade (`AvifImageDecoder` implementing `IImageDecoder` and `IPlanarImageDecoder`). Supports AV1 Profiles 0, 1 and 2 (8-, 10- and 12-bit; 4:2:0, 4:2:2, 4:4:4 and 4:0:0; lossless WHT), Palette, IntraBC, Superres (§7.16), Film Grain synthesis (§7.18.3), Segmentation, Delta-Q / Delta-LF, Quantization Matrices, Multi-tile, Deblocking, CDEF, and Wiener / SGR Loop Restoration. Container support covers `av01`, `grid`, `iden`, `iovl` overlay, straight and premultiplied `auxl` alpha (single and grid), `clap` / `irot` / `imir` transforms, `colr` (nclx & ICC) + `clli`, HDR PQ / HLG 16-bit output, ISO/IEC 21496-1 `tmap` gain maps (dual-path linear HDR floats + SDR base), and Exif / XMP / `thmb` metadata. All 34 intra still fixtures in `Fixtures/avif/avif-golden.tsv` match `libavif 1.4.2 + dav1d 1.5.5` plane-for-plane with zero bit error (the remaining layered `a1lx`/`a1op` fixture uses `INTER_FRAME` enhancement layers and lands with M3 Inter decoding).
 
 Planned milestones:
 

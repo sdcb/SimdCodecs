@@ -13,8 +13,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 work="${1:-$here/bin/aot-smoke}"
 mkdir -p "$work"
 
-# The HEIF fixtures FacadeSmoke embeds are downloaded, never committed.
+# The HEIF & AVIF fixtures FacadeSmoke embeds are downloaded, never committed.
 bash "$here/../Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh" > "$work/heif-fetch.log" || { cat "$work/heif-fetch.log"; exit 1; }
+bash "$here/../Sdcb.SimdCodecs.Tests/Oracle/avif/fetch.sh" > "$work/avif-fetch.log" || { cat "$work/avif-fetch.log"; exit 1; }
 
 # Build first, then run with --no-build: `dotnet run` prints restore warnings (e.g. NU1903 for a package advisory)
 # to stdout, which would land in jit.txt but never in the AOT binary's output.

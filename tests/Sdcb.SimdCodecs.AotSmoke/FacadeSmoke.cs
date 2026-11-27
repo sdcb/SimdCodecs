@@ -365,6 +365,8 @@ internal static class FacadeSmoke
             ("webp-lossy", Fixture("astronaut-192-q20-normal.webp")),
             ("webp-lossless", Fixture("lossless-palette-16.webp")),
             ("webp-anim", Fixture("anim-img2webp-mixed.webp")),
+            ("avif", Fixture("screen-testsrc2-1280x720-lr-wiener-sgr.avif")),
+            ("avif-alpha", Fixture("container-tiny-3x7.avif")),
             ("webp-enc-lossless", WebpEncoder.EncodeLossless(rgba, w, h, PixelFormat.Rgba32)),
             ("webp-enc-lossy", WebpEncoder.EncodeLossy(rgb, w, h, PixelFormat.Rgb24, new WebpLossyEncodeOptions { Quality = 60, Effort = 6 })),
             ("webp-enc-lossy-alpha", WebpEncoder.EncodeLossy(rgba, w, h, PixelFormat.Rgba32, new WebpLossyEncodeOptions { Quality = 60, Effort = 6 })),

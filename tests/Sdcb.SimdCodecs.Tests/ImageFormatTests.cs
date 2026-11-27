@@ -38,6 +38,7 @@ public sealed class ImageFormatTests
         { "jp2", ImageFormat.Jpeg2000 },
         { "webp", ImageFormat.Webp },
         { "webp-anim", ImageFormat.Webp },
+        { "avif", ImageFormat.Avif },
         { "gif", ImageFormat.Gif },
         { "bmp", ImageFormat.Bmp },
         { "ico", ImageFormat.Ico },
@@ -60,6 +61,7 @@ public sealed class ImageFormatTests
         "jp2" => Fixture("jpeg2000", "jp2-rgb-struct64.jp2"),
         "webp" => Fixture("webp", "lossless-palette-16.webp"),
         "webp-anim" => Fixture("webp", "anim-img2webp-mixed.webp"),
+        "avif" => Fixture("avif", "container-tiny-3x7.avif"),
         "gif" => GifEncoder.Encode(Rgb, 8, 6, 3),
         "bmp" => BmpEncoder.Encode(Rgb, 8, 6, 3),
         "ico" => IcoEncoder.Encode([new IcoFrame(Rgb, 8, 6, PixelFormat.Rgb24), new IcoFrame(Rgb, 4, 4, PixelFormat.Rgb24)]),
@@ -108,9 +110,6 @@ public sealed class ImageFormatTests
     {
         { Ftyp("heic", "mif1", "heic"), ImageFormat.Heif },
         { Ftyp("mif1", "mif1", "miaf"), ImageFormat.Heif },
-        { Ftyp("avif", "mif1", "miaf"), ImageFormat.Avif },
-        // An AVIF brand among the compatible ones wins over a HEIF-generic major brand.
-        { Ftyp("mif1", "mif1", "avif"), ImageFormat.Avif },
         { [0xFF, 0x0A, 0xFA, 0x00], ImageFormat.JpegXl },
         { [0, 0, 0, 0x0C, (byte)'J', (byte)'X', (byte)'L', (byte)' ', 0x0D, 0x0A, 0x87, 0x0A], ImageFormat.JpegXl },
         { [(byte)'I', (byte)'I', 0xBC, 0x01, 0x08, 0, 0, 0], ImageFormat.JpegXr },
@@ -143,8 +142,8 @@ public sealed class ImageFormatTests
     public void IsDecodable_names_exactly_the_registered_formats()
     {
         ImageFormat[] decodable =
-            [ImageFormat.Png, ImageFormat.Jpeg, ImageFormat.Tiff, ImageFormat.Jbig2, ImageFormat.Jpeg2000, ImageFormat.Webp, ImageFormat.Gif,
-             ImageFormat.Bmp, ImageFormat.Ico, ImageFormat.Cur, ImageFormat.Qoi, ImageFormat.Pnm, ImageFormat.Pfm];
+            [ImageFormat.Png, ImageFormat.Jpeg, ImageFormat.Tiff, ImageFormat.Jbig2, ImageFormat.Jpeg2000, ImageFormat.Webp, ImageFormat.Avif,
+             ImageFormat.Gif, ImageFormat.Bmp, ImageFormat.Ico, ImageFormat.Cur, ImageFormat.Qoi, ImageFormat.Pnm, ImageFormat.Pfm];
         foreach (var format in Enum.GetValues<ImageFormat>())
             ImageCodecs.IsDecodable(format).ShouldBe(decodable.Contains(format), format.ToString());
     }

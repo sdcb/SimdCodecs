@@ -163,10 +163,10 @@ public sealed class HeifFacadeTests : IDisposable
         info.Format.ShouldBe(ImageFormat.Png);
 
         byte[] other = "Q4Q4fake stream"u8.ToArray();
-        ImageCodecs.DetectFormat(other).ShouldBe(ImageFormat.Avif);
-        ImageCodecs.IsDecodable(ImageFormat.Avif).ShouldBeTrue();
+        ImageCodecs.DetectFormat(other).ShouldBe(ImageFormat.JpegXl);
+        ImageCodecs.IsDecodable(ImageFormat.JpegXl).ShouldBeTrue();
         ImageCodecs.TryReadInfo(other, out info).ShouldBeTrue();
-        (info.Width, info.Format).ShouldBe((1, ImageFormat.Avif));
+        (info.Width, info.Format).ShouldBe((1, ImageFormat.JpegXl));
     }
 
     [Fact]
@@ -260,7 +260,7 @@ public sealed class HeifFacadeTests : IDisposable
     private static ImageDecoderRegistration Fake(byte[] magic) =>
         new()
         {
-            Format = ImageFormat.Avif,
+            Format = ImageFormat.JpegXl,
             CanDecode = header => header.StartsWith(magic),
             TryReadInfo = FakeInfo,
             TryGetClosestSize = FakeClosestSize,
@@ -290,7 +290,7 @@ public sealed class HeifFacadeTests : IDisposable
 
     private static bool FakeInfo(ReadOnlySpan<byte> data, out ImageInfo info)
     {
-        info = new ImageInfo(1, 1, 3, SampleFormat.UInt8) { Format = ImageFormat.Avif };
+        info = new ImageInfo(1, 1, 3, SampleFormat.UInt8) { Format = ImageFormat.JpegXl };
         return true;
     }
 

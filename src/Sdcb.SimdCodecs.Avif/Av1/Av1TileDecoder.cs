@@ -39,6 +39,14 @@ internal sealed class Av1TileDecoder
         { true, true, true, true, false, false, false, false, false, true, false, false, false, false, false, false },
     };
 
+    private static readonly bool[,] TxTypeInSetInter =
+    {
+        { true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false },
+        { true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true },
+        { true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false },
+        { true, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false },
+    };
+
     private readonly Av1SequenceHeader _seq;
     private readonly Av1FrameHeader _fh;
     private readonly Av1Picture _pic;
@@ -85,7 +93,7 @@ internal sealed class Av1TileDecoder
     // Current block state
     private int _miRow, _miCol, _miSize;
     private bool _hasChroma, _availU, _availL, _availUChroma, _availLChroma;
-    private bool _skip, _lossless;
+    private bool _skip, _lossless, _isInter, _useIntrabc;
     private int _segmentId;
     private int _yMode, _uvMode;
     private int _angleDeltaY, _angleDeltaUv;
@@ -96,6 +104,14 @@ internal sealed class Av1TileDecoder
     private int _txSize;
     private int _planeTxType;
     private int _maxLumaW, _maxLumaH;
+    private int _mv0Y, _mv0X;
+
+    // IntraBC / MV stack scratch
+    private readonly int[] _refStackMvY = new int[Av1Constants.MaxRefMvStackSize];
+    private readonly int[] _refStackMvX = new int[Av1Constants.MaxRefMvStackSize];
+    private readonly int[] _weightStack = new int[Av1Constants.MaxRefMvStackSize];
+    private int _numMvFound;
+    private readonly int[] _interTmp = new int[136 * 128];
 
     internal Av1TileDecoder(Av1SequenceHeader seq, Av1FrameHeader fh, Av1Picture pic, Av1FrameState st)
     {
@@ -410,7 +426,7 @@ internal sealed class Av1TileDecoder
         if (_skip)
             ResetBlockContext(bw4, bh4);
 
-        // Store YMode / UVMode before residual (needed by intra edge filter type for subsequent blocks)
+        // Store YMode / UVMode / RefFrames / Mvs before compute_prediction & residual (§5.11.5)
         int miCols = _st.MiCols;
         int rEnd = Math.Min(r + bh4, _st.MiRows);
         int cEnd = Math.Min(c + bw4, miCols);
@@ -419,11 +435,22 @@ internal sealed class Av1TileDecoder
             int rowBase = rr * miCols;
             for (int cc = c; cc < cEnd; cc++)
             {
-                _st.YModes[rowBase + cc] = (byte)_yMode;
+                int idx = rowBase + cc;
+                _st.YModes[idx] = (byte)_yMode;
                 if (_hasChroma)
-                    _st.UvModes[rowBase + cc] = (byte)_uvMode;
+                    _st.UvModes[idx] = (byte)_uvMode;
+                _st.RefFrames[idx * 2] = Av1Constants.IntraFrame;
+                _st.RefFrames[idx * 2 + 1] = Av1Constants.NoneFrame;
+                if (_isInter)
+                {
+                    _st.Mvs[idx * 4] = (short)_mv0Y;
+                    _st.Mvs[idx * 4 + 1] = (short)_mv0X;
+                }
             }
         }
+
+        if (_useIntrabc)
+            ComputePredictionIntrabc();
 
         Residual(ref sym);
 
@@ -434,6 +461,7 @@ internal sealed class Av1TileDecoder
             for (int cc = c; cc < cEnd; cc++)
             {
                 int idx = rowBase + cc;
+                _st.IsInters[idx] = _isInter ? (byte)1 : (byte)0;
                 _st.Skips[idx] = _skip ? (byte)1 : (byte)0;
                 _st.MiSizes[idx] = (byte)subSize;
                 _st.SegmentIds[idx] = (byte)_segmentId;
@@ -498,6 +526,26 @@ internal sealed class Av1TileDecoder
         ReadDeltaLf(ref sym);
         _readDeltas = false;
 
+        _useIntrabc = _fh.AllowIntrabc && sym.ReadSymbol(_cdf.Intrabc) != 0;
+        if (_useIntrabc)
+        {
+            _isInter = true;
+            _yMode = Av1Constants.DcPred;
+            _uvMode = Av1Constants.DcPred;
+            _angleDeltaY = 0;
+            _angleDeltaUv = 0;
+            _cflAlphaU = 0;
+            _cflAlphaV = 0;
+            _paletteSizeY = 0;
+            _paletteSizeUv = 0;
+            _useFilterIntra = false;
+            _filterIntraMode = 0;
+            FindMvStackIntrabc();
+            AssignMvIntrabc(ref sym);
+            return;
+        }
+
+        _isInter = false;
         int aboveMode = Av1Constants.IntraModeContext[_availU ? _st.YModes[(_miRow - 1) * _st.MiCols + _miCol] : Av1Constants.DcPred];
         int leftMode = Av1Constants.IntraModeContext[_availL ? _st.YModes[_miRow * _st.MiCols + (_miCol - 1)] : Av1Constants.DcPred];
         _yMode = sym.ReadSymbol(_cdf.IntraFrameYMode.AsSpan((aboveMode * 5 + leftMode) * 14, 14));
@@ -695,6 +743,21 @@ internal sealed class Av1TileDecoder
 
     private void ReadBlockTxSize(ref Av1SymbolDecoder sym, int bw4, int bh4)
     {
+        if (_fh.TxMode == Av1Constants.TxModeSelect
+            && _miSize > Av1Constants.Block4x4
+            && _isInter
+            && !_skip
+            && !_lossless)
+        {
+            int maxTxSz = Av1Constants.MaxTxSizeRect[_miSize];
+            int txW4 = Av1Constants.TxWidth[maxTxSz] >> 2;
+            int txH4 = Av1Constants.TxHeight[maxTxSz] >> 2;
+            for (int row = _miRow; row < _miRow + bh4; row += txH4)
+                for (int col = _miCol; col < _miCol + bw4; col += txW4)
+                    ReadVarTxSize(ref sym, row, col, maxTxSz, 0);
+            return;
+        }
+
         if (_lossless)
         {
             _txSize = Av1Constants.Tx4x4;
@@ -704,12 +767,20 @@ internal sealed class Av1TileDecoder
             int maxRectTxSize = Av1Constants.MaxTxSizeRect[_miSize];
             int maxTxDepth = Av1Constants.MaxTxDepth[_miSize];
             _txSize = maxRectTxSize;
-            if (_miSize > Av1Constants.Block4x4 && _fh.TxMode == Av1Constants.TxModeSelect)
+            bool allowSelect = !_skip || !_isInter;
+            if (_miSize > Av1Constants.Block4x4 && allowSelect && _fh.TxMode == Av1Constants.TxModeSelect)
             {
                 int maxTxW = Av1Constants.TxWidth[maxRectTxSize];
                 int maxTxH = Av1Constants.TxHeight[maxRectTxSize];
-                int aboveW = _availU ? Av1Constants.TxWidth[_st.InterTxSizes[(_miRow - 1) * _st.MiCols + _miCol]] : 0;
-                int leftH = _availL ? Av1Constants.TxHeight[_st.InterTxSizes[_miRow * _st.MiCols + (_miCol - 1)]] : 0;
+                int miCols = _st.MiCols;
+                int aboveW = !_availU ? 0
+                    : _st.IsInters[(_miRow - 1) * miCols + _miCol] != 0
+                        ? Av1Constants.BlockWidth[_st.MiSizes[(_miRow - 1) * miCols + _miCol]]
+                        : GetAboveTxWidth(_miRow, _miCol);
+                int leftH = !_availL ? 0
+                    : _st.IsInters[_miRow * miCols + (_miCol - 1)] != 0
+                        ? Av1Constants.BlockHeight[_st.MiSizes[_miRow * miCols + (_miCol - 1)]]
+                        : GetLeftTxHeight(_miRow, _miCol);
                 int ctx = (aboveW >= maxTxW ? 1 : 0) + (leftH >= maxTxH ? 1 : 0);
                 Span<ushort> cdf = maxTxDepth switch
                 {
@@ -724,12 +795,80 @@ internal sealed class Av1TileDecoder
             }
         }
 
-        int miCols = _st.MiCols;
+        int cols = _st.MiCols;
         int rEnd = Math.Min(_miRow + bh4, _st.MiRows);
-        int cEnd = Math.Min(_miCol + bw4, miCols);
+        int cEnd = Math.Min(_miCol + bw4, cols);
         for (int r = _miRow; r < rEnd; r++)
             for (int c = _miCol; c < cEnd; c++)
-                _st.InterTxSizes[r * miCols + c] = (byte)_txSize;
+                _st.InterTxSizes[r * cols + c] = (byte)_txSize;
+    }
+
+    private void ReadVarTxSize(ref Av1SymbolDecoder sym, int row, int col, int txSz, int depth)
+    {
+        if (row >= _fh.MiRows || col >= _fh.MiCols)
+            return;
+
+        int txfmSplit;
+        if (txSz == Av1Constants.Tx4x4 || depth == Av1Constants.MaxVarTxDepth)
+        {
+            txfmSplit = 0;
+        }
+        else
+        {
+            int above = GetAboveTxWidth(row, col) < Av1Constants.TxWidth[txSz] ? 1 : 0;
+            int left = GetLeftTxHeight(row, col) < Av1Constants.TxHeight[txSz] ? 1 : 0;
+            int size = Math.Min(64, Math.Max(Av1Constants.BlockWidth[_miSize], Av1Constants.BlockHeight[_miSize]));
+            int maxTxSz = Av1Constants.FindTxSize(size, size);
+            int txSzSqrUp = Av1Constants.TxSizeSqrUp[txSz];
+            int ctx = (txSzSqrUp != maxTxSz ? 3 : 0) + (Av1Constants.TxSizes - 1 - maxTxSz) * 6 + above + left;
+            txfmSplit = sym.ReadSymbol(_cdf.TxfmSplit.AsSpan(ctx * 3, 3));
+        }
+
+        int w4 = Av1Constants.TxWidth[txSz] >> 2;
+        int h4 = Av1Constants.TxHeight[txSz] >> 2;
+        if (txfmSplit != 0)
+        {
+            int subTxSz = Av1Constants.SplitTxSize[txSz];
+            int stepW = Av1Constants.TxWidth[subTxSz] >> 2;
+            int stepH = Av1Constants.TxHeight[subTxSz] >> 2;
+            for (int i = 0; i < h4; i += stepH)
+                for (int j = 0; j < w4; j += stepW)
+                    ReadVarTxSize(ref sym, row + i, col + j, subTxSz, depth + 1);
+        }
+        else
+        {
+            int miCols = _st.MiCols;
+            int rEnd = Math.Min(row + h4, _st.MiRows);
+            int cEnd = Math.Min(col + w4, miCols);
+            for (int r = row; r < rEnd; r++)
+                for (int c = col; c < cEnd; c++)
+                    _st.InterTxSizes[r * miCols + c] = (byte)txSz;
+            _txSize = txSz;
+        }
+    }
+
+    private int GetAboveTxWidth(int row, int col)
+    {
+        if (row == _miRow)
+        {
+            if (!_availU) return 64;
+            int idx = (row - 1) * _st.MiCols + col;
+            if (_st.Skips[idx] != 0 && _st.IsInters[idx] != 0)
+                return Av1Constants.BlockWidth[_st.MiSizes[idx]];
+        }
+        return Av1Constants.TxWidth[_st.InterTxSizes[(row - 1) * _st.MiCols + col]];
+    }
+
+    private int GetLeftTxHeight(int row, int col)
+    {
+        if (col == _miCol)
+        {
+            if (!_availL) return 64;
+            int idx = row * _st.MiCols + (col - 1);
+            if (_st.Skips[idx] != 0 && _st.IsInters[idx] != 0)
+                return Av1Constants.BlockHeight[_st.MiSizes[idx]];
+        }
+        return Av1Constants.TxHeight[_st.InterTxSizes[row * _st.MiCols + (col - 1)]];
     }
 
     private void Residual(ref Av1SymbolDecoder sym)
@@ -743,6 +882,8 @@ internal sealed class Av1TileDecoder
         {
             for (int chunkX = 0; chunkX < widthChunks; chunkX++)
             {
+                int miRowChunk = _miRow + (chunkY << 4);
+                int miColChunk = _miCol + (chunkX << 4);
                 for (int plane = 0; plane < planes; plane++)
                 {
                     int txSz = _lossless ? Av1Constants.Tx4x4 : GetTxSize(plane, _txSize);
@@ -753,18 +894,59 @@ internal sealed class Av1TileDecoder
                     int num4x4H = Av1Constants.Num4x4BlocksHigh[planeSz];
                     int subX = plane > 0 ? _seq.SubsamplingX : 0;
                     int subY = plane > 0 ? _seq.SubsamplingY : 0;
-                    int baseXBlock = (_miCol >> subX) * 4;
-                    int baseYBlock = (_miRow >> subY) * 4;
-                    int xOff = (chunkX << 4) >> subX;
-                    int yOff = (chunkY << 4) >> subY;
 
-                    for (int y = 0; y < num4x4H; y += stepY)
+                    if (_isInter && !_lossless && plane == 0)
                     {
-                        for (int x = 0; x < num4x4W; x += stepX)
-                            TransformBlock(ref sym, plane, baseXBlock, baseYBlock, txSz, x + xOff, y + yOff);
+                        TransformTree(ref sym, miColChunk * 4, miRowChunk * 4, num4x4W * 4, num4x4H * 4);
+                    }
+                    else
+                    {
+                        int baseXBlock = (_miCol >> subX) * 4;
+                        int baseYBlock = (_miRow >> subY) * 4;
+                        int xOff = (chunkX << 4) >> subX;
+                        int yOff = (chunkY << 4) >> subY;
+                        for (int y = 0; y < num4x4H; y += stepY)
+                        {
+                            for (int x = 0; x < num4x4W; x += stepX)
+                                TransformBlock(ref sym, plane, baseXBlock, baseYBlock, txSz, x + xOff, y + yOff);
+                        }
                     }
                 }
             }
+        }
+    }
+
+    private void TransformTree(ref Av1SymbolDecoder sym, int startX, int startY, int w, int h)
+    {
+        if (startX >= _fh.MiCols * 4 || startY >= _fh.MiRows * 4)
+            return;
+        int row = startY >> 2;
+        int col = startX >> 2;
+        int lumaTxSz = _st.InterTxSizes[row * _st.MiCols + col];
+        int lumaW = Av1Constants.TxWidth[lumaTxSz];
+        int lumaH = Av1Constants.TxHeight[lumaTxSz];
+        if (w <= lumaW && h <= lumaH)
+        {
+            int txSz = Av1Constants.FindTxSize(w, h);
+            TransformBlock(ref sym, 0, startX, startY, txSz, 0, 0);
+        }
+        else if (w > h)
+        {
+            TransformTree(ref sym, startX, startY, w >> 1, h);
+            TransformTree(ref sym, startX + (w >> 1), startY, w >> 1, h);
+        }
+        else if (w < h)
+        {
+            TransformTree(ref sym, startX, startY, w, h >> 1);
+            TransformTree(ref sym, startX, startY + (h >> 1), w, h >> 1);
+        }
+        else
+        {
+            int hw = w >> 1, hh = h >> 1;
+            TransformTree(ref sym, startX, startY, hw, hh);
+            TransformTree(ref sym, startX + hw, startY, hw, hh);
+            TransformTree(ref sym, startX, startY + hh, hw, hh);
+            TransformTree(ref sym, startX + hw, startY + hh, hw, hh);
         }
     }
 
@@ -786,64 +968,67 @@ internal sealed class Av1TileDecoder
         if (startX >= maxX || startY >= maxY)
             return;
 
-        if ((plane == 0 && _paletteSizeY > 0) || (plane > 0 && _paletteSizeUv > 0))
+        if (!_isInter)
         {
-            ReadOnlySpan<int> pal = plane == 0 ? _curPalY : plane == 1 ? _curPalU : _curPalV;
-            byte[] cmap = plane == 0 ? _colorMapY : _colorMapUv;
-            Av1IntraPred.PredictPalette(_pic.Planes[plane], _pic.PlaneStrides[plane], startX, startY, x, y, txSz, pal, cmap, 64);
-        }
-        else
-        {
-            bool isCfl = plane > 0 && _uvMode == Av1Constants.UvCflPred;
-            int mode = plane == 0 ? _yMode : isCfl ? Av1Constants.DcPred : _uvMode;
-            int log2W = Av1Constants.TxWidthLog2[txSz];
-            int log2H = Av1Constants.TxHeightLog2[txSz];
-
-            bool haveLeft = (plane == 0 ? _availL : _availLChroma) || x > 0;
-            bool haveAbove = (plane == 0 ? _availU : _availUChroma) || y > 0;
-            bool[] bd = _blockDecoded[plane];
-            int bdY = subBlockMiRow >> subY;
-            int bdX = subBlockMiCol >> subX;
-            bool haveAboveRight = bd[bdY * BdStride + (bdX + stepX + 1)];
-            bool haveBelowLeft = bd[(bdY + stepY + 1) * BdStride + bdX];
-
-            Av1IntraPred.PredictIntra(
-                _pic.Planes[plane],
-                _pic.PlaneStrides[plane],
-                _seq.BitDepth,
-                _seq.EnableIntraEdgeFilter,
-                plane,
-                startX,
-                startY,
-                haveLeft,
-                haveAbove,
-                haveAboveRight,
-                haveBelowLeft,
-                mode,
-                plane == 0 ? _angleDeltaY : _angleDeltaUv,
-                plane == 0 && _useFilterIntra,
-                _filterIntraMode,
-                GetIntraFilterType(plane),
-                log2W,
-                log2H,
-                maxX - 1,
-                maxY - 1);
-
-            if (isCfl)
+            if ((plane == 0 && _paletteSizeY > 0) || (plane > 0 && _paletteSizeUv > 0))
             {
-                Av1IntraPred.PredictChromaFromLuma(
-                    _pic.Planes[0], _pic.PlaneStrides[0],
-                    _pic.Planes[plane], _pic.PlaneStrides[plane],
-                    _seq.BitDepth, _seq.SubsamplingX, _seq.SubsamplingY,
-                    startX, startY, txSz, plane == 1 ? _cflAlphaU : _cflAlphaV,
-                    _maxLumaW, _maxLumaH);
+                ReadOnlySpan<int> pal = plane == 0 ? _curPalY : plane == 1 ? _curPalU : _curPalV;
+                byte[] cmap = plane == 0 ? _colorMapY : _colorMapUv;
+                Av1IntraPred.PredictPalette(_pic.Planes[plane], _pic.PlaneStrides[plane], startX, startY, x, y, txSz, pal, cmap, 64);
             }
-        }
+            else
+            {
+                bool isCfl = plane > 0 && _uvMode == Av1Constants.UvCflPred;
+                int mode = plane == 0 ? _yMode : isCfl ? Av1Constants.DcPred : _uvMode;
+                int log2W = Av1Constants.TxWidthLog2[txSz];
+                int log2H = Av1Constants.TxHeightLog2[txSz];
 
-        if (plane == 0)
-        {
-            _maxLumaW = startX + stepX * 4;
-            _maxLumaH = startY + stepY * 4;
+                bool haveLeft = (plane == 0 ? _availL : _availLChroma) || x > 0;
+                bool haveAbove = (plane == 0 ? _availU : _availUChroma) || y > 0;
+                bool[] bd = _blockDecoded[plane];
+                int bdY = subBlockMiRow >> subY;
+                int bdX = subBlockMiCol >> subX;
+                bool haveAboveRight = bd[bdY * BdStride + (bdX + stepX + 1)];
+                bool haveBelowLeft = bd[(bdY + stepY + 1) * BdStride + bdX];
+
+                Av1IntraPred.PredictIntra(
+                    _pic.Planes[plane],
+                    _pic.PlaneStrides[plane],
+                    _seq.BitDepth,
+                    _seq.EnableIntraEdgeFilter,
+                    plane,
+                    startX,
+                    startY,
+                    haveLeft,
+                    haveAbove,
+                    haveAboveRight,
+                    haveBelowLeft,
+                    mode,
+                    plane == 0 ? _angleDeltaY : _angleDeltaUv,
+                    plane == 0 && _useFilterIntra,
+                    _filterIntraMode,
+                    GetIntraFilterType(plane),
+                    log2W,
+                    log2H,
+                    maxX - 1,
+                    maxY - 1);
+
+                if (isCfl)
+                {
+                    Av1IntraPred.PredictChromaFromLuma(
+                        _pic.Planes[0], _pic.PlaneStrides[0],
+                        _pic.Planes[plane], _pic.PlaneStrides[plane],
+                        _seq.BitDepth, _seq.SubsamplingX, _seq.SubsamplingY,
+                        startX, startY, txSz, plane == 1 ? _cflAlphaU : _cflAlphaV,
+                        _maxLumaW, _maxLumaH);
+                }
+            }
+
+            if (plane == 0)
+            {
+                _maxLumaW = startX + stepX * 4;
+                _maxLumaH = startY + stepY * 4;
+            }
         }
 
         if (!_skip)
@@ -1204,7 +1389,15 @@ internal sealed class Av1TileDecoder
     {
         int sqr = Av1Constants.TxSizeSqr[txSz];
         int sqrUp = Av1Constants.TxSizeSqrUp[txSz];
-        if (sqrUp >= Av1Constants.Tx32x32)
+        if (sqrUp > Av1Constants.Tx32x32)
+            return Av1Constants.TxSetDctOnly;
+        if (_isInter)
+        {
+            if (_fh.ReducedTxSet || sqrUp == Av1Constants.Tx32x32) return Av1Constants.TxSetInter3;
+            if (sqr == Av1Constants.Tx16x16) return Av1Constants.TxSetInter2;
+            return Av1Constants.TxSetInter1;
+        }
+        if (sqrUp == Av1Constants.Tx32x32)
             return Av1Constants.TxSetDctOnly;
         if (_fh.ReducedTxSet || sqr == Av1Constants.Tx16x16)
             return Av1Constants.TxSetIntra2;
@@ -1219,16 +1412,37 @@ internal sealed class Av1TileDecoder
         if (set > 0 && qidx > 0)
         {
             int sqr = Av1Constants.TxSizeSqr[txSz];
-            int intraDir = _useFilterIntra ? Av1Constants.FilterIntraModeToIntraDir[_filterIntraMode] : _yMode;
-            if (set == Av1Constants.TxSetIntra1)
+            if (_isInter)
             {
-                int s = sym.ReadSymbol(_cdf.IntraTxTypeSet1.AsSpan((sqr * 13 + intraDir) * 8, 8));
-                txType = Av1Constants.TxTypeIntraInvSet1[s];
+                if (set == Av1Constants.TxSetInter1)
+                {
+                    int s = sym.ReadSymbol(_cdf.InterTxTypeSet1.AsSpan(sqr * 17, 17));
+                    txType = Av1Constants.TxTypeInterInvSet1[s];
+                }
+                else if (set == Av1Constants.TxSetInter2)
+                {
+                    int s = sym.ReadSymbol(_cdf.InterTxTypeSet2);
+                    txType = Av1Constants.TxTypeInterInvSet2[s];
+                }
+                else
+                {
+                    int s = sym.ReadSymbol(_cdf.InterTxTypeSet3.AsSpan(sqr * 3, 3));
+                    txType = Av1Constants.TxTypeInterInvSet3[s];
+                }
             }
             else
             {
-                int s = sym.ReadSymbol(_cdf.IntraTxTypeSet2.AsSpan((sqr * 13 + intraDir) * 6, 6));
-                txType = Av1Constants.TxTypeIntraInvSet2[s];
+                int intraDir = _useFilterIntra ? Av1Constants.FilterIntraModeToIntraDir[_filterIntraMode] : _yMode;
+                if (set == Av1Constants.TxSetIntra1)
+                {
+                    int s = sym.ReadSymbol(_cdf.IntraTxTypeSet1.AsSpan((sqr * 13 + intraDir) * 8, 8));
+                    txType = Av1Constants.TxTypeIntraInvSet1[s];
+                }
+                else
+                {
+                    int s = sym.ReadSymbol(_cdf.IntraTxTypeSet2.AsSpan((sqr * 13 + intraDir) * 6, 6));
+                    txType = Av1Constants.TxTypeIntraInvSet2[s];
+                }
             }
         }
         else
@@ -1252,6 +1466,20 @@ internal sealed class Av1TileDecoder
         if (plane == 0)
             return _txTypes[y4 * _st.MiCols + x4];
         int txSet = GetTxSet(txSz);
+        if (_isInter)
+        {
+            int x4L = Math.Max(_miCol, x4 << _seq.SubsamplingX);
+            int y4L = Math.Max(_miRow, y4 << _seq.SubsamplingY);
+            int interTxType = _txTypes[y4L * _st.MiCols + x4L];
+            int interRow = txSet switch
+            {
+                Av1Constants.TxSetInter1 => 1,
+                Av1Constants.TxSetInter2 => 2,
+                Av1Constants.TxSetInter3 => 3,
+                _ => 0,
+            };
+            return TxTypeInSetInter[interRow, interTxType] ? interTxType : Av1Constants.DctDct;
+        }
         int txType = Av1Constants.ModeToTxfm[_uvMode];
         return TxTypeInSetIntra[txSet, txType] ? txType : Av1Constants.DctDct;
     }
@@ -1544,8 +1772,10 @@ internal sealed class Av1TileDecoder
             int stepX = 4 >> subX;
             int uRowStart = (r * stepY + unitSize - 1) / unitSize;
             int uRowEnd = Math.Min(unitRows, ((r + h) * stepY + unitSize - 1) / unitSize);
-            int uColStart = (c * stepX + unitSize - 1) / unitSize;
-            int uColEnd = Math.Min(unitCols, ((c + w) * stepX + unitSize - 1) / unitSize);
+            int numerator = _fh.UseSuperres ? stepX * _fh.SuperresDenom : stepX;
+            int denominator = _fh.UseSuperres ? unitSize * Av1Constants.SuperresNum : unitSize;
+            int uColStart = (c * numerator + denominator - 1) / denominator;
+            int uColEnd = Math.Min(unitCols, ((c + w) * numerator + denominator - 1) / denominator);
 
             for (int ur = uRowStart; ur < uRowEnd; ur++)
                 for (int uc = uColStart; uc < uColEnd; uc++)
@@ -1651,6 +1881,325 @@ internal sealed class Av1TileDecoder
         int v = sym.ReadLiteral(w - 1);
         if (v < m) return v;
         return (v << 1) - m + sym.ReadBool();
+    }
+
+    // --- IntraBC MV stack, decoding & prediction (§5.11.26, §5.11.31-32, §7.10.2, §7.11.3) ---
+
+    private void FindMvStackIntrabc()
+    {
+        int bw4 = Av1Constants.Num4x4BlocksWide[_miSize];
+        int bh4 = Av1Constants.Num4x4BlocksHigh[_miSize];
+        _numMvFound = 0;
+
+        ScanRowIntrabc(-1, bw4);
+        ScanColIntrabc(-1, bh4);
+        if (Math.Max(bw4, bh4) <= 16)
+            ScanPointIntrabc(-1, bw4);
+
+        int numNearest = _numMvFound;
+        if (numNearest > 0)
+        {
+            for (int idx = 0; idx < numNearest; idx++)
+                _weightStack[idx] += Av1Constants.RefCatLevel;
+        }
+
+        ScanPointIntrabc(-1, -1);
+        ScanRowIntrabc(-3, bw4);
+        ScanColIntrabc(-3, bh4);
+        if (bh4 > 1) ScanRowIntrabc(-5, bw4);
+        if (bw4 > 1) ScanColIntrabc(-5, bh4);
+
+        SortMvStack(0, numNearest);
+        SortMvStack(numNearest, _numMvFound);
+
+        // Extra search (§7.10.2.12): in intra frames no neighbor has ref > INTRA_FRAME, so pad up to 2 with GlobalMv (0, 0).
+        for (int idx = _numMvFound; idx < 2; idx++)
+        {
+            _refStackMvY[idx] = 0;
+            _refStackMvX[idx] = 0;
+        }
+
+        // Clamp (§7.10.2.14)
+        int bw = Av1Constants.BlockWidth[_miSize];
+        int bh = Av1Constants.BlockHeight[_miSize];
+        int borderY = Av1Constants.MvBorder + bh * 8;
+        int borderX = Av1Constants.MvBorder + bw * 8;
+        int topEdge = -(_miRow * 4 * 8) - borderY;
+        int botEdge = ((_fh.MiRows - bh4 - _miRow) * 4 * 8) + borderY;
+        int leftEdge = -(_miCol * 4 * 8) - borderX;
+        int rightEdge = ((_fh.MiCols - bw4 - _miCol) * 4 * 8) + borderX;
+
+        for (int idx = 0; idx < _numMvFound; idx++)
+        {
+            _refStackMvY[idx] = Av1Constants.Clip3(topEdge, botEdge, _refStackMvY[idx]);
+            _refStackMvX[idx] = Av1Constants.Clip3(leftEdge, rightEdge, _refStackMvX[idx]);
+        }
+    }
+
+    private void ScanRowIntrabc(int deltaRow, int bw4)
+    {
+        int end4 = Math.Min(Math.Min(bw4, _fh.MiCols - _miCol), 16);
+        int deltaCol = 0;
+        bool useStep16 = bw4 >= 16;
+        if (Math.Abs(deltaRow) > 1)
+        {
+            deltaRow += _miRow & 1;
+            deltaCol = 1 - (_miCol & 1);
+        }
+        int i = 0;
+        while (i < end4)
+        {
+            int mvRow = _miRow + deltaRow;
+            int mvCol = _miCol + deltaCol + i;
+            if (!IsInside(mvRow, mvCol))
+                break;
+            int len = Math.Min(bw4, Av1Constants.Num4x4BlocksWide[_st.MiSizes[mvRow * _st.MiCols + mvCol]]);
+            if (Math.Abs(deltaRow) > 1) len = Math.Max(2, len);
+            if (useStep16) len = Math.Max(4, len);
+            AddRefMvCandidateIntrabc(mvRow, mvCol, len * 2);
+            i += len;
+        }
+    }
+
+    private void ScanColIntrabc(int deltaCol, int bh4)
+    {
+        int end4 = Math.Min(Math.Min(bh4, _fh.MiRows - _miRow), 16);
+        int deltaRow = 0;
+        bool useStep16 = bh4 >= 16;
+        if (Math.Abs(deltaCol) > 1)
+        {
+            deltaRow = 1 - (_miRow & 1);
+            deltaCol += _miCol & 1;
+        }
+        int i = 0;
+        while (i < end4)
+        {
+            int mvRow = _miRow + deltaRow + i;
+            int mvCol = _miCol + deltaCol;
+            if (!IsInside(mvRow, mvCol))
+                break;
+            int len = Math.Min(bh4, Av1Constants.Num4x4BlocksHigh[_st.MiSizes[mvRow * _st.MiCols + mvCol]]);
+            if (Math.Abs(deltaCol) > 1) len = Math.Max(2, len);
+            if (useStep16) len = Math.Max(4, len);
+            AddRefMvCandidateIntrabc(mvRow, mvCol, len * 2);
+            i += len;
+        }
+    }
+
+    private void ScanPointIntrabc(int deltaRow, int deltaCol)
+    {
+        int mvRow = _miRow + deltaRow;
+        int mvCol = _miCol + deltaCol;
+        if (IsInside(mvRow, mvCol) && _st.RefFrames[(mvRow * _st.MiCols + mvCol) * 2] != Av1Constants.NoneFrame)
+            AddRefMvCandidateIntrabc(mvRow, mvCol, 4);
+    }
+
+    private void AddRefMvCandidateIntrabc(int mvRow, int mvCol, int weight)
+    {
+        int idx = mvRow * _st.MiCols + mvCol;
+        if (_st.IsInters[idx] == 0)
+            return;
+        for (int candList = 0; candList < 2; candList++)
+        {
+            if (_st.RefFrames[idx * 2 + candList] != Av1Constants.IntraFrame)
+                continue;
+            int mvY = _st.Mvs[idx * 4 + candList * 2];
+            int mvX = _st.Mvs[idx * 4 + candList * 2 + 1];
+            // lower_mv_precision with force_integer_mv == 1 (§7.10.2.10)
+            mvY = LowerMvPrecisionInt(mvY);
+            mvX = LowerMvPrecisionInt(mvX);
+
+            bool found = false;
+            for (int k = 0; k < _numMvFound; k++)
+            {
+                if (_refStackMvY[k] == mvY && _refStackMvX[k] == mvX)
+                {
+                    _weightStack[k] += weight;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found && _numMvFound < Av1Constants.MaxRefMvStackSize)
+            {
+                _refStackMvY[_numMvFound] = mvY;
+                _refStackMvX[_numMvFound] = mvX;
+                _weightStack[_numMvFound] = weight;
+                _numMvFound++;
+            }
+        }
+    }
+
+    private static int LowerMvPrecisionInt(int v)
+    {
+        int a = Math.Abs(v);
+        int aInt = (a + 3) >> 3;
+        return v > 0 ? (aInt << 3) : -(aInt << 3);
+    }
+
+    private void SortMvStack(int start, int end)
+    {
+        while (end > start)
+        {
+            int newEnd = start;
+            for (int i = start + 1; i < end; i++)
+            {
+                if (_weightStack[i - 1] < _weightStack[i])
+                {
+                    (_weightStack[i - 1], _weightStack[i]) = (_weightStack[i], _weightStack[i - 1]);
+                    (_refStackMvY[i - 1], _refStackMvY[i]) = (_refStackMvY[i], _refStackMvY[i - 1]);
+                    (_refStackMvX[i - 1], _refStackMvX[i]) = (_refStackMvX[i], _refStackMvX[i - 1]);
+                    newEnd = i;
+                }
+            }
+            end = newEnd;
+        }
+    }
+
+    private void AssignMvIntrabc(ref Av1SymbolDecoder sym)
+    {
+        int predY = _refStackMvY[0];
+        int predX = _refStackMvX[0];
+        if (predY == 0 && predX == 0)
+        {
+            predY = _refStackMvY[1];
+            predX = _refStackMvX[1];
+        }
+        if (predY == 0 && predX == 0)
+        {
+            int sbSize4 = _seq.Use128x128Superblock ? 32 : 16;
+            if (_miRow - sbSize4 < _miRowStart)
+            {
+                predY = 0;
+                predX = -(sbSize4 * 4 + Av1Constants.IntrabcDelayPixels) * 8;
+            }
+            else
+            {
+                predY = -(sbSize4 * 4 * 8);
+                predX = 0;
+            }
+        }
+
+        ReadMv(ref sym, Av1Constants.MvIntrabcContext, predY, predX, out _mv0Y, out _mv0X);
+    }
+
+    private void ReadMv(ref Av1SymbolDecoder sym, int mvCtx, int predY, int predX, out int mvY, out int mvX)
+    {
+        int joint = sym.ReadSymbol(_cdf.MvJoint.AsSpan(mvCtx * 5, 5));
+        int diffY = (joint is Av1Constants.MvJointHzvnz or Av1Constants.MvJointHnzvnz)
+            ? ReadMvComponent(ref sym, mvCtx, 0) : 0;
+        int diffX = (joint is Av1Constants.MvJointHnzvz or Av1Constants.MvJointHnzvnz)
+            ? ReadMvComponent(ref sym, mvCtx, 1) : 0;
+        mvY = predY + diffY;
+        mvX = predX + diffX;
+    }
+
+    private int ReadMvComponent(ref Av1SymbolDecoder sym, int mvCtx, int comp)
+    {
+        int cc = mvCtx * 2 + comp;
+        int sign = sym.ReadSymbol(_cdf.MvSign.AsSpan(cc * 3, 3));
+        int mvClass = sym.ReadSymbol(_cdf.MvClass.AsSpan(cc * 12, 12));
+        int mag;
+        if (mvClass == Av1Constants.MvClass0)
+        {
+            int bit = sym.ReadSymbol(_cdf.MvClass0Bit.AsSpan(cc * 3, 3));
+            int fr = _fh.ForceIntegerMv ? 3 : sym.ReadSymbol(_cdf.MvClass0Fr.AsSpan((cc * 2 + bit) * 5, 5));
+            int hp = 1; // allow_high_precision_mv is 0 for intra frames
+            mag = ((bit << 3) | (fr << 1) | hp) + 1;
+        }
+        else
+        {
+            int d = 0;
+            for (int i = 0; i < mvClass; i++)
+            {
+                int b = sym.ReadSymbol(_cdf.MvBit.AsSpan((cc * 10 + i) * 3, 3));
+                d |= b << i;
+            }
+            mag = Av1Constants.Class0Size << (mvClass + 2);
+            int fr = _fh.ForceIntegerMv ? 3 : sym.ReadSymbol(_cdf.MvFr.AsSpan(cc * 5, 5));
+            int hp = 1;
+            mag += ((d << 3) | (fr << 1) | hp) + 1;
+        }
+        return sign != 0 ? -mag : mag;
+    }
+
+    private void ComputePredictionIntrabc()
+    {
+        int bitDepth = _seq.BitDepth;
+        int interRound0 = bitDepth == 12 ? 5 : 3;
+        int interRound1 = bitDepth == 12 ? 9 : 11;
+        int planes = _hasChroma ? 3 : 1;
+
+        for (int plane = 0; plane < planes; plane++)
+        {
+            int subX = plane > 0 ? _seq.SubsamplingX : 0;
+            int subY = plane > 0 ? _seq.SubsamplingY : 0;
+            int planeSz = GetPlaneResidualSize(_miSize, plane);
+            int w = Av1Constants.BlockWidth[planeSz];
+            int h = Av1Constants.BlockHeight[planeSz];
+            int baseX = (_miCol >> subX) * 4;
+            int baseY = (_miRow >> subY) * 4;
+
+            // §7.11.3.3 for IntraBC (xScale = yScale = 1 << 14, stepX = stepY = 1024)
+            int subpelX = (baseX << 4) + ((2 * _mv0X) >> subX);
+            int subpelY = (baseY << 4) + ((2 * _mv0Y) >> subY);
+            int srcX0 = subpelX >> 4;
+            int srcY0 = subpelY >> 4;
+            int fracX = subpelX & 15;
+            int fracY = subpelY & 15;
+
+            int lastX = ((_fh.MiCols * 4) >> subX) - 1;
+            int lastY = ((_fh.MiRows * 4) >> subY) - 1;
+            ushort[] buf = _pic.Planes[plane];
+            int stride = _pic.PlaneStrides[plane];
+
+            if (fracX == 0 && fracY == 0)
+            {
+                for (int r = 0; r < h; r++)
+                {
+                    int sy = Av1Constants.Clip3(0, lastY, srcY0 + r);
+                    int dstRow = (baseY + r) * stride + baseX;
+                    int srcRow = sy * stride;
+                    for (int c = 0; c < w; c++)
+                    {
+                        int sx = Av1Constants.Clip3(0, lastX, srcX0 + c);
+                        buf[dstRow + c] = buf[srcRow + sx];
+                    }
+                }
+            }
+            else
+            {
+                // Bilinear interpolation (interpFilter = BILINEAR = 3: w0 = 128 - 8*f, w1 = 8*f)
+                int hx0 = 128 - 8 * fracX;
+                int hx1 = 8 * fracX;
+                int hy0 = 128 - 8 * fracY;
+                int hy1 = 8 * fracY;
+                int interH = h + 1;
+                for (int r = 0; r < interH; r++)
+                {
+                    int sy = Av1Constants.Clip3(0, lastY, srcY0 + r);
+                    int srcRow = sy * stride;
+                    int tmpRow = r * w;
+                    for (int c = 0; c < w; c++)
+                    {
+                        int sx0 = Av1Constants.Clip3(0, lastX, srcX0 + c);
+                        int sx1 = Av1Constants.Clip3(0, lastX, srcX0 + c + 1);
+                        int s = hx0 * buf[srcRow + sx0] + hx1 * buf[srcRow + sx1];
+                        _interTmp[tmpRow + c] = Av1Constants.Round2(s, interRound0);
+                    }
+                }
+                for (int r = 0; r < h; r++)
+                {
+                    int dstRow = (baseY + r) * stride + baseX;
+                    int t0 = r * w;
+                    int t1 = (r + 1) * w;
+                    for (int c = 0; c < w; c++)
+                    {
+                        int s = hy0 * _interTmp[t0 + c] + hy1 * _interTmp[t1 + c];
+                        buf[dstRow + c] = (ushort)Av1Constants.Clip1(Av1Constants.Round2(s, interRound1), bitDepth);
+                    }
+                }
+            }
+        }
     }
 
     private static bool IsDirectionalMode(int mode) => mode is >= Av1Constants.VPred and <= Av1Constants.D67Pred;

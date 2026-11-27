@@ -150,19 +150,27 @@ public sealed class DecodeErrorTests : IDisposable
     }
 
     [Theory]
-    [InlineData("avif", "AVIF")]
     [InlineData("jxl", "JPEG XL")]
     [InlineData("psd", "PSD")]
     public void RecognisedButUndecodableFormat_IsNamed(string kind, string name)
     {
         byte[] data = kind switch
         {
-            "avif" => Ftyp("avif", "mif1", "miaf"),
             "jxl" => [0xFF, 0x0A, 0xFA, 0x7F, 0x01, 0x90, 0x08, 0x06, 0x01, 0x00, 0x48, 0x00],
             _ => [.. "8BPS"u8, 0, 1, 0, 0, 0, 0, 0, 0, 0, 3],
         };
         Should.Throw<NotSupportedException>(() => ImageCodecs.Decode(data, cancellationToken: TestContext.Current.CancellationToken))
             .Message.ShouldBe($"The data is {name}, which Sdcb.SimdCodecs recognises but does not decode.");
+    }
+
+    [Fact]
+    public void CorruptAvif_GivesTheReason()
+    {
+        var avif = Ftyp("avif", "mif1", "miaf");
+        ImageCodecs.TryDecode(avif, out _, cancellationToken: TestContext.Current.CancellationToken).ShouldBeFalse();
+        var e = Should.Throw<InvalidDataException>(() => ImageCodecs.Decode(avif, cancellationToken: TestContext.Current.CancellationToken));
+        e.Message.ShouldStartWith("The AVIF file cannot be decoded: ");
+        e.InnerException.ShouldBeOfType<InvalidDataException>();
     }
 
     [Fact]

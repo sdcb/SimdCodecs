@@ -91,6 +91,7 @@ internal sealed class Av1FrameHeader
     internal int TxMode { get; private set; }
     internal bool ReducedTxSet { get; private set; }
     internal bool ApplyGrain { get; private set; }
+    internal Av1FilmGrainParams? FilmGrain { get; private set; }
 
     internal static Av1FrameHeader Parse(ref Av1BitReader br, Av1SequenceHeader seq, int temporalId = 0, int spatialId = 0)
     {
@@ -199,6 +200,12 @@ internal sealed class Av1FrameHeader
 
         fh.UpscaledWidth = fh.FrameWidth;
         fh.FrameWidth = (fh.UpscaledWidth * Av1Constants.SuperresNum + (fh.SuperresDenom / 2)) / fh.SuperresDenom;
+        if (fh.UpscaledWidth <= 0 || fh.FrameHeight <= 0
+            || fh.UpscaledWidth > AvifContainer.MaxDimension || fh.FrameHeight > AvifContainer.MaxDimension
+            || (long)fh.UpscaledWidth * fh.FrameHeight > AvifContainer.MaxPixels)
+        {
+            throw new InvalidDataException($"AV1 frame dimensions {fh.UpscaledWidth}x{fh.FrameHeight} exceed decoder limits.");
+        }
         fh.MiCols = 2 * ((fh.FrameWidth + 7) >> 3);
         fh.MiRows = 2 * ((fh.FrameHeight + 7) >> 3);
 
@@ -215,11 +222,6 @@ internal sealed class Av1FrameHeader
 
         if (fh.AllowScreenContentTools && fh.UpscaledWidth == fh.FrameWidth)
             fh.AllowIntrabc = br.ReadBool();
-
-        if (fh.UseSuperres)
-            throw new InvalidDataException("AV1 Superres is not supported in M1 (lands in M2).");
-        if (fh.AllowIntrabc)
-            throw new InvalidDataException("AV1 IntraBC is not supported in M1 (lands in M2).");
 
         fh.DisableFrameEndUpdateCdf = seq.ReducedStillPictureHeader || fh.DisableCdfUpdate || br.ReadBool();
 
@@ -258,13 +260,104 @@ internal sealed class Av1FrameHeader
 
         // Film grain params (§5.9.30)
         if (seq.FilmGrainParamsPresent && (fh.ShowFrame || fh.ShowableFrame))
-        {
-            fh.ApplyGrain = br.ReadBool();
-            if (fh.ApplyGrain)
-                throw new InvalidDataException("AV1 Film Grain synthesis is not supported in M1 (lands in M2).");
-        }
+            ParseFilmGrainParams(ref br, seq, fh);
 
         return fh;
+    }
+
+    private static void ParseFilmGrainParams(ref Av1BitReader br, Av1SequenceHeader seq, Av1FrameHeader fh)
+    {
+        fh.ApplyGrain = br.ReadBool();
+        if (!fh.ApplyGrain)
+            return;
+
+        var fg = new Av1FilmGrainParams
+        {
+            ApplyGrain = true,
+            GrainSeed = (ushort)br.ReadBits(16),
+            UpdateGrain = fh.FrameType == Av1Constants.InterFrame ? br.ReadBool() : true,
+        };
+        if (!fg.UpdateGrain)
+            throw new InvalidDataException("AV1 inter film_grain_params_ref_idx is not supported in intra still decode.");
+
+        fg.NumYPoints = (int)br.ReadBits(4);
+        if (fg.NumYPoints > 14)
+            throw new InvalidDataException($"Invalid AV1 film grain num_y_points {fg.NumYPoints}.");
+        for (int i = 0; i < fg.NumYPoints; i++)
+        {
+            fg.PointYValue[i] = (byte)br.ReadBits(8);
+            fg.PointYScaling[i] = (byte)br.ReadBits(8);
+            if (i > 0 && fg.PointYValue[i] <= fg.PointYValue[i - 1])
+                throw new InvalidDataException("AV1 film grain point_y_value is not strictly increasing.");
+        }
+
+        fg.ChromaScalingFromLuma = !seq.Monochrome && br.ReadBool();
+        if (seq.Monochrome || fg.ChromaScalingFromLuma || (seq.SubsamplingX == 1 && seq.SubsamplingY == 1 && fg.NumYPoints == 0))
+        {
+            fg.NumCbPoints = 0;
+            fg.NumCrPoints = 0;
+        }
+        else
+        {
+            fg.NumCbPoints = (int)br.ReadBits(4);
+            if (fg.NumCbPoints > 10)
+                throw new InvalidDataException($"Invalid AV1 film grain num_cb_points {fg.NumCbPoints}.");
+            for (int i = 0; i < fg.NumCbPoints; i++)
+            {
+                fg.PointCbValue[i] = (byte)br.ReadBits(8);
+                fg.PointCbScaling[i] = (byte)br.ReadBits(8);
+                if (i > 0 && fg.PointCbValue[i] <= fg.PointCbValue[i - 1])
+                    throw new InvalidDataException("AV1 film grain point_cb_value is not strictly increasing.");
+            }
+
+            fg.NumCrPoints = (int)br.ReadBits(4);
+            if (fg.NumCrPoints > 10)
+                throw new InvalidDataException($"Invalid AV1 film grain num_cr_points {fg.NumCrPoints}.");
+            for (int i = 0; i < fg.NumCrPoints; i++)
+            {
+                fg.PointCrValue[i] = (byte)br.ReadBits(8);
+                fg.PointCrScaling[i] = (byte)br.ReadBits(8);
+                if (i > 0 && fg.PointCrValue[i] <= fg.PointCrValue[i - 1])
+                    throw new InvalidDataException("AV1 film grain point_cr_value is not strictly increasing.");
+            }
+        }
+
+        fg.GrainScalingMinus8 = (int)br.ReadBits(2);
+        fg.ArCoeffLag = (int)br.ReadBits(2);
+        int numPosLuma = 2 * fg.ArCoeffLag * (fg.ArCoeffLag + 1);
+        int numPosChroma = fg.NumYPoints > 0 ? numPosLuma + 1 : numPosLuma;
+        if (fg.NumYPoints > 0)
+        {
+            for (int i = 0; i < numPosLuma; i++)
+                fg.ArCoeffsYPlus128[i] = (byte)br.ReadBits(8);
+        }
+        if (fg.ChromaScalingFromLuma || fg.NumCbPoints > 0)
+        {
+            for (int i = 0; i < numPosChroma; i++)
+                fg.ArCoeffsCbPlus128[i] = (byte)br.ReadBits(8);
+        }
+        if (fg.ChromaScalingFromLuma || fg.NumCrPoints > 0)
+        {
+            for (int i = 0; i < numPosChroma; i++)
+                fg.ArCoeffsCrPlus128[i] = (byte)br.ReadBits(8);
+        }
+        fg.ArCoeffShiftMinus6 = (int)br.ReadBits(2);
+        fg.GrainScaleShift = (int)br.ReadBits(2);
+        if (fg.NumCbPoints > 0)
+        {
+            fg.CbMult = (int)br.ReadBits(8);
+            fg.CbLumaMult = (int)br.ReadBits(8);
+            fg.CbOffset = (int)br.ReadBits(9);
+        }
+        if (fg.NumCrPoints > 0)
+        {
+            fg.CrMult = (int)br.ReadBits(8);
+            fg.CrLumaMult = (int)br.ReadBits(8);
+            fg.CrOffset = (int)br.ReadBits(9);
+        }
+        fg.OverlapFlag = br.ReadBool();
+        fg.ClipToRestrictedRange = br.ReadBool();
+        fh.FilmGrain = fg;
     }
 
     internal int GetQIndex(bool ignoreDeltaQ, int segmentId, int currentQIndex)

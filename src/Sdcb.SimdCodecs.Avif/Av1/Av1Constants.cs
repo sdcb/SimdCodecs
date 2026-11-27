@@ -145,6 +145,23 @@ internal static class Av1Constants
     internal const int TxSetDctOnly = 0;
     internal const int TxSetIntra1 = 1;
     internal const int TxSetIntra2 = 2;
+
+    // Motion vectors & IntraBC constants (§3 / §7.10)
+    internal const int IntrabcDelayPixels = 256;
+    internal const int MvBorder = 128;
+    internal const int RefCatLevel = 640;
+    internal const int MaxRefMvStackSize = 8;
+    internal const int MaxVarTxDepth = 2;
+    internal const int MvContexts = 2;
+    internal const int MvIntrabcContext = 1;
+    internal const int MvJointZero = 0;
+    internal const int MvJointHnzvz = 1;
+    internal const int MvJointHzvnz = 2;
+    internal const int MvJointHnzvnz = 3;
+    internal const int MvClass0 = 0;
+    internal const int Class0Size = 2;
+    internal const int MvOffsetBits = 10;
+    internal const int NoneFrame = -1;
     internal const int TxSetDctIdtx = 3;
     internal const int TxSetInter1 = 4;
     internal const int TxSetInter2 = 5;
@@ -345,6 +362,28 @@ internal static class Av1Constants
 
     internal static readonly int[] TxTypeIntraInvSet1 = [Idtx, DctDct, VDct, HDct, AdstAdst, AdstDct, DctAdst];
     internal static readonly int[] TxTypeIntraInvSet2 = [Idtx, DctDct, AdstAdst, AdstDct, DctAdst];
+    internal static readonly int[] TxTypeInterInvSet1 =
+    [
+        Idtx, VDct, HDct, VAdst, HAdst, VFlipAdst, HFlipAdst,
+        DctDct, AdstDct, DctAdst, FlipAdstDct, DctFlipAdst, AdstAdst,
+        FlipAdstFlipAdst, AdstFlipAdst, FlipAdstAdst,
+    ];
+    internal static readonly int[] TxTypeInterInvSet2 =
+    [
+        Idtx, VDct, HDct, DctDct, AdstDct, DctAdst, FlipAdstDct,
+        DctFlipAdst, AdstAdst, FlipAdstFlipAdst, AdstFlipAdst, FlipAdstAdst,
+    ];
+    internal static readonly int[] TxTypeInterInvSet3 = [Idtx, DctDct];
+
+    internal static int FindTxSize(int w, int h)
+    {
+        for (int txSz = 0; txSz < TxWidth.Length; txSz++)
+        {
+            if (TxWidth[txSz] == w && TxHeight[txSz] == h)
+                return txSz;
+        }
+        return Tx4x4;
+    }
 
     internal static readonly int[] FilterIntraModeToIntraDir = [DcPred, VPred, HPred, D157Pred, DcPred];
 

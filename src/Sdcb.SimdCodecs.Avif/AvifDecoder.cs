@@ -43,10 +43,10 @@ public static class AvifDecoder
         {
             Width = width,
             Height = height,
-            BitDepth = container.Primary.TileConfigs[0].BitDepth,
-            HasAlpha = container.Alpha is not null,
+            BitDepth = container.BitDepth,
+            HasAlpha = container.HasAlpha,
             FrameCount = 1,
-            TileCount = container.Primary.Tiles.Count,
+            TileCount = container.TileCount,
             IccProfile = container.IccProfile,
             Orientation = ImageOrientation.Normal,
         };
@@ -58,11 +58,7 @@ public static class AvifDecoder
     public static AvifImage Decode(ReadOnlySpan<byte> data)
     {
         var container = AvifContainer.Parse(data);
-        var planes = DecodePlanes(data, container);
-        var (width, height) = container.DisplaySize();
-        var pixels = new byte[(long)width * height * 4];
-        RenderRgba(container, planes, pixels, width, height);
-        return new AvifImage(width, height, pixels, planes.BitDepth, planes.Alpha is not null, container.IccProfile);
+        return DecodeContainer(data, container);
     }
 
     /// <summary>
@@ -71,13 +67,48 @@ public static class AvifDecoder
     public static (int Width, int Height) DecodeTo(ReadOnlySpan<byte> data, Span<byte> rgbaDestination)
     {
         var container = AvifContainer.Parse(data);
-        var planes = DecodePlanes(data, container);
+        EnsureCanvasDimensions(data, container);
         var (width, height) = container.DisplaySize();
         long needed = (long)width * height * 4;
         if (rgbaDestination.Length < needed)
             throw new ArgumentException($"The destination needs {needed} bytes for a {width}x{height} image.", nameof(rgbaDestination));
-        RenderRgba(container, planes, rgbaDestination, width, height);
+        DecodeContainerToRgba8(data, container, rgbaDestination, width, height);
         return (width, height);
+    }
+
+    internal static AvifImage DecodeContainer(ReadOnlySpan<byte> data, AvifContainer container)
+    {
+        EnsureCanvasDimensions(data, container);
+        var (width, height) = container.DisplaySize();
+        var pixels = new byte[checked((long)width * height * 4)];
+        int bitDepth = DecodeContainerToRgba8(data, container, pixels, width, height);
+        return new AvifImage(width, height, pixels, bitDepth, container.HasAlpha, container.IccProfile);
+    }
+
+    internal static int DecodeContainerToRgba8(ReadOnlySpan<byte> data, AvifContainer container, Span<byte> destination, int outW, int outH, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (container.Overlay is not null)
+        {
+            RenderOverlayRgba8(data, container, destination, outW, outH, cancellationToken);
+            return container.BitDepth;
+        }
+        var planes = DecodePlanes(data, container);
+        RenderRgba(container, planes, destination, outW, outH);
+        return planes.BitDepth;
+    }
+
+    internal static int DecodeContainerToRgba16(ReadOnlySpan<byte> data, AvifContainer container, Span<ushort> destination, int outW, int outH, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (container.Overlay is not null)
+        {
+            RenderOverlayRgba16(data, container, destination, outW, outH, cancellationToken);
+            return container.BitDepth;
+        }
+        var planes = DecodePlanes(data, container);
+        RenderRgba16(container, planes, destination, outW, outH);
+        return planes.BitDepth;
     }
 
     /// <summary>
@@ -90,8 +121,10 @@ public static class AvifDecoder
         return DecodePlanes(data, container);
     }
 
-    private static AvifDecodedPlanes DecodePlanes(ReadOnlySpan<byte> data, AvifContainer container)
+    internal static AvifDecodedPlanes DecodePlanes(ReadOnlySpan<byte> data, AvifContainer container)
     {
+        if (container.Overlay is not null)
+            throw new InvalidDataException("Planar YCbCr output is not defined for an 'iovl' overlay image.");
         var primaryPics = DecodePlanTiles(data, container.Items, container.Primary);
         var first = primaryPics[0];
 
@@ -160,45 +193,55 @@ public static class AvifDecoder
         };
     }
 
-    private static void EnsureCanvasDimensions(ReadOnlySpan<byte> data, AvifContainer container)
+    internal static void EnsureCanvasDimensions(ReadOnlySpan<byte> data, AvifContainer container)
     {
+        if (container.Overlay is not null)
+            return;
         if (container.Primary.CanvasWidth > 0 && container.Primary.CanvasHeight > 0)
             return;
 
         // Fallback when 'ispe' is absent on a single 'av01' item: read dimensions from sequence header OBU.
+        var seq = TryReadSequenceHeader(data, container)
+            ?? throw new InvalidDataException("AV1 item has no sequence header.");
+        container.Primary.CanvasWidth = seq.MaxFrameWidth;
+        container.Primary.CanvasHeight = seq.MaxFrameHeight;
+    }
+
+    internal static Av1SequenceHeader? TryReadSequenceHeader(ReadOnlySpan<byte> data, AvifContainer container)
+    {
+        if (container.Overlay is not null)
+        {
+            return container.Overlay.Layers.Count > 0
+                ? TryReadSequenceHeader(data, container.Overlay.Layers[0].Image)
+                : null;
+        }
+        if (container.Primary.Tiles.Count == 0)
+            return null;
+
         var tile = container.Primary.Tiles[0];
         var cfg = container.Primary.TileConfigs[0];
-        long len = ItemContainer.GetItemLength(tile);
-        if (len <= 0 || len > data.Length)
-            throw new InvalidDataException("Invalid AV1 item payload length.");
-        var buf = new byte[len];
-        container.Items.Resolve(data, tile, buf);
-
-        Av1SequenceHeader? seq = null;
         if (cfg.ConfigObusLength > 0)
         {
             var cfgSpan = data.Slice(cfg.ConfigObusOffset, cfg.ConfigObusLength);
             foreach (var obu in Av1ObuParser.ParseAll(cfgSpan))
             {
                 if (obu.Type == Av1Constants.ObuSequenceHeader)
-                {
-                    seq = Av1SequenceHeader.Parse(cfgSpan.Slice(obu.PayloadOffset, obu.PayloadLength));
-                    break;
-                }
+                    return Av1SequenceHeader.Parse(cfgSpan.Slice(obu.PayloadOffset, obu.PayloadLength));
             }
         }
+
+        long len = ItemContainer.GetItemLength(tile);
+        if (len <= 0 || len > data.Length)
+            throw new InvalidDataException("Invalid AV1 item payload length.");
+        // Sequence header OBU is always near the start of the item; resolve up to first 4 KB when possible, or full item if small.
+        var buf = new byte[len];
+        container.Items.Resolve(data, tile, buf);
         foreach (var obu in Av1ObuParser.ParseAll(buf))
         {
             if (obu.Type == Av1Constants.ObuSequenceHeader)
-            {
-                seq = Av1SequenceHeader.Parse(buf.AsSpan(obu.PayloadOffset, obu.PayloadLength));
-                break;
-            }
+                return Av1SequenceHeader.Parse(buf.AsSpan(obu.PayloadOffset, obu.PayloadLength));
         }
-        if (seq is null)
-            throw new InvalidDataException("AV1 item has no sequence header.");
-        container.Primary.CanvasWidth = seq.MaxFrameWidth;
-        container.Primary.CanvasHeight = seq.MaxFrameHeight;
+        return null;
     }
 
     private static Av1Picture[] DecodePlanTiles(ReadOnlySpan<byte> data, ItemContainer items, AvifContainer.ImagePlan plan)
@@ -295,14 +338,9 @@ public static class AvifDecoder
         return dst;
     }
 
-    private static void RenderRgba(AvifContainer container, AvifDecodedPlanes planes, Span<byte> destination, int outW, int outH)
+    private static (int A, int B, int C, int D, int E, int F) ComposeAffine(AvifContainer container, int width, int height)
     {
-        // Compose transformative properties (clap, irot, imir) in association order into an affine map:
-        // output = (a*x + b*y + c, d*x + e*y + f) from canvas (x, y).
-        int width = planes.Width;
-        int height = planes.Height;
         int a = 1, b = 0, c = 0, d = 0, e = 1, f = 0;
-
         foreach (var t in container.Transforms)
         {
             switch (t.Type)
@@ -339,6 +377,12 @@ public static class AvifDecoder
                     break;
             }
         }
+        return (a, b, c, d, e, f);
+    }
+
+    private static void RenderRgba(AvifContainer container, AvifDecodedPlanes planes, Span<byte> destination, int outW, int outH)
+    {
+        var (a, b, c, d, e, f) = ComposeAffine(container, planes.Width, planes.Height);
 
         var coeff = AvifColor.For(planes.MatrixCoefficients, planes.FullRange, planes.BitDepth);
         int cw = (planes.Width + planes.SubsamplingX) >> planes.SubsamplingX;
@@ -353,7 +397,6 @@ public static class AvifDecoder
         bool aFull = planes.AlphaFullRange;
         bool prem = planes.IsPremultiplied;
 
-        // Fast path: no transform (identity map)
         bool isIdentity = a == 1 && b == 0 && c == 0 && d == 0 && e == 1 && f == 0 && outW == planes.Width && outH == planes.Height;
         if (isIdentity)
         {
@@ -398,6 +441,243 @@ public static class AvifDecoder
                     out destination[dstOff + 1],
                     out destination[dstOff + 2],
                     out destination[dstOff + 3]);
+            }
+        }
+    }
+
+    private static void RenderRgba16(AvifContainer container, AvifDecodedPlanes planes, Span<ushort> destination, int outW, int outH)
+    {
+        var (a, b, c, d, e, f) = ComposeAffine(container, planes.Width, planes.Height);
+
+        var coeff = AvifColor.For16(planes.MatrixCoefficients, planes.FullRange, planes.BitDepth);
+        int cw = (planes.Width + planes.SubsamplingX) >> planes.SubsamplingX;
+        int subX = planes.SubsamplingX;
+        int subY = planes.SubsamplingY;
+        bool mono = planes.Monochrome;
+        ushort[] yBuf = planes.Y;
+        ushort[]? cbBuf = planes.Cb;
+        ushort[]? crBuf = planes.Cr;
+        ushort[]? aBuf = planes.Alpha;
+        int aBd = planes.AlphaBitDepth;
+        bool aFull = planes.AlphaFullRange;
+        bool prem = planes.IsPremultiplied;
+
+        bool isIdentity = a == 1 && b == 0 && c == 0 && d == 0 && e == 1 && f == 0 && outW == planes.Width && outH == planes.Height;
+        if (isIdentity)
+        {
+            for (int y = 0; y < outH; y++)
+            {
+                int yRow = y * planes.Width;
+                int cRow = (y >> subY) * cw;
+                int dstRow = y * outW * 4;
+                for (int x = 0; x < outW; x++)
+                {
+                    ushort ys = yBuf[yRow + x];
+                    ushort cbs = mono ? (ushort)0 : cbBuf![cRow + (x >> subX)];
+                    ushort crs = mono ? (ushort)0 : crBuf![cRow + (x >> subX)];
+                    ushort alpha = aBuf is not null ? AvifColor.SampleAlphaTo16(aBuf[yRow + x], aBd, aFull) : (ushort)65535;
+                    AvifColor.PixelToRgba16(ys, cbs, crs, mono, in coeff, alpha, prem,
+                        out destination[dstRow + x * 4],
+                        out destination[dstRow + x * 4 + 1],
+                        out destination[dstRow + x * 4 + 2],
+                        out destination[dstRow + x * 4 + 3]);
+                }
+            }
+            return;
+        }
+
+        for (int y = 0; y < planes.Height; y++)
+        {
+            int yRow = y * planes.Width;
+            int cRow = (y >> subY) * cw;
+            for (int x = 0; x < planes.Width; x++)
+            {
+                int ox = a * x + b * y + c;
+                int oy = d * x + e * y + f;
+                if ((uint)ox >= (uint)outW || (uint)oy >= (uint)outH) continue;
+
+                ushort ys = yBuf[yRow + x];
+                ushort cbs = mono ? (ushort)0 : cbBuf![cRow + (x >> subX)];
+                ushort crs = mono ? (ushort)0 : crBuf![cRow + (x >> subX)];
+                ushort alpha = aBuf is not null ? AvifColor.SampleAlphaTo16(aBuf[yRow + x], aBd, aFull) : (ushort)65535;
+                int dstOff = (oy * outW + ox) * 4;
+                AvifColor.PixelToRgba16(ys, cbs, crs, mono, in coeff, alpha, prem,
+                    out destination[dstOff],
+                    out destination[dstOff + 1],
+                    out destination[dstOff + 2],
+                    out destination[dstOff + 3]);
+            }
+        }
+    }
+
+    private static void RenderOverlayRgba8(ReadOnlySpan<byte> data, AvifContainer container, Span<byte> destination, int outW, int outH, CancellationToken cancellationToken)
+    {
+        var ov = container.Overlay!;
+        int cw = ov.CanvasWidth;
+        int ch = ov.CanvasHeight;
+        bool hasTransforms = container.Transforms.Count > 0;
+        byte[]? canvasArr = hasTransforms ? new byte[checked((long)cw * ch * 4)] : null;
+        Span<byte> canvas = hasTransforms ? canvasArr : destination;
+
+        byte fr = (byte)(ov.FillR >> 8);
+        byte fg = (byte)(ov.FillG >> 8);
+        byte fb = (byte)(ov.FillB >> 8);
+        byte fa = (byte)(ov.FillA >> 8);
+        for (int i = 0; i < cw * ch; i++)
+        {
+            int p = i * 4;
+            canvas[p] = fr;
+            canvas[p + 1] = fg;
+            canvas[p + 2] = fb;
+            canvas[p + 3] = fa;
+        }
+
+        foreach (var layer in ov.Layers)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            EnsureCanvasDimensions(data, layer.Image);
+            var (lw, lh) = layer.Image.DisplaySize();
+            var layerBuf = new byte[checked((long)lw * lh * 4)];
+            DecodeContainerToRgba8(data, layer.Image, layerBuf, lw, lh, cancellationToken);
+
+            int x0 = Math.Max(0, layer.HorizontalOffset);
+            int y0 = Math.Max(0, layer.VerticalOffset);
+            int x1 = Math.Min(cw, layer.HorizontalOffset + lw);
+            int y1 = Math.Min(ch, layer.VerticalOffset + lh);
+            for (int y = y0; y < y1; y++)
+            {
+                int sy = y - layer.VerticalOffset;
+                for (int x = x0; x < x1; x++)
+                {
+                    int sx = x - layer.HorizontalOffset;
+                    int srcOff = (sy * lw + sx) * 4;
+                    int dstOff = (y * cw + x) * 4;
+                    byte sa = layerBuf[srcOff + 3];
+                    if (sa == 255)
+                    {
+                        canvas[dstOff] = layerBuf[srcOff];
+                        canvas[dstOff + 1] = layerBuf[srcOff + 1];
+                        canvas[dstOff + 2] = layerBuf[srcOff + 2];
+                        canvas[dstOff + 3] = 255;
+                    }
+                    else if (sa > 0)
+                    {
+                        int inv = 255 - sa;
+                        int da = canvas[dstOff + 3];
+                        int oa = sa + ((da * inv + 127) / 255);
+                        if (oa > 0)
+                        {
+                            canvas[dstOff] = (byte)((layerBuf[srcOff] * sa * 255 + canvas[dstOff] * da * inv + oa * 127) / (oa * 255));
+                            canvas[dstOff + 1] = (byte)((layerBuf[srcOff + 1] * sa * 255 + canvas[dstOff + 1] * da * inv + oa * 127) / (oa * 255));
+                            canvas[dstOff + 2] = (byte)((layerBuf[srcOff + 2] * sa * 255 + canvas[dstOff + 2] * da * inv + oa * 127) / (oa * 255));
+                        }
+                        canvas[dstOff + 3] = (byte)oa;
+                    }
+                }
+            }
+        }
+
+        if (hasTransforms)
+        {
+            var (a, b, c, d, e, f) = ComposeAffine(container, cw, ch);
+            for (int y = 0; y < ch; y++)
+            {
+                for (int x = 0; x < cw; x++)
+                {
+                    int ox = a * x + b * y + c;
+                    int oy = d * x + e * y + f;
+                    if ((uint)ox >= (uint)outW || (uint)oy >= (uint)outH) continue;
+                    int srcOff = (y * cw + x) * 4;
+                    int dstOff = (oy * outW + ox) * 4;
+                    destination[dstOff] = canvas[srcOff];
+                    destination[dstOff + 1] = canvas[srcOff + 1];
+                    destination[dstOff + 2] = canvas[srcOff + 2];
+                    destination[dstOff + 3] = canvas[srcOff + 3];
+                }
+            }
+        }
+    }
+
+    private static void RenderOverlayRgba16(ReadOnlySpan<byte> data, AvifContainer container, Span<ushort> destination, int outW, int outH, CancellationToken cancellationToken)
+    {
+        var ov = container.Overlay!;
+        int cw = ov.CanvasWidth;
+        int ch = ov.CanvasHeight;
+        bool hasTransforms = container.Transforms.Count > 0;
+        ushort[]? canvasArr = hasTransforms ? new ushort[checked((long)cw * ch * 4)] : null;
+        Span<ushort> canvas = hasTransforms ? canvasArr : destination;
+
+        for (int i = 0; i < cw * ch; i++)
+        {
+            int p = i * 4;
+            canvas[p] = ov.FillR;
+            canvas[p + 1] = ov.FillG;
+            canvas[p + 2] = ov.FillB;
+            canvas[p + 3] = ov.FillA;
+        }
+
+        foreach (var layer in ov.Layers)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            EnsureCanvasDimensions(data, layer.Image);
+            var (lw, lh) = layer.Image.DisplaySize();
+            var layerBuf = new ushort[checked((long)lw * lh * 4)];
+            DecodeContainerToRgba16(data, layer.Image, layerBuf, lw, lh, cancellationToken);
+
+            int x0 = Math.Max(0, layer.HorizontalOffset);
+            int y0 = Math.Max(0, layer.VerticalOffset);
+            int x1 = Math.Min(cw, layer.HorizontalOffset + lw);
+            int y1 = Math.Min(ch, layer.VerticalOffset + lh);
+            for (int y = y0; y < y1; y++)
+            {
+                int sy = y - layer.VerticalOffset;
+                for (int x = x0; x < x1; x++)
+                {
+                    int sx = x - layer.HorizontalOffset;
+                    int srcOff = (sy * lw + sx) * 4;
+                    int dstOff = (y * cw + x) * 4;
+                    ushort sa = layerBuf[srcOff + 3];
+                    if (sa == 65535)
+                    {
+                        canvas[dstOff] = layerBuf[srcOff];
+                        canvas[dstOff + 1] = layerBuf[srcOff + 1];
+                        canvas[dstOff + 2] = layerBuf[srcOff + 2];
+                        canvas[dstOff + 3] = 65535;
+                    }
+                    else if (sa > 0)
+                    {
+                        long inv = 65535 - sa;
+                        long da = canvas[dstOff + 3];
+                        long oa = sa + ((da * inv + 32767) / 65535);
+                        if (oa > 0)
+                        {
+                            canvas[dstOff] = (ushort)((layerBuf[srcOff] * (long)sa * 65535 + canvas[dstOff] * da * inv + oa * 32767) / (oa * 65535));
+                            canvas[dstOff + 1] = (ushort)((layerBuf[srcOff + 1] * (long)sa * 65535 + canvas[dstOff + 1] * da * inv + oa * 32767) / (oa * 65535));
+                            canvas[dstOff + 2] = (ushort)((layerBuf[srcOff + 2] * (long)sa * 65535 + canvas[dstOff + 2] * da * inv + oa * 32767) / (oa * 65535));
+                        }
+                        canvas[dstOff + 3] = (ushort)oa;
+                    }
+                }
+            }
+        }
+
+        if (hasTransforms)
+        {
+            var (a, b, c, d, e, f) = ComposeAffine(container, cw, ch);
+            for (int y = 0; y < ch; y++)
+            {
+                for (int x = 0; x < cw; x++)
+                {
+                    int ox = a * x + b * y + c;
+                    int oy = d * x + e * y + f;
+                    if ((uint)ox >= (uint)outW || (uint)oy >= (uint)outH) continue;
+                    int srcOff = (y * cw + x) * 4;
+                    int dstOff = (oy * outW + ox) * 4;
+                    destination[dstOff] = canvas[srcOff];
+                    destination[dstOff + 1] = canvas[srcOff + 1];
+                    destination[dstOff + 2] = canvas[srcOff + 2];
+                    destination[dstOff + 3] = canvas[srcOff + 3];
+                }
             }
         }
     }

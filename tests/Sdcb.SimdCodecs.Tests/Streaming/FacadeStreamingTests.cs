@@ -189,7 +189,7 @@ public sealed class FacadeStreamingTests : IDisposable
         "avif"u8.CopyTo(avif.AsSpan(96));
         ImageCodecs.DetectFormat(avif).ShouldBe(ImageFormat.Avif);
         Should.Throw<InvalidDataException>(() => ImageCodecs.OpenRowReader(new ChunkedStream(avif), PixelFormat.Rgba32))
-            .Message.ShouldBe(ImageCodecs.NoCodecMessage(avif));
+            .Message.ShouldStartWith("The AVIF file cannot be decoded: ");
         (await Should.ThrowAsync<InvalidDataException>(async () =>
                 await ImageCodecs.OpenRowReaderAsync(new ChunkedStream(avif, asyncOnly: true), PixelFormat.Rgba32, cancellationToken: Ct)))
             .Message.ShouldContain("AVIF");

@@ -13,9 +13,11 @@
     <EmbeddedResource Include="$(_SmokeFixtures)webp\astronaut-192-q20-normal.webp" LogicalName="astronaut-192-q20-normal.webp" />
     <EmbeddedResource Include="$(_SmokeFixtures)webp\lossless-palette-16.webp" LogicalName="lossless-palette-16.webp" />
     <EmbeddedResource Include="$(_SmokeFixtures)webp\anim-img2webp-mixed.webp" LogicalName="anim-img2webp-mixed.webp" />
-    <!-- HEIF fixtures are not committed: run.sh fetches them (Oracle/heif/fetch.sh) first; a missing one fails the build. -->
+    <!-- HEIF & AVIF fixtures are not committed: run.sh fetches them first; a missing one fails the build. -->
     <EmbeddedResource Include="$(_SmokeFixtures)heif\synth-screen-testsrc2-1280x720-main8.heic" LogicalName="synth-screen-testsrc2-1280x720-main8.heic" />
     <EmbeddedResource Include="$(_SmokeFixtures)heif\synth-screen-testsrc2-640x360-pq-vui.heic" LogicalName="synth-screen-testsrc2-640x360-pq-vui.heic" />
+    <EmbeddedResource Include="$(_SmokeFixtures)avif\screen-testsrc2-1280x720-lr-wiener-sgr.avif" LogicalName="screen-testsrc2-1280x720-lr-wiener-sgr.avif" />
+    <EmbeddedResource Include="$(_SmokeFixtures)avif\container-tiny-3x7.avif" LogicalName="container-tiny-3x7.avif" />
   </ItemGroup>
 
 </Project>

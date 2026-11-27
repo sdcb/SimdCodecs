@@ -24,6 +24,20 @@ internal static class Av1FrameDecoder
         }
 
         var obus = Av1ObuParser.ParseAll(payload);
+
+        // If the still-image payload carries multiple frames (e.g. scalable layered AVIF with a1lx/a1op),
+        // verify whether enhancement layers require INTER_FRAME decoding (which lands in M3).
+        int frameObuCount = 0;
+        foreach (var obu in obus)
+        {
+            if (obu.Type is Av1Constants.ObuFrame or Av1Constants.ObuFrameHeader)
+            {
+                frameObuCount++;
+                if (frameObuCount > 1)
+                    throw new InvalidDataException("Layered scalable AVIF with multiple AV1 frames ('a1lx'/'a1op') is not supported yet (lands in M3).");
+            }
+        }
+
         Av1FrameHeader? fh = null;
         Av1Picture? pic = null;
         Av1FrameState? state = null;
@@ -37,20 +51,17 @@ internal static class Av1FrameDecoder
             {
                 case Av1Constants.ObuSequenceHeader:
                     seq = Av1SequenceHeader.Parse(obuPayload);
-                    ValidateM1Sequence(seq);
                     break;
 
                 case Av1Constants.ObuFrame:
                     if (seq is null)
                         throw new InvalidDataException("AV1 frame OBU appeared before any sequence header OBU.");
-                    ValidateM1Sequence(seq);
                     DecodeFrameObu(obuPayload, obu.TemporalId, obu.SpatialId, seq, out fh, out pic, out state);
                     return pic;
 
                 case Av1Constants.ObuFrameHeader:
                     if (seq is null)
                         throw new InvalidDataException("AV1 frame header OBU appeared before any sequence header OBU.");
-                    ValidateM1Sequence(seq);
                     var br = new Av1BitReader(obuPayload);
                     fh = Av1FrameHeader.Parse(ref br, seq, obu.TemporalId, obu.SpatialId);
                     pic = new Av1Picture(seq, fh);
@@ -85,16 +96,6 @@ internal static class Av1FrameDecoder
         }
 
         throw new InvalidDataException("No decodable AV1 frame found in bitstream.");
-    }
-
-    private static void ValidateM1Sequence(Av1SequenceHeader seq)
-    {
-        if (seq.SeqProfile != 0)
-            throw new InvalidDataException($"AV1 profile {seq.SeqProfile} is not supported in M1 (Profile 0 only).");
-        if (seq.BitDepth != 8 && seq.BitDepth != 10)
-            throw new InvalidDataException($"AV1 bit depth {seq.BitDepth} is not supported in M1 (8-bit and 10-bit only).");
-        if (!seq.Monochrome && (seq.SubsamplingX != 1 || seq.SubsamplingY != 1))
-            throw new InvalidDataException("Only 4:2:0 and 4:0:0 subsampling are supported in M1.");
     }
 
     private static void DecodeFrameObu(
@@ -163,9 +164,9 @@ internal static class Av1FrameDecoder
                     raw |= (uint)data[offset + b] << (b * 8);
                 offset += fh.TileSizeBytes;
                 remaining -= fh.TileSizeBytes;
-                tileSize = checked((int)raw + 1);
-                if (tileSize < 0 || tileSize > remaining)
+                if (raw >= (uint)remaining)
                     throw new InvalidDataException("AV1 tile extends past end of tile group OBU.");
+                tileSize = (int)raw + 1;
                 remaining -= tileSize;
             }
 
@@ -178,38 +179,62 @@ internal static class Av1FrameDecoder
 
     private static void RunPostFilters(Av1SequenceHeader seq, Av1FrameHeader fh, Av1Picture pic, Av1FrameState state)
     {
-        // 1. Deblocking loop filter (in-place on pic.Planes)
+        // 1. Deblocking loop filter (in-place on pic.Planes at coded FrameWidth)
         Av1LoopFilter.Apply(seq, fh, pic, state);
 
-        // 2. CDEF + 3. Loop Restoration
+        // 2. CDEF (at coded FrameWidth)
         bool runCdef = !fh.CodedLossless && !fh.AllowIntrabc && seq.EnableCdef;
+        bool runSuperres = fh.UseSuperres && fh.UpscaledWidth > fh.FrameWidth;
         bool runLr = fh.UsesLr;
 
-        if (!runCdef && !runLr)
-            return;
-
-        if (runCdef && !runLr)
+        ushort[][] deblockPlanes = pic.Planes;
+        ushort[][] cdefPlanes;
+        if (runCdef)
         {
-            var cdefPlanes = AllocateLike(pic);
-            Av1Cdef.Apply(seq, fh, pic, state, pic.Planes, cdefPlanes);
-            CopyBack(cdefPlanes, pic.Planes);
-            return;
+            cdefPlanes = AllocateLike(pic);
+            Av1Cdef.Apply(seq, fh, pic, state, deblockPlanes, cdefPlanes);
+        }
+        else
+        {
+            cdefPlanes = deblockPlanes;
         }
 
-        if (!runCdef && runLr)
+        // 3. Superres horizontal upscaling (§7.16): upscales CDEF output (and deblock output if LR needs it)
+        ushort[][] upDeblock = deblockPlanes;
+        ushort[][] upCdef = cdefPlanes;
+        if (runSuperres)
         {
-            var lrPlanes = AllocateLike(pic);
-            Av1LoopRestoration.Apply(seq, fh, pic, state, pic.Planes, pic.Planes, lrPlanes);
-            CopyBack(lrPlanes, pic.Planes);
-            return;
+            upCdef = AllocateLike(pic);
+            Av1Superres.Apply(seq, fh, pic, cdefPlanes, upCdef);
+            if (runLr && !ReferenceEquals(deblockPlanes, cdefPlanes))
+            {
+                upDeblock = AllocateLike(pic);
+                Av1Superres.Apply(seq, fh, pic, deblockPlanes, upDeblock);
+            }
+            else
+            {
+                upDeblock = upCdef;
+            }
         }
 
-        // Both CDEF and LR active: LR reads post-CDEF inside stripes and post-deblock outside stripes (§7.17.6).
-        var cdefOut = AllocateLike(pic);
-        Av1Cdef.Apply(seq, fh, pic, state, pic.Planes, cdefOut);
-        var lrOut = AllocateLike(pic);
-        Av1LoopRestoration.Apply(seq, fh, pic, state, pic.Planes, cdefOut, lrOut);
-        CopyBack(lrOut, pic.Planes);
+        // 4. Loop Restoration (§7.17) at UpscaledWidth
+        ushort[][] finalPlanes;
+        if (runLr)
+        {
+            finalPlanes = AllocateLike(pic);
+            Av1LoopRestoration.Apply(seq, fh, pic, state, upDeblock, upCdef, finalPlanes);
+        }
+        else
+        {
+            finalPlanes = upCdef;
+        }
+
+        if (!ReferenceEquals(finalPlanes, pic.Planes))
+            CopyBack(finalPlanes, pic.Planes);
+
+        // 5. Film Grain synthesis (§7.18.3)
+        if (fh.ApplyGrain && fh.FilmGrain is not null)
+            Av1FilmGrain.Apply(seq, fh.FilmGrain, pic);
     }
 
     private static ushort[][] AllocateLike(Av1Picture pic)

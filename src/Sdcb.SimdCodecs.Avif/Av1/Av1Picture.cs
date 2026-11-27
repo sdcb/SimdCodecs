@@ -42,7 +42,7 @@ internal sealed class Av1Picture
         Planes = new ushort[numPlanes][];
 
         int sbPx = seq.Use128x128Superblock ? 128 : 64;
-        int miWidthPx = ((fh.MiCols * 4) + sbPx - 1) & ~(sbPx - 1);
+        int miWidthPx = Math.Max(((fh.MiCols * 4) + sbPx - 1) & ~(sbPx - 1), fh.UpscaledWidth);
         int miHeightPx = ((fh.MiRows * 4) + sbPx - 1) & ~(sbPx - 1);
 
         for (int p = 0; p < numPlanes; p++)

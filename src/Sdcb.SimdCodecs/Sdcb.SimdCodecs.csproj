@@ -49,6 +49,7 @@
     <ProjectReference Include="..\Sdcb.SimdCodecs.Ico\Sdcb.SimdCodecs.Ico.csproj" />
     <ProjectReference Include="..\Sdcb.SimdCodecs.Qoi\Sdcb.SimdCodecs.Qoi.csproj" />
     <ProjectReference Include="..\Sdcb.SimdCodecs.Pnm\Sdcb.SimdCodecs.Pnm.csproj" />
+    <ProjectReference Include="..\Sdcb.SimdCodecs.Avif\Sdcb.SimdCodecs.Avif.csproj" />
   </ItemGroup>
 
 </Project>

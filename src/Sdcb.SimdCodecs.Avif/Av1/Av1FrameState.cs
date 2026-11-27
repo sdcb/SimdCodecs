@@ -17,6 +17,9 @@ internal sealed class Av1FrameState
     internal readonly byte[] Skips;
     internal readonly byte[] SegmentIds;
     internal readonly byte[] InterTxSizes;
+    internal readonly byte[] IsInters;
+    internal readonly sbyte[] RefFrames; // 2 per MI cell (-1 = NONE, 0 = INTRA_FRAME)
+    internal readonly short[] Mvs; // 4 per MI cell: [ref0_y, ref0_x, ref1_y, ref1_x]
     internal readonly sbyte[] DeltaLfs; // 4 per MI cell (when DeltaLfPresent)
 
     // LoopfilterTxSizes[plane][planeRow * planeMiCols + planeCol]
@@ -51,6 +54,10 @@ internal sealed class Av1FrameState
         Skips = new byte[miCount];
         SegmentIds = new byte[miCount];
         InterTxSizes = new byte[miCount];
+        IsInters = new byte[miCount];
+        RefFrames = new sbyte[miCount * 2];
+        Array.Fill(RefFrames, (sbyte)Av1Constants.NoneFrame);
+        Mvs = new short[miCount * 4];
         DeltaLfs = fh.DeltaLfPresent ? new sbyte[miCount * 4] : [];
 
         LoopfilterTxSizes = new byte[NumPlanes][];

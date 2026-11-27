@@ -61,11 +61,25 @@ internal sealed class Av1CdfState
     ];
     internal readonly ushort[] IntraTxTypeSet1 = new ushort[Av1CdfTables.DefaultIntraTxTypeSet1Cdf.Length];
     internal readonly ushort[] IntraTxTypeSet2 = new ushort[Av1CdfTables.DefaultIntraTxTypeSet2Cdf.Length];
+    internal readonly ushort[] InterTxTypeSet1 = new ushort[Av1CdfTables.DefaultInterTxTypeSet1Cdf.Length];
+    internal readonly ushort[] InterTxTypeSet2 = new ushort[Av1CdfTables.DefaultInterTxTypeSet2Cdf.Length];
+    internal readonly ushort[] InterTxTypeSet3 = new ushort[Av1CdfTables.DefaultInterTxTypeSet3Cdf.Length];
     internal readonly ushort[] CflSign = new ushort[Av1CdfTables.DefaultCflSignCdf.Length];
     internal readonly ushort[] CflAlpha = new ushort[Av1CdfTables.DefaultCflAlphaCdf.Length];
     internal readonly ushort[] UseWiener = new ushort[Av1CdfTables.DefaultUseWienerCdf.Length];
     internal readonly ushort[] UseSgrproj = new ushort[Av1CdfTables.DefaultUseSgrprojCdf.Length];
     internal readonly ushort[] RestorationType = new ushort[Av1CdfTables.DefaultRestorationTypeCdf.Length];
+
+    // Motion Vector CDFs (indexed by mvCtx in 0..1: 0=inter, 1=intrabc)
+    internal readonly ushort[] MvJoint = new ushort[Av1Constants.MvContexts * 5];
+    internal readonly ushort[] MvClass = new ushort[Av1Constants.MvContexts * 2 * 12];
+    internal readonly ushort[] MvClass0Bit = new ushort[Av1Constants.MvContexts * 2 * 3];
+    internal readonly ushort[] MvClass0Fr = new ushort[Av1Constants.MvContexts * 2 * 2 * 5];
+    internal readonly ushort[] MvClass0Hp = new ushort[Av1Constants.MvContexts * 2 * 3];
+    internal readonly ushort[] MvSign = new ushort[Av1Constants.MvContexts * 2 * 3];
+    internal readonly ushort[] MvBit = new ushort[Av1Constants.MvContexts * 2 * 10 * 3];
+    internal readonly ushort[] MvFr = new ushort[Av1Constants.MvContexts * 2 * 5];
+    internal readonly ushort[] MvHp = new ushort[Av1Constants.MvContexts * 2 * 3];
 
     // Coefficient CDFs (sliced for the frame's qCtx in 0..3)
     internal readonly ushort[] TxbSkip = new ushort[5 * 13 * 3];
@@ -128,11 +142,31 @@ internal sealed class Av1CdfState
             Av1CdfTables.DefaultDeltaLfCdf.CopyTo(DeltaLfMulti[i], 0);
         Av1CdfTables.DefaultIntraTxTypeSet1Cdf.CopyTo(IntraTxTypeSet1, 0);
         Av1CdfTables.DefaultIntraTxTypeSet2Cdf.CopyTo(IntraTxTypeSet2, 0);
+        Av1CdfTables.DefaultInterTxTypeSet1Cdf.CopyTo(InterTxTypeSet1, 0);
+        Av1CdfTables.DefaultInterTxTypeSet2Cdf.CopyTo(InterTxTypeSet2, 0);
+        Av1CdfTables.DefaultInterTxTypeSet3Cdf.CopyTo(InterTxTypeSet3, 0);
         Av1CdfTables.DefaultCflSignCdf.CopyTo(CflSign, 0);
         Av1CdfTables.DefaultCflAlphaCdf.CopyTo(CflAlpha, 0);
         Av1CdfTables.DefaultUseWienerCdf.CopyTo(UseWiener, 0);
         Av1CdfTables.DefaultUseSgrprojCdf.CopyTo(UseSgrproj, 0);
         Av1CdfTables.DefaultRestorationTypeCdf.CopyTo(RestorationType, 0);
+
+        for (int ctx = 0; ctx < Av1Constants.MvContexts; ctx++)
+        {
+            Av1CdfTables.DefaultMvJointCdf.CopyTo(MvJoint, ctx * 5);
+            Av1CdfTables.DefaultMvClassCdf.CopyTo(MvClass, ctx * 24);
+            Av1CdfTables.DefaultMvClass0FrCdf.CopyTo(MvClass0Fr, ctx * 20);
+            Av1CdfTables.DefaultMvFrCdf.CopyTo(MvFr, ctx * 10);
+            for (int comp = 0; comp < 2; comp++)
+            {
+                int cc = (ctx * 2 + comp);
+                Av1CdfTables.DefaultMvClass0BitCdf.CopyTo(MvClass0Bit, cc * 3);
+                Av1CdfTables.DefaultMvClass0HpCdf.CopyTo(MvClass0Hp, cc * 3);
+                Av1CdfTables.DefaultMvSignCdf.CopyTo(MvSign, cc * 3);
+                Av1CdfTables.DefaultMvBitCdf.CopyTo(MvBit, cc * 30);
+                Av1CdfTables.DefaultMvHpCdf.CopyTo(MvHp, cc * 3);
+            }
+        }
 
         int qCtx = baseQIdx <= 20 ? 0 : baseQIdx <= 60 ? 1 : baseQIdx <= 120 ? 2 : 3;
         SliceCopy(Av1CdfTables.DefaultTxbSkipCdf, qCtx, TxbSkip);
