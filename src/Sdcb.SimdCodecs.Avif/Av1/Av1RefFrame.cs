@@ -46,6 +46,13 @@ internal sealed class Av1DecoderSession
     internal Av1RefFrame[] RefFrames { get; } = CreateSlots();
     internal int CurrentFrameId { get; set; }
 
+    /// <summary>
+    /// True when the session is discarded after its one output picture (a still item): that picture may then own
+    /// pooled planes even though a reference slot also holds it, because nothing decodes from the slot after the
+    /// caller disposes the picture. A multi-frame session keeps reference pictures out of the pool.
+    /// </summary>
+    internal bool OneShot { get; init; }
+
     private static Av1RefFrame[] CreateSlots()
     {
         var arr = new Av1RefFrame[Av1Constants.NumRefFrames];
@@ -124,9 +131,9 @@ internal sealed class Av1DecoderSession
                         fh = null; pic = null; state = null; tileDecoder = null; savedUpdateCdf = null;
                         break;
                     }
-                    pic = new Av1Picture(SequenceHeader, fh);
+                    pic = new Av1Picture(SequenceHeader, fh, pooled: fh.RefreshFrameFlags == 0);
                     state = new Av1FrameState(SequenceHeader, fh);
-                    tileDecoder = new Av1TileDecoder(SequenceHeader, fh, pic, state, this);
+                    tileDecoder = null;
                     savedUpdateCdf = null;
                     decodedTiles = 0;
                     break;
@@ -134,9 +141,9 @@ internal sealed class Av1DecoderSession
 
                 case Av1Constants.ObuTileGroup:
                 {
-                    if (SequenceHeader is null || fh is null || pic is null || state is null || tileDecoder is null)
+                    if (SequenceHeader is null || fh is null || pic is null || state is null)
                         throw new InvalidDataException("AV1 tile group OBU appeared without an active frame header.");
-                    decodedTiles += Av1FrameDecoder.DecodeTileGroup(obuPayload, fh, tileDecoder, ref savedUpdateCdf);
+                    decodedTiles += Av1FrameDecoder.DecodeTileGroup(obuPayload, SequenceHeader, fh, pic, state, this, ref tileDecoder, ref savedUpdateCdf);
                     if (decodedTiles >= fh.TileCols * fh.TileRows)
                     {
                         var shown = FinishDecodedFrame(SequenceHeader, fh, pic, state, savedUpdateCdf);
@@ -176,12 +183,12 @@ internal sealed class Av1DecoderSession
         br.ByteAlign();
         int headerBytes = br.BytePosition;
 
-        var pic = new Av1Picture(seq, fh);
+        var pic = new Av1Picture(seq, fh, pooled: fh.RefreshFrameFlags == 0);
         var state = new Av1FrameState(seq, fh);
-        var tileDecoder = new Av1TileDecoder(seq, fh, pic, state, this);
+        Av1TileDecoder? tileDecoder = null;
         Av1CdfState? savedUpdateCdf = null;
 
-        Av1FrameDecoder.DecodeTileGroup(obuPayload[headerBytes..], fh, tileDecoder, ref savedUpdateCdf);
+        Av1FrameDecoder.DecodeTileGroup(obuPayload[headerBytes..], seq, fh, pic, state, this, ref tileDecoder, ref savedUpdateCdf);
         return FinishDecodedFrame(seq, fh, pic, state, savedUpdateCdf);
     }
 
@@ -202,7 +209,7 @@ internal sealed class Av1DecoderSession
         }
 
         // Apply saved film grain onto a fresh copy so the stored reference frame stays grain-free.
-        if (seq.FilmGrainParamsPresent && slot.SavedFilmGrain is { ApplyGrain: true } fg)
+        if (seq.FilmGrainParamsPresent && slot.SavedFilmGrain is { ApplyGrain: true } fg && (AvifDiagnostics.Ablation & AvifAblation.SkipFilmGrain) == 0)
         {
             var copy = slot.Picture.Clone();
             Av1FilmGrain.Apply(seq, fg, copy);
@@ -220,7 +227,7 @@ internal sealed class Av1DecoderSession
         Av1CdfState? savedUpdateCdf)
     {
         // Post-filters up to Loop Restoration (stored in FrameStore BEFORE film grain!)
-        Av1FrameDecoder.RunPostFiltersBeforeGrain(seq, fh, pic, state);
+        Av1FrameDecoder.RunPostFiltersBeforeGrain(seq, fh, pic, state, pooledOutput: fh.RefreshFrameFlags == 0 || OneShot);
 
         // §7.19 Motion field motion vector storage + §7.20 Reference frame update
         if (fh.RefreshFrameFlags != 0)
@@ -232,7 +239,7 @@ internal sealed class Av1DecoderSession
             return null;
 
         // §7.18.3 Film grain is applied only to displayed output, never mutating stored reference frames!
-        if (fh.ApplyGrain && fh.FilmGrain is not null)
+        if (fh.ApplyGrain && fh.FilmGrain is not null && (AvifDiagnostics.Ablation & AvifAblation.SkipFilmGrain) == 0)
         {
             var outPic = fh.RefreshFrameFlags != 0 ? pic.Clone() : pic;
             Av1FilmGrain.Apply(seq, fh.FilmGrain, outPic);

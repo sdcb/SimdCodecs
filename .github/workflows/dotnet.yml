@@ -145,6 +145,8 @@ jobs:
     #   (the decoded planes and pixels against the goldens).
     # - heif-api: the rest of the HEIF suite (scaled, region, adapter, transforms, robustness, fuzz, planar output).
     #   It checks logic that does not depend on the tier, so it runs once, on the Vector256 tier.
+    # - avif: the whole AVIF suite (planes against the dav1d goldens, container, fuzz); it is fast, so every tier runs
+    #   all of it. Like HEIF, its fixtures are fetched only here, so this matrix is where AVIF's goldens run.
     # The build job already runs core and webp on Vector256 with every oracle, so this matrix skips them there; it is
     # the only place HEIF's goldens run on Vector256, because the build job does not fetch the HEIF fixtures.
     name: simd-tiers (${{ matrix.tier }}, ${{ matrix.group }})
@@ -152,7 +154,7 @@ jobs:
       fail-fast: false
       matrix:
         tier: [ x64 Vector256, x64 Vector128, x64 scalar, arm64 AdvSimd ]
-        group: [ core, webp, heif, heif-api ]
+        group: [ core, webp, heif, heif-api, avif ]
         exclude:
         - { tier: x64 Vector256, group: core }
         - { tier: x64 Vector256, group: webp }
@@ -177,6 +179,9 @@ jobs:
     - name: Fetch HEIF fixtures
       if: startsWith(matrix.group, 'heif')
       run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/heif/fetch.sh
+    - name: Fetch AVIF fixtures
+      if: matrix.group == 'avif'
+      run: bash tests/Sdcb.SimdCodecs.Tests/Oracle/avif/fetch.sh
     - name: Install dwebp
       if: matrix.group == 'webp'
       run: sudo apt-get update && sudo apt-get install -y webp
@@ -188,6 +193,7 @@ jobs:
           core)     filter='FullyQualifiedName~Jpeg|FullyQualifiedName~Png|FullyQualifiedName~Bmp|FullyQualifiedName~Ico|FullyQualifiedName~Qoi|FullyQualifiedName~Pnm|FullyQualifiedName~BoxDownscale' ;;
           webp)     filter='FullyQualifiedName~Webp' ;;
           heif)     filter='FullyQualifiedName~.HeifTests.|FullyQualifiedName~.HeifEquivalenceTests.' ;;
+          avif)     filter='FullyQualifiedName~Avif' ;;
           heif-api) filter='(FullyQualifiedName~Heif&FullyQualifiedName!~.HeifTests.&FullyQualifiedName!~.HeifEquivalenceTests.)|FullyQualifiedName~.PlanarTests.' ;;
         esac
         env ${{ matrix.isa }} dotnet test tests/Sdcb.SimdCodecs.Tests -c Release --no-build --filter "$filter"

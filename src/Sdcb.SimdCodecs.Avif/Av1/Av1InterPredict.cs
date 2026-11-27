@@ -1,3 +1,6 @@
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
+
 namespace Sdcb.SimdCodecs.Avif.Av1;
 
 /// <summary>
@@ -164,39 +167,68 @@ internal sealed class Av1InterPredict
         int dstStride = _pic.PlaneStrides[plane];
         int maxSample = (1 << bd) - 1;
 
+        // The proof behind the unchecked writes of WriteSingle / BlendAvg / BlendDist: every write lands at
+        // (y + r) * dstStride + x + c with r < h, c < w, which this one check keeps inside dstPlane; _pred0 / _pred1
+        // hold 128 * 128 >= w * h samples. Blocks always sit inside the superblock-padded plane, so it never fires
+        // on a decodable stream.
+        if (x < 0 || y < 0 || x + w > dstStride || (long)(y + h - 1) * dstStride + x + w > dstPlane.Length
+            || w * h > _pred0.Length)
+            throw new InvalidDataException("AV1 inter prediction block lies outside the frame.");
+
         if (!isCompound && !isInterIntra)
         {
-            for (int r = 0; r < h; r++)
+            if (Avx2.IsSupported && w >= 8)
+                Av1InterPredictSimd.WriteSingleV256(_pred0, dstPlane, dstStride, x, y, w, h, maxSample);
+            else if (Vector128.IsHardwareAccelerated && w >= 4)
+                Av1InterPredictSimd.WriteSingleV128(_pred0, dstPlane, dstStride, x, y, w, h, maxSample);
+            else
             {
-                int dstOff = (y + r) * dstStride + x;
-                int srcOff = r * w;
-                for (int c = 0; c < w; c++)
-                    dstPlane[dstOff + c] = (ushort)Math.Clamp(_pred0[srcOff + c], 0, maxSample);
+                for (int r = 0; r < h; r++)
+                {
+                    int dstOff = (y + r) * dstStride + x;
+                    int srcOff = r * w;
+                    for (int c = 0; c < w; c++)
+                        dstPlane[dstOff + c] = (ushort)Math.Clamp(_pred0[srcOff + c], 0, maxSample);
+                }
             }
         }
         else if (compoundType == Av1Constants.CompoundAverage)
         {
             int shift = 1 + interPostRound;
-            for (int r = 0; r < h; r++)
+            if (Avx2.IsSupported && w >= 8)
+                Av1InterPredictSimd.BlendAvgV256(_pred0, _pred1, dstPlane, dstStride, x, y, w, h, shift, maxSample);
+            else if (Vector128.IsHardwareAccelerated && w >= 4)
+                Av1InterPredictSimd.BlendAvgV128(_pred0, _pred1, dstPlane, dstStride, x, y, w, h, shift, maxSample);
+            else
             {
-                int dstOff = (y + r) * dstStride + x;
-                int srcOff = r * w;
-                for (int c = 0; c < w; c++)
-                    dstPlane[dstOff + c] = (ushort)Math.Clamp(Av1Constants.Round2(_pred0[srcOff + c] + _pred1[srcOff + c], shift), 0, maxSample);
+                for (int r = 0; r < h; r++)
+                {
+                    int dstOff = (y + r) * dstStride + x;
+                    int srcOff = r * w;
+                    for (int c = 0; c < w; c++)
+                        dstPlane[dstOff + c] = (ushort)Math.Clamp(Av1Constants.Round2(_pred0[srcOff + c] + _pred1[srcOff + c], shift), 0, maxSample);
+                }
             }
         }
         else if (compoundType == Av1Constants.CompoundDistance)
         {
             ComputeDistanceWeights(candIdx, out int fwdWeight, out int bckWeight);
             int shift = 4 + interPostRound;
-            for (int r = 0; r < h; r++)
+            if (Avx2.IsSupported && w >= 8)
+                Av1InterPredictSimd.BlendDistV256(_pred0, _pred1, dstPlane, dstStride, x, y, w, h, fwdWeight, bckWeight, shift, maxSample);
+            else if (Vector128.IsHardwareAccelerated && w >= 4)
+                Av1InterPredictSimd.BlendDistV128(_pred0, _pred1, dstPlane, dstStride, x, y, w, h, fwdWeight, bckWeight, shift, maxSample);
+            else
             {
-                int dstOff = (y + r) * dstStride + x;
-                int srcOff = r * w;
-                for (int c = 0; c < w; c++)
+                for (int r = 0; r < h; r++)
                 {
-                    int val = Av1Constants.Round2(fwdWeight * _pred0[srcOff + c] + bckWeight * _pred1[srcOff + c], shift);
-                    dstPlane[dstOff + c] = (ushort)Math.Clamp(val, 0, maxSample);
+                    int dstOff = (y + r) * dstStride + x;
+                    int srcOff = r * w;
+                    for (int c = 0; c < w; c++)
+                    {
+                        int val = Av1Constants.Round2(fwdWeight * _pred0[srcOff + c] + bckWeight * _pred1[srcOff + c], shift);
+                        dstPlane[dstOff + c] = (ushort)Math.Clamp(val, 0, maxSample);
+                    }
                 }
             }
         }
@@ -254,6 +286,26 @@ internal sealed class Av1InterPredict
         stepY = Av1Constants.Round2Signed(yScale, Av1Constants.RefScaleShift - Av1Constants.ScaleSubpelBits);
     }
 
+    // A reference frame decoded under another sequence header (a new one may arrive between frames) has other plane
+    // geometry: its chroma planes can be half the size the current subsampling implies, or missing. Conforming streams
+    // never reference such a frame, so it is invalid data.
+    private void CheckReferenceFormat(Av1RefFrame slot)
+    {
+        if (slot.SubsamplingX != _seq.SubsamplingX || slot.SubsamplingY != _seq.SubsamplingY || slot.BitDepth != _seq.BitDepth)
+            throw new InvalidDataException("AV1 inter prediction references a frame with a different sample format.");
+    }
+
+    // The proof behind every unchecked reference read (scalar clamps, the interior fast paths and the pointer reads in
+    // Av1InterPredictSimd): each sample read sits at row sy in [0, lastY] and column sx in [0, lastX], so with
+    // lastX < refStride and (lastY + 1) * refStride <= refBuf.Length the offset sy * refStride + sx is in range.
+    private static void CheckReferenceBounds(Av1Picture refPic, int plane, int lastX, int lastY)
+    {
+        if ((uint)plane >= (uint)refPic.Planes.Length || lastX < 0 || lastY < 0
+            || lastX >= refPic.PlaneStrides[plane]
+            || (long)(lastY + 1) * refPic.PlaneStrides[plane] > refPic.Planes[plane].Length)
+            throw new InvalidDataException("AV1 reference frame is smaller than the prediction requires.");
+    }
+
     // §7.11.3.4 Block inter prediction process
     private void BlockInterPrediction(
         int plane, int refIdx, int x, int y, int xStep, int yStep,
@@ -277,12 +329,145 @@ internal sealed class Av1InterPredict
             refH = slot.FrameHeight;
         }
 
+        if (refIdx >= 0)
+            CheckReferenceFormat(_session.RefFrames[refIdx]);
         int subX = plane > 0 ? _seq.SubsamplingX : 0;
         int subY = plane > 0 ? _seq.SubsamplingY : 0;
         int lastX = ((refUpW + subX) >> subX) - 1;
         int lastY = ((refH + subY) >> subY) - 1;
+        CheckReferenceBounds(refPic, plane, lastX, lastY);
         ushort[] refBuf = refPic.Planes[plane];
         int refStride = refPic.PlaneStrides[plane];
+
+        // Fast unscaled paths (xStep == 1024 && yStep == 1024): 99.9% of AV1 Inter blocks.
+        if (xStep == 1024 && yStep == 1024)
+        {
+            int xInt = x >> 10;
+            int yInt = y >> 10;
+            int phaseX = (x >> 6) & Av1Constants.SubpelMask;
+            int phaseY = (y >> 6) & Av1Constants.SubpelMask;
+
+            if (phaseX == 0 && phaseY == 0)
+            {
+                // Pure integer copy / left-shift (bit-exact with [0,0,0,128,0,0,0,0] x 2 passes).
+                int leftShift = 14 - interRound0 - interRound1;
+                if (xInt >= 0 && xInt + w - 1 <= lastX)
+                {
+                    for (int r = 0; r < h; r++)
+                    {
+                        int sy = Av1Constants.Clip3(0, lastY, yInt + r);
+                        int srcOff = sy * refStride + xInt;
+                        int dstOff = r * w;
+                        if (leftShift == 0)
+                        {
+                            for (int c = 0; c < w; c++)
+                                pred[dstOff + c] = refBuf[srcOff + c];
+                        }
+                        else
+                        {
+                            for (int c = 0; c < w; c++)
+                                pred[dstOff + c] = refBuf[srcOff + c] << leftShift;
+                        }
+                    }
+                }
+                else
+                {
+                    for (int r = 0; r < h; r++)
+                    {
+                        int sy = Av1Constants.Clip3(0, lastY, yInt + r);
+                        int srcRow = sy * refStride;
+                        int dstOff = r * w;
+                        if (leftShift == 0)
+                        {
+                            for (int c = 0; c < w; c++)
+                                pred[dstOff + c] = refBuf[srcRow + Av1Constants.Clip3(0, lastX, xInt + c)];
+                        }
+                        else
+                        {
+                            for (int c = 0; c < w; c++)
+                                pred[dstOff + c] = refBuf[srcRow + Av1Constants.Clip3(0, lastX, xInt + c)] << leftShift;
+                        }
+                    }
+                }
+                return;
+            }
+
+            if (phaseX == 0 && xInt >= 0 && xInt + w - 1 <= lastX)
+            {
+                int vFilter0 = _st.InterpFilters[candIdx * 2];
+                if (h <= 4)
+                {
+                    if (vFilter0 is Av1Constants.EightTap or Av1Constants.EightTapSharp) vFilter0 = 4;
+                    else if (vFilter0 == Av1Constants.EightTapSmooth) vFilter0 = 5;
+                }
+                int fOffV = vFilter0 * 128 + (phaseY << 3);
+                int netShift = interRound1 - (7 - interRound0);
+                if (Avx2.IsSupported && w >= 8)
+                {
+                    Av1InterPredictSimd.ConvolveVertOnlyInteriorV256(refBuf, refStride, lastY, xInt, yInt, w, h, SubpelFilters, fOffV, netShift, pred);
+                    return;
+                }
+                if (Vector128.IsHardwareAccelerated && w >= 4)
+                {
+                    Av1InterPredictSimd.ConvolveVertOnlyInteriorV128(refBuf, refStride, lastY, xInt, yInt, w, h, SubpelFilters, fOffV, netShift, pred);
+                    return;
+                }
+            }
+
+            if (phaseY == 0 && xInt - 3 >= 0 && xInt + w + 3 <= lastX)
+            {
+                int hFilter0 = _st.InterpFilters[candIdx * 2 + 1];
+                if (w <= 4)
+                {
+                    if (hFilter0 is Av1Constants.EightTap or Av1Constants.EightTapSharp) hFilter0 = 4;
+                    else if (hFilter0 == Av1Constants.EightTapSmooth) hFilter0 = 5;
+                }
+                int fOffH = hFilter0 * 128 + (phaseX << 3);
+                int postShift = interRound1 - 7; // 4 (8/10-bit single), 2 (12-bit single), or 0 (compound)
+                if (Avx2.IsSupported && w >= 8)
+                {
+                    Av1InterPredictSimd.ConvolveHorizInteriorV256(refBuf, refStride, lastY, xInt, yInt, h, w, SubpelFilters, fOffH, interRound0, postShift, pred);
+                    return;
+                }
+                if (Vector128.IsHardwareAccelerated && w >= 4)
+                {
+                    Av1InterPredictSimd.ConvolveHorizInteriorV128(refBuf, refStride, lastY, xInt, yInt, h, w, SubpelFilters, fOffH, interRound0, postShift, pred);
+                    return;
+                }
+            }
+
+            if (phaseX != 0 && phaseY != 0 && xInt - 3 >= 0 && xInt + w + 3 <= lastX)
+            {
+                int hFilter0 = _st.InterpFilters[candIdx * 2 + 1];
+                if (w <= 4)
+                {
+                    if (hFilter0 is Av1Constants.EightTap or Av1Constants.EightTapSharp) hFilter0 = 4;
+                    else if (hFilter0 == Av1Constants.EightTapSmooth) hFilter0 = 5;
+                }
+                int vFilter0 = _st.InterpFilters[candIdx * 2];
+                if (h <= 4)
+                {
+                    if (vFilter0 is Av1Constants.EightTap or Av1Constants.EightTapSharp) vFilter0 = 4;
+                    else if (vFilter0 == Av1Constants.EightTapSmooth) vFilter0 = 5;
+                }
+                int fOffH = hFilter0 * 128 + (phaseX << 3);
+                int fOffV = vFilter0 * 128 + (phaseY << 3);
+                int interH = h + 7;
+
+                if (Avx2.IsSupported && w >= 8)
+                {
+                    Av1InterPredictSimd.ConvolveHorizInteriorV256(refBuf, refStride, lastY, xInt, yInt - 3, interH, w, SubpelFilters, fOffH, interRound0, 0, _interBuf);
+                    Av1InterPredictSimd.ConvolveVertIntV256(_interBuf, w, h, SubpelFilters, fOffV, interRound1, pred);
+                    return;
+                }
+                if (Vector128.IsHardwareAccelerated && w >= 4)
+                {
+                    Av1InterPredictSimd.ConvolveHorizInteriorV128(refBuf, refStride, lastY, xInt, yInt - 3, interH, w, SubpelFilters, fOffH, interRound0, 0, _interBuf);
+                    Av1InterPredictSimd.ConvolveVertIntV128(_interBuf, w, h, SubpelFilters, fOffV, interRound1, pred);
+                    return;
+                }
+            }
+        }
 
         int intermediateHeight = (((h - 1) * yStep + (1 << Av1Constants.ScaleSubpelBits) - 1) >> Av1Constants.ScaleSubpelBits) + 8;
 
@@ -350,10 +535,12 @@ internal sealed class Av1InterPredict
         if (!slot.Valid || slot.Picture is null)
             throw new InvalidDataException($"AV1 warped prediction references invalid frame slot {refIdx}.");
 
+        CheckReferenceFormat(slot);
         int subX = plane > 0 ? _seq.SubsamplingX : 0;
         int subY = plane > 0 ? _seq.SubsamplingY : 0;
         int lastX = ((slot.UpscaledWidth + subX) >> subX) - 1;
         int lastY = ((slot.FrameHeight + subY) >> subY) - 1;
+        CheckReferenceBounds(slot.Picture, plane, lastX, lastY);
         ushort[] refBuf = slot.Picture.Planes[plane];
         int refStride = slot.Picture.PlaneStrides[plane];
 

@@ -401,12 +401,20 @@ internal static class Av1FilmGrain
         int chromaStripeW = ((wChroma + 31) & ~31) + 34;
         int cStripeH = 34 >> subY;
 
-        var curStripeY = new int[34 * lumaStripeW];
-        var prevStripeY = new int[34 * lumaStripeW];
-        int[]? curStripeU = numPlanes > 1 ? new int[cStripeH * chromaStripeW] : null;
-        int[]? prevStripeU = numPlanes > 1 ? new int[cStripeH * chromaStripeW] : null;
-        int[]? curStripeV = numPlanes > 1 ? new int[cStripeH * chromaStripeW] : null;
-        int[]? prevStripeV = numPlanes > 1 ? new int[cStripeH * chromaStripeW] : null;
+        // Pre-expand scaling LUTs to full [0..1<<bitDepth) so per-pixel lookup is a single load (bit-exact with ScaleLut).
+        int lutSize = 1 << bitDepth;
+        var fullLutY = new ushort[lutSize];
+        var fullLutU = numPlanes > 1 ? new ushort[lutSize] : null;
+        var fullLutV = numPlanes > 1 ? new ushort[lutSize] : null;
+        for (int v = 0; v < lutSize; v++)
+        {
+            fullLutY[v] = (ushort)ScaleLut(scalingLut, 0, v, bitDepth);
+            if (numPlanes > 1)
+            {
+                fullLutU![v] = (ushort)ScaleLut(scalingLut, 1, v, bitDepth);
+                fullLutV![v] = (ushort)ScaleLut(scalingLut, 2, v, bitDepth);
+            }
+        }
 
         ushort[] outY = pic.Planes[0];
         int strideY = pic.PlaneStrides[0];
@@ -418,191 +426,281 @@ internal static class Av1FilmGrain
         int numStripes = (((h + 1) / 2) + 15) / 16;
         int halfW = (w + 1) / 2;
 
-        for (int lumaNum = 0; lumaNum < numStripes; lumaNum++)
+        if (numStripes >= 4)
         {
-            // Build horizontal stripe lumaNum
-            rng = fg.GrainSeed;
-            rng ^= ((lumaNum * 37 + 178) & 255) << 8;
-            rng ^= (lumaNum * 173 + 105) & 255;
-
-            for (int x = 0; x < halfW; x += 16)
-            {
-                int rand = GetRandomNumber(ref rng, 8);
-                int offsetX = rand >> 4;
-                int offsetY = rand & 15;
-
-                // Plane 0 (luma)
-                int pOffX = 9 + offsetX * 2;
-                int pOffY = 9 + offsetY * 2;
-                for (int i = 0; i < 34; i++)
+            Parallel.For(
+                0,
+                numStripes,
+                () => (
+                    curY: System.Buffers.ArrayPool<int>.Shared.Rent(34 * lumaStripeW),
+                    prevY: fg.OverlapFlag ? System.Buffers.ArrayPool<int>.Shared.Rent(34 * lumaStripeW) : [],
+                    curU: numPlanes > 1 ? System.Buffers.ArrayPool<int>.Shared.Rent(cStripeH * chromaStripeW) : [],
+                    prevU: (numPlanes > 1 && fg.OverlapFlag) ? System.Buffers.ArrayPool<int>.Shared.Rent(cStripeH * chromaStripeW) : [],
+                    curV: numPlanes > 1 ? System.Buffers.ArrayPool<int>.Shared.Rent(cStripeH * chromaStripeW) : [],
+                    prevV: (numPlanes > 1 && fg.OverlapFlag) ? System.Buffers.ArrayPool<int>.Shared.Rent(cStripeH * chromaStripeW) : []),
+                (lumaNum, _, s) =>
                 {
-                    int dstRow = i * lumaStripeW + x * 2;
-                    int srcRow = (pOffY + i) * 82 + pOffX;
-                    for (int j = 0; j < 34; j++)
+                    if (fg.OverlapFlag && lumaNum > 0)
                     {
-                        int g = lumaGrain[srcRow + j];
-                        if (j < 2 && fg.OverlapFlag && x > 0)
-                        {
-                            int old = curStripeY[dstRow + j];
-                            g = j == 0 ? (old * 27 + g * 17) : (old * 17 + g * 27);
-                            g = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(g, 5));
-                        }
-                        curStripeY[dstRow + j] = g;
+                        BuildStripe(fg, lumaNum - 1, halfW, numPlanes, subX, subY, grainMin, grainMax,
+                            lumaGrain, cbGrain, crGrain, chromaW, lumaStripeW, chromaStripeW, cStripeH,
+                            s.prevY, s.prevU, s.prevV);
                     }
-                }
-
-                // Planes 1 & 2 (chroma)
-                if (numPlanes > 1)
+                    BuildStripe(fg, lumaNum, halfW, numPlanes, subX, subY, grainMin, grainMax,
+                        lumaGrain, cbGrain, crGrain, chromaW, lumaStripeW, chromaStripeW, cStripeH,
+                        s.curY, s.curU, s.curV);
+                    BlendStripe(fg, lumaNum, w, h, wChroma, hChroma, bitDepth, numPlanes, subX, subY,
+                        grainMin, grainMax, minValue, maxLuma, maxChroma, scalingShift,
+                        lumaStripeW, chromaStripeW,
+                        s.curY, s.prevY, s.curU, s.prevU, s.curV, s.prevV,
+                        fullLutY, fullLutU, fullLutV,
+                        outY, strideY, outU, strideU, outV, strideV);
+                    return s;
+                },
+                s =>
                 {
-                    int cOffX = subX != 0 ? (6 + offsetX) : (9 + offsetX * 2);
-                    int cOffY = subY != 0 ? (6 + offsetY) : (9 + offsetY * 2);
-                    int cW = 34 >> subX;
-                    int cDstX = subX != 0 ? x : (x * 2);
-                    for (int i = 0; i < cStripeH; i++)
+                    System.Buffers.ArrayPool<int>.Shared.Return(s.curY);
+                    if (s.prevY.Length > 0) System.Buffers.ArrayPool<int>.Shared.Return(s.prevY);
+                    if (s.curU.Length > 0) System.Buffers.ArrayPool<int>.Shared.Return(s.curU);
+                    if (s.prevU.Length > 0) System.Buffers.ArrayPool<int>.Shared.Return(s.prevU);
+                    if (s.curV.Length > 0) System.Buffers.ArrayPool<int>.Shared.Return(s.curV);
+                    if (s.prevV.Length > 0) System.Buffers.ArrayPool<int>.Shared.Return(s.prevV);
+                });
+        }
+        else
+        {
+            var curStripeY = System.Buffers.ArrayPool<int>.Shared.Rent(34 * lumaStripeW);
+            var prevStripeY = System.Buffers.ArrayPool<int>.Shared.Rent(34 * lumaStripeW);
+            int[] curStripeU = numPlanes > 1 ? System.Buffers.ArrayPool<int>.Shared.Rent(cStripeH * chromaStripeW) : [];
+            int[] prevStripeU = numPlanes > 1 ? System.Buffers.ArrayPool<int>.Shared.Rent(cStripeH * chromaStripeW) : [];
+            int[] curStripeV = numPlanes > 1 ? System.Buffers.ArrayPool<int>.Shared.Rent(cStripeH * chromaStripeW) : [];
+            int[] prevStripeV = numPlanes > 1 ? System.Buffers.ArrayPool<int>.Shared.Rent(cStripeH * chromaStripeW) : [];
+            try
+            {
+                for (int lumaNum = 0; lumaNum < numStripes; lumaNum++)
+                {
+                    BuildStripe(fg, lumaNum, halfW, numPlanes, subX, subY, grainMin, grainMax,
+                        lumaGrain, cbGrain, crGrain, chromaW, lumaStripeW, chromaStripeW, cStripeH,
+                        curStripeY, curStripeU, curStripeV);
+                    BlendStripe(fg, lumaNum, w, h, wChroma, hChroma, bitDepth, numPlanes, subX, subY,
+                        grainMin, grainMax, minValue, maxLuma, maxChroma, scalingShift,
+                        lumaStripeW, chromaStripeW,
+                        curStripeY, prevStripeY, curStripeU, prevStripeU, curStripeV, prevStripeV,
+                        fullLutY, fullLutU, fullLutV,
+                        outY, strideY, outU, strideU, outV, strideV);
+
+                    (prevStripeY, curStripeY) = (curStripeY, prevStripeY);
+                    if (numPlanes > 1)
                     {
-                        int dstRow = i * chromaStripeW + cDstX;
-                        int srcRow = (cOffY + i) * chromaW + cOffX;
-                        for (int j = 0; j < cW; j++)
-                        {
-                            int gU = cbGrain![srcRow + j];
-                            int gV = crGrain![srcRow + j];
-                            if (fg.OverlapFlag && x > 0)
-                            {
-                                if (subX == 0 && j < 2)
-                                {
-                                    int oldU = curStripeU![dstRow + j];
-                                    int oldV = curStripeV![dstRow + j];
-                                    gU = j == 0 ? (oldU * 27 + gU * 17) : (oldU * 17 + gU * 27);
-                                    gV = j == 0 ? (oldV * 27 + gV * 17) : (oldV * 17 + gV * 27);
-                                    gU = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(gU, 5));
-                                    gV = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(gV, 5));
-                                }
-                                else if (subX != 0 && j == 0)
-                                {
-                                    gU = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(curStripeU![dstRow] * 23 + gU * 22, 5));
-                                    gV = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(curStripeV![dstRow] * 23 + gV * 22, 5));
-                                }
-                            }
-                            curStripeU![dstRow + j] = gU;
-                            curStripeV![dstRow + j] = gV;
-                        }
+                        (prevStripeU, curStripeU) = (curStripeU, prevStripeU);
+                        (prevStripeV, curStripeV) = (curStripeV, prevStripeV);
                     }
                 }
             }
-
-            // First blend chroma rows in this stripe (reads original unmodified OutY!)
-            if (numPlanes > 1 && (fg.NumCbPoints > 0 || fg.NumCrPoints > 0 || fg.ChromaScalingFromLuma))
+            finally
             {
-                int cYStart = lumaNum << (5 - subY);
-                int cYEnd = Math.Min(hChroma, cYStart + (32 >> subY));
-                for (int y = cYStart; y < cYEnd; y++)
+                System.Buffers.ArrayPool<int>.Shared.Return(curStripeY);
+                System.Buffers.ArrayPool<int>.Shared.Return(prevStripeY);
+                if (curStripeU.Length > 0) System.Buffers.ArrayPool<int>.Shared.Return(curStripeU);
+                if (prevStripeU.Length > 0) System.Buffers.ArrayPool<int>.Shared.Return(prevStripeU);
+                if (curStripeV.Length > 0) System.Buffers.ArrayPool<int>.Shared.Return(curStripeV);
+                if (prevStripeV.Length > 0) System.Buffers.ArrayPool<int>.Shared.Return(prevStripeV);
+            }
+        }
+    }
+
+    private static void BuildStripe(
+        Av1FilmGrainParams fg, int lumaNum, int halfW, int numPlanes, int subX, int subY,
+        int grainMin, int grainMax,
+        int[] lumaGrain, int[]? cbGrain, int[]? crGrain, int chromaW,
+        int lumaStripeW, int chromaStripeW, int cStripeH,
+        int[] curStripeY, int[] curStripeU, int[] curStripeV)
+    {
+        int rng = fg.GrainSeed;
+        rng ^= ((lumaNum * 37 + 178) & 255) << 8;
+        rng ^= (lumaNum * 173 + 105) & 255;
+
+        for (int x = 0; x < halfW; x += 16)
+        {
+            int rand = GetRandomNumber(ref rng, 8);
+            int offsetX = rand >> 4;
+            int offsetY = rand & 15;
+
+            // Plane 0 (luma)
+            int pOffX = 9 + offsetX * 2;
+            int pOffY = 9 + offsetY * 2;
+            for (int i = 0; i < 34; i++)
+            {
+                int dstRow = i * lumaStripeW + x * 2;
+                int srcRow = (pOffY + i) * 82 + pOffX;
+                for (int j = 0; j < 34; j++)
                 {
-                    int i = y - cYStart;
-                    int lumaY = y << subY;
-                    int yRowOff = lumaY * strideY;
-                    int uRowOff = y * strideU;
-                    int vRowOff = y * strideV;
-                    int curRowOff = i * chromaStripeW;
-                    int prevRowOff = (i + (32 >> subY)) * chromaStripeW;
-                    bool vOverlap = fg.OverlapFlag && lumaNum > 0 && (subY == 0 ? i < 2 : i < 1);
-
-                    for (int x = 0; x < wChroma; x++)
+                    int g = lumaGrain[srcRow + j];
+                    if (j < 2 && fg.OverlapFlag && x > 0)
                     {
-                        int lumaX = x << subX;
-                        int averageLuma = subX != 0
-                            ? Av1Constants.Round2(outY[yRowOff + lumaX] + outY[yRowOff + Math.Min(lumaX + 1, w - 1)], 1)
-                            : outY[yRowOff + lumaX];
-
-                        if (fg.NumCbPoints > 0 || fg.ChromaScalingFromLuma)
-                        {
-                            int orig = outU![uRowOff + x];
-                            int merged;
-                            if (fg.ChromaScalingFromLuma)
-                            {
-                                merged = averageLuma;
-                            }
-                            else
-                            {
-                                int combined = averageLuma * (fg.CbLumaMult - 128) + orig * (fg.CbMult - 128);
-                                merged = Av1Constants.Clip1((combined >> 6) + ((fg.CbOffset - 256) << (bitDepth - 8)), bitDepth);
-                            }
-                            int noise = curStripeU![curRowOff + x];
-                            if (vOverlap)
-                            {
-                                int old = prevStripeU![prevRowOff + x];
-                                noise = subY == 0
-                                    ? (i == 0 ? old * 27 + noise * 17 : old * 17 + noise * 27)
-                                    : (old * 23 + noise * 22);
-                                noise = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(noise, 5));
-                            }
-                            noise = Av1Constants.Round2(ScaleLut(scalingLut, 1, merged, bitDepth) * noise, scalingShift);
-                            outU[uRowOff + x] = (ushort)Av1Constants.Clip3(minValue, maxChroma, orig + noise);
-                        }
-
-                        if (fg.NumCrPoints > 0 || fg.ChromaScalingFromLuma)
-                        {
-                            int orig = outV![vRowOff + x];
-                            int merged;
-                            if (fg.ChromaScalingFromLuma)
-                            {
-                                merged = averageLuma;
-                            }
-                            else
-                            {
-                                int combined = averageLuma * (fg.CrLumaMult - 128) + orig * (fg.CrMult - 128);
-                                merged = Av1Constants.Clip1((combined >> 6) + ((fg.CrOffset - 256) << (bitDepth - 8)), bitDepth);
-                            }
-                            int noise = curStripeV![curRowOff + x];
-                            if (vOverlap)
-                            {
-                                int old = prevStripeV![prevRowOff + x];
-                                noise = subY == 0
-                                    ? (i == 0 ? old * 27 + noise * 17 : old * 17 + noise * 27)
-                                    : (old * 23 + noise * 22);
-                                noise = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(noise, 5));
-                            }
-                            noise = Av1Constants.Round2(ScaleLut(scalingLut, 2, merged, bitDepth) * noise, scalingShift);
-                            outV[vRowOff + x] = (ushort)Av1Constants.Clip3(minValue, maxChroma, orig + noise);
-                        }
+                        int old = curStripeY[dstRow + j];
+                        g = j == 0 ? (old * 27 + g * 17) : (old * 17 + g * 27);
+                        g = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(g, 5));
                     }
+                    curStripeY[dstRow + j] = g;
                 }
             }
 
-            // Now blend luma rows in this stripe
-            if (fg.NumYPoints > 0)
-            {
-                int yStart = lumaNum << 5;
-                int yEnd = Math.Min(h, yStart + 32);
-                for (int y = yStart; y < yEnd; y++)
-                {
-                    int i = y - yStart;
-                    int yRowOff = y * strideY;
-                    int curRowOff = i * lumaStripeW;
-                    int prevRowOff = (i + 32) * lumaStripeW;
-                    bool vOverlap = fg.OverlapFlag && lumaNum > 0 && i < 2;
-
-                    for (int x = 0; x < w; x++)
-                    {
-                        int orig = outY[yRowOff + x];
-                        int noise = curStripeY[curRowOff + x];
-                        if (vOverlap)
-                        {
-                            int old = prevStripeY[prevRowOff + x];
-                            noise = i == 0 ? (old * 27 + noise * 17) : (old * 17 + noise * 27);
-                            noise = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(noise, 5));
-                        }
-                        noise = Av1Constants.Round2(ScaleLut(scalingLut, 0, orig, bitDepth) * noise, scalingShift);
-                        outY[yRowOff + x] = (ushort)Av1Constants.Clip3(minValue, maxLuma, orig + noise);
-                    }
-                }
-            }
-
-            // Swap stripe buffers
-            (prevStripeY, curStripeY) = (curStripeY, prevStripeY);
+            // Planes 1 & 2 (chroma)
             if (numPlanes > 1)
             {
-                (prevStripeU, curStripeU) = (curStripeU, prevStripeU);
-                (prevStripeV, curStripeV) = (curStripeV, prevStripeV);
+                int cOffX = subX != 0 ? (6 + offsetX) : (9 + offsetX * 2);
+                int cOffY = subY != 0 ? (6 + offsetY) : (9 + offsetY * 2);
+                int cW = 34 >> subX;
+                int cDstX = subX != 0 ? x : (x * 2);
+                for (int i = 0; i < cStripeH; i++)
+                {
+                    int dstRow = i * chromaStripeW + cDstX;
+                    int srcRow = (cOffY + i) * chromaW + cOffX;
+                    for (int j = 0; j < cW; j++)
+                    {
+                        int gU = cbGrain![srcRow + j];
+                        int gV = crGrain![srcRow + j];
+                        if (fg.OverlapFlag && x > 0)
+                        {
+                            if (subX == 0 && j < 2)
+                            {
+                                int oldU = curStripeU[dstRow + j];
+                                int oldV = curStripeV[dstRow + j];
+                                gU = j == 0 ? (oldU * 27 + gU * 17) : (oldU * 17 + gU * 27);
+                                gV = j == 0 ? (oldV * 27 + gV * 17) : (oldV * 17 + gV * 27);
+                                gU = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(gU, 5));
+                                gV = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(gV, 5));
+                            }
+                            else if (subX != 0 && j == 0)
+                            {
+                                gU = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(curStripeU[dstRow] * 23 + gU * 22, 5));
+                                gV = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(curStripeV[dstRow] * 23 + gV * 22, 5));
+                            }
+                        }
+                        curStripeU[dstRow + j] = gU;
+                        curStripeV[dstRow + j] = gV;
+                    }
+                }
+            }
+        }
+    }
+
+    private static void BlendStripe(
+        Av1FilmGrainParams fg, int lumaNum, int w, int h, int wChroma, int hChroma, int bitDepth,
+        int numPlanes, int subX, int subY, int grainMin, int grainMax,
+        int minValue, int maxLuma, int maxChroma, int scalingShift,
+        int lumaStripeW, int chromaStripeW,
+        int[] curStripeY, int[] prevStripeY,
+        int[] curStripeU, int[] prevStripeU,
+        int[] curStripeV, int[] prevStripeV,
+        ushort[] fullLutY, ushort[]? fullLutU, ushort[]? fullLutV,
+        ushort[] outY, int strideY, ushort[]? outU, int strideU, ushort[]? outV, int strideV)
+    {
+        // First blend chroma rows in this stripe (reads original unmodified OutY!)
+        if (numPlanes > 1 && (fg.NumCbPoints > 0 || fg.NumCrPoints > 0 || fg.ChromaScalingFromLuma))
+        {
+            int cYStart = lumaNum << (5 - subY);
+            int cYEnd = Math.Min(hChroma, cYStart + (32 >> subY));
+            for (int y = cYStart; y < cYEnd; y++)
+            {
+                int i = y - cYStart;
+                int lumaY = y << subY;
+                int yRowOff = lumaY * strideY;
+                int uRowOff = y * strideU;
+                int vRowOff = y * strideV;
+                int curRowOff = i * chromaStripeW;
+                int prevRowOff = (i + (32 >> subY)) * chromaStripeW;
+                bool vOverlap = fg.OverlapFlag && lumaNum > 0 && (subY == 0 ? i < 2 : i < 1);
+
+                for (int x = 0; x < wChroma; x++)
+                {
+                    int lumaX = x << subX;
+                    int averageLuma = subX != 0
+                        ? Av1Constants.Round2(outY[yRowOff + lumaX] + outY[yRowOff + Math.Min(lumaX + 1, w - 1)], 1)
+                        : outY[yRowOff + lumaX];
+
+                    if (fg.NumCbPoints > 0 || fg.ChromaScalingFromLuma)
+                    {
+                        int orig = outU![uRowOff + x];
+                        int merged;
+                        if (fg.ChromaScalingFromLuma)
+                        {
+                            merged = averageLuma;
+                        }
+                        else
+                        {
+                            int combined = averageLuma * (fg.CbLumaMult - 128) + orig * (fg.CbMult - 128);
+                            merged = Av1Constants.Clip1((combined >> 6) + ((fg.CbOffset - 256) << (bitDepth - 8)), bitDepth);
+                        }
+                        int noise = curStripeU[curRowOff + x];
+                        if (vOverlap)
+                        {
+                            int old = prevStripeU[prevRowOff + x];
+                            noise = subY == 0
+                                ? (i == 0 ? old * 27 + noise * 17 : old * 17 + noise * 27)
+                                : (old * 23 + noise * 22);
+                            noise = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(noise, 5));
+                        }
+                        noise = Av1Constants.Round2(fullLutU![merged] * noise, scalingShift);
+                        outU[uRowOff + x] = (ushort)Av1Constants.Clip3(minValue, maxChroma, orig + noise);
+                    }
+
+                    if (fg.NumCrPoints > 0 || fg.ChromaScalingFromLuma)
+                    {
+                        int orig = outV![vRowOff + x];
+                        int merged;
+                        if (fg.ChromaScalingFromLuma)
+                        {
+                            merged = averageLuma;
+                        }
+                        else
+                        {
+                            int combined = averageLuma * (fg.CrLumaMult - 128) + orig * (fg.CrMult - 128);
+                            merged = Av1Constants.Clip1((combined >> 6) + ((fg.CrOffset - 256) << (bitDepth - 8)), bitDepth);
+                        }
+                        int noise = curStripeV[curRowOff + x];
+                        if (vOverlap)
+                        {
+                            int old = prevStripeV[prevRowOff + x];
+                            noise = subY == 0
+                                ? (i == 0 ? old * 27 + noise * 17 : old * 17 + noise * 27)
+                                : (old * 23 + noise * 22);
+                            noise = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(noise, 5));
+                        }
+                        noise = Av1Constants.Round2(fullLutV![merged] * noise, scalingShift);
+                        outV[vRowOff + x] = (ushort)Av1Constants.Clip3(minValue, maxChroma, orig + noise);
+                    }
+                }
+            }
+        }
+
+        // Now blend luma rows in this stripe
+        if (fg.NumYPoints > 0)
+        {
+            int yStart = lumaNum << 5;
+            int yEnd = Math.Min(h, yStart + 32);
+            for (int y = yStart; y < yEnd; y++)
+            {
+                int i = y - yStart;
+                int yRowOff = y * strideY;
+                int curRowOff = i * lumaStripeW;
+                int prevRowOff = (i + 32) * lumaStripeW;
+                bool vOverlap = fg.OverlapFlag && lumaNum > 0 && i < 2;
+
+                for (int x = 0; x < w; x++)
+                {
+                    int orig = outY[yRowOff + x];
+                    int noise = curStripeY[curRowOff + x];
+                    if (vOverlap)
+                    {
+                        int old = prevStripeY[prevRowOff + x];
+                        noise = i == 0 ? (old * 27 + noise * 17) : (old * 17 + noise * 27);
+                        noise = Av1Constants.Clip3(grainMin, grainMax, Av1Constants.Round2(noise, 5));
+                    }
+                    noise = Av1Constants.Round2(fullLutY[orig] * noise, scalingShift);
+                    outY[yRowOff + x] = (ushort)Av1Constants.Clip3(minValue, maxLuma, orig + noise);
+                }
             }
         }
     }

@@ -114,24 +114,36 @@ internal static class Av1Superres
             ushort[] src = srcPlanes[plane];
             ushort[] dst = dstPlanes[plane];
 
-            for (int y = 0; y < planeH; y++)
+            if (planeH >= 64)
             {
-                int rowOff = y * stride;
-                for (int x = 0; x < upscaledPlaneW; x++)
-                {
-                    long srcX = -(1L << SuperresScaleBits) + initialSubpelX + x * stepX;
-                    int srcXPx = (int)(srcX >> SuperresScaleBits);
-                    int srcXSubpel = (int)((srcX & SuperresScaleMask) >> SuperresExtraBits);
-                    int fOff = srcXSubpel * SuperresFilterTaps;
-                    int sum = 0;
-                    for (int k = 0; k < SuperresFilterTaps; k++)
-                    {
-                        int sampleX = Av1Constants.Clip3(0, maxX, srcXPx + (k - SuperresFilterOffset));
-                        sum += src[rowOff + sampleX] * UpscaleFilter[fOff + k];
-                    }
-                    dst[rowOff + x] = (ushort)Av1Constants.Clip1(Av1Constants.Round2(sum, FilterBits), bitDepth);
-                }
+                Parallel.For(0, planeH, y => UpscaleRow(src, dst, stride, y, upscaledPlaneW, initialSubpelX, stepX, maxX, bitDepth));
             }
+            else
+            {
+                for (int y = 0; y < planeH; y++)
+                    UpscaleRow(src, dst, stride, y, upscaledPlaneW, initialSubpelX, stepX, maxX, bitDepth);
+            }
+        }
+    }
+
+    private static void UpscaleRow(
+        ushort[] src, ushort[] dst, int stride, int y,
+        int upscaledPlaneW, long initialSubpelX, long stepX, int maxX, int bitDepth)
+    {
+        int rowOff = y * stride;
+        for (int x = 0; x < upscaledPlaneW; x++)
+        {
+            long srcX = -(1L << SuperresScaleBits) + initialSubpelX + x * stepX;
+            int srcXPx = (int)(srcX >> SuperresScaleBits);
+            int srcXSubpel = (int)((srcX & SuperresScaleMask) >> SuperresExtraBits);
+            int fOff = srcXSubpel * SuperresFilterTaps;
+            int sum = 0;
+            for (int k = 0; k < SuperresFilterTaps; k++)
+            {
+                int sampleX = Av1Constants.Clip3(0, maxX, srcXPx + (k - SuperresFilterOffset));
+                sum += src[rowOff + sampleX] * UpscaleFilter[fOff + k];
+            }
+            dst[rowOff + x] = (ushort)Av1Constants.Clip1(Av1Constants.Round2(sum, FilterBits), bitDepth);
         }
     }
 }

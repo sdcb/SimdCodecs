@@ -25,6 +25,11 @@ internal sealed class Av1FrameState
     internal readonly sbyte[] RefFrames; // 2 per MI cell (-1 = NONE, 0 = INTRA_FRAME)
     internal readonly short[] Mvs; // 4 per MI cell: [ref0_y, ref0_x, ref1_y, ref1_x]
     internal readonly sbyte[] DeltaLfs; // 4 per MI cell (when DeltaLfPresent)
+    internal readonly byte[] TxTypes; // MiRows * MiCols (disjoint per tile)
+    internal readonly byte[]? PaletteSizesY;
+    internal readonly byte[]? PaletteSizesUv;
+    internal readonly ushort[]? PaletteColorsY;
+    internal readonly ushort[]? PaletteColorsUv;
 
     // LoopfilterTxSizes[plane][planeRow * planeMiCols + planeCol]
     internal readonly byte[][] LoopfilterTxSizes;
@@ -67,6 +72,14 @@ internal sealed class Av1FrameState
         Array.Fill(RefFrames, (sbyte)Av1Constants.NoneFrame);
         Mvs = new short[miCount * 4];
         DeltaLfs = fh.DeltaLfPresent ? new sbyte[miCount * 4] : [];
+        TxTypes = new byte[miCount];
+        if (fh.AllowScreenContentTools)
+        {
+            PaletteSizesY = new byte[miCount];
+            PaletteSizesUv = new byte[miCount];
+            PaletteColorsY = new ushort[miCount * 8];
+            PaletteColorsUv = new ushort[miCount * 8];
+        }
 
         LoopfilterTxSizes = new byte[NumPlanes][];
         LfTxCols = new int[NumPlanes];

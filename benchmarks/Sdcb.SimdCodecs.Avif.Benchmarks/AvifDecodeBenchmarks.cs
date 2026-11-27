@@ -24,6 +24,13 @@ public class AvifDecodeBenchmarks
         _data = AvifInputs.Load(Fixture);
     }
 
+    [Benchmark(Description = "RGBA, Sdcb.SimdCodecs.Avif")]
+    public byte SdcbAvif()
+    {
+        using var img = AvifDecoder.Decode(_data);
+        return img.Rgba[0];
+    }
+
     [Benchmark(Description = "RGBA, libavif[dav1d] (1T)")]
     public int LibAvif_SingleThread()
         => NativeAvif.DecodeRgba(_data, maxThreads: 1)[0];

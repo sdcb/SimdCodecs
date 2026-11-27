@@ -2,7 +2,7 @@ namespace Sdcb.SimdCodecs.Avif.Benchmarks;
 
 internal static class AvifInputs
 {
-    internal static readonly string[] Fixtures =
+    internal static readonly string[] StillFixtures =
     [
         "perf-photo-mangrove-8192x6144-grid-8b.avif",
         "perf-photo-almsee-4096x3072-grid-10b.avif",
@@ -13,6 +13,15 @@ internal static class AvifInputs
         "perf-photo-carter-3840x2560-p2-12b-422.avif",
         "perf-photo-fuji-2560x1440-alpha-10b.avif",
     ];
+
+    internal static readonly string[] AnimFixtures =
+    [
+        "anim-photo-fuji-1920x1080-30f-10b.avif",
+        "anim-mandelbrot-1280x720-60f-inter.avif",
+        "anim-screen-testsrc2-1280x720-24f-444.avif",
+    ];
+
+    internal static readonly string[] Fixtures = StillFixtures;
 
     internal static string ResolveDirectory()
     {

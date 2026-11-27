@@ -76,16 +76,17 @@ internal sealed class Av1TileDecoder
     private readonly bool[][] _blockDecoded;
     private const int BdStride = 34;
 
-    // Per-block scratch
-    private readonly byte[] _txTypes; // MiRows * MiCols (or per-tile, allocate per-tile)
+    // Per-block scratch (TxTypes & Palette state live on Av1FrameState, disjoint per tile)
+    private readonly byte[] _txTypes;
     private readonly int[] _quant = new int[1024];
+    private readonly byte[] _levels = new byte[36 * 36]; // padded by +4 cols and +4 rows of zeros for branchless coeff ctx
     private readonly int[] _dequant = new int[1024];
     private readonly int[] _residual = new int[4096];
 
-    // Palette state (per tile, only allocated/used if AllowScreenContentTools)
+    // Palette state (references shared frame-level arrays; per-block scratch is tile-local)
     private readonly byte[]? _paletteSizesY;
     private readonly byte[]? _paletteSizesUv;
-    private readonly ushort[]? _paletteColorsY; // MiRows*MiCols*8
+    private readonly ushort[]? _paletteColorsY;
     private readonly ushort[]? _paletteColorsUv;
     private readonly int[] _curPalY = new int[8];
     private readonly int[] _curPalU = new int[8];
@@ -169,16 +170,11 @@ internal sealed class Av1TileDecoder
 
         _aboveSegPredContext = new byte[fh.MiCols + 32];
         _leftSegPredContext = new byte[fh.MiRows + 32];
-        _txTypes = new byte[fh.MiRows * fh.MiCols];
-
-        if (fh.AllowScreenContentTools)
-        {
-            int n = fh.MiRows * fh.MiCols;
-            _paletteSizesY = new byte[n];
-            _paletteSizesUv = new byte[n];
-            _paletteColorsY = new ushort[n * 8];
-            _paletteColorsUv = new ushort[n * 8];
-        }
+        _txTypes = st.TxTypes;
+        _paletteSizesY = st.PaletteSizesY;
+        _paletteSizesUv = st.PaletteSizesUv;
+        _paletteColorsY = st.PaletteColorsY;
+        _paletteColorsUv = st.PaletteColorsUv;
     }
 
     internal void DecodeTile(int tileRow, int tileCol, ReadOnlySpan<byte> tileBytes, bool saveCdf, ref Av1CdfState? savedUpdateCdf)
@@ -1026,57 +1022,60 @@ internal sealed class Av1TileDecoder
 
         if (!_isInter)
         {
-            if ((plane == 0 && _paletteSizeY > 0) || (plane > 0 && _paletteSizeUv > 0))
+            if ((AvifDiagnostics.Ablation & AvifAblation.SkipIntraPred) == 0)
             {
-                ReadOnlySpan<int> pal = plane == 0 ? _curPalY : plane == 1 ? _curPalU : _curPalV;
-                byte[] cmap = plane == 0 ? _colorMapY : _colorMapUv;
-                Av1IntraPred.PredictPalette(_pic.Planes[plane], _pic.PlaneStrides[plane], startX, startY, x, y, txSz, pal, cmap, 64);
-            }
-            else
-            {
-                bool isCfl = plane > 0 && _uvMode == Av1Constants.UvCflPred;
-                int mode = plane == 0 ? _yMode : isCfl ? Av1Constants.DcPred : _uvMode;
-                int log2W = Av1Constants.TxWidthLog2[txSz];
-                int log2H = Av1Constants.TxHeightLog2[txSz];
-
-                bool haveLeft = (plane == 0 ? _availL : _availLChroma) || x > 0;
-                bool haveAbove = (plane == 0 ? _availU : _availUChroma) || y > 0;
-                bool[] bd = _blockDecoded[plane];
-                int bdY = subBlockMiRow >> subY;
-                int bdX = subBlockMiCol >> subX;
-                bool haveAboveRight = bd[bdY * BdStride + (bdX + stepX + 1)];
-                bool haveBelowLeft = bd[(bdY + stepY + 1) * BdStride + bdX];
-
-                Av1IntraPred.PredictIntra(
-                    _pic.Planes[plane],
-                    _pic.PlaneStrides[plane],
-                    _seq.BitDepth,
-                    _seq.EnableIntraEdgeFilter,
-                    plane,
-                    startX,
-                    startY,
-                    haveLeft,
-                    haveAbove,
-                    haveAboveRight,
-                    haveBelowLeft,
-                    mode,
-                    plane == 0 ? _angleDeltaY : _angleDeltaUv,
-                    plane == 0 && _useFilterIntra,
-                    _filterIntraMode,
-                    GetIntraFilterType(plane),
-                    log2W,
-                    log2H,
-                    maxX - 1,
-                    maxY - 1);
-
-                if (isCfl)
+                if ((plane == 0 && _paletteSizeY > 0) || (plane > 0 && _paletteSizeUv > 0))
                 {
-                    Av1IntraPred.PredictChromaFromLuma(
-                        _pic.Planes[0], _pic.PlaneStrides[0],
-                        _pic.Planes[plane], _pic.PlaneStrides[plane],
-                        _seq.BitDepth, _seq.SubsamplingX, _seq.SubsamplingY,
-                        startX, startY, txSz, plane == 1 ? _cflAlphaU : _cflAlphaV,
-                        _maxLumaW, _maxLumaH);
+                    ReadOnlySpan<int> pal = plane == 0 ? _curPalY : plane == 1 ? _curPalU : _curPalV;
+                    byte[] cmap = plane == 0 ? _colorMapY : _colorMapUv;
+                    Av1IntraPred.PredictPalette(_pic.Planes[plane], _pic.PlaneStrides[plane], startX, startY, x, y, txSz, pal, cmap, 64);
+                }
+                else
+                {
+                    bool isCfl = plane > 0 && _uvMode == Av1Constants.UvCflPred;
+                    int mode = plane == 0 ? _yMode : isCfl ? Av1Constants.DcPred : _uvMode;
+                    int log2W = Av1Constants.TxWidthLog2[txSz];
+                    int log2H = Av1Constants.TxHeightLog2[txSz];
+
+                    bool haveLeft = (plane == 0 ? _availL : _availLChroma) || x > 0;
+                    bool haveAbove = (plane == 0 ? _availU : _availUChroma) || y > 0;
+                    bool[] bd = _blockDecoded[plane];
+                    int bdY = subBlockMiRow >> subY;
+                    int bdX = subBlockMiCol >> subX;
+                    bool haveAboveRight = bd[bdY * BdStride + (bdX + stepX + 1)];
+                    bool haveBelowLeft = bd[(bdY + stepY + 1) * BdStride + bdX];
+
+                    Av1IntraPred.PredictIntra(
+                        _pic.Planes[plane],
+                        _pic.PlaneStrides[plane],
+                        _seq.BitDepth,
+                        _seq.EnableIntraEdgeFilter,
+                        plane,
+                        startX,
+                        startY,
+                        haveLeft,
+                        haveAbove,
+                        haveAboveRight,
+                        haveBelowLeft,
+                        mode,
+                        plane == 0 ? _angleDeltaY : _angleDeltaUv,
+                        plane == 0 && _useFilterIntra,
+                        _filterIntraMode,
+                        GetIntraFilterType(plane),
+                        log2W,
+                        log2H,
+                        maxX - 1,
+                        maxY - 1);
+
+                    if (isCfl)
+                    {
+                        Av1IntraPred.PredictChromaFromLuma(
+                            _pic.Planes[0], _pic.PlaneStrides[0],
+                            _pic.Planes[plane], _pic.PlaneStrides[plane],
+                            _seq.BitDepth, _seq.SubsamplingX, _seq.SubsamplingY,
+                            startX, startY, txSz, plane == 1 ? _cflAlphaU : _cflAlphaV,
+                            _maxLumaW, _maxLumaH);
+                    }
                 }
             }
 
@@ -1090,7 +1089,7 @@ internal sealed class Av1TileDecoder
         if (!_skip)
         {
             int eob = DecodeCoeffs(ref sym, plane, startX, startY, txSz);
-            if (eob > 0)
+            if (eob > 0 && (AvifDiagnostics.Ablation & AvifAblation.SkipTransform) == 0)
             {
                 Av1Transform.Reconstruct(
                     _fh, _seq.BitDepth, plane, _segmentId, _currentQIndex,
@@ -1190,14 +1189,12 @@ internal sealed class Av1TileDecoder
             ? 512
             : Math.Min(1024, Av1Constants.TxWidth[txSz] * Av1Constants.TxHeight[txSz]);
 
-        _quant.AsSpan(0, segEob).Clear();
-
         int eob = 0;
         int culLevel = 0;
         int dcCategory = 0;
 
         int txbSkipCtx = GetAllZeroCtx(plane, txSz, x4, y4, w4, h4);
-        int allZero = sym.ReadSymbol(_cdf.TxbSkip.AsSpan((txSzCtx * 13 + txbSkipCtx) * 3, 3));
+        int allZero = sym.ReadBoolCdf(_cdf.TxbSkip.AsSpan((txSzCtx * 13 + txbSkipCtx) * 3, 3));
 
         if (allZero != 0)
         {
@@ -1233,18 +1230,17 @@ internal sealed class Av1TileDecoder
             };
 
             eob = eobPt < 2 ? eobPt : ((1 << (eobPt - 2)) + 1);
-            int eobShift = Math.Max(-1, eobPt - 3);
+            int eobShift = eobPt - 3;
             if (eobShift >= 0)
             {
-                int eobExtra = sym.ReadSymbol(_cdf.EobExtra.AsSpan(((txSzCtx * 2 + ptype) * 9 + (eobPt - 3)) * 3, 3));
+                int eobExtra = sym.ReadBoolCdf(_cdf.EobExtra.AsSpan(((txSzCtx * 2 + ptype) * 9 + eobShift) * 3, 3));
                 if (eobExtra != 0)
                     eob += 1 << eobShift;
-                int limit = Math.Max(0, eobPt - 2);
+                int limit = eobPt - 2;
                 for (int i = 1; i < limit; i++)
                 {
-                    int sh = limit - 1 - i;
                     if (sym.ReadBool() != 0)
-                        eob += 1 << sh;
+                        eob += 1 << (limit - 1 - i);
                 }
             }
 
@@ -1253,58 +1249,27 @@ internal sealed class Av1TileDecoder
             int adjW = 1 << bwl;
             int adjH = Av1Constants.TxHeight[adjTxSz];
             int brTxSzCtx = Math.Min(txSzCtx, Av1Constants.Tx32x32);
+            int brBaseOff = (brTxSzCtx * 2 + ptype) * 21;
+            int cbBaseOff = (txSzCtx * 2 + ptype) * 42;
+            int[] quant = _quant;
 
-            for (int c = eob - 1; c >= 0; c--)
+            if (eob == 1)
             {
-                int pos = scan[c];
-                int level;
-                if (c == eob - 1)
+                // DC-only fast path (very common): no _quant or _levels clear needed!
+                int level = sym.ReadSymbol(_cdf.CoeffBaseEob.AsSpan((txSzCtx * 2 + ptype) * 16, 4)) + 1;
+                if (level > 2)
                 {
-                    int eobBaseCtx = c == 0 ? 0
-                        : c <= ((adjH << bwl) >> 3) ? 1
-                        : c <= ((adjH << bwl) >> 2) ? 2
-                        : 3;
-                    level = sym.ReadSymbol(_cdf.CoeffBaseEob.AsSpan(((txSzCtx * 2 + ptype) * 4 + eobBaseCtx) * 4, 4)) + 1;
-                }
-                else
-                {
-                    int baseCtx = GetCoeffBaseCtx(txSz, txClass, bwl, adjW, adjH, pos);
-                    level = sym.ReadSymbol(_cdf.CoeffBase.AsSpan(((txSzCtx * 2 + ptype) * 42 + baseCtx) * 5, 5));
-                }
-
-                if (level > 2) // NUM_BASE_LEVELS = 2
-                {
-                    int brCtx = GetCoeffBrCtx(txClass, bwl, adjW, adjH, pos);
-                    Span<ushort> brCdf = _cdf.CoeffBr.AsSpan(((brTxSzCtx * 2 + ptype) * 21 + brCtx) * 5, 5);
-                    for (int idx = 0; idx < 4; idx++) // COEFF_BASE_RANGE(12) / (BR_CDF_SIZE(4) - 1) = 4
+                    Span<ushort> brCdf = _cdf.CoeffBr.AsSpan(brBaseOff * 5, 5);
+                    for (int idx = 0; idx < 4; idx++)
                     {
-                        int br = sym.ReadSymbol(brCdf);
+                        int br = sym.ReadSymbol4(brCdf);
                         level += br;
                         if (br < 3) break;
                     }
                 }
-                _quant[pos] = level;
-            }
-
-            for (int c = 0; c < eob; c++)
-            {
-                int pos = scan[c];
-                int q = _quant[pos];
-                int sign = 0;
-                if (q != 0)
-                {
-                    if (c == 0)
-                    {
-                        int dcSignCtx = GetDcSignCtx(plane, x4, y4, w4, h4);
-                        sign = sym.ReadSymbol(_cdf.DcSign.AsSpan((ptype * 3 + dcSignCtx) * 3, 3));
-                    }
-                    else
-                    {
-                        sign = sym.ReadBool();
-                    }
-                }
-
-                if (q > 14) // NUM_BASE_LEVELS(2) + COEFF_BASE_RANGE(12) = 14
+                int dcSignCtx = GetDcSignCtx(plane, x4, y4, w4, h4);
+                int sign = sym.ReadBoolCdf(_cdf.DcSign.AsSpan((ptype * 3 + dcSignCtx) * 3, 3));
+                if (level > 14)
                 {
                     int length = 0;
                     do
@@ -1317,18 +1282,178 @@ internal sealed class Av1TileDecoder
                     int xVal = 1;
                     for (int i = length - 2; i >= 0; i--)
                         xVal = (xVal << 1) | sym.ReadBool();
-                    q = xVal + 14;
+                    level = xVal + 14;
+                }
+                dcCategory = sign != 0 ? 1 : 2;
+                level &= 0xFFFFF;
+                culLevel = Math.Min(63, level);
+                quant[0] = sign != 0 ? -level : level;
+            }
+            else
+            {
+                quant.AsSpan(0, segEob).Clear();
+                int lvStride = adjW + 4;
+                byte[] lv = _levels;
+                lv.AsSpan(0, (adjH + 4) * lvStride).Clear();
+                byte[] ctxOffTable = CoeffBaseCtxOffset;
+                int txSzCtxTableOff = txSz * 25;
+                int posMask = adjW - 1;
+
+                // EOB coefficient (c = eob - 1)
+                {
+                    int c = eob - 1;
+                    int pos = scan[c];
+                    int row = pos >> bwl;
+                    int col = pos & posMask;
+                    int eobBaseCtx = c <= ((adjH << bwl) >> 3) ? 1
+                        : c <= ((adjH << bwl) >> 2) ? 2
+                        : 3;
+                    int level = sym.ReadSymbol(_cdf.CoeffBaseEob.AsSpan(((txSzCtx * 2 + ptype) * 4 + eobBaseCtx) * 4, 4)) + 1;
+                    if (level > 2)
+                    {
+                        // No neighbors decoded yet at EOB (mag == 0) and c >= 1 (pos != 0)
+                        int brCtx = txClass == Av1Constants.TxClass2D
+                            ? (row < 2 && col < 2 ? 7 : 14)
+                            : txClass == Av1Constants.TxClassHoriz
+                                ? (col == 0 ? 7 : 14)
+                                : (row == 0 ? 7 : 14);
+                        Span<ushort> brCdf = _cdf.CoeffBr.AsSpan((brBaseOff + brCtx) * 5, 5);
+                        for (int idx = 0; idx < 4; idx++)
+                        {
+                            int br = sym.ReadSymbol4(brCdf);
+                            level += br;
+                            if (br < 3) break;
+                        }
+                    }
+                    quant[pos] = level;
+                    lv[row * lvStride + col] = (byte)(level > 15 ? 15 : level);
                 }
 
-                if (pos == 0 && q > 0)
-                    dcCategory = sign != 0 ? 1 : 2;
+                // Remaining coefficients c = eob - 2 .. 0 (branchless zero-padded _levels neighbor lookup!)
+                if (txClass == Av1Constants.TxClass2D)
+                {
+                    for (int c = eob - 2; c >= 0; c--)
+                    {
+                        int pos = scan[c];
+                        int row = pos >> bwl;
+                        int col = pos & posMask;
+                        int o = row * lvStride + col;
 
-                q &= 0xFFFFF;
-                culLevel += q;
-                _quant[pos] = sign != 0 ? -q : q;
+                        int v0 = lv[o + 1];
+                        int v1 = lv[o + lvStride];
+                        int v2 = lv[o + lvStride + 1];
+                        int v3 = lv[o + 2];
+                        int v4 = lv[o + 2 * lvStride];
+                        int mag = (v0 > 3 ? 3 : v0) + (v1 > 3 ? 3 : v1) + (v2 > 3 ? 3 : v2) + (v3 > 3 ? 3 : v3) + (v4 > 3 ? 3 : v4);
+                        int ctx = (mag + 1) >> 1;
+                        if (ctx > 4) ctx = 4;
+                        int baseCtx = pos == 0
+                            ? 0
+                            : ctx + ctxOffTable[txSzCtxTableOff + (row > 4 ? 4 : row) * 5 + (col > 4 ? 4 : col)];
+
+                        int level = sym.ReadSymbol4(_cdf.CoeffBase.AsSpan((cbBaseOff + baseCtx) * 5, 5));
+                        if (level > 2)
+                        {
+                            int brMag = (v0 + v1 + v2 + 1) >> 1;
+                            if (brMag > 6) brMag = 6;
+                            int brCtx = brMag + (pos == 0 ? 0 : (row < 2 && col < 2) ? 7 : 14);
+                            Span<ushort> brCdf = _cdf.CoeffBr.AsSpan((brBaseOff + brCtx) * 5, 5);
+                            for (int idx = 0; idx < 4; idx++)
+                            {
+                                int br = sym.ReadSymbol4(brCdf);
+                                level += br;
+                                if (br < 3) break;
+                            }
+                        }
+                        if (level != 0)
+                        {
+                            quant[pos] = level;
+                            lv[o] = (byte)(level > 15 ? 15 : level);
+                        }
+                    }
+                }
+                else
+                {
+                    int off3 = txClass == Av1Constants.TxClassHoriz ? 2 : 2 * lvStride;
+                    int off4 = txClass == Av1Constants.TxClassHoriz ? 3 : 3 * lvStride;
+                    int off5 = txClass == Av1Constants.TxClassHoriz ? 4 : 4 * lvStride;
+                    for (int c = eob - 2; c >= 0; c--)
+                    {
+                        int pos = scan[c];
+                        int row = pos >> bwl;
+                        int col = pos & posMask;
+                        int o = row * lvStride + col;
+
+                        int v0 = lv[o + 1];
+                        int v1 = lv[o + lvStride];
+                        int v2 = lv[o + off3];
+                        int v3 = lv[o + off4];
+                        int v4 = lv[o + off5];
+                        int mag = (v0 > 3 ? 3 : v0) + (v1 > 3 ? 3 : v1) + (v2 > 3 ? 3 : v2) + (v3 > 3 ? 3 : v3) + (v4 > 3 ? 3 : v4);
+                        int ctx = (mag + 1) >> 1;
+                        if (ctx > 4) ctx = 4;
+                        int pIdx = txClass == Av1Constants.TxClassVert ? row : col;
+                        int baseCtx = ctx + CoeffBasePosCtxOffset[pIdx > 2 ? 2 : pIdx];
+
+                        int level = sym.ReadSymbol4(_cdf.CoeffBase.AsSpan((cbBaseOff + baseCtx) * 5, 5));
+                        if (level > 2)
+                        {
+                            int brMag = (v0 + v1 + v2 + 1) >> 1;
+                            if (brMag > 6) brMag = 6;
+                            int brCtx = brMag + (pos == 0 ? 0 : (pIdx == 0 ? 7 : 14));
+                            Span<ushort> brCdf = _cdf.CoeffBr.AsSpan((brBaseOff + brCtx) * 5, 5);
+                            for (int idx = 0; idx < 4; idx++)
+                            {
+                                int br = sym.ReadSymbol4(brCdf);
+                                level += br;
+                                if (br < 3) break;
+                            }
+                        }
+                        if (level != 0)
+                        {
+                            quant[pos] = level;
+                            lv[o] = (byte)(level > 15 ? 15 : level);
+                        }
+                    }
+                }
+
+                // Signs & Golomb-Rice
+                for (int c = 0; c < eob; c++)
+                {
+                    int pos = scan[c];
+                    int q = quant[pos];
+                    if (q == 0) continue;
+
+                    int sign = c == 0
+                        ? sym.ReadBoolCdf(_cdf.DcSign.AsSpan((ptype * 3 + GetDcSignCtx(plane, x4, y4, w4, h4)) * 3, 3))
+                        : sym.ReadBool();
+
+                    if (q > 14)
+                    {
+                        int length = 0;
+                        do
+                        {
+                            length++;
+                            if (length > 20)
+                                throw new InvalidDataException("AV1 Golomb coefficient overflow.");
+                        } while (sym.ReadBool() == 0);
+
+                        int xVal = 1;
+                        for (int i = length - 2; i >= 0; i--)
+                            xVal = (xVal << 1) | sym.ReadBool();
+                        q = xVal + 14;
+                    }
+
+                    if (pos == 0)
+                        dcCategory = sign != 0 ? 1 : 2;
+
+                    q &= 0xFFFFF;
+                    culLevel += q;
+                    quant[pos] = sign != 0 ? -q : q;
+                }
+
+                culLevel = Math.Min(63, culLevel);
             }
-
-            culLevel = Math.Min(63, culLevel);
         }
 
         byte culB = (byte)culLevel;
@@ -3455,6 +3580,8 @@ internal sealed class Av1TileDecoder
     // §5.11.33 Compute prediction (Inter + InterIntra + IntraBC)
     private void ComputePrediction()
     {
+        if ((AvifDiagnostics.Ablation & AvifAblation.SkipInterPred) != 0)
+            return;
         int sbMask = _seq.Use128x128Superblock ? 31 : 15;
         int subBlockMiRow = _miRow & sbMask;
         int subBlockMiCol = _miCol & sbMask;

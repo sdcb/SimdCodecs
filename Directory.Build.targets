@@ -31,6 +31,8 @@
 string md = File.ReadAllText(Source);
 // The right-floated <img> icon: nuget.org shows the package icon already.
 md = Regex.Replace(md, @"^<img [^>]*>[ \t]*\r?\n(\r?\n)?", "", RegexOptions.Multiline);
+// <picture> (dark/light variants) -> its <img> fallback as a Markdown image: nuget.org renders no <picture>.
+md = Regex.Replace(md, @"<picture>.*?<img\s[^>]*?src=""([^""]+)""[^>]*?alt=""([^""]*)""[^>]*>\s*</picture>", "![$2]($1)", RegexOptions.Singleline);
 // <sub>caption</sub> -> *caption*
 md = Regex.Replace(md, @"<sub>(.*?)</sub>", "*$1*", RegexOptions.Singleline);
 // <details><summary>Title</summary> ... </details> -> a ### heading over the expanded body.

@@ -1,13 +1,70 @@
+using System.Text.RegularExpressions;
 using BenchmarkDotNet.Running;
 using Sdcb.SimdCodecs.Avif.Benchmarks;
 
-if (args.Length > 0 && args[0] == "info")
+const string Usage = """
+    Sdcb.SimdCodecs AVIF decode benchmark. Run from the repository root:
+
+      info                         machine CPU / SIMD / libavif codec summary
+      verify [--fixtures RE]       verify ours vs libavif[dav1d] before timing
+      equivalence [--fixtures RE]  verify serial vs parallel decode produce identical RGBA
+      single [--reps N] [--fixtures RE]
+                                   single-core (1T) ours vs libavif[dav1d]
+      multi [--reps N] [--fixtures RE] [--magick]
+                                   multi-core ours vs libavif[dav1d] (+ optional Magick.NET)
+      anim [--reps N] [--fixtures RE]
+                                   animated AVIF sequence decode (1T & MT), ours vs libavif[dav1d]
+      quick [--reps N] [--fixtures RE] [--multi]
+                                   fast A/B timing of ours only
+      ablate [--reps N] [--fixtures RE] [--anim]
+                                   single-core stage-by-stage ablation
+      [--filter ...] [BDN args]    BenchmarkDotNet (AvifDecodeBenchmarks)
+    """;
+
+string command = args.Length > 0 && !args[0].StartsWith("--") ? args[0] : "bdn";
+string? Opt(string name) => args.SkipWhile(a => a != name).Skip(1).FirstOrDefault();
+int Reps() => int.TryParse(Opt("--reps"), out int r) ? r : 3;
+
+string[] Select(string[] defaults)
 {
-    NativeAvif.SelfCheck();
-    Console.WriteLine(NativeAvif.CodecSummary());
-    Console.WriteLine($"Fixtures dir: {AvifInputs.ResolveDirectory()}");
-    return 0;
+    string? pattern = Opt("--fixtures");
+    if (pattern is null) return defaults;
+    return defaults.Where(f => Regex.IsMatch(f, pattern)).ToArray();
 }
 
-BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
-return 0;
+switch (command)
+{
+    case "info":
+        NativeAvif.SelfCheck();
+        Console.WriteLine(BenchRunner.MachineHeader());
+        Console.WriteLine($"Fixtures dir: {AvifInputs.ResolveDirectory()}");
+        return 0;
+    case "verify":
+        return BenchRunner.Verify(Select(AvifInputs.StillFixtures));
+    case "equivalence":
+        return BenchRunner.Equivalence(Select(AvifInputs.StillFixtures));
+    case "single":
+        Console.WriteLine(BenchRunner.SingleCore(Select(AvifInputs.StillFixtures), Reps()));
+        return 0;
+    case "multi":
+        Console.WriteLine(BenchRunner.MultiCore(Select(AvifInputs.StillFixtures), Reps(), args.Contains("--magick")));
+        return 0;
+    case "anim":
+        Console.WriteLine(BenchRunner.Anim(Select(AvifInputs.AnimFixtures), Reps()));
+        return 0;
+    case "quick":
+        Console.WriteLine(BenchRunner.Quick(Select(AvifInputs.StillFixtures), Reps(), args.Contains("--multi")));
+        return 0;
+    case "ablate":
+    {
+        bool anim = args.Contains("--anim");
+        Console.WriteLine(BenchRunner.Ablate(Select(anim ? AvifInputs.AnimFixtures : AvifInputs.StillFixtures), Reps(), anim));
+        return 0;
+    }
+    case "help":
+        Console.WriteLine(Usage);
+        return 0;
+    default:
+        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
+        return 0;
+}

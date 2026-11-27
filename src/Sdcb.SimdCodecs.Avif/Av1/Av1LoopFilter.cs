@@ -31,77 +31,148 @@ internal static class Av1LoopFilter
             byte[] lfTx = st.LoopfilterTxSizes[plane];
             int lfCols = st.LfTxCols[plane];
 
-            for (int pass = 0; pass < 2; pass++)
+            // Pass 0: vertical edges (rows are independent — each row band writes only horizontal samples on its rows).
+            int rowCount = (miRows + rowStep - 1) / rowStep;
+            if (rowCount >= 32)
             {
-                int dx = pass == 0 ? 1 : 0;
-                int dy = pass == 0 ? 0 : 1;
-
-                for (int row = 0; row < miRows; row += rowStep)
+                Parallel.For(0, rowCount, rowIdx =>
                 {
-                    int y = row * 4;
-                    if (y >= fh.FrameHeight) continue;
-                    if (pass == 1 && y == 0) continue;
+                    int row = rowIdx * rowStep;
+                    FilterVerticalRow(fh, st, planeBuf, stride, lfTx, lfCols, bitDepth, plane, subX, subY, colStep, miCols, row);
+                });
+            }
+            else
+            {
+                for (int row = 0; row < miRows; row += rowStep)
+                    FilterVerticalRow(fh, st, planeBuf, stride, lfTx, lfCols, bitDepth, plane, subX, subY, colStep, miCols, row);
+            }
 
-                    int adjRow = row | subY;
-                    int prevRow = adjRow - (dy << subY);
-                    int yP = y >> subY;
-                    int txRow = adjRow >> subY;
-                    int prevTxRow = prevRow >> subY;
+            // Pass 1: horizontal edges (columns are independent — each column writes only vertical samples on its columns).
+            int colCount = (miCols + colStep - 1) / colStep;
+            if (colCount >= 32)
+            {
+                Parallel.For(0, colCount, colIdx =>
+                {
+                    int col = colIdx * colStep;
+                    FilterHorizontalCol(fh, st, planeBuf, stride, lfTx, lfCols, bitDepth, plane, subX, subY, rowStep, miRows, miCols, col);
+                });
+            }
+            else
+            {
+                for (int col = 0; col < miCols; col += colStep)
+                    FilterHorizontalCol(fh, st, planeBuf, stride, lfTx, lfCols, bitDepth, plane, subX, subY, rowStep, miRows, miCols, col);
+            }
+        }
+    }
 
-                    for (int col = 0; col < miCols; col += colStep)
-                    {
-                        int x = col * 4;
-                        if (x >= fh.FrameWidth) continue;
-                        if (pass == 0 && x == 0) continue;
+    private static void FilterVerticalRow(
+        Av1FrameHeader fh, Av1FrameState st, ushort[] planeBuf, int stride, byte[] lfTx, int lfCols,
+        int bitDepth, int plane, int subX, int subY, int colStep, int miCols, int row)
+    {
+        int y = row * 4;
+        if (y >= fh.FrameHeight) return;
 
-                        int adjCol = col | subX;
-                        int prevCol = adjCol - (dx << subX);
-                        int xP = x >> subX;
+        int adjRow = row | subY;
+        int yP = y >> subY;
+        int txRow = adjRow >> subY;
 
-                        int txSz = lfTx[txRow * lfCols + (adjCol >> subX)];
-                        bool isTxEdge = pass == 0
-                            ? (xP % Av1Constants.TxWidth[txSz]) == 0
-                            : (yP % Av1Constants.TxHeight[txSz]) == 0;
-                        if (!isTxEdge) continue;
+        for (int col = 0; col < miCols; col += colStep)
+        {
+            int x = col * 4;
+            if (x == 0 || x >= fh.FrameWidth) continue;
 
-                        int adjIdx = adjRow * miCols + adjCol;
-                        int planeSize = Av1Constants.SubsampledSize(st.MiSizes[adjIdx], subX, subY);
-                        bool isBlockEdge = pass == 0
-                            ? (xP % Av1Constants.BlockWidth[planeSize]) == 0
-                            : (yP % Av1Constants.BlockHeight[planeSize]) == 0;
-                        bool skip = st.Skips[adjIdx] != 0;
-                        bool isIntra = st.RefFrames[adjIdx * 2] <= Av1Constants.IntraFrame;
-                        if (!isBlockEdge && skip && !isIntra)
-                            continue;
+            int adjCol = col | subX;
+            int prevCol = adjCol - (1 << subX);
+            int xP = x >> subX;
 
-                        int prevTxSz = lfTx[prevTxRow * lfCols + (prevCol >> subX)];
-                        int baseSize = pass == 0
-                            ? Math.Min(Av1Constants.TxWidth[prevTxSz], Av1Constants.TxWidth[txSz])
-                            : Math.Min(Av1Constants.TxHeight[prevTxSz], Av1Constants.TxHeight[txSz]);
-                        int filterSize = plane == 0 ? Math.Min(16, baseSize) : Math.Min(8, baseSize);
+            int txSz = lfTx[txRow * lfCols + (adjCol >> subX)];
+            if ((xP & (Av1Constants.TxWidth[txSz] - 1)) != 0) continue;
 
-                        int lvl = GetFilterLevel(fh, st, adjRow, adjCol, plane, pass);
-                        if (lvl == 0)
-                            lvl = GetFilterLevel(fh, st, prevRow, prevCol, plane, pass);
-                        if (lvl == 0)
-                            continue;
+            int adjIdx = adjRow * miCols + adjCol;
+            int planeSize = Av1Constants.SubsampledSize(st.MiSizes[adjIdx], subX, subY);
+            bool isBlockEdge = (xP & (Av1Constants.BlockWidth[planeSize] - 1)) == 0;
+            bool skip = st.Skips[adjIdx] != 0;
+            bool isIntra = st.RefFrames[adjIdx * 2] <= Av1Constants.IntraFrame;
+            if (!isBlockEdge && skip && !isIntra)
+                continue;
 
-                        int shift = fh.LoopFilterSharpness > 4 ? 2 : fh.LoopFilterSharpness > 0 ? 1 : 0;
-                        int limit = fh.LoopFilterSharpness > 0
-                            ? Av1Constants.Clip3(1, 9 - fh.LoopFilterSharpness, lvl >> shift)
-                            : Math.Max(1, lvl >> shift);
-                        int blimit = 2 * (lvl + 2) + limit;
-                        int thresh = lvl >> 4;
+            int prevTxSz = lfTx[txRow * lfCols + (prevCol >> subX)];
+            int baseSize = Math.Min(Av1Constants.TxWidth[prevTxSz], Av1Constants.TxWidth[txSz]);
+            int filterSize = plane == 0 ? Math.Min(16, baseSize) : Math.Min(8, baseSize);
 
-                        for (int i = 0; i < 4; i++)
-                        {
-                            FilterSample(
-                                planeBuf, stride, bitDepth, plane,
-                                xP + dy * i, yP + dx * i,
-                                limit, blimit, thresh, dx, dy, filterSize);
-                        }
-                    }
-                }
+            int lvl = GetFilterLevel(fh, st, adjRow, adjCol, plane, 0);
+            if (lvl == 0)
+                lvl = GetFilterLevel(fh, st, adjRow, prevCol, plane, 0);
+            if (lvl == 0)
+                continue;
+
+            int shift = fh.LoopFilterSharpness > 4 ? 2 : fh.LoopFilterSharpness > 0 ? 1 : 0;
+            int limit = fh.LoopFilterSharpness > 0
+                ? Av1Constants.Clip3(1, 9 - fh.LoopFilterSharpness, lvl >> shift)
+                : Math.Max(1, lvl >> shift);
+            int blimit = 2 * (lvl + 2) + limit;
+            int thresh = lvl >> 4;
+
+            for (int i = 0; i < 4; i++)
+            {
+                FilterSample(planeBuf, stride, bitDepth, plane, xP, yP + i, limit, blimit, thresh, 1, 0, filterSize);
+            }
+        }
+    }
+
+    private static void FilterHorizontalCol(
+        Av1FrameHeader fh, Av1FrameState st, ushort[] planeBuf, int stride, byte[] lfTx, int lfCols,
+        int bitDepth, int plane, int subX, int subY, int rowStep, int miRows, int miCols, int col)
+    {
+        int x = col * 4;
+        if (x >= fh.FrameWidth) return;
+
+        int adjCol = col | subX;
+        int xP = x >> subX;
+        int txCol = adjCol >> subX;
+
+        for (int row = 0; row < miRows; row += rowStep)
+        {
+            int y = row * 4;
+            if (y == 0 || y >= fh.FrameHeight) continue;
+
+            int adjRow = row | subY;
+            int prevRow = adjRow - (1 << subY);
+            int yP = y >> subY;
+            int txRow = adjRow >> subY;
+            int prevTxRow = prevRow >> subY;
+
+            int txSz = lfTx[txRow * lfCols + txCol];
+            if ((yP & (Av1Constants.TxHeight[txSz] - 1)) != 0) continue;
+
+            int adjIdx = adjRow * miCols + adjCol;
+            int planeSize = Av1Constants.SubsampledSize(st.MiSizes[adjIdx], subX, subY);
+            bool isBlockEdge = (yP & (Av1Constants.BlockHeight[planeSize] - 1)) == 0;
+            bool skip = st.Skips[adjIdx] != 0;
+            bool isIntra = st.RefFrames[adjIdx * 2] <= Av1Constants.IntraFrame;
+            if (!isBlockEdge && skip && !isIntra)
+                continue;
+
+            int prevTxSz = lfTx[prevTxRow * lfCols + txCol];
+            int baseSize = Math.Min(Av1Constants.TxHeight[prevTxSz], Av1Constants.TxHeight[txSz]);
+            int filterSize = plane == 0 ? Math.Min(16, baseSize) : Math.Min(8, baseSize);
+
+            int lvl = GetFilterLevel(fh, st, adjRow, adjCol, plane, 1);
+            if (lvl == 0)
+                lvl = GetFilterLevel(fh, st, prevRow, adjCol, plane, 1);
+            if (lvl == 0)
+                continue;
+
+            int shift = fh.LoopFilterSharpness > 4 ? 2 : fh.LoopFilterSharpness > 0 ? 1 : 0;
+            int limit = fh.LoopFilterSharpness > 0
+                ? Av1Constants.Clip3(1, 9 - fh.LoopFilterSharpness, lvl >> shift)
+                : Math.Max(1, lvl >> shift);
+            int blimit = 2 * (lvl + 2) + limit;
+            int thresh = lvl >> 4;
+
+            for (int i = 0; i < 4; i++)
+            {
+                FilterSample(planeBuf, stride, bitDepth, plane, xP + i, yP, limit, blimit, thresh, 0, 1, filterSize);
             }
         }
     }

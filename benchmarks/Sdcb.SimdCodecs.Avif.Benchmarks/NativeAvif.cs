@@ -197,6 +197,79 @@ internal static unsafe partial class NativeAvif
         }
     }
 
+    internal static int DecodeYuv(byte[] encoded, int maxThreads)
+    {
+        AvifDecoder* dec = avifDecoderCreate();
+        if (dec == null) throw new OutOfMemoryException("avifDecoderCreate failed.");
+        try
+        {
+            dec->CodecChoice = AvifCodecChoiceDav1d;
+            dec->MaxThreads = maxThreads;
+            dec->StrictFlags = 0;
+
+            fixed (byte* src = encoded)
+            {
+                Check(avifDecoderSetIOMemory(dec, src, (nuint)encoded.Length), dec);
+                Check(avifDecoderParse(dec), dec);
+                Check(avifDecoderNextImage(dec), dec);
+                return (int)dec->Image->Width;
+            }
+        }
+        finally
+        {
+            avifDecoderDestroy(dec);
+        }
+    }
+
+    internal static int DecodeAllFramesRgba(byte[] encoded, int maxThreads)
+    {
+        AvifDecoder* dec = avifDecoderCreate();
+        if (dec == null) throw new OutOfMemoryException("avifDecoderCreate failed.");
+        try
+        {
+            dec->CodecChoice = AvifCodecChoiceDav1d;
+            dec->MaxThreads = maxThreads;
+            dec->StrictFlags = 0;
+
+            fixed (byte* src = encoded)
+            {
+                Check(avifDecoderSetIOMemory(dec, src, (nuint)encoded.Length), dec);
+                Check(avifDecoderParse(dec), dec);
+                int count = dec->ImageCount;
+                byte[]? output = null;
+                int checksum = 0;
+                for (int i = 0; i < count; i++)
+                {
+                    Check(avifDecoderNextImage(dec), dec);
+                    AvifImageHeader* img = dec->Image;
+                    AvifRgbImage rgb = default;
+                    avifRGBImageSetDefaults(&rgb, img);
+                    rgb.Depth = 8;
+                    rgb.Format = AvifRgbFormatRgba;
+                    rgb.ChromaUpsampling = AvifChromaUpsamplingAutomatic;
+                    rgb.MaxThreads = maxThreads;
+
+                    int rowBytes = checked((int)img->Width * 4);
+                    int needed = checked(rowBytes * (int)img->Height);
+                    if (output is null || output.Length < needed)
+                        output = new byte[needed];
+                    fixed (byte* dst = output)
+                    {
+                        rgb.Pixels = dst;
+                        rgb.RowBytes = (uint)rowBytes;
+                        Check(avifImageYUVToRGB(img, &rgb), dec);
+                    }
+                    checksum ^= output[0];
+                }
+                return checksum;
+            }
+        }
+        finally
+        {
+            avifDecoderDestroy(dec);
+        }
+    }
+
     private static void Check(int result, AvifDecoder* dec)
     {
         if (result == AvifResultOk) return;

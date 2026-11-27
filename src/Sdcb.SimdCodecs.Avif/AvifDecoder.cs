@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Runtime.ExceptionServices;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Avif.Av1;
 using Sdcb.SimdCodecs.Avif.Isobmff;
@@ -97,9 +99,287 @@ public static class AvifDecoder
             RenderOverlayRgba8(data, container, destination, outW, outH, cancellationToken);
             return container.BitDepth;
         }
+        if (container.Transforms.Count == 0)
+        {
+            int directBd = TryDecodeDirectToRgba8(data, container, destination, outW, outH);
+            if (directBd > 0)
+                return directBd;
+        }
         var planes = DecodePlanes(data, container);
         RenderRgba(container, planes, destination, outW, outH);
         return planes.BitDepth;
+    }
+
+    private static unsafe int TryDecodeDirectToRgba8(ReadOnlySpan<byte> data, AvifContainer container, Span<byte> destination, int outW, int outH)
+    {
+        var primary = container.Primary;
+        var alphaPlan = container.Alpha;
+        if (primary.Tiles.Count == 0)
+            return 0;
+
+        // Case 1: single primary tile + optional single alpha tile (no ComposePlane copy!)
+        if (primary.Tiles.Count == 1 && (alphaPlan is null || alphaPlan.Tiles.Count == 1))
+        {
+            Av1Picture? primPic = null;
+            Av1Picture? alphaPic = null;
+            try
+            {
+                if (alphaPlan is null)
+                {
+                    primPic = DecodeSingleItem(data, container.Items, primary, 0);
+                }
+                else
+                {
+                    byte[] primPayload = ResolveItemBytes(data, container.Items, primary.Tiles[0]);
+                    byte[] primCfg = primary.TileConfigs[0].ConfigObusLength > 0
+                        ? data.Slice(primary.TileConfigs[0].ConfigObusOffset, primary.TileConfigs[0].ConfigObusLength).ToArray() : [];
+                    byte[] alphaPayload = ResolveItemBytes(data, container.Items, alphaPlan.Tiles[0]);
+                    byte[] alphaCfg = alphaPlan.TileConfigs[0].ConfigObusLength > 0
+                        ? data.Slice(alphaPlan.TileConfigs[0].ConfigObusOffset, alphaPlan.TileConfigs[0].ConfigObusLength).ToArray() : [];
+
+                    Av1Picture? p0 = null, a0 = null;
+                    RunParallel(() => Parallel.Invoke(
+                        () => p0 = Av1FrameDecoder.DecodeStill(primPayload, primCfg),
+                        () => a0 = Av1FrameDecoder.DecodeStill(alphaPayload, alphaCfg)));
+                    primPic = p0!;
+                    alphaPic = a0!;
+                }
+
+                if (primary.CanvasWidth == 0 || primary.CanvasHeight == 0)
+                {
+                    primary.CanvasWidth = primPic.Width;
+                    primary.CanvasHeight = primPic.Height;
+                }
+                int canvasW = primary.CanvasWidth;
+                int canvasH = primary.CanvasHeight;
+                if (canvasW != outW || canvasH != outH || primPic.Width < canvasW || primPic.Height < canvasH)
+                    throw new InvalidDataException("AVIF decoded dimensions do not match canvas.");
+
+                if (alphaPlan is not null && alphaPic is not null)
+                {
+                    if (alphaPlan.CanvasWidth == 0 || alphaPlan.CanvasHeight == 0)
+                    {
+                        alphaPlan.CanvasWidth = alphaPic.Width;
+                        alphaPlan.CanvasHeight = alphaPic.Height;
+                    }
+                    if (alphaPlan.CanvasWidth != canvasW || alphaPlan.CanvasHeight != canvasH ||
+                        alphaPic.Width < canvasW || alphaPic.Height < canvasH)
+                        throw new InvalidDataException($"AVIF alpha canvas {alphaPlan.CanvasWidth}x{alphaPlan.CanvasHeight} does not match primary {canvasW}x{canvasH}.");
+                }
+
+                int matrix = container.NclxColour is { } nclx ? nclx.MatrixCoefficients : primPic.MatrixCoefficients;
+                bool fullRange = container.NclxColour is { } nclx2 ? nclx2.FullRange : primPic.FullRange;
+                if ((AvifDiagnostics.Ablation & AvifAblation.SkipColor) == 0)
+                {
+                    RenderPictureRectToRgba8(
+                        primPic, alphaPic, container.IsPremultiplied, matrix, fullRange,
+                        destination, outW, dstX0: 0, dstY0: 0, width: outW, height: outH, parallelRows: outH >= 64);
+                }
+                return primPic.BitDepth;
+            }
+            finally
+            {
+                primPic?.Dispose();
+                alphaPic?.Dispose();
+            }
+        }
+
+        // Case 2: grid primary without alpha -> decode & render each tile directly into destination in parallel, freeing tile planes immediately!
+        if (alphaPlan is null && primary.Tiles.Count > 1 && primary.CanvasWidth == outW && primary.CanvasHeight == outH)
+        {
+            int count = primary.Tiles.Count;
+            var payloads = new byte[count][];
+            var configObus = new byte[count][];
+            for (int i = 0; i < count; i++)
+            {
+                payloads[i] = ResolveItemBytes(data, container.Items, primary.Tiles[i]);
+                var cfg = primary.TileConfigs[i];
+                configObus[i] = cfg.ConfigObusLength > 0
+                    ? data.Slice(cfg.ConfigObusOffset, cfg.ConfigObusLength).ToArray()
+                    : [];
+            }
+
+            // Decode tile 0 first to lock in validated tile dimensions & color metadata before streaming all remaining tiles directly to RGBA.
+            int tileW, tileH, bitDepth, subX, subY, matrix;
+            bool mono, fullRange;
+            using (var first = Av1FrameDecoder.DecodeStill(payloads[0], configObus[0]))
+            {
+                tileW = first.Width;
+                tileH = first.Height;
+                bitDepth = first.BitDepth;
+                subX = first.SubsamplingX;
+                subY = first.SubsamplingY;
+                mono = first.Monochrome;
+                if ((long)tileW * primary.GridColumns < outW || (long)tileH * primary.GridRows < outH)
+                    throw new InvalidDataException("AVIF grid tiles do not cover the output canvas.");
+                matrix = container.NclxColour is { } nclx ? nclx.MatrixCoefficients : first.MatrixCoefficients;
+                fullRange = container.NclxColour is { } nclx2 ? nclx2.FullRange : first.FullRange;
+
+                if ((AvifDiagnostics.Ablation & AvifAblation.SkipColor) == 0)
+                {
+                    RenderPictureRectToRgba8(
+                        first, null, container.IsPremultiplied, matrix, fullRange,
+                        destination, outW, dstX0: 0, dstY0: 0,
+                        width: Math.Min(tileW, outW), height: Math.Min(tileH, outH), parallelRows: false);
+                }
+            }
+
+            bool skipColor = (AvifDiagnostics.Ablation & AvifAblation.SkipColor) != 0;
+            bool prem = container.IsPremultiplied;
+            int gridCols = primary.GridColumns;
+            fixed (byte* dstBase = destination)
+            {
+                nint dstPtr = (nint)dstBase;
+                int dstLen = destination.Length;
+                RunParallel(() => Parallel.For(1, count, i =>
+                {
+                    using var pic = Av1FrameDecoder.DecodeStill(payloads[i], configObus[i]);
+                    if (pic.Width != tileW || pic.Height != tileH || pic.BitDepth != bitDepth ||
+                        pic.Monochrome != mono || pic.SubsamplingX != subX || pic.SubsamplingY != subY)
+                    {
+                        throw new InvalidDataException("AVIF grid tiles differ in dimensions, bit depth, or subsampling.");
+                    }
+                    if (skipColor) return;
+
+                    int gx = i % gridCols;
+                    int gy = i / gridCols;
+                    int dstX0 = gx * tileW;
+                    int dstY0 = gy * tileH;
+                    if (dstX0 >= outW || dstY0 >= outH) return;
+                    int copyW = Math.Min(tileW, outW - dstX0);
+                    int copyH = Math.Min(tileH, outH - dstY0);
+
+                    var dstSpan = new Span<byte>((byte*)dstPtr, dstLen);
+                    RenderPictureRectToRgba8(
+                        pic, null, prem, matrix, fullRange,
+                        dstSpan, outW, dstX0, dstY0, copyW, copyH, parallelRows: false);
+                }));
+            }
+            return bitDepth;
+        }
+
+        return 0;
+    }
+
+    private static byte[] ResolveItemBytes(ReadOnlySpan<byte> data, ItemContainer items, ItemContainer.Item tile)
+    {
+        long len = ItemContainer.GetItemLength(tile);
+        if (len <= 0 || len > data.Length)
+            throw new InvalidDataException("AVIF item payload has invalid size.");
+        var buf = new byte[len];
+        items.Resolve(data, tile, buf);
+        return buf;
+    }
+
+    private static Av1Picture DecodeSingleItem(ReadOnlySpan<byte> data, ItemContainer items, AvifContainer.ImagePlan plan, int index)
+    {
+        var tile = plan.Tiles[index];
+        long len = ItemContainer.GetItemLength(tile);
+        if (len <= 0 || len > data.Length)
+            throw new InvalidDataException("AVIF item payload has invalid size.");
+        byte[] rented = ArrayPool<byte>.Shared.Rent((int)len);
+        try
+        {
+            items.Resolve(data, tile, rented.AsSpan(0, (int)len));
+            var cfg = plan.TileConfigs[index];
+            ReadOnlySpan<byte> cfgSpan = cfg.ConfigObusLength > 0
+                ? data.Slice(cfg.ConfigObusOffset, cfg.ConfigObusLength)
+                : default;
+            return Av1FrameDecoder.DecodeStill(rented.AsSpan(0, (int)len), cfgSpan);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    private static void RunParallel(Action parallelAction)
+    {
+        try
+        {
+            parallelAction();
+        }
+        catch (AggregateException ex)
+        {
+            var inner = ex.Flatten().InnerExceptions;
+            foreach (var e in inner)
+            {
+                if (e is InvalidDataException ide)
+                    throw new InvalidDataException(ide.Message, ide);
+            }
+            ExceptionDispatchInfo.Capture(inner[0]).Throw();
+            throw;
+        }
+    }
+
+    private static unsafe void RenderPictureRectToRgba8(
+        Av1Picture pic, Av1Picture? alphaPic, bool premultiplied, int matrixCoefficients, bool fullRange,
+        Span<byte> destination, int dstStridePx, int dstX0, int dstY0, int width, int height, bool parallelRows)
+    {
+        var coeff = AvifColor.For(matrixCoefficients, fullRange, pic.BitDepth);
+        int subX = pic.SubsamplingX;
+        int subY = pic.SubsamplingY;
+        bool mono = pic.Monochrome;
+        ushort[] yBuf = pic.Planes[0];
+        int yStride = pic.PlaneStrides[0];
+        ushort[]? cbBuf = mono ? null : pic.Planes[1];
+        ushort[]? crBuf = mono ? null : pic.Planes[2];
+        int cStride = mono ? 0 : pic.PlaneStrides[1];
+        ushort[]? aBuf = alphaPic?.Planes[0];
+        int aStride = alphaPic?.PlaneStrides[0] ?? 0;
+        int aBd = alphaPic?.BitDepth ?? 8;
+        bool aFull = alphaPic?.FullRange ?? true;
+
+        if (parallelRows)
+        {
+            fixed (byte* dstBase = destination)
+            {
+                nint dstPtr = (nint)dstBase;
+                int dstLen = destination.Length;
+                Parallel.For(0, height, y =>
+                {
+                    var dstSpan = new Span<byte>((byte*)dstPtr, dstLen);
+                    RenderRowRgba8(
+                        yBuf, yStride, cbBuf, crBuf, cStride, aBuf, aStride, aBd, aFull,
+                        mono, subX, subY, in coeff, premultiplied,
+                        dstSpan, dstStridePx, dstX0, dstY0, width, y);
+                });
+            }
+        }
+        else
+        {
+            for (int y = 0; y < height; y++)
+            {
+                RenderRowRgba8(
+                    yBuf, yStride, cbBuf, crBuf, cStride, aBuf, aStride, aBd, aFull,
+                    mono, subX, subY, in coeff, premultiplied,
+                    destination, dstStridePx, dstX0, dstY0, width, y);
+            }
+        }
+    }
+
+    private static void RenderRowRgba8(
+        ushort[] yBuf, int yStride, ushort[]? cbBuf, ushort[]? crBuf, int cStride,
+        ushort[]? aBuf, int aStride, int aBd, bool aFull,
+        bool mono, int subX, int subY, in AvifColor.Coefficients coeff, bool prem,
+        Span<byte> destination, int dstStridePx, int dstX0, int dstY0, int width, int y)
+    {
+        int yRow = y * yStride;
+        int cRow = (y >> subY) * cStride;
+        int aRow = y * aStride;
+        int dstRow = ((dstY0 + y) * dstStridePx + dstX0) * 4;
+        for (int x = 0; x < width; x++)
+        {
+            ushort ys = yBuf[yRow + x];
+            ushort cbs = mono ? (ushort)0 : cbBuf![cRow + (x >> subX)];
+            ushort crs = mono ? (ushort)0 : crBuf![cRow + (x >> subX)];
+            byte alpha = aBuf is not null ? AvifColor.SampleAlphaTo8(aBuf[aRow + x], aBd, aFull) : (byte)255;
+            AvifColor.PixelToRgba(ys, cbs, crs, mono, in coeff, alpha, prem,
+                out destination[dstRow + x * 4],
+                out destination[dstRow + x * 4 + 1],
+                out destination[dstRow + x * 4 + 2],
+                out destination[dstRow + x * 4 + 3]);
+        }
     }
 
     internal static int DecodeContainerToRgba16(ReadOnlySpan<byte> data, AvifContainer container, Span<ushort> destination, int outW, int outH, CancellationToken cancellationToken = default)
@@ -130,71 +410,81 @@ public static class AvifDecoder
         if (container.Overlay is not null)
             throw new InvalidDataException("Planar YCbCr output is not defined for an 'iovl' overlay image.");
         var primaryPics = DecodePlanTiles(data, container.Items, container.Primary);
-        var first = primaryPics[0];
-
-        if (container.Primary.CanvasWidth == 0 || container.Primary.CanvasHeight == 0)
+        Av1Picture[]? alphaPics = null;
+        try
         {
-            container.Primary.CanvasWidth = first.Width;
-            container.Primary.CanvasHeight = first.Height;
-        }
+            var first = primaryPics[0];
 
-        int canvasW = container.Primary.CanvasWidth;
-        int canvasH = container.Primary.CanvasHeight;
-        ValidateGridTiles(container.Primary, primaryPics, canvasW, canvasH);
-
-        int subX = first.Monochrome ? 1 : first.SubsamplingX;
-        int subY = first.Monochrome ? 1 : first.SubsamplingY;
-        var yPlane = ComposePlane(primaryPics, container.Primary, planeIdx: 0, canvasW, canvasH, 0, 0);
-        ushort[]? cbPlane = null;
-        ushort[]? crPlane = null;
-        if (!first.Monochrome)
-        {
-            cbPlane = ComposePlane(primaryPics, container.Primary, planeIdx: 1, canvasW, canvasH, subX, subY);
-            crPlane = ComposePlane(primaryPics, container.Primary, planeIdx: 2, canvasW, canvasH, subX, subY);
-        }
-
-        ushort[]? alphaPlane = null;
-        int alphaBitDepth = first.BitDepth;
-        bool alphaFullRange = true;
-        if (container.Alpha is { } alphaPlan)
-        {
-            var alphaPics = DecodePlanTiles(data, container.Items, alphaPlan);
-            var firstAlpha = alphaPics[0];
-            if (alphaPlan.CanvasWidth == 0 || alphaPlan.CanvasHeight == 0)
+            if (container.Primary.CanvasWidth == 0 || container.Primary.CanvasHeight == 0)
             {
-                alphaPlan.CanvasWidth = firstAlpha.Width;
-                alphaPlan.CanvasHeight = firstAlpha.Height;
+                container.Primary.CanvasWidth = first.Width;
+                container.Primary.CanvasHeight = first.Height;
             }
-            if (alphaPlan.CanvasWidth != canvasW || alphaPlan.CanvasHeight != canvasH)
-                throw new InvalidDataException($"AVIF alpha canvas {alphaPlan.CanvasWidth}x{alphaPlan.CanvasHeight} does not match primary {canvasW}x{canvasH}.");
 
-            ValidateGridTiles(alphaPlan, alphaPics, canvasW, canvasH);
-            alphaPlane = ComposePlane(alphaPics, alphaPlan, planeIdx: 0, canvasW, canvasH, 0, 0);
-            alphaBitDepth = firstAlpha.BitDepth;
-            alphaFullRange = firstAlpha.FullRange;
+            int canvasW = container.Primary.CanvasWidth;
+            int canvasH = container.Primary.CanvasHeight;
+            ValidateGridTiles(container.Primary, primaryPics, canvasW, canvasH);
+
+            int subX = first.Monochrome ? 1 : first.SubsamplingX;
+            int subY = first.Monochrome ? 1 : first.SubsamplingY;
+            var yPlane = ComposePlane(primaryPics, container.Primary, planeIdx: 0, canvasW, canvasH, 0, 0);
+            ushort[]? cbPlane = null;
+            ushort[]? crPlane = null;
+            if (!first.Monochrome)
+            {
+                cbPlane = ComposePlane(primaryPics, container.Primary, planeIdx: 1, canvasW, canvasH, subX, subY);
+                crPlane = ComposePlane(primaryPics, container.Primary, planeIdx: 2, canvasW, canvasH, subX, subY);
+            }
+
+            ushort[]? alphaPlane = null;
+            int alphaBitDepth = first.BitDepth;
+            bool alphaFullRange = true;
+            if (container.Alpha is { } alphaPlan)
+            {
+                alphaPics = DecodePlanTiles(data, container.Items, alphaPlan);
+                var firstAlpha = alphaPics[0];
+                if (alphaPlan.CanvasWidth == 0 || alphaPlan.CanvasHeight == 0)
+                {
+                    alphaPlan.CanvasWidth = firstAlpha.Width;
+                    alphaPlan.CanvasHeight = firstAlpha.Height;
+                }
+                if (alphaPlan.CanvasWidth != canvasW || alphaPlan.CanvasHeight != canvasH)
+                    throw new InvalidDataException($"AVIF alpha canvas {alphaPlan.CanvasWidth}x{alphaPlan.CanvasHeight} does not match primary {canvasW}x{canvasH}.");
+
+                ValidateGridTiles(alphaPlan, alphaPics, canvasW, canvasH);
+                alphaPlane = ComposePlane(alphaPics, alphaPlan, planeIdx: 0, canvasW, canvasH, 0, 0);
+                alphaBitDepth = firstAlpha.BitDepth;
+                alphaFullRange = firstAlpha.FullRange;
+            }
+
+            int matrix = container.NclxColour is { } nclx ? nclx.MatrixCoefficients : first.MatrixCoefficients;
+            bool fullRange = container.NclxColour is { } nclx2 ? nclx2.FullRange : first.FullRange;
+
+            return new AvifDecodedPlanes
+            {
+                Width = canvasW,
+                Height = canvasH,
+                BitDepth = first.BitDepth,
+                SubsamplingX = first.SubsamplingX,
+                SubsamplingY = first.SubsamplingY,
+                Monochrome = first.Monochrome,
+                Y = yPlane,
+                Cb = cbPlane,
+                Cr = crPlane,
+                Alpha = alphaPlane,
+                AlphaBitDepth = alphaBitDepth,
+                AlphaFullRange = alphaFullRange,
+                MatrixCoefficients = matrix,
+                FullRange = fullRange,
+                IsPremultiplied = container.IsPremultiplied,
+            };
         }
-
-        int matrix = container.NclxColour is { } nclx ? nclx.MatrixCoefficients : first.MatrixCoefficients;
-        bool fullRange = container.NclxColour is { } nclx2 ? nclx2.FullRange : first.FullRange;
-
-        return new AvifDecodedPlanes
+        finally
         {
-            Width = canvasW,
-            Height = canvasH,
-            BitDepth = first.BitDepth,
-            SubsamplingX = first.SubsamplingX,
-            SubsamplingY = first.SubsamplingY,
-            Monochrome = first.Monochrome,
-            Y = yPlane,
-            Cb = cbPlane,
-            Cr = crPlane,
-            Alpha = alphaPlane,
-            AlphaBitDepth = alphaBitDepth,
-            AlphaFullRange = alphaFullRange,
-            MatrixCoefficients = matrix,
-            FullRange = fullRange,
-            IsPremultiplied = container.IsPremultiplied,
-        };
+            foreach (var p in primaryPics) p?.Dispose();
+            if (alphaPics is not null)
+                foreach (var p in alphaPics) p?.Dispose();
+        }
     }
 
     internal static void EnsureCanvasDimensions(ReadOnlySpan<byte> data, AvifContainer container)
@@ -387,8 +677,10 @@ public static class AvifDecoder
     private static void RenderRgba(AvifContainer container, AvifDecodedPlanes planes, Span<byte> destination, int outW, int outH)
         => RenderRgba(container.Transforms, planes, destination, outW, outH);
 
-    internal static void RenderRgba(List<AvifContainer.Transform> transforms, AvifDecodedPlanes planes, Span<byte> destination, int outW, int outH)
+    internal static unsafe void RenderRgba(List<AvifContainer.Transform> transforms, AvifDecodedPlanes planes, Span<byte> destination, int outW, int outH)
     {
+        if ((AvifDiagnostics.Ablation & AvifAblation.SkipColor) != 0)
+            return;
         var (a, b, c, d, e, f) = ComposeAffine(transforms, planes.Width, planes.Height);
 
         var coeff = AvifColor.For(planes.MatrixCoefficients, planes.FullRange, planes.BitDepth);
@@ -407,22 +699,31 @@ public static class AvifDecoder
         bool isIdentity = a == 1 && b == 0 && c == 0 && d == 0 && e == 1 && f == 0 && outW == planes.Width && outH == planes.Height;
         if (isIdentity)
         {
-            for (int y = 0; y < outH; y++)
+            if (outH >= 64)
             {
-                int yRow = y * planes.Width;
-                int cRow = (y >> subY) * cw;
-                int dstRow = y * outW * 4;
-                for (int x = 0; x < outW; x++)
+                fixed (byte* dstBase = destination)
                 {
-                    ushort ys = yBuf[yRow + x];
-                    ushort cbs = mono ? (ushort)0 : cbBuf![cRow + (x >> subX)];
-                    ushort crs = mono ? (ushort)0 : crBuf![cRow + (x >> subX)];
-                    byte alpha = aBuf is not null ? AvifColor.SampleAlphaTo8(aBuf[yRow + x], aBd, aFull) : (byte)255;
-                    AvifColor.PixelToRgba(ys, cbs, crs, mono, in coeff, alpha, prem,
-                        out destination[dstRow + x * 4],
-                        out destination[dstRow + x * 4 + 1],
-                        out destination[dstRow + x * 4 + 2],
-                        out destination[dstRow + x * 4 + 3]);
+                    nint dstPtr = (nint)dstBase;
+                    int dstLen = destination.Length;
+                    int yStride = planes.Width;
+                    Parallel.For(0, outH, y =>
+                    {
+                        var dstSpan = new Span<byte>((byte*)dstPtr, dstLen);
+                        RenderRowRgba8(
+                            yBuf, yStride, cbBuf, crBuf, cw, aBuf, yStride, aBd, aFull,
+                            mono, subX, subY, in coeff, prem,
+                            dstSpan, outW, 0, 0, outW, y);
+                    });
+                }
+            }
+            else
+            {
+                for (int y = 0; y < outH; y++)
+                {
+                    RenderRowRgba8(
+                        yBuf, planes.Width, cbBuf, crBuf, cw, aBuf, planes.Width, aBd, aFull,
+                        mono, subX, subY, in coeff, prem,
+                        destination, outW, 0, 0, outW, y);
                 }
             }
             return;

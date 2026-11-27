@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace Sdcb.SimdCodecs.Avif.Av1;
 
 /// <summary>
@@ -24,7 +26,7 @@ internal static class Av1LoopRestoration
     {
         int numPlanes = seq.NumPlanes;
         for (int p = 0; p < numPlanes; p++)
-            cdefPlanes[p].AsSpan().CopyTo(dstPlanes[p]);
+            cdefPlanes[p].AsSpan(0, pic.PlaneLengths[p]).CopyTo(dstPlanes[p]);
 
         if (!fh.UsesLr)
             return;
@@ -60,66 +62,126 @@ internal static class Av1LoopRestoration
             // and its start y is always even (matching §7.17.3 box filter pass=0 odd-row parity).
             int maxStripe = (planeH + stripeOffset + stripeH - 1) / stripeH;
             int maxBlockW = Math.Min(unitSize * 2, planeW);
-            var wienerInter = new int[(stripeH + 6) * maxBlockW];
-            var sgrA = new int[(stripeH + 2) * (maxBlockW + 2)];
-            var sgrB = new int[(stripeH + 2) * (maxBlockW + 2)];
-            var sgrF0 = new int[stripeH * maxBlockW];
-            var sgrF1 = new int[stripeH * maxBlockW];
+            int wienerLen = (stripeH + 6) * maxBlockW;
+            int sgrAbLen = (stripeH + 2) * (maxBlockW + 2);
+            int sgrFLen = stripeH * maxBlockW;
+            int capturedPlane = plane;
 
-            for (int stripeNum = 0; stripeNum < maxStripe; stripeNum++)
+            if (maxStripe >= 4)
             {
-                int stripeStartY = stripeNum * stripeH - stripeOffset;
-                int stripeEndY = stripeStartY + stripeH - 1;
-                int yStart = Math.Max(0, stripeStartY);
-                int yEnd = Math.Min(planeH, stripeEndY + 1);
-                if (yStart >= yEnd) continue;
-
-                // Restoration unit row is constant across a stripe when unitSize >= stripeH;
-                // when unitSize < stripeH (32x32 chroma), split vertically at unitSize boundaries.
-                for (int y0 = yStart; y0 < yEnd;)
-                {
-                    int unitRow = Math.Min(unitRows - 1, (y0 + stripeOffset) / unitSize);
-                    int nextUnitY = unitRow == unitRows - 1 ? planeH : (unitRow + 1) * unitSize - stripeOffset;
-                    int y1 = Math.Min(yEnd, nextUnitY);
-                    int h = y1 - y0;
-
-                    for (int uc = 0; uc < unitCols; uc++)
+                Parallel.For(
+                    0,
+                    maxStripe,
+                    () => (
+                        wienerInter: ArrayPool<int>.Shared.Rent(wienerLen),
+                        sgrA: ArrayPool<int>.Shared.Rent(sgrAbLen),
+                        sgrB: ArrayPool<int>.Shared.Rent(sgrAbLen),
+                        sgrF0: ArrayPool<int>.Shared.Rent(sgrFLen),
+                        sgrF1: ArrayPool<int>.Shared.Rent(sgrFLen)),
+                    (stripeNum, _, scratch) =>
                     {
-                        int x0 = uc * unitSize;
-                        int x1 = uc == unitCols - 1 ? planeW : Math.Min(planeW, (uc + 1) * unitSize);
-                        int w = x1 - x0;
-                        if (w <= 0) continue;
-
-                        int uIdx = unitRow * unitCols + uc;
-                        int rType = st.LrType[plane][uIdx];
-                        if (rType == Av1Constants.RestoreNone) continue;
-
-                        if (rType == Av1Constants.RestoreWiener)
-                        {
-                            ApplyWiener(
-                                deblock, cdef, dst, stride, bitDepth,
-                                interRound0, interRound1,
-                                st.LrWiener[plane], uIdx * 6,
-                                x0, y0, w, h,
-                                stripeStartY, stripeEndY, planeEndX, planeEndY,
-                                wienerInter);
-                        }
-                        else if (rType == Av1Constants.RestoreSgrproj)
-                        {
-                            ApplySgr(
-                                deblock, cdef, dst, stride, bitDepth,
-                                st.LrSgrSet[plane][uIdx],
-                                st.LrSgrXqd[plane][uIdx * 2],
-                                st.LrSgrXqd[plane][uIdx * 2 + 1],
-                                x0, y0, w, h,
-                                stripeStartY, stripeEndY, planeEndX, planeEndY,
-                                sgrA, sgrB, sgrF0, sgrF1);
-                        }
+                        ProcessStripe(
+                            st, capturedPlane, bitDepth, interRound0, interRound1,
+                            unitSize, unitRows, unitCols, planeW, planeH, planeEndX, planeEndY,
+                            stride, deblock, cdef, dst, stripeH, stripeOffset, stripeNum,
+                            scratch.wienerInter, scratch.sgrA, scratch.sgrB, scratch.sgrF0, scratch.sgrF1);
+                        return scratch;
+                    },
+                    scratch =>
+                    {
+                        ArrayPool<int>.Shared.Return(scratch.wienerInter);
+                        ArrayPool<int>.Shared.Return(scratch.sgrA);
+                        ArrayPool<int>.Shared.Return(scratch.sgrB);
+                        ArrayPool<int>.Shared.Return(scratch.sgrF0);
+                        ArrayPool<int>.Shared.Return(scratch.sgrF1);
+                    });
+            }
+            else
+            {
+                var wienerInter = ArrayPool<int>.Shared.Rent(wienerLen);
+                var sgrA = ArrayPool<int>.Shared.Rent(sgrAbLen);
+                var sgrB = ArrayPool<int>.Shared.Rent(sgrAbLen);
+                var sgrF0 = ArrayPool<int>.Shared.Rent(sgrFLen);
+                var sgrF1 = ArrayPool<int>.Shared.Rent(sgrFLen);
+                try
+                {
+                    for (int stripeNum = 0; stripeNum < maxStripe; stripeNum++)
+                    {
+                        ProcessStripe(
+                            st, capturedPlane, bitDepth, interRound0, interRound1,
+                            unitSize, unitRows, unitCols, planeW, planeH, planeEndX, planeEndY,
+                            stride, deblock, cdef, dst, stripeH, stripeOffset, stripeNum,
+                            wienerInter, sgrA, sgrB, sgrF0, sgrF1);
                     }
-
-                    y0 = y1;
+                }
+                finally
+                {
+                    ArrayPool<int>.Shared.Return(wienerInter);
+                    ArrayPool<int>.Shared.Return(sgrA);
+                    ArrayPool<int>.Shared.Return(sgrB);
+                    ArrayPool<int>.Shared.Return(sgrF0);
+                    ArrayPool<int>.Shared.Return(sgrF1);
                 }
             }
+        }
+    }
+
+    private static void ProcessStripe(
+        Av1FrameState st, int plane, int bitDepth, int interRound0, int interRound1,
+        int unitSize, int unitRows, int unitCols, int planeW, int planeH, int planeEndX, int planeEndY,
+        int stride, ushort[] deblock, ushort[] cdef, ushort[] dst, int stripeH, int stripeOffset, int stripeNum,
+        int[] wienerInter, int[] sgrA, int[] sgrB, int[] sgrF0, int[] sgrF1)
+    {
+        int stripeStartY = stripeNum * stripeH - stripeOffset;
+        int stripeEndY = stripeStartY + stripeH - 1;
+        int yStart = Math.Max(0, stripeStartY);
+        int yEnd = Math.Min(planeH, stripeEndY + 1);
+        if (yStart >= yEnd) return;
+
+        // Restoration unit row is constant across a stripe when unitSize >= stripeH;
+        // when unitSize < stripeH (32x32 chroma), split vertically at unitSize boundaries.
+        for (int y0 = yStart; y0 < yEnd;)
+        {
+            int unitRow = Math.Min(unitRows - 1, (y0 + stripeOffset) / unitSize);
+            int nextUnitY = unitRow == unitRows - 1 ? planeH : (unitRow + 1) * unitSize - stripeOffset;
+            int y1 = Math.Min(yEnd, nextUnitY);
+            int h = y1 - y0;
+
+            for (int uc = 0; uc < unitCols; uc++)
+            {
+                int x0 = uc * unitSize;
+                int x1 = uc == unitCols - 1 ? planeW : Math.Min(planeW, (uc + 1) * unitSize);
+                int w = x1 - x0;
+                if (w <= 0) continue;
+
+                int uIdx = unitRow * unitCols + uc;
+                int rType = st.LrType[plane][uIdx];
+                if (rType == Av1Constants.RestoreNone) continue;
+
+                if (rType == Av1Constants.RestoreWiener)
+                {
+                    ApplyWiener(
+                        deblock, cdef, dst, stride, bitDepth,
+                        interRound0, interRound1,
+                        st.LrWiener[plane], uIdx * 6,
+                        x0, y0, w, h,
+                        stripeStartY, stripeEndY, planeEndX, planeEndY,
+                        wienerInter);
+                }
+                else if (rType == Av1Constants.RestoreSgrproj)
+                {
+                    ApplySgr(
+                        deblock, cdef, dst, stride, bitDepth,
+                        st.LrSgrSet[plane][uIdx],
+                        st.LrSgrXqd[plane][uIdx * 2],
+                        st.LrSgrXqd[plane][uIdx * 2 + 1],
+                        x0, y0, w, h,
+                        stripeStartY, stripeEndY, planeEndX, planeEndY,
+                        sgrA, sgrB, sgrF0, sgrF1);
+                }
+            }
+
+            y0 = y1;
         }
     }
 

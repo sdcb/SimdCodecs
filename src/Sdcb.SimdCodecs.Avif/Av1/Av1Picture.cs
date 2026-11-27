@@ -1,9 +1,11 @@
+using System.Buffers;
+
 namespace Sdcb.SimdCodecs.Avif.Av1;
 
 /// <summary>
 /// A decoded AV1 picture holding Y (and optionally Cb, Cr) planes as 16-bit samples in [0, (1 &lt;&lt; BitDepth) - 1].
 /// </summary>
-internal sealed class Av1Picture
+internal sealed class Av1Picture : IDisposable
 {
     internal int Width { get; }
     internal int Height { get; }
@@ -20,9 +22,11 @@ internal sealed class Av1Picture
     /// <summary>Padded buffer widths (aligned to MI grid = multiple of 8 for luma, 4 for 4:2:0 chroma).</summary>
     internal int[] PlaneStrides { get; }
     internal int[] PlaneHeights { get; }
-    internal ushort[][] Planes { get; }
+    internal int[] PlaneLengths { get; }
+    internal ushort[][] Planes { get; private set; }
+    internal bool PlanesPooled { get; private set; }
 
-    internal Av1Picture(Av1SequenceHeader seq, Av1FrameHeader fh)
+    internal Av1Picture(Av1SequenceHeader seq, Av1FrameHeader fh, bool pooled = true)
     {
         Width = fh.UpscaledWidth;
         Height = fh.FrameHeight;
@@ -39,7 +43,9 @@ internal sealed class Av1Picture
         int numPlanes = seq.NumPlanes;
         PlaneStrides = new int[numPlanes];
         PlaneHeights = new int[numPlanes];
+        PlaneLengths = new int[numPlanes];
         Planes = new ushort[numPlanes][];
+        PlanesPooled = pooled;
 
         int sbPx = seq.Use128x128Superblock ? 128 : 64;
         int miWidthPx = Math.Max(((fh.MiCols * 4) + sbPx - 1) & ~(sbPx - 1), fh.UpscaledWidth);
@@ -51,10 +57,28 @@ internal sealed class Av1Picture
             int sy = p == 0 ? 0 : seq.SubsamplingY;
             int stride = (miWidthPx + sx) >> sx;
             int height = (miHeightPx + sy) >> sy;
+            int len = stride * height;
             PlaneStrides[p] = stride;
             PlaneHeights[p] = height;
-            Planes[p] = new ushort[stride * height];
+            PlaneLengths[p] = len;
+            if (pooled)
+            {
+                var buf = ArrayPool<ushort>.Shared.Rent(len);
+                // Clear only what is needed? No, tile decoding writes every coded pixel; clear padding to keep deterministic edges.
+                buf.AsSpan(0, len).Clear();
+                Planes[p] = buf;
+            }
+            else
+            {
+                Planes[p] = new ushort[len];
+            }
         }
+    }
+
+    internal void TakePlanes(ushort[][] planes, bool pooled)
+    {
+        Planes = planes;
+        PlanesPooled = pooled;
     }
 
     internal int OutputPlaneWidth(int plane) => plane == 0 ? Width : (Width + SubsamplingX) >> SubsamplingX;
@@ -64,8 +88,17 @@ internal sealed class Av1Picture
     {
         var copy = new Av1Picture(this);
         for (int p = 0; p < Planes.Length; p++)
-            Planes[p].CopyTo(copy.Planes[p], 0);
+            Planes[p].AsSpan(0, PlaneLengths[p]).CopyTo(copy.Planes[p]);
         return copy;
+    }
+
+    public void Dispose()
+    {
+        if (PlanesPooled)
+        {
+            PlanesPooled = false;
+            Av1FrameDecoder.ReturnPlanes(Planes);
+        }
     }
 
     private Av1Picture(Av1Picture src)
@@ -83,8 +116,10 @@ internal sealed class Av1Picture
         ChromaSamplePosition = src.ChromaSamplePosition;
         PlaneStrides = (int[])src.PlaneStrides.Clone();
         PlaneHeights = (int[])src.PlaneHeights.Clone();
+        PlaneLengths = (int[])src.PlaneLengths.Clone();
         Planes = new ushort[src.Planes.Length][];
+        PlanesPooled = false;
         for (int p = 0; p < Planes.Length; p++)
-            Planes[p] = new ushort[src.Planes[p].Length];
+            Planes[p] = new ushort[src.PlaneLengths[p]];
     }
 }
