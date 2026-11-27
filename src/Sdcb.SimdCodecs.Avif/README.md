@@ -2,9 +2,9 @@
 
 Pure-managed AVIF decoder for .NET 10. Reads ISOBMFF containers (ISO/IEC 14496-12), the HEIF / AVIF item and sequence models (ISO/IEC 23008-12, MIAF 23000-22, AOM AVIF v1.1.0), and decodes AV1 bitstreams (AOM AV1 Bitstream & Decoding Process Specification).
 
-## Status (M0)
+## Status (M1)
 
-Package skeleton, shared ISOBMFF layer wiring (`src/Shared/Isobmff`), benchmark harness (`benchmarks/Sdcb.SimdCodecs.Avif.Benchmarks`), fixture generator (`tools/avif-fixtures`) and oracle definitions (`tests/Sdcb.SimdCodecs.Tests/Oracle/avif`).
+ISOBMFF / AVIF container (`av01`, `grid`, `av1C`, `ispe`, `colr`, `clap` / `irot` / `imir`, `auxl` alpha including grid alpha, `prem`) and pure-managed AV1 Profile 0 (Main, 8- and 10-bit, 4:2:0 and 4:0:0) intra decoder (OBUs, sequence/frame headers, multi-symbol CDF arithmetic coder, superblock partitions, intra prediction with edge filter / Filter Intra / CFL / Palette, DCT / ADST / FLIPADST / IDTX / WHT transforms with quantization matrices & delta-q & segmentation, deblocking loop filter, CDEF, and Wiener / SGR loop restoration). All 21 Profile 0 fixtures in `Fixtures/avif/avif-golden.tsv` (including 50 MP 16×12 grids, 10-bit grids, 4×4 multi-tile SVT-AV1, 10-bit alpha, monochrome, Wiener/SGR, segmentation/qmatrix, and HDR PQ/HLG streams) match `libavif 1.4.2 + dav1d 1.5.5` plane-for-plane with zero bit error.
 
 Planned milestones:
 
