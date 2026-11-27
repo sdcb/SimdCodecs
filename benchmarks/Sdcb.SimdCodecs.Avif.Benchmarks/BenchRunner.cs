@@ -188,9 +188,6 @@ internal static class BenchRunner
             $"{"fixture",-44} {"frames",6} {"ours 1T",9} {"dav1d 1T",9} {"ratio 1T",9} {"ours MT",9} {"dav1d MT",9} {"alloc MB",9}",
         };
 
-        ThreadPool.GetMinThreads(out int minW, out int minIo);
-        ThreadPool.GetMaxThreads(out int maxW, out int maxIo);
-
         foreach (string fixture in fixtures)
         {
             byte[] data = AvifInputs.Load(fixture);
@@ -201,8 +198,8 @@ internal static class BenchRunner
             double oursMt = Median(reps, () => DecodeAllOurs(data));
             double dav1dMt = Median(reps, () => NativeAvif.DecodeAllFramesRgba(data, cores));
 
-            ThreadPool.SetMinThreads(1, minIo);
-            ThreadPool.SetMaxThreads(1, maxIo);
+            // SetMaxThreads(1) is ignored below the processor count; the decoder's own option makes it serial.
+            AvifDiagnostics.ParallelOptions.MaxDegreeOfParallelism = 1;
             double ours1T, dav1d1T;
             try
             {
@@ -211,8 +208,7 @@ internal static class BenchRunner
             }
             finally
             {
-                ThreadPool.SetMinThreads(minW, minIo);
-                ThreadPool.SetMaxThreads(maxW, maxIo);
+                AvifDiagnostics.ParallelOptions.MaxDegreeOfParallelism = -1;
             }
 
             _ = AllocatedMb(() => DecodeAllOurs(data));
@@ -225,9 +221,10 @@ internal static class BenchRunner
     /// <summary>
     /// Same-process A/B against the built baseline (<see cref="Baseline"/>): both decode each fixture to RGBA through
     /// the public <c>TryDecodeInto</c>, their outputs must match byte for byte before anything is timed, and the
-    /// repetitions alternate A, B so drift hits both alike.
+    /// repetitions alternate A, B so drift hits both alike. With <paramref name="anim"/>, each rep decodes every frame
+    /// of an animated fixture through the public frame reader, and every frame must match.
     /// </summary>
-    internal static int Ab(string[] fixtures, int reps, bool multiCore)
+    internal static int Ab(string[] fixtures, int reps, bool multiCore, bool anim = false)
     {
         var process = Process.GetCurrentProcess();
         nint prevAffinity = 0;
@@ -259,9 +256,27 @@ internal static class BenchRunner
                 int stride = info.Width * 4;
                 byte[] a = new byte[stride * info.Height];
                 byte[] b = new byte[a.Length];
-                if (!Baseline.TryDecodeInto(data, a, stride) || !AvifImageDecoder.TryDecodeInto(data, b, stride, PixelFormat.Rgba32))
-                    throw new InvalidDataException($"{fixture}: decode failed.");
-                if (!a.AsSpan().SequenceEqual(b))
+                Action decodeA, decodeB;
+                bool same;
+                if (anim)
+                {
+                    decodeA = () => Baseline.DecodeAllFrames(data, a, stride);
+                    decodeB = () => DecodeAllOurs(data, b);
+                    var hashes = new List<string>();
+                    Baseline.DecodeAllFrames(data, a, stride, _ => hashes.Add(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(a))));
+                    var ours = new List<string>();
+                    DecodeAllOurs(data, b, _ => ours.Add(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(b))));
+                    same = hashes.SequenceEqual(ours);
+                }
+                else
+                {
+                    decodeA = () => Baseline.TryDecodeInto(data, a, stride);
+                    decodeB = () => AvifImageDecoder.TryDecodeInto(data, b, stride, PixelFormat.Rgba32);
+                    if (!Baseline.TryDecodeInto(data, a, stride) || !AvifImageDecoder.TryDecodeInto(data, b, stride, PixelFormat.Rgba32))
+                        throw new InvalidDataException($"{fixture}: decode failed.");
+                    same = a.AsSpan().SequenceEqual(b);
+                }
+                if (!same)
                 {
                     Console.WriteLine($"{fixture,-44} OUTPUT DIFFERS from the baseline: not timed");
                     failures++;
@@ -273,10 +288,10 @@ internal static class BenchRunner
                 for (int i = 0; i < reps; i++)
                 {
                     var sw = Stopwatch.StartNew();
-                    Baseline.TryDecodeInto(data, a, stride);
+                    decodeA();
                     ta.Add(sw.Elapsed.TotalMilliseconds);
                     sw.Restart();
-                    AvifImageDecoder.TryDecodeInto(data, b, stride, PixelFormat.Rgba32);
+                    decodeB();
                     tb.Add(sw.Elapsed.TotalMilliseconds);
                 }
                 ta.Sort();
@@ -476,7 +491,7 @@ internal static class BenchRunner
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static int DecodeAllOurs(byte[] data)
+    private static int DecodeAllOurs(byte[] data, byte[]? buf = null, Action<int>? frame = null)
     {
         if (!AvifImageDecoder.TryOpenFrames(data, out var reader))
             throw new InvalidOperationException("TryOpenFrames failed.");
@@ -486,12 +501,13 @@ internal static class BenchRunner
                 throw new InvalidOperationException("TryReadInfo failed.");
             int checksum = 0;
             int stride = info.Width * 4;
-            byte[] buf = new byte[stride * info.Height];
+            buf ??= new byte[stride * info.Height];
             for (int i = 0; i < reader.FrameCount; i++)
             {
                 if (!reader.TryDecodeFrameInto(i, buf, stride, PixelFormat.Rgba32))
                     throw new InvalidOperationException($"Frame {i} decode failed.");
                 checksum ^= buf[0];
+                frame?.Invoke(i);
             }
             return checksum;
         }

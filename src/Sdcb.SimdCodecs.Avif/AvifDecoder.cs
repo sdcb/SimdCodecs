@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using Sdcb.SimdCodecs.Abstractions;
 using Sdcb.SimdCodecs.Avif.Av1;
 using Sdcb.SimdCodecs.Avif.Isobmff;
@@ -369,6 +370,19 @@ public static class AvifDecoder
         int cRow = (y >> subY) * cStride;
         int aRow = y * aStride;
         int dstRow = ((dstY0 + y) * dstStridePx + dstX0) * 4;
+        if (!prem && !coeff.Identity)
+        {
+            // The row kernel writes opaque pixels; straight alpha then only replaces the alpha bytes.
+            var dst = destination.Slice(dstRow, width * 4);
+            AvifColor.RowToRgba8(yBuf.AsSpan(yRow, width), mono ? default : cbBuf.AsSpan(cRow), mono ? default : crBuf.AsSpan(cRow),
+                mono, subX, in coeff, dst);
+            if (aBuf is not null)
+            {
+                for (int x = 0; x < width; x++)
+                    dst[x * 4 + 3] = AvifColor.SampleAlphaTo8(aBuf[aRow + x], aBd, aFull);
+            }
+            return;
+        }
         for (int x = 0; x < width; x++)
         {
             ushort ys = yBuf[yRow + x];
@@ -757,7 +771,7 @@ public static class AvifDecoder
     private static void RenderRgba16(AvifContainer container, AvifDecodedPlanes planes, Span<ushort> destination, int outW, int outH)
         => RenderRgba16(container.Transforms, planes, destination, outW, outH);
 
-    internal static void RenderRgba16(List<AvifContainer.Transform> transforms, AvifDecodedPlanes planes, Span<ushort> destination, int outW, int outH)
+    internal static unsafe void RenderRgba16(List<AvifContainer.Transform> transforms, AvifDecodedPlanes planes, Span<ushort> destination, int outW, int outH)
     {
         var (a, b, c, d, e, f) = ComposeAffine(transforms, planes.Width, planes.Height);
 
@@ -777,23 +791,25 @@ public static class AvifDecoder
         bool isIdentity = a == 1 && b == 0 && c == 0 && d == 0 && e == 1 && f == 0 && outW == planes.Width && outH == planes.Height;
         if (isIdentity)
         {
-            for (int y = 0; y < outH; y++)
+            int yStride = planes.Width;
+            if (outH < 64)
             {
-                int yRow = y * planes.Width;
-                int cRow = (y >> subY) * cw;
-                int dstRow = y * outW * 4;
-                for (int x = 0; x < outW; x++)
+                for (int y = 0; y < outH; y++)
                 {
-                    ushort ys = yBuf[yRow + x];
-                    ushort cbs = mono ? (ushort)0 : cbBuf![cRow + (x >> subX)];
-                    ushort crs = mono ? (ushort)0 : crBuf![cRow + (x >> subX)];
-                    ushort alpha = aBuf is not null ? AvifColor.SampleAlphaTo16(aBuf[yRow + x], aBd, aFull) : (ushort)65535;
-                    AvifColor.PixelToRgba16(ys, cbs, crs, mono, in coeff, alpha, prem,
-                        out destination[dstRow + x * 4],
-                        out destination[dstRow + x * 4 + 1],
-                        out destination[dstRow + x * 4 + 2],
-                        out destination[dstRow + x * 4 + 3]);
+                    RenderRowRgba16(yBuf, yStride, cbBuf, crBuf, cw, aBuf, yStride, aBd, aFull, mono, subX, subY, in coeff, prem,
+                        y, destination.Slice(y * outW * 4, outW * 4));
                 }
+                return;
+            }
+            fixed (ushort* dstBase = destination)
+            {
+                nint dstPtr = (nint)dstBase;
+                int dstLen = destination.Length;
+                Parallel.For(0, outH, AvifDiagnostics.ParallelOptions, y =>
+                {
+                    var row = new Span<ushort>((ushort*)dstPtr, dstLen).Slice(y * outW * 4, outW * 4);
+                    RenderRowRgba16(yBuf, yStride, cbBuf, crBuf, cw, aBuf, yStride, aBd, aFull, mono, subX, subY, in coeff, prem, y, row);
+                });
             }
             return;
         }
@@ -819,6 +835,98 @@ public static class AvifDecoder
                     out destination[dstOff + 2],
                     out destination[dstOff + 3]);
             }
+        }
+    }
+
+    /// <summary>Row <paramref name="y"/> of a picture as RGBA16 into <paramref name="dst"/> (its width × 4 samples).</summary>
+    private static void RenderRowRgba16(
+        ushort[] yBuf, int yStride, ushort[]? cbBuf, ushort[]? crBuf, int cStride,
+        ushort[]? aBuf, int aStride, int aBd, bool aFull,
+        bool mono, int subX, int subY, in AvifColor.Coefficients16 coeff, bool prem, int y, Span<ushort> dst)
+    {
+        int width = dst.Length / 4;
+        int yRow = y * yStride;
+        int cRow = (y >> subY) * cStride;
+        int aRow = y * aStride;
+        if (!prem && !coeff.Identity)
+        {
+            // The row kernel writes opaque pixels; straight alpha then only replaces the alpha samples.
+            AvifColor.RowToRgba16(yBuf.AsSpan(yRow, width), mono ? default : cbBuf.AsSpan(cRow), mono ? default : crBuf.AsSpan(cRow),
+                mono, subX, in coeff, dst);
+            if (aBuf is not null)
+            {
+                for (int x = 0; x < width; x++)
+                    dst[x * 4 + 3] = AvifColor.SampleAlphaTo16(aBuf[aRow + x], aBd, aFull);
+            }
+            return;
+        }
+        for (int x = 0; x < width; x++)
+        {
+            ushort ys = yBuf[yRow + x];
+            ushort cbs = mono ? (ushort)0 : cbBuf![cRow + (x >> subX)];
+            ushort crs = mono ? (ushort)0 : crBuf![cRow + (x >> subX)];
+            ushort alpha = aBuf is not null ? AvifColor.SampleAlphaTo16(aBuf[aRow + x], aBd, aFull) : (ushort)65535;
+            AvifColor.PixelToRgba16(ys, cbs, crs, mono, in coeff, alpha, prem,
+                out dst[x * 4], out dst[x * 4 + 1], out dst[x * 4 + 2], out dst[x * 4 + 3]);
+        }
+    }
+
+    /// <summary>
+    /// Renders a whole decoded picture (no transforms, straight alpha) into a destination laid out by
+    /// <see cref="PixelConverter.TryGetLayout"/>, row by row in parallel: each row is converted to RGBA8 (8-bit) or
+    /// RGBA16 (deeper), then to <paramref name="format"/>, which is what rendering the whole image to RGBA and
+    /// converting it gives. 8-bit into <see cref="PixelFormat.Rgba32"/> renders straight into the destination.
+    /// </summary>
+    internal static unsafe void RenderPictureInto(Av1Picture pic, Av1Picture? alphaPic, int matrixCoefficients, bool fullRange,
+        Span<byte> destination, int rowStride, PixelFormat format)
+    {
+        if ((AvifDiagnostics.Ablation & AvifAblation.SkipColor) != 0)
+            return;
+        int w = pic.Width, h = pic.Height;
+        bool wide = pic.BitDepth > 8;
+        var coeff8 = wide ? default : AvifColor.For(matrixCoefficients, fullRange, pic.BitDepth);
+        var coeff16 = wide ? AvifColor.For16(matrixCoefficients, fullRange, pic.BitDepth) : default;
+        int subX = pic.SubsamplingX, subY = pic.SubsamplingY;
+        bool mono = pic.Monochrome;
+        ushort[] yBuf = pic.Planes[0];
+        int yStride = pic.PlaneStrides[0];
+        ushort[]? cbBuf = mono ? null : pic.Planes[1];
+        ushort[]? crBuf = mono ? null : pic.Planes[2];
+        int cStride = mono ? 0 : pic.PlaneStrides[1];
+        ushort[]? aBuf = alphaPic?.Planes[0];
+        int aStride = alphaPic?.PlaneStrides[0] ?? 0;
+        int aBd = alphaPic?.BitDepth ?? 8;
+        bool aFull = alphaPic?.FullRange ?? true;
+        var source = wide ? PixelFormat.Rgba64 : PixelFormat.Rgba32;
+        bool direct = !wide && format == PixelFormat.Rgba32;
+        int srcRow = w * source.BytesPerPixel;
+        int dstRowBytes = w * format.BytesPerPixel;
+
+        fixed (byte* dstBase = destination)
+        {
+            nint dstPtr = (nint)dstBase;
+            int dstLen = destination.Length;
+            Parallel.For(0, h, AvifDiagnostics.ParallelOptions,
+                () => direct ? null : new byte[srcRow],
+                (y, _, rowBuf) =>
+                {
+                    var dst = new Span<byte>((byte*)dstPtr, dstLen).Slice(y * rowStride, dstRowBytes);
+                    Span<byte> rgba = direct ? dst : rowBuf;
+                    if (wide)
+                    {
+                        RenderRowRgba16(yBuf, yStride, cbBuf, crBuf, cStride, aBuf, aStride, aBd, aFull, mono, subX, subY,
+                            in coeff16, prem: false, y, MemoryMarshal.Cast<byte, ushort>(rgba));
+                    }
+                    else
+                    {
+                        RenderRowRgba8(yBuf, yStride, cbBuf, crBuf, cStride, aBuf, aStride, aBd, aFull, mono, subX, subY,
+                            in coeff8, prem: false, rgba, w, 0, -y, w, y); // dstY0 = -y: row y lands at the start of rgba
+                    }
+                    if (!direct)
+                        PixelConverter.Convert(rgba, srcRow, source, dst, dstRowBytes, format, w, 1);
+                    return rowBuf;
+                },
+                _ => { });
         }
     }
 

@@ -208,6 +208,84 @@ public sealed class AvifTests
         digest.ShouldBe(expected.Digest, $"{fixture} ({seq.FrameCount} frames)");
     }
 
+    /// <summary>
+    /// Frames render straight from the decoded picture, row by row, into the destination format. The oracle converts
+    /// the frame's planes pixel by pixel with the scalar <see cref="AvifColor"/> formulas, then to each format.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Animated))]
+    public void AnimatedFrames_EveryFormat_MatchPerPixelConversion(string fixture)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        byte[] data = ReadFixture(fixture);
+        AvifSequence.TryParse(data, out var seq).ShouldBeTrue(fixture);
+        seq!.Transforms.ShouldBeEmpty(fixture);
+        var planesDecoder = new AvifSequenceDecoder(seq, data);
+        AvifImageDecoder.TryOpenFrames(data, out var reader).ShouldBeTrue(fixture);
+        using (reader)
+        {
+            foreach (int i in new[] { 0, 1, seq.FrameCount - 1 })
+            {
+                var planes = planesDecoder.DecodeFramePlanes(data, i, ct);
+                int w = planes.Width, h = planes.Height;
+                bool wide = planes.BitDepth > 8;
+                var source = wide ? Abstractions.PixelFormat.Rgba64 : Abstractions.PixelFormat.Rgba32;
+                byte[] rgba = PerPixelRgba(planes, wide);
+
+                foreach (var format in Abstractions.PixelFormat.All)
+                {
+                    int stride = w * format.BytesPerPixel + 5;
+                    var expected = new byte[stride * h];
+                    expected.AsSpan().Fill(0x5A);
+                    var actual = expected.AsSpan().ToArray();
+                    Abstractions.PixelConverter.Convert(rgba, w * source.BytesPerPixel, source, expected, stride, format, w, h);
+                    reader!.TryDecodeFrameInto(i, actual, stride, format, cancellationToken: ct).ShouldBeTrue($"{fixture} #{i} {format}");
+                    actual.AsSpan().SequenceEqual(expected).ShouldBeTrue($"{fixture} #{i} {format}");
+                }
+
+                reader!.TryDecodeFrame(i, out var image, cancellationToken: ct).ShouldBeTrue($"{fixture} #{i}");
+                using (image)
+                {
+                    var expected = new byte[w * h * source.BytesPerPixel];
+                    var actual = new byte[expected.Length];
+                    Abstractions.PixelConverter.Convert(rgba, 0, source, expected, 0, source, w, h);
+                    image!.TryCopyTo(actual, 0, source).ShouldBeTrue($"{fixture} #{i}");
+                    actual.AsSpan().SequenceEqual(expected).ShouldBeTrue($"{fixture} #{i} TryDecodeFrame");
+                }
+            }
+        }
+
+        static byte[] PerPixelRgba(AvifDecodedPlanes p, bool wide)
+        {
+            int w = p.Width, h = p.Height, cw = (w + p.SubsamplingX) >> p.SubsamplingX;
+            var bytes = new byte[w * h * (wide ? 8 : 4)];
+            var rgba16 = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ushort>(bytes.AsSpan());
+            var k8 = AvifColor.For(p.MatrixCoefficients, p.FullRange, p.BitDepth);
+            var k16 = AvifColor.For16(p.MatrixCoefficients, p.FullRange, p.BitDepth);
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    int i = y * w + x, c = (y >> p.SubsamplingY) * cw + (x >> p.SubsamplingX);
+                    ushort cb = p.Monochrome ? (ushort)0 : p.Cb![c], cr = p.Monochrome ? (ushort)0 : p.Cr![c];
+                    if (wide)
+                    {
+                        ushort a = p.Alpha is null ? (ushort)65535 : AvifColor.SampleAlphaTo16(p.Alpha[i], p.AlphaBitDepth, p.AlphaFullRange);
+                        AvifColor.PixelToRgba16(p.Y[i], cb, cr, p.Monochrome, in k16, a, false,
+                            out rgba16[i * 4], out rgba16[i * 4 + 1], out rgba16[i * 4 + 2], out rgba16[i * 4 + 3]);
+                    }
+                    else
+                    {
+                        byte a = p.Alpha is null ? (byte)255 : AvifColor.SampleAlphaTo8(p.Alpha[i], p.AlphaBitDepth, p.AlphaFullRange);
+                        AvifColor.PixelToRgba(p.Y[i], cb, cr, p.Monochrome, in k8, a, false,
+                            out bytes[i * 4], out bytes[i * 4 + 1], out bytes[i * 4 + 2], out bytes[i * 4 + 3]);
+                    }
+                }
+            }
+            return bytes;
+        }
+    }
+
     [Fact]
     public void AnimatedAvif_OpenFrames_ReportsTimingLoopAndSupportsRandomSeek()
     {

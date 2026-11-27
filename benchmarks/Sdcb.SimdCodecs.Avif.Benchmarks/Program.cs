@@ -21,8 +21,9 @@ const string Usage = """
       stages [--reps N] [--fixtures RE] [--multi] [--anim]
                                    stage timers inside tile decoding (AVIF_STAGE_TIMERS=1; 1T unless --multi)
       baseline [git-ref]           build git-ref's (default HEAD) Avif package into .cache/baseline for 'ab'
-      ab [--reps N] [--fixtures RE] [--multi]
-                                   same-process A/B: the baseline vs the working tree (1T unless --multi)
+      ab [--reps N] [--fixtures RE] [--multi] [--anim]
+                                   same-process A/B: the baseline vs the working tree (1T unless --multi;
+                                   --anim: every frame of the animated fixtures)
       [--filter ...] [BDN args]    BenchmarkDotNet (AvifDecodeBenchmarks)
     """;
 
@@ -72,7 +73,8 @@ switch (command)
         Baseline.Build(args.Length > 1 && !args[1].StartsWith("--") ? args[1] : "HEAD");
         return 0;
     case "ab":
-        return BenchRunner.Ab(Select(AvifInputs.StillFixtures), int.TryParse(Opt("--reps"), out int abReps) ? abReps : 7, args.Contains("--multi"));
+        return BenchRunner.Ab(Select(args.Contains("--anim") ? AvifInputs.AnimFixtures : AvifInputs.StillFixtures),
+            int.TryParse(Opt("--reps"), out int abReps) ? abReps : 7, args.Contains("--multi"), args.Contains("--anim"));
     case "help":
         Console.WriteLine(Usage);
         return 0;

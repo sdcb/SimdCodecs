@@ -620,6 +620,8 @@ internal sealed class AvifSequenceDecoder
     private readonly Av1DecoderSession _primarySession = new();
     private readonly Av1DecoderSession? _alphaSession;
     private int _lastIndex = -1;
+    private Av1Picture? _lastPrimary;
+    private Av1Picture? _lastAlpha;
     private AvifDecodedPlanes? _lastPlanes;
 
     internal AvifSequenceDecoder(AvifSequence sequence, ReadOnlySpan<byte> data)
@@ -641,8 +643,25 @@ internal sealed class AvifSequenceDecoder
 
     internal AvifDecodedPlanes DecodeFramePlanes(ReadOnlySpan<byte> data, int index, CancellationToken cancellationToken = default)
     {
-        if (index == _lastIndex && _lastPlanes is not null)
-            return _lastPlanes;
+        var (primary, alpha) = DecodeFramePictures(data, index, cancellationToken);
+        return _lastPlanes ??= BuildDecodedPlanes(primary, alpha);
+    }
+
+    /// <summary>
+    /// The colour parameters to render <paramref name="primary"/> with: the container's <c>nclx</c>, else the
+    /// bitstream's.
+    /// </summary>
+    internal (int MatrixCoefficients, bool FullRange) ColorOf(Av1Picture primary) =>
+        _seq.NclxColour is { } nclx ? (nclx.MatrixCoefficients, nclx.FullRange) : (primary.MatrixCoefficients, primary.FullRange);
+
+    /// <summary>
+    /// Decodes frame <paramref name="index"/> (from the nearest sync sample at or before it, or on from the frame
+    /// decoded last) and returns the primary and alpha pictures, which stay valid until the next call.
+    /// </summary>
+    internal (Av1Picture Primary, Av1Picture? Alpha) DecodeFramePictures(ReadOnlySpan<byte> data, int index, CancellationToken cancellationToken = default)
+    {
+        if (index == _lastIndex && _lastPrimary is not null)
+            return (_lastPrimary, _lastAlpha);
 
         int startFrom;
         if (_lastIndex < 0 || index < _lastIndex)
@@ -681,10 +700,13 @@ internal sealed class AvifSequenceDecoder
             }
         }
 
-        var planes = BuildDecodedPlanes(primaryPic!, alphaPic);
+        if (alphaPic is not null && (alphaPic.Width != primaryPic!.Width || alphaPic.Height != primaryPic.Height))
+            throw new InvalidDataException($"AVIF sequence alpha dimensions {alphaPic.Width}x{alphaPic.Height} do not match primary {primaryPic.Width}x{primaryPic.Height}.");
         _lastIndex = index;
-        _lastPlanes = planes;
-        return planes;
+        _lastPrimary = primaryPic!;
+        _lastAlpha = alphaPic;
+        _lastPlanes = null;
+        return (primaryPic!, alphaPic);
     }
 
     private int FindNearestSync(int index)

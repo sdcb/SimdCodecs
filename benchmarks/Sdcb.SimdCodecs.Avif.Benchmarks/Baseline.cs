@@ -29,15 +29,48 @@ internal static unsafe class Baseline
         ((delegate*<ReadOnlySpan<byte>, Span<byte>, int, PixelFormat, object?, CancellationToken, bool>)DecodeInto.Value)(
             data, rgba, stride, PixelFormat.Rgba32, null, default);
 
-    private static IntPtr Load()
+    private static readonly Lazy<Assembly> Avif = new(() =>
     {
         var description = Description ?? throw new InvalidOperationException("No baseline built. Run the 'baseline [git-ref]' command first.");
         var dir = Path.Combine(Dir, description.Split(' ')[0]);
-        var avif = new DirectoryLoadContext(dir).LoadFromAssemblyName(new AssemblyName("Sdcb.SimdCodecs.Avif"));
-        var method = avif.GetType("Sdcb.SimdCodecs.Avif.AvifImageDecoder")?
+        return new DirectoryLoadContext(dir).LoadFromAssemblyName(new AssemblyName("Sdcb.SimdCodecs.Avif"));
+    });
+
+    private static readonly Lazy<IntPtr> OpenFrames = new(() => DecoderMethod("TryOpenFrames", 2));
+
+    /// <summary>
+    /// Decodes every frame of an animated AVIF to RGBA through the baseline's public frame reader
+    /// (<c>AvifImageDecoder.TryOpenFrames</c>, then <c>TryDecodeFrameInto</c> per frame), calling
+    /// <paramref name="frame"/> after each with the frame index.
+    /// </summary>
+    internal static void DecodeAllFrames(byte[] data, byte[] rgba, int stride, Action<int>? frame = null)
+    {
+        object? reader = null;
+        if (!((delegate*<ReadOnlyMemory<byte>, out object?, bool>)OpenFrames.Value)(data, out reader) || reader is null)
+            throw new InvalidDataException("The baseline's TryOpenFrames failed.");
+        using var disposable = (IDisposable)reader;
+        var type = reader.GetType();
+        int count = (int)type.GetProperty("FrameCount")!.GetValue(reader)!;
+        var decode = (delegate*<object, int, Span<byte>, int, PixelFormat, object?, CancellationToken, bool>)type
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Single(m => m.Name == "TryDecodeFrameInto" && m.GetParameters().Length == 6)
+            .MethodHandle.GetFunctionPointer();
+        for (int i = 0; i < count; i++)
+        {
+            if (!decode(reader, i, rgba, stride, PixelFormat.Rgba32, null, default))
+                throw new InvalidDataException($"The baseline failed to decode frame {i}.");
+            frame?.Invoke(i);
+        }
+    }
+
+    private static IntPtr Load() => DecoderMethod("TryDecodeInto", 6);
+
+    private static IntPtr DecoderMethod(string name, int parameters)
+    {
+        var method = Avif.Value.GetType("Sdcb.SimdCodecs.Avif.AvifImageDecoder")?
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .SingleOrDefault(m => m.Name == "TryDecodeInto" && m.GetParameters().Length == 6)
-            ?? throw new InvalidOperationException("The baseline has no AvifImageDecoder.TryDecodeInto(6 parameters).");
+            .SingleOrDefault(m => m.Name == name && m.GetParameters().Length == parameters)
+            ?? throw new InvalidOperationException($"The baseline has no AvifImageDecoder.{name}({parameters} parameters).");
         return method.MethodHandle.GetFunctionPointer();
     }
 
