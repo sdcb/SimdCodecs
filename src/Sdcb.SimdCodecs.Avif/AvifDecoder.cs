@@ -139,6 +139,7 @@ public static class AvifDecoder
 
                     Av1Picture? p0 = null, a0 = null;
                     RunParallel(() => Parallel.Invoke(
+                        AvifDiagnostics.ParallelOptions,
                         () => p0 = Av1FrameDecoder.DecodeStill(primPayload, primCfg),
                         () => a0 = Av1FrameDecoder.DecodeStill(alphaPayload, alphaCfg)));
                     primPic = p0!;
@@ -231,7 +232,7 @@ public static class AvifDecoder
             {
                 nint dstPtr = (nint)dstBase;
                 int dstLen = destination.Length;
-                RunParallel(() => Parallel.For(1, count, i =>
+                RunParallel(() => Parallel.For(1, count, AvifDiagnostics.ParallelOptions, i =>
                 {
                     using var pic = Av1FrameDecoder.DecodeStill(payloads[i], configObus[i]);
                     if (pic.Width != tileW || pic.Height != tileH || pic.BitDepth != bitDepth ||
@@ -336,7 +337,7 @@ public static class AvifDecoder
             {
                 nint dstPtr = (nint)dstBase;
                 int dstLen = destination.Length;
-                Parallel.For(0, height, y =>
+                Parallel.For(0, height, AvifDiagnostics.ParallelOptions, y =>
                 {
                     var dstSpan = new Span<byte>((byte*)dstPtr, dstLen);
                     RenderRowRgba8(
@@ -566,7 +567,7 @@ public static class AvifDecoder
 
         try
         {
-            Parallel.For(0, count, i =>
+            Parallel.For(0, count, AvifDiagnostics.ParallelOptions, i =>
             {
                 pictures[i] = Av1FrameDecoder.DecodeStill(payloads[i], configObus[i]);
             });
@@ -706,7 +707,7 @@ public static class AvifDecoder
                     nint dstPtr = (nint)dstBase;
                     int dstLen = destination.Length;
                     int yStride = planes.Width;
-                    Parallel.For(0, outH, y =>
+                    Parallel.For(0, outH, AvifDiagnostics.ParallelOptions, y =>
                     {
                         var dstSpan = new Span<byte>((byte*)dstPtr, dstLen);
                         RenderRowRgba8(

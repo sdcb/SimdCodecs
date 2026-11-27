@@ -107,6 +107,7 @@ internal static class Av1FrameDecoder
                 Parallel.For<Av1TileDecoder>(
                     0,
                     tileCount,
+                    AvifDiagnostics.ParallelOptions,
                     () => new Av1TileDecoder(seq, fh, pic, state, session),
                     (idx, _, worker) =>
                     {

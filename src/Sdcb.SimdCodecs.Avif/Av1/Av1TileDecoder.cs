@@ -448,12 +448,14 @@ internal sealed class Av1TileDecoder
             _availLChroma = false;
         }
 
+        long t0 = AvifDiagnostics.Timers ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         if (_fh.FrameIsIntra)
             IntraFrameModeInfo(ref sym);
         else
             InterFrameModeInfo(ref sym);
         PaletteTokens(ref sym);
         ReadBlockTxSize(ref sym, bw4, bh4);
+        if (AvifDiagnostics.Timers) { AvifDiagnostics.Add(AvifTimer.ModeInfo, t0); t0 = System.Diagnostics.Stopwatch.GetTimestamp(); }
 
         if (_skip)
             ResetBlockContext(bw4, bh4);
@@ -508,6 +510,8 @@ internal sealed class Av1TileDecoder
                 }
             }
         }
+
+        if (AvifDiagnostics.Timers) AvifDiagnostics.Add(AvifTimer.MiStore, t0);
 
         if (_isInter)
             ComputePrediction();
@@ -1088,7 +1092,9 @@ internal sealed class Av1TileDecoder
 
         if (!_skip)
         {
+            long tc = AvifDiagnostics.Timers ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
             int eob = DecodeCoeffs(ref sym, plane, startX, startY, txSz);
+            if (AvifDiagnostics.Timers) AvifDiagnostics.Add(AvifTimer.Coeffs, tc);
             if (eob > 0 && (AvifDiagnostics.Ablation & AvifAblation.SkipTransform) == 0)
             {
                 Av1Transform.Reconstruct(

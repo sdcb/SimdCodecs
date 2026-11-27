@@ -72,6 +72,7 @@ internal static class Av1LoopRestoration
                 Parallel.For(
                     0,
                     maxStripe,
+                    AvifDiagnostics.ParallelOptions,
                     () => (
                         wienerInter: ArrayPool<int>.Shared.Rent(wienerLen),
                         sgrA: ArrayPool<int>.Shared.Rent(sgrAbLen),

@@ -222,6 +222,140 @@ internal static class BenchRunner
         return string.Join(Environment.NewLine, lines);
     }
 
+    /// <summary>
+    /// Same-process A/B against the built baseline (<see cref="Baseline"/>): both decode each fixture to RGBA through
+    /// the public <c>TryDecodeInto</c>, their outputs must match byte for byte before anything is timed, and the
+    /// repetitions alternate A, B so drift hits both alike.
+    /// </summary>
+    internal static int Ab(string[] fixtures, int reps, bool multiCore)
+    {
+        var process = Process.GetCurrentProcess();
+        nint prevAffinity = 0;
+        ThreadPool.GetMinThreads(out int minW, out int minIo);
+        ThreadPool.GetMaxThreads(out int maxW, out int maxIo);
+        if (!multiCore)
+        {
+            if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
+            {
+                prevAffinity = process.ProcessorAffinity;
+                process.ProcessorAffinity = (nint)(1L << 2);
+            }
+            ThreadPool.SetMinThreads(1, minIo);
+            ThreadPool.SetMaxThreads(1, maxIo);
+        }
+
+        Console.WriteLine(MachineHeader());
+        Console.WriteLine($"A = baseline {Baseline.Description}; B = working tree");
+        Console.WriteLine($"A/B ({(multiCore ? $"{Environment.ProcessorCount}T" : "1T CPU 2")}; median of {reps} alternating reps, ms):");
+        Console.WriteLine($"{"fixture",-44} {"A ms",9} {"B ms",9} {"B/A",7}");
+        int failures = 0;
+        try
+        {
+            foreach (string fixture in fixtures)
+            {
+                byte[] data = AvifInputs.Load(fixture);
+                if (!AvifImageDecoder.TryReadInfo(data, out var info))
+                    throw new InvalidDataException($"{fixture}: TryReadInfo failed.");
+                int stride = info.Width * 4;
+                byte[] a = new byte[stride * info.Height];
+                byte[] b = new byte[a.Length];
+                if (!Baseline.TryDecodeInto(data, a, stride) || !AvifImageDecoder.TryDecodeInto(data, b, stride, PixelFormat.Rgba32))
+                    throw new InvalidDataException($"{fixture}: decode failed.");
+                if (!a.AsSpan().SequenceEqual(b))
+                {
+                    Console.WriteLine($"{fixture,-44} OUTPUT DIFFERS from the baseline: not timed");
+                    failures++;
+                    continue;
+                }
+
+                var ta = new List<double>(reps);
+                var tb = new List<double>(reps);
+                for (int i = 0; i < reps; i++)
+                {
+                    var sw = Stopwatch.StartNew();
+                    Baseline.TryDecodeInto(data, a, stride);
+                    ta.Add(sw.Elapsed.TotalMilliseconds);
+                    sw.Restart();
+                    AvifImageDecoder.TryDecodeInto(data, b, stride, PixelFormat.Rgba32);
+                    tb.Add(sw.Elapsed.TotalMilliseconds);
+                }
+                ta.Sort();
+                tb.Sort();
+                double ma = ta[reps / 2], mb = tb[reps / 2];
+                Console.WriteLine($"{fixture,-44} {ma,9:F1} {mb,9:F1} {mb / ma,7:F3}");
+            }
+        }
+        finally
+        {
+            if (!multiCore)
+            {
+                ThreadPool.SetMinThreads(minW, minIo);
+                ThreadPool.SetMaxThreads(maxW, maxIo);
+                if (prevAffinity != 0 && (OperatingSystem.IsWindows() || OperatingSystem.IsLinux()))
+                    process.ProcessorAffinity = prevAffinity;
+            }
+        }
+        return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Single-core stage timers (needs <c>AVIF_STAGE_TIMERS=1</c>): per decode, the total and the instrumented stages
+    /// inside it, plus the 'parse' ablation (every reconstruction stage switched off) for comparison. Timers cost a
+    /// little themselves; read them as shares, and confirm a change with <c>ab</c>.
+    /// </summary>
+    internal static int Stages(string[] fixtures, int reps)
+    {
+        if (!AvifDiagnostics.Timers)
+        {
+            Console.Error.WriteLine("Set AVIF_STAGE_TIMERS=1 for the 'stages' command.");
+            return 2;
+        }
+        var process = Process.GetCurrentProcess();
+        nint prevAffinity = 0;
+        ThreadPool.GetMinThreads(out int minW, out int minIo);
+        ThreadPool.GetMaxThreads(out int maxW, out int maxIo);
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
+        {
+            prevAffinity = process.ProcessorAffinity;
+            process.ProcessorAffinity = (nint)(1L << 2);
+        }
+        ThreadPool.SetMinThreads(1, minIo);
+        ThreadPool.SetMaxThreads(1, maxIo);
+        Console.WriteLine(MachineHeader());
+        Console.WriteLine($"Stage timers (1T CPU 2; mean ms per decode over {reps} reps; tiles = all tile groups, inside it: modeinfo / mistore / coeffs):");
+        Console.WriteLine($"{"fixture",-44} {"total",8} {"tiles",8} {"modeinfo",9} {"mistore",8} {"coeffs",8} {"tile-rest",9} {"post",8} {"parse",8}");
+        AvifAblation parseOnly = AblationCases[^1].Flags;
+        AvifDiagnostics.ParallelOptions.MaxDegreeOfParallelism = 1; // truly serial: the timers then add up
+        try
+        {
+            foreach (string fixture in fixtures)
+            {
+                byte[] data = AvifInputs.Load(fixture);
+                { using var warm = AvifDecoder.Decode(data); }
+                Array.Clear(AvifDiagnostics.Ticks);
+                var sw = Stopwatch.StartNew();
+                for (int i = 0; i < reps; i++) { using var img = AvifDecoder.Decode(data); }
+                double total = sw.Elapsed.TotalMilliseconds / reps;
+                double Ms(AvifTimer t) => AvifDiagnostics.Ticks[(int)t] * 1000.0 / Stopwatch.Frequency / reps;
+                double tiles = Ms(AvifTimer.Tiles), mode = Ms(AvifTimer.ModeInfo), mi = Ms(AvifTimer.MiStore), coeffs = Ms(AvifTimer.Coeffs), post = Ms(AvifTimer.PostFilters);
+                AvifDiagnostics.Ablation = parseOnly;
+                double parse;
+                try { parse = Median(reps, () => { using var img = AvifDecoder.Decode(data); return 0; }); }
+                finally { AvifDiagnostics.Ablation = AvifAblation.None; }
+                Console.WriteLine($"{fixture,-44} {total,8:F1} {tiles,8:F1} {mode,9:F1} {mi,8:F1} {coeffs,8:F1} {tiles - mode - mi - coeffs,9:F1} {post,8:F1} {parse,8:F1}");
+            }
+        }
+        finally
+        {
+            AvifDiagnostics.ParallelOptions.MaxDegreeOfParallelism = -1;
+            ThreadPool.SetMinThreads(minW, minIo);
+            ThreadPool.SetMaxThreads(maxW, maxIo);
+            if (prevAffinity != 0 && (OperatingSystem.IsWindows() || OperatingSystem.IsLinux()))
+                process.ProcessorAffinity = prevAffinity;
+        }
+        return 0;
+    }
+
     internal static string Quick(string[] fixtures, int reps, bool multiCore)
     {
         var process = Process.GetCurrentProcess();

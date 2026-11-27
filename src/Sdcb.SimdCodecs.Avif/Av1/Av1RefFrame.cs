@@ -143,7 +143,9 @@ internal sealed class Av1DecoderSession
                 {
                     if (SequenceHeader is null || fh is null || pic is null || state is null)
                         throw new InvalidDataException("AV1 tile group OBU appeared without an active frame header.");
+                    long tt = AvifDiagnostics.Timers ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
                     decodedTiles += Av1FrameDecoder.DecodeTileGroup(obuPayload, SequenceHeader, fh, pic, state, this, ref tileDecoder, ref savedUpdateCdf);
+                    if (AvifDiagnostics.Timers) AvifDiagnostics.Add(AvifTimer.Tiles, tt);
                     if (decodedTiles >= fh.TileCols * fh.TileRows)
                     {
                         var shown = FinishDecodedFrame(SequenceHeader, fh, pic, state, savedUpdateCdf);
@@ -188,7 +190,9 @@ internal sealed class Av1DecoderSession
         Av1TileDecoder? tileDecoder = null;
         Av1CdfState? savedUpdateCdf = null;
 
+        long tt = AvifDiagnostics.Timers ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         Av1FrameDecoder.DecodeTileGroup(obuPayload[headerBytes..], seq, fh, pic, state, this, ref tileDecoder, ref savedUpdateCdf);
+        if (AvifDiagnostics.Timers) AvifDiagnostics.Add(AvifTimer.Tiles, tt);
         return FinishDecodedFrame(seq, fh, pic, state, savedUpdateCdf);
     }
 
@@ -227,7 +231,9 @@ internal sealed class Av1DecoderSession
         Av1CdfState? savedUpdateCdf)
     {
         // Post-filters up to Loop Restoration (stored in FrameStore BEFORE film grain!)
+        long tp = AvifDiagnostics.Timers ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         Av1FrameDecoder.RunPostFiltersBeforeGrain(seq, fh, pic, state, pooledOutput: fh.RefreshFrameFlags == 0 || OneShot);
+        if (AvifDiagnostics.Timers) AvifDiagnostics.Add(AvifTimer.PostFilters, tp);
 
         // §7.19 Motion field motion vector storage + §7.20 Reference frame update
         if (fh.RefreshFrameFlags != 0)

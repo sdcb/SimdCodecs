@@ -43,7 +43,7 @@ internal static class Av1Cdef
         int rowBlocks = (miRows + 1) >> 1;
         if (rowBlocks >= 16)
         {
-            Parallel.For(0, rowBlocks, rb =>
+            Parallel.For(0, rowBlocks, AvifDiagnostics.ParallelOptions, rb =>
                 ApplyRow(seq, fh, pic, st, srcPlanes, dstPlanes, numPlanes, bitDepth, coeffShift, miRows, miCols, rb << 1));
         }
         else

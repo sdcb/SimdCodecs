@@ -116,7 +116,7 @@ internal static class Av1Superres
 
             if (planeH >= 64)
             {
-                Parallel.For(0, planeH, y => UpscaleRow(src, dst, stride, y, upscaledPlaneW, initialSubpelX, stepX, maxX, bitDepth));
+                Parallel.For(0, planeH, AvifDiagnostics.ParallelOptions, y => UpscaleRow(src, dst, stride, y, upscaledPlaneW, initialSubpelX, stepX, maxX, bitDepth));
             }
             else
             {

@@ -431,6 +431,7 @@ internal static class Av1FilmGrain
             Parallel.For(
                 0,
                 numStripes,
+                AvifDiagnostics.ParallelOptions,
                 () => (
                     curY: System.Buffers.ArrayPool<int>.Shared.Rent(34 * lumaStripeW),
                     prevY: fg.OverlapFlag ? System.Buffers.ArrayPool<int>.Shared.Rent(34 * lumaStripeW) : [],

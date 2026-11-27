@@ -35,7 +35,7 @@ internal static class Av1LoopFilter
             int rowCount = (miRows + rowStep - 1) / rowStep;
             if (rowCount >= 32)
             {
-                Parallel.For(0, rowCount, rowIdx =>
+                Parallel.For(0, rowCount, AvifDiagnostics.ParallelOptions, rowIdx =>
                 {
                     int row = rowIdx * rowStep;
                     FilterVerticalRow(fh, st, planeBuf, stride, lfTx, lfCols, bitDepth, plane, subX, subY, colStep, miCols, row);
@@ -51,7 +51,7 @@ internal static class Av1LoopFilter
             int colCount = (miCols + colStep - 1) / colStep;
             if (colCount >= 32)
             {
-                Parallel.For(0, colCount, colIdx =>
+                Parallel.For(0, colCount, AvifDiagnostics.ParallelOptions, colIdx =>
                 {
                     int col = colIdx * colStep;
                     FilterHorizontalCol(fh, st, planeBuf, stride, lfTx, lfCols, bitDepth, plane, subX, subY, rowStep, miRows, miCols, col);

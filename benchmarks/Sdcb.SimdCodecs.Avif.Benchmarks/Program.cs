@@ -18,6 +18,11 @@ const string Usage = """
                                    fast A/B timing of ours only
       ablate [--reps N] [--fixtures RE] [--anim]
                                    single-core stage-by-stage ablation
+      stages [--reps N] [--fixtures RE]
+                                   single-core stage timers inside tile decoding (AVIF_STAGE_TIMERS=1)
+      baseline [git-ref]           build git-ref's (default HEAD) Avif package into .cache/baseline for 'ab'
+      ab [--reps N] [--fixtures RE] [--multi]
+                                   same-process A/B: the baseline vs the working tree (1T unless --multi)
       [--filter ...] [BDN args]    BenchmarkDotNet (AvifDecodeBenchmarks)
     """;
 
@@ -61,6 +66,13 @@ switch (command)
         Console.WriteLine(BenchRunner.Ablate(Select(anim ? AvifInputs.AnimFixtures : AvifInputs.StillFixtures), Reps(), anim));
         return 0;
     }
+    case "stages":
+        return BenchRunner.Stages(Select(AvifInputs.StillFixtures), Reps());
+    case "baseline":
+        Baseline.Build(args.Length > 1 && !args[1].StartsWith("--") ? args[1] : "HEAD");
+        return 0;
+    case "ab":
+        return BenchRunner.Ab(Select(AvifInputs.StillFixtures), int.TryParse(Opt("--reps"), out int abReps) ? abReps : 7, args.Contains("--multi"));
     case "help":
         Console.WriteLine(Usage);
         return 0;
