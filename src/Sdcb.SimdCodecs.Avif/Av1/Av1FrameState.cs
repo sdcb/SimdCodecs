@@ -6,6 +6,12 @@ namespace Sdcb.SimdCodecs.Avif.Av1;
 internal sealed class Av1FrameState
 {
     internal readonly int MiRows;
+
+    /// <summary>
+    /// Set when the frame's tiles are parsed ahead of their reconstruction: one record set per tile (null for a tile
+    /// not decoded yet), reconstructed by <c>Av1FrameDecoder.ReconstructDeferred</c> before the post-filters.
+    /// </summary>
+    internal Av1TileRecords?[]? DeferredTiles;
     internal readonly int MiCols;
     internal readonly int NumPlanes;
     internal readonly int SubX;

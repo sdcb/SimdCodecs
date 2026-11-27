@@ -56,6 +56,12 @@ internal sealed class Av1TileDecoder
     private readonly Av1CdfState _cdf = new();
 
     private int _miRowStart, _miRowEnd, _miColStart, _miColEnd;
+
+    // Parse / reconstruction split (Av1TileRecords): Full decodes and reconstructs block by block; Parse only decodes
+    // symbols and records what reconstruction needs; Recon replays those records without reading any symbol.
+    private Av1TileMode _mode;
+    private Av1TileRecords? _records;
+    private int _txCursor;
     private int _currentQIndex;
     private bool _readDeltas;
     private readonly int[] _deltaLf = new int[4];
@@ -205,11 +211,18 @@ internal sealed class Av1TileDecoder
         int sbSize = _seq.Use128x128Superblock ? Av1Constants.Block128x128 : Av1Constants.Block64x64;
         int sbSize4 = Av1Constants.Num4x4BlocksWide[sbSize];
 
+        int sbIndex = 0;
         for (int r = _miRowStart; r < _miRowEnd; r += sbSize4)
         {
             ClearLeftContext();
             for (int c = _miColStart; c < _miColEnd; c += sbSize4)
             {
+                if (_records is not null)
+                {
+                    // Superblocks 0 .. sbIndex - 1 are complete (their last block ends here): publish them.
+                    _records.SbBlockStart[sbIndex] = _records.BlockCount;
+                    _records.Parsed.Publish(sbIndex++);
+                }
                 _readDeltas = _fh.DeltaQPresent;
                 ClearCdef(r, c);
                 ClearBlockDecodedFlags(r, c, sbSize4);
@@ -218,9 +231,276 @@ internal sealed class Av1TileDecoder
             }
         }
 
+        if (_records is not null)
+        {
+            _records.SbBlockStart[sbIndex] = _records.BlockCount;
+            _records.Parsed.Publish(sbIndex);
+        }
         sym.Exit();
         if (saveCdf)
             savedUpdateCdf = _cdf.Clone();
+    }
+
+    /// <summary>
+    /// Decodes a tile's symbols only, leaving prediction and reconstruction to <see cref="ReconstructSuperblock"/>:
+    /// <paramref name="records"/> receives every block's state and coefficients.
+    /// </summary>
+    internal void ParseTile(int tileRow, int tileCol, ReadOnlySpan<byte> tileBytes, bool saveCdf, ref Av1CdfState? savedUpdateCdf, Av1TileRecords records)
+    {
+        _mode = Av1TileMode.Parse;
+        _records = records;
+        try
+        {
+            DecodeTile(tileRow, tileCol, tileBytes, saveCdf, ref savedUpdateCdf);
+        }
+        finally
+        {
+            _mode = Av1TileMode.Full;
+            _records = null;
+        }
+    }
+
+    /// <summary>
+    /// Predicts and reconstructs one superblock of a parsed tile from its records. The superblocks to its left and
+    /// above-right in the same tile must be reconstructed already (intra edges reach that far); the parse data of
+    /// the whole frame is complete.
+    /// </summary>
+    internal void ReconstructSuperblock(Av1TileRecords records, int sbRow, int sbCol)
+    {
+        _mode = Av1TileMode.Recon;
+        _records = records;
+        try
+        {
+            _miRowStart = records.MiRowStart;
+            _miRowEnd = records.MiRowEnd;
+            _miColStart = records.MiColStart;
+            _miColEnd = records.MiColEnd;
+            int r = records.MiRowStart + sbRow * records.SbSize4;
+            int c = records.MiColStart + sbCol * records.SbSize4;
+            ClearBlockDecodedFlags(r, c, records.SbSize4);
+            int sb = sbRow * records.SbCols + sbCol;
+            Av1SymbolDecoder unused = default; // Recon mode reads no symbols
+            for (int b = records.SbBlockStart[sb], end = records.SbBlockStart[sb + 1]; b < end; b++)
+            {
+                RestoreBlock(ref records.Blocks[b]);
+                if (_isInter)
+                    ComputePrediction();
+                Residual(ref unused);
+            }
+        }
+        finally
+        {
+            _mode = Av1TileMode.Full;
+            _records = null;
+        }
+    }
+
+    private void RecordBlock()
+    {
+        var rec = _records!;
+        ref BlockRecord b = ref rec.AddBlock();
+        b.MiRow = _miRow;
+        b.MiCol = _miCol;
+        b.MiSize = _miSize;
+        b.Flags = (_hasChroma ? BlockFlags.HasChroma : 0)
+            | (_availU ? BlockFlags.AvailU : 0)
+            | (_availL ? BlockFlags.AvailL : 0)
+            | (_availUChroma ? BlockFlags.AvailUChroma : 0)
+            | (_availLChroma ? BlockFlags.AvailLChroma : 0)
+            | (_skip ? BlockFlags.Skip : 0)
+            | (_lossless ? BlockFlags.Lossless : 0)
+            | (_isInter ? BlockFlags.IsInter : 0)
+            | (_useIntrabc ? BlockFlags.UseIntrabc : 0)
+            | (_useFilterIntra ? BlockFlags.UseFilterIntra : 0)
+            | (_isInterIntra ? BlockFlags.IsInterIntra : 0)
+            | (_wedgeInterIntra ? BlockFlags.WedgeInterIntra : 0);
+        b.SegmentId = (byte)_segmentId;
+        b.YMode = (byte)_yMode;
+        b.UvMode = (byte)_uvMode;
+        b.FilterIntraMode = (byte)_filterIntraMode;
+        b.PaletteSizeY = (byte)_paletteSizeY;
+        b.PaletteSizeUv = (byte)_paletteSizeUv;
+        b.TxSize = (byte)_txSize;
+        b.AngleDeltaY = (sbyte)_angleDeltaY;
+        b.AngleDeltaUv = (sbyte)_angleDeltaUv;
+        b.CflAlphaU = (sbyte)_cflAlphaU;
+        b.CflAlphaV = (sbyte)_cflAlphaV;
+        b.QIndex = (short)_currentQIndex;
+        b.MotionMode = (byte)_motionMode;
+        b.InterIntraMode = (byte)_interIntraMode;
+        b.WedgeIndex = (byte)_wedgeIndex;
+        b.WedgeSign = (byte)_wedgeSign;
+        b.CompoundType = (byte)_compoundType;
+        b.MaskType = (byte)_maskType;
+        b.NumWarpSamples = (byte)_numWarpSamples;
+        b.TxStart = rec.TxCount;
+        b.ExtraStart = rec.ExtraCount;
+        b.MapStart = rec.MapCount;
+
+        if (_isInter && _numWarpSamples > 0)
+            _warpCandList.AsSpan(0, _numWarpSamples * 4).CopyTo(rec.AddExtra(_numWarpSamples * 4));
+        if (_paletteSizeY > 0 || _paletteSizeUv > 0)
+        {
+            var pal = rec.AddExtra(24);
+            _curPalY.CopyTo(pal);
+            _curPalU.CopyTo(pal[8..]);
+            _curPalV.CopyTo(pal[16..]);
+            GetPaletteMapSize(false, out int yw, out int yh);
+            GetPaletteMapSize(true, out int uw, out int uh);
+            if (_paletteSizeY > 0)
+                CopyMapRows(_colorMapY, rec.AddMap(yw * yh), yw, yh, toMap: false);
+            if (_paletteSizeUv > 0)
+                CopyMapRows(_colorMapUv, rec.AddMap(uw * uh), uw, uh, toMap: false);
+        }
+    }
+
+    private void RestoreBlock(ref BlockRecord b)
+    {
+        _miRow = b.MiRow;
+        _miCol = b.MiCol;
+        _miSize = b.MiSize;
+        _hasChroma = (b.Flags & BlockFlags.HasChroma) != 0;
+        _availU = (b.Flags & BlockFlags.AvailU) != 0;
+        _availL = (b.Flags & BlockFlags.AvailL) != 0;
+        _availUChroma = (b.Flags & BlockFlags.AvailUChroma) != 0;
+        _availLChroma = (b.Flags & BlockFlags.AvailLChroma) != 0;
+        _skip = (b.Flags & BlockFlags.Skip) != 0;
+        _lossless = (b.Flags & BlockFlags.Lossless) != 0;
+        _isInter = (b.Flags & BlockFlags.IsInter) != 0;
+        _useIntrabc = (b.Flags & BlockFlags.UseIntrabc) != 0;
+        _useFilterIntra = (b.Flags & BlockFlags.UseFilterIntra) != 0;
+        _isInterIntra = (b.Flags & BlockFlags.IsInterIntra) != 0;
+        _wedgeInterIntra = (b.Flags & BlockFlags.WedgeInterIntra) != 0;
+        _segmentId = b.SegmentId;
+        _yMode = b.YMode;
+        _uvMode = b.UvMode;
+        _filterIntraMode = b.FilterIntraMode;
+        _paletteSizeY = b.PaletteSizeY;
+        _paletteSizeUv = b.PaletteSizeUv;
+        _txSize = b.TxSize;
+        _angleDeltaY = b.AngleDeltaY;
+        _angleDeltaUv = b.AngleDeltaUv;
+        _cflAlphaU = b.CflAlphaU;
+        _cflAlphaV = b.CflAlphaV;
+        _currentQIndex = b.QIndex;
+        _motionMode = b.MotionMode;
+        _interIntraMode = b.InterIntraMode;
+        _wedgeIndex = b.WedgeIndex;
+        _wedgeSign = b.WedgeSign;
+        _compoundType = b.CompoundType;
+        _maskType = b.MaskType;
+        _numWarpSamples = b.NumWarpSamples;
+        _txCursor = b.TxStart;
+
+        var rec = _records!;
+        int extra = b.ExtraStart;
+        if (_isInter && _numWarpSamples > 0)
+        {
+            rec.Extra.AsSpan(extra, _numWarpSamples * 4).CopyTo(_warpCandList);
+            extra += _numWarpSamples * 4;
+        }
+        if (_paletteSizeY > 0 || _paletteSizeUv > 0)
+        {
+            var pal = rec.Extra.AsSpan(extra, 24);
+            pal[..8].CopyTo(_curPalY);
+            pal.Slice(8, 8).CopyTo(_curPalU);
+            pal.Slice(16, 8).CopyTo(_curPalV);
+            GetPaletteMapSize(false, out int yw, out int yh);
+            GetPaletteMapSize(true, out int uw, out int uh);
+            int map = b.MapStart;
+            if (_paletteSizeY > 0)
+            {
+                CopyMapRows(_colorMapY, rec.Maps.AsSpan(map, yw * yh), yw, yh, toMap: true);
+                map += yw * yh;
+            }
+            if (_paletteSizeUv > 0)
+                CopyMapRows(_colorMapUv, rec.Maps.AsSpan(map, uw * uh), uw, uh, toMap: true);
+        }
+    }
+
+    // The extent of the colour map DecodePaletteMap fills (the whole block, onscreen or not) for the current block:
+    // luma, or chroma with its +2 widening of 2-wide maps.
+    private void GetPaletteMapSize(bool chroma, out int w, out int h)
+    {
+        w = Av1Constants.BlockWidth[_miSize];
+        h = Av1Constants.BlockHeight[_miSize];
+        if (chroma)
+        {
+            w >>= _seq.SubsamplingX;
+            h >>= _seq.SubsamplingY;
+            if (w < 4) w += 2;
+            if (h < 4) h += 2;
+        }
+    }
+
+    // Copies a w x h colour map between the decoder's 64-stride map and a packed record.
+    private static void CopyMapRows(byte[] map, Span<byte> packed, int w, int h, bool toMap)
+    {
+        for (int y = 0; y < h; y++)
+        {
+            if (toMap)
+                packed.Slice(y * w, w).CopyTo(map.AsSpan(y * 64, w));
+            else
+                map.AsSpan(y * 64, w).CopyTo(packed.Slice(y * w, w));
+        }
+    }
+
+    // Parse mode: the transform block's coefficients go to the records instead of the reconstruction.
+    private void StoreCoeffs(int txSz, int eob)
+    {
+        var rec = _records!;
+        ref TxRecord t = ref rec.AddTx();
+        t.Eob = eob;
+        t.TxType = (byte)_planeTxType;
+        t.CoeffStart = rec.CoeffCount;
+        if (eob == 0)
+        {
+            t.CoeffCount = 0;
+            return;
+        }
+        if (eob == 1)
+        {
+            // DecodeCoeffs' DC-only path sets quant[0] alone.
+            rec.AddCoeffs(1)[0] = _quant[0] << 10;
+            t.CoeffCount = 1;
+            return;
+        }
+        ushort[] scan = GetScan(txSz, _planeTxType);
+        Span<int> dst = rec.AddCoeffs(eob);
+        int n = 0;
+        for (int c = 0; c < eob; c++)
+        {
+            int pos = scan[c];
+            int v = _quant[pos];
+            if (v != 0)
+                dst[n++] = (v << 10) | pos;
+        }
+        rec.CoeffCount -= eob - n;
+        t.CoeffCount = n;
+    }
+
+    // Recon mode: the next transform block's coefficients, back into _quant as DecodeCoeffs leaves them.
+    private int LoadCoeffs(int txSz)
+    {
+        var rec = _records!;
+        ref TxRecord t = ref rec.Txs[_txCursor++];
+        _planeTxType = t.TxType;
+        int eob = t.Eob;
+        if (eob == 0)
+            return 0;
+        ReadOnlySpan<int> src = rec.Coeffs.AsSpan(t.CoeffStart, t.CoeffCount);
+        if (eob == 1)
+        {
+            _quant[0] = src[0] >> 10;
+            return 1;
+        }
+        int segEob = txSz is Av1Constants.Tx16x64 or Av1Constants.Tx64x16
+            ? 512
+            : Math.Min(1024, Av1Constants.TxWidth[txSz] * Av1Constants.TxHeight[txSz]);
+        _quant.AsSpan(0, segEob).Clear();
+        foreach (int packed in src)
+            _quant[packed & 1023] = packed >> 10;
+        return eob;
     }
 
     private void ClearAboveContext()
@@ -513,7 +793,9 @@ internal sealed class Av1TileDecoder
 
         if (AvifDiagnostics.Timers) AvifDiagnostics.Add(AvifTimer.MiStore, t0);
 
-        if (_isInter)
+        if (_mode == Av1TileMode.Parse)
+            RecordBlock();
+        else if (_isInter)
             ComputePrediction();
 
         Residual(ref sym);
@@ -1026,7 +1308,7 @@ internal sealed class Av1TileDecoder
 
         if (!_isInter)
         {
-            if ((AvifDiagnostics.Ablation & AvifAblation.SkipIntraPred) == 0)
+            if ((AvifDiagnostics.Ablation & AvifAblation.SkipIntraPred) == 0 && _mode != Av1TileMode.Parse)
             {
                 if ((plane == 0 && _paletteSizeY > 0) || (plane > 0 && _paletteSizeUv > 0))
                 {
@@ -1092,10 +1374,20 @@ internal sealed class Av1TileDecoder
 
         if (!_skip)
         {
-            long tc = AvifDiagnostics.Timers ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
-            int eob = DecodeCoeffs(ref sym, plane, startX, startY, txSz);
-            if (AvifDiagnostics.Timers) AvifDiagnostics.Add(AvifTimer.Coeffs, tc);
-            if (eob > 0 && (AvifDiagnostics.Ablation & AvifAblation.SkipTransform) == 0)
+            int eob;
+            if (_mode == Av1TileMode.Recon)
+            {
+                eob = LoadCoeffs(txSz);
+            }
+            else
+            {
+                long tc = AvifDiagnostics.Timers ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+                eob = DecodeCoeffs(ref sym, plane, startX, startY, txSz);
+                if (AvifDiagnostics.Timers) AvifDiagnostics.Add(AvifTimer.Coeffs, tc);
+                if (_mode == Av1TileMode.Parse)
+                    StoreCoeffs(txSz, eob);
+            }
+            if (eob > 0 && _mode != Av1TileMode.Parse && (AvifDiagnostics.Ablation & AvifAblation.SkipTransform) == 0)
             {
                 Av1Transform.Reconstruct(
                     _fh, _seq.BitDepth, plane, _segmentId, _currentQIndex,
@@ -1120,7 +1412,8 @@ internal sealed class Av1TileDecoder
             int lfOff = (rSub + i) * lfCols + cSub;
             for (int j = 0; j < stepX; j++)
             {
-                if (rowIn && cSub + j < lfCols)
+                // The parse pass already stored the loop-filter transform sizes.
+                if (rowIn && cSub + j < lfCols && _mode != Av1TileMode.Recon)
                     lfTx[lfOff + j] = (byte)txSz;
                 bdArr[bdOff + j] = true;
             }
@@ -3714,4 +4007,11 @@ internal sealed class Av1TileDecoder
         }
         return t;
     }
+}
+
+internal enum Av1TileMode
+{
+    Full,
+    Parse,
+    Recon,
 }

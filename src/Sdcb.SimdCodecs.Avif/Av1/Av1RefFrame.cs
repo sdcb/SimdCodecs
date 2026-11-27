@@ -230,6 +230,13 @@ internal sealed class Av1DecoderSession
         Av1FrameState state,
         Av1CdfState? savedUpdateCdf)
     {
+        if (state.DeferredTiles is not null)
+        {
+            long tr = AvifDiagnostics.Timers ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+            Av1FrameDecoder.ReconstructDeferred(seq, fh, pic, state, this);
+            if (AvifDiagnostics.Timers) AvifDiagnostics.Add(AvifTimer.Recon, tr);
+        }
+
         // Post-filters up to Loop Restoration (stored in FrameStore BEFORE film grain!)
         long tp = AvifDiagnostics.Timers ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         Av1FrameDecoder.RunPostFiltersBeforeGrain(seq, fh, pic, state, pooledOutput: fh.RefreshFrameFlags == 0 || OneShot);

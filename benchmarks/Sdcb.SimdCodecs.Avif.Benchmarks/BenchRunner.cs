@@ -303,7 +303,7 @@ internal static class BenchRunner
     /// inside it, plus the 'parse' ablation (every reconstruction stage switched off) for comparison. Timers cost a
     /// little themselves; read them as shares, and confirm a change with <c>ab</c>.
     /// </summary>
-    internal static int Stages(string[] fixtures, int reps)
+    internal static int Stages(string[] fixtures, int reps, bool multiCore, bool anim = false)
     {
         if (!AvifDiagnostics.Timers)
         {
@@ -314,35 +314,41 @@ internal static class BenchRunner
         nint prevAffinity = 0;
         ThreadPool.GetMinThreads(out int minW, out int minIo);
         ThreadPool.GetMaxThreads(out int maxW, out int maxIo);
-        if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
+        if (!multiCore)
         {
-            prevAffinity = process.ProcessorAffinity;
-            process.ProcessorAffinity = (nint)(1L << 2);
+            if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
+            {
+                prevAffinity = process.ProcessorAffinity;
+                process.ProcessorAffinity = (nint)(1L << 2);
+            }
+            ThreadPool.SetMinThreads(1, minIo);
+            ThreadPool.SetMaxThreads(1, maxIo);
+            AvifDiagnostics.ParallelOptions.MaxDegreeOfParallelism = 1; // truly serial: the timers then add up
         }
-        ThreadPool.SetMinThreads(1, minIo);
-        ThreadPool.SetMaxThreads(1, maxIo);
         Console.WriteLine(MachineHeader());
-        Console.WriteLine($"Stage timers (1T CPU 2; mean ms per decode over {reps} reps; tiles = all tile groups, inside it: modeinfo / mistore / coeffs):");
-        Console.WriteLine($"{"fixture",-44} {"total",8} {"tiles",8} {"modeinfo",9} {"mistore",8} {"coeffs",8} {"tile-rest",9} {"post",8} {"parse",8}");
+        Console.WriteLine(multiCore
+            ? $"Stage timers ({Environment.ProcessorCount}T; mean ms per decode over {reps} reps). Wall time: total, tiles (parse, or decode), recon (deferred reconstruction), post. CPU time summed over threads: modeinfo / mistore / coeffs:"
+            : $"Stage timers (1T CPU 2; mean ms per decode over {reps} reps; tiles = all tile groups, inside it: modeinfo / mistore / coeffs):");
+        Console.WriteLine($"{"fixture",-44} {"total",8} {"tiles",8} {"modeinfo",9} {"mistore",8} {"coeffs",8} {"tile-rest",9} {"recon",8} {"post",8} {"parse",8}");
         AvifAblation parseOnly = AblationCases[^1].Flags;
-        AvifDiagnostics.ParallelOptions.MaxDegreeOfParallelism = 1; // truly serial: the timers then add up
         try
         {
             foreach (string fixture in fixtures)
             {
                 byte[] data = AvifInputs.Load(fixture);
-                { using var warm = AvifDecoder.Decode(data); }
+                Action decode = anim ? () => DecodeAllOurs(data) : () => { using var img = AvifDecoder.Decode(data); };
+                decode();
                 Array.Clear(AvifDiagnostics.Ticks);
                 var sw = Stopwatch.StartNew();
-                for (int i = 0; i < reps; i++) { using var img = AvifDecoder.Decode(data); }
+                for (int i = 0; i < reps; i++) decode();
                 double total = sw.Elapsed.TotalMilliseconds / reps;
                 double Ms(AvifTimer t) => AvifDiagnostics.Ticks[(int)t] * 1000.0 / Stopwatch.Frequency / reps;
-                double tiles = Ms(AvifTimer.Tiles), mode = Ms(AvifTimer.ModeInfo), mi = Ms(AvifTimer.MiStore), coeffs = Ms(AvifTimer.Coeffs), post = Ms(AvifTimer.PostFilters);
+                double tiles = Ms(AvifTimer.Tiles), mode = Ms(AvifTimer.ModeInfo), mi = Ms(AvifTimer.MiStore), coeffs = Ms(AvifTimer.Coeffs), recon = Ms(AvifTimer.Recon), post = Ms(AvifTimer.PostFilters);
                 AvifDiagnostics.Ablation = parseOnly;
                 double parse;
-                try { parse = Median(reps, () => { using var img = AvifDecoder.Decode(data); return 0; }); }
+                try { parse = Median(reps, () => { decode(); return 0; }); }
                 finally { AvifDiagnostics.Ablation = AvifAblation.None; }
-                Console.WriteLine($"{fixture,-44} {total,8:F1} {tiles,8:F1} {mode,9:F1} {mi,8:F1} {coeffs,8:F1} {tiles - mode - mi - coeffs,9:F1} {post,8:F1} {parse,8:F1}");
+                Console.WriteLine($"{fixture,-44} {total,8:F1} {tiles,8:F1} {mode,9:F1} {mi,8:F1} {coeffs,8:F1} {tiles - mode - mi - coeffs,9:F1} {recon,8:F1} {post,8:F1} {parse,8:F1}");
             }
         }
         finally

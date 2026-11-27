@@ -29,6 +29,14 @@ internal static class AvifDiagnostics
     internal static readonly ParallelOptions ParallelOptions = new();
 
     /// <summary>
+    /// Overrides when a frame's tiles are parsed first and reconstructed in a superblock wavefront
+    /// (<c>Av1FrameDecoder.UseTileSplit</c>): 0 decides by frame size and tile count, 1 always splits, -1 never does.
+    /// Tests force both ways; benchmarks compare them, starting from <c>AVIF_TILE_SPLIT</c>. Either way the output is
+    /// the same, sample for sample.
+    /// </summary>
+    internal static int TileSplit = int.TryParse(Environment.GetEnvironmentVariable("AVIF_TILE_SPLIT"), out int split) ? split : 0;
+
+    /// <summary>
     /// Stage timers inside tile decoding (benchmark instrumentation). Read once from <c>AVIF_STAGE_TIMERS=1</c>; as a
     /// static readonly false the JIT drops every timer site.
     /// </summary>
@@ -47,6 +55,7 @@ internal enum AvifTimer
     MiStore,
     Coeffs,
     Tiles,
+    Recon,
     PostFilters,
     Count,
 }

@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 
 namespace Sdcb.SimdCodecs.Avif.Av1;
@@ -52,17 +53,7 @@ internal static class Av1FrameDecoder
         int remaining = data.Length - offset;
         int tileCount = tgEnd - tgStart + 1;
 
-        if (tileCount == 1)
-        {
-            int tileRow = tgStart / fh.TileCols;
-            int tileCol = tgStart % fh.TileCols;
-            bool saveCdf = !fh.DisableFrameEndUpdateCdf && tgStart == fh.ContextUpdateTileId;
-            singleTileDecoder ??= new Av1TileDecoder(seq, fh, pic, state, session);
-            singleTileDecoder.DecodeTile(tileRow, tileCol, data.Slice(offset, remaining), saveCdf, ref savedUpdateCdf);
-            return 1;
-        }
-
-        // Parse tile byte ranges up front so all tiles in the group can be decoded independently in parallel.
+        // Tile byte ranges up front, so the tiles of the group can be decoded independently in parallel.
         var tileOffsets = new int[tileCount];
         var tileSizes = new int[tileCount];
         for (int idx = 0; idx < tileCount; idx++)
@@ -92,16 +83,61 @@ internal static class Av1FrameDecoder
             offset += tileSize;
         }
 
+        bool split = UseTileSplit(seq, fh);
+        bool wholeFrame = tgStart == 0 && tgEnd == numTiles - 1 && state.DeferredTiles is null;
+
         Av1CdfState? capturedCdf = savedUpdateCdf;
         // Tiles decode in parallel even under IntraBC, which copies from the frame being decoded: a conforming vector
         // stays inside its own tile. A corrupt one may read another tile's samples while that tile is being written;
         // the read stays inside the plane (CheckReferenceBounds), so the only effect is unspecified output for a
         // non-conforming stream. Serialising IntraBC frames instead cost screen content ~40% on 16 threads.
         // The tile spans rebuilt from ptr are in range: the loop above keeps every tileOffsets[idx] + tileSizes[idx]
-        // within data (each size is checked against what remains), and data stays pinned for the whole Parallel.For.
+        // within data (each size is checked against what remains), and data stays pinned while any worker runs.
         fixed (byte* basePtr = data)
         {
             nint ptr = (nint)basePtr;
+            if (split && wholeFrame)
+            {
+                // The usual case: one tile group holds the whole frame. Parse and reconstruction overlap.
+                var records = new Av1TileRecords[tileCount];
+                for (int idx = 0; idx < tileCount; idx++)
+                    records[idx] = NewRecords(seq, fh, idx / fh.TileCols, idx % fh.TileCols);
+                try
+                {
+                    RunSplit(seq, fh, pic, state, session, records, ptr, tileOffsets, tileSizes, ref capturedCdf);
+                }
+                finally
+                {
+                    foreach (var r in records)
+                        r.Dispose();
+                }
+                savedUpdateCdf = capturedCdf;
+                return tileCount;
+            }
+
+            if (split)
+                state.DeferredTiles ??= new Av1TileRecords?[numTiles];
+
+            if (tileCount == 1)
+            {
+                int tileRow = tgStart / fh.TileCols;
+                int tileCol = tgStart % fh.TileCols;
+                bool saveCdf = !fh.DisableFrameEndUpdateCdf && tgStart == fh.ContextUpdateTileId;
+                singleTileDecoder ??= new Av1TileDecoder(seq, fh, pic, state, session);
+                var tileSpan = data.Slice(tileOffsets[0], tileSizes[0]);
+                if (split)
+                {
+                    var records = NewRecords(seq, fh, tileRow, tileCol);
+                    state.DeferredTiles![tgStart] = records;
+                    singleTileDecoder.ParseTile(tileRow, tileCol, tileSpan, saveCdf, ref savedUpdateCdf, records);
+                }
+                else
+                {
+                    singleTileDecoder.DecodeTile(tileRow, tileCol, tileSpan, saveCdf, ref savedUpdateCdf);
+                }
+                return 1;
+            }
+
             try
             {
                 Parallel.For<Av1TileDecoder>(
@@ -117,7 +153,16 @@ internal static class Av1FrameDecoder
                         bool saveCdf = !fh.DisableFrameEndUpdateCdf && tileNum == fh.ContextUpdateTileId;
                         Av1CdfState? localCdf = null;
                         var tileSpan = new ReadOnlySpan<byte>((byte*)ptr + tileOffsets[idx], tileSizes[idx]);
-                        worker.DecodeTile(tileRow, tileCol, tileSpan, saveCdf, ref localCdf);
+                        if (split)
+                        {
+                            var records = NewRecords(seq, fh, tileRow, tileCol);
+                            state.DeferredTiles![tileNum] = records; // one slot per tile: no two workers share one
+                            worker.ParseTile(tileRow, tileCol, tileSpan, saveCdf, ref localCdf, records);
+                        }
+                        else
+                        {
+                            worker.DecodeTile(tileRow, tileCol, tileSpan, saveCdf, ref localCdf);
+                        }
                         if (saveCdf && localCdf is not null)
                             Volatile.Write(ref capturedCdf, localCdf);
                         return worker;
@@ -126,18 +171,171 @@ internal static class Av1FrameDecoder
             }
             catch (AggregateException ex)
             {
-                var inner = ex.Flatten().InnerExceptions;
-                foreach (var e in inner)
-                {
-                    if (e is InvalidDataException ide)
-                        throw new InvalidDataException(ide.Message, ide);
-                }
-                ExceptionDispatchInfo.Capture(inner[0]).Throw();
-                throw;
+                Rethrow(ex);
             }
         }
         savedUpdateCdf = capturedCdf;
         return tileCount;
+    }
+
+    /// <summary>
+    /// Whether to parse the frame's tiles first and reconstruct them in a superblock wavefront, overlapping the two.
+    /// Worth it when tile-level parallelism leaves threads idle (fewer tiles than threads) on a frame big enough to
+    /// amortise the records (about a megapixel). IntraBC frames copy from the frame being reconstructed; they keep the
+    /// block-by-block order.
+    /// </summary>
+    internal static bool UseTileSplit(Av1SequenceHeader seq, Av1FrameHeader fh)
+    {
+        if (fh.AllowIntrabc)
+            return false;
+        if (AvifDiagnostics.TileSplit != 0)
+            return AvifDiagnostics.TileSplit > 0;
+        int threads = AvifDiagnostics.ParallelOptions.MaxDegreeOfParallelism is > 0 and var d ? d : Environment.ProcessorCount;
+        return fh.TileCols * fh.TileRows < threads && (long)fh.MiRows * fh.MiCols >= 1 << 16;
+    }
+
+    private static Av1TileRecords NewRecords(Av1SequenceHeader seq, Av1FrameHeader fh, int tileRow, int tileCol) =>
+        new(fh.MiRowStarts[tileRow], fh.MiRowStarts[tileRow + 1], fh.MiColStarts[tileCol], fh.MiColStarts[tileCol + 1],
+            seq.Use128x128Superblock ? 32 : 16);
+
+    /// <summary>
+    /// Reconstructs tiles parsed by earlier tile groups (<see cref="Av1FrameState.DeferredTiles"/>), before the
+    /// post-filters. Only a frame split over several tile groups gets here; one tile group overlaps parse and
+    /// reconstruction in <see cref="DecodeTileGroup"/>.
+    /// </summary>
+    internal static void ReconstructDeferred(Av1SequenceHeader seq, Av1FrameHeader fh, Av1Picture pic, Av1FrameState state, Av1DecoderSession session)
+    {
+        var tiles = state.DeferredTiles!;
+        state.DeferredTiles = null;
+        var parsed = tiles.Where(t => t is not null).Select(t => t!).ToArray();
+        try
+        {
+            Av1CdfState? unused = null;
+            RunSplit(seq, fh, pic, state, session, parsed, 0, null, null, ref unused);
+        }
+        finally
+        {
+            foreach (var tile in parsed)
+                tile.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Runs the parse / reconstruction split of a frame. The jobs are, in order: parsing each tile (when
+    /// <paramref name="tileSizes"/> is given; otherwise the records are complete already), then reconstructing each
+    /// superblock row of each tile, row by row across the tiles. Workers claim jobs from one counter in that order.
+    /// A reconstruction job waits, superblock by superblock, for that superblock to be parsed and for the row above
+    /// to have finished the superblock above-right (intra edges reach that far; tiles do not depend on each other).
+    /// Everything a job waits for is claimed earlier, so it is held by a running worker and the wait ends, whatever
+    /// the number of workers; with one, all parsing precedes all reconstruction. A failure anywhere stops every waiter.
+    /// </summary>
+    private static unsafe void RunSplit(
+        Av1SequenceHeader seq, Av1FrameHeader fh, Av1Picture pic, Av1FrameState state, Av1DecoderSession session,
+        Av1TileRecords[] records, nint dataPtr, int[]? tileOffsets, int[]? tileSizes, ref Av1CdfState? capturedCdf)
+    {
+        int parseJobs = tileSizes is null ? 0 : records.Length;
+        var rowDone = new Av1Progress[records.Length][];
+        int maxRows = 0;
+        for (int t = 0; t < records.Length; t++)
+        {
+            rowDone[t] = new Av1Progress[records[t].SbRows];
+            for (int row = 0; row < rowDone[t].Length; row++)
+                rowDone[t][row] = new Av1Progress();
+            maxRows = Math.Max(maxRows, records[t].SbRows);
+        }
+        var reconJobs = new List<(int Tile, int Row)>();
+        for (int row = 0; row < maxRows; row++)
+        {
+            for (int t = 0; t < records.Length; t++)
+            {
+                if (row < records[t].SbRows)
+                    reconJobs.Add((t, row));
+            }
+        }
+
+        int total = parseJobs + reconJobs.Count;
+        int threads = AvifDiagnostics.ParallelOptions.MaxDegreeOfParallelism is > 0 and var d ? d : Environment.ProcessorCount;
+        int workers = Math.Min(threads, total);
+        int next = 0;
+        int failed = 0;
+        Av1CdfState? cdf = capturedCdf;
+
+        void Abort()
+        {
+            Volatile.Write(ref failed, 1);
+            foreach (var r in records)
+                r.Parsed.Abort();
+            foreach (var rows in rowDone)
+            {
+                foreach (var p in rows)
+                    p.Abort();
+            }
+        }
+
+        try
+        {
+            Parallel.For(0, workers, AvifDiagnostics.ParallelOptions, _ =>
+            {
+                var decoder = new Av1TileDecoder(seq, fh, pic, state, session);
+                try
+                {
+                    for (int j = Interlocked.Increment(ref next) - 1; j < total; j = Interlocked.Increment(ref next) - 1)
+                    {
+                        if (j < parseJobs)
+                        {
+                            var rec = records[j];
+                            int tileNum = j; // parse jobs exist only for a whole-frame tile group
+                            int tileRow = tileNum / fh.TileCols;
+                            int tileCol = tileNum % fh.TileCols;
+                            bool saveCdf = !fh.DisableFrameEndUpdateCdf && tileNum == fh.ContextUpdateTileId;
+                            Av1CdfState? localCdf = null;
+                            var tileSpan = new ReadOnlySpan<byte>((byte*)dataPtr + tileOffsets![j], tileSizes![j]);
+                            decoder.ParseTile(tileRow, tileCol, tileSpan, saveCdf, ref localCdf, rec);
+                            if (saveCdf && localCdf is not null)
+                                Volatile.Write(ref cdf, localCdf);
+                            continue;
+                        }
+
+                        var (t, row) = reconJobs[j - parseJobs];
+                        var tile = records[t];
+                        var above = row > 0 ? rowDone[t][row - 1] : null;
+                        var mine = rowDone[t][row];
+                        for (int col = 0; col < tile.SbCols; col++)
+                        {
+                            if (!tile.Parsed.WaitFor(row * tile.SbCols + col + 1, ref failed))
+                                return;
+                            if (above is not null && !above.WaitFor(Math.Min(col + 2, tile.SbCols), ref failed))
+                                return;
+                            decoder.ReconstructSuperblock(tile, row, col);
+                            mine.Publish(col + 1);
+                        }
+                    }
+                }
+                catch
+                {
+                    Abort();
+                    throw;
+                }
+            });
+        }
+        catch (AggregateException ex)
+        {
+            Rethrow(ex);
+        }
+        capturedCdf = cdf;
+    }
+
+    [DoesNotReturn]
+    private static void Rethrow(AggregateException ex)
+    {
+        var inner = ex.Flatten().InnerExceptions;
+        foreach (var e in inner)
+        {
+            if (e is InvalidDataException ide)
+                throw new InvalidDataException(ide.Message, ide);
+        }
+        ExceptionDispatchInfo.Capture(inner[0]).Throw();
+        throw ex;
     }
 
     internal static void RunPostFiltersBeforeGrain(Av1SequenceHeader seq, Av1FrameHeader fh, Av1Picture pic, Av1FrameState state, bool pooledOutput)
