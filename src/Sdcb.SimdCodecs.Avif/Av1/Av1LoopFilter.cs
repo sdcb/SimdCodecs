@@ -330,17 +330,24 @@ internal static class Av1LoopFilter
         int n = log2Size == 4 ? 6 : plane == 0 ? 3 : 2;
         int n2 = (log2Size == 3 && plane == 0) ? 0 : 1;
 
+        // Output i is Round2(sum over j in [-n, n] of tap(j) * s[Clip3(-(n + 1), n, i + j)], log2Size), with tap 2 for
+        // |j| <= n2 and 1 otherwise. With e[m] = s[Clip3(-(n + 1), n, m)] for m in [-2n, 2n), that sum is the window
+        // e[i - n .. i + n] plus e[i - n2 .. i + n2] once more; the window slides by one sample per output. The same
+        // integers are added, so the outputs are exactly the per-tap sums. e[k] is held at index k + 2n.
+        int o = 2 * n;
+        Span<int> e = stackalloc int[24];
+        for (int m = -o; m < o; m++)
+            e[m + o] = buf[pos + Av1Constants.Clip3(-(n + 1), n, m) * step];
+        int window = 0;
+        for (int m = -o; m <= 0; m++)
+            window += e[m + o];
         Span<ushort> f = stackalloc ushort[12];
         for (int i = -n; i < n; i++)
         {
-            int t = 0;
-            for (int j = -n; j <= n; j++)
-            {
-                int p = Av1Constants.Clip3(-(n + 1), n, i + j);
-                int tap = Math.Abs(j) <= n2 ? 2 : 1;
-                t += buf[pos + p * step] * tap;
-            }
+            int t = window + e[i + o] + (n2 == 1 ? e[i - 1 + o] + e[i + 1 + o] : 0);
             f[i + n] = (ushort)Av1Constants.Round2(t, log2Size);
+            if (i + 1 < n)
+                window += e[i + n + 1 + o] - e[i - n + o];
         }
         for (int i = -n; i < n; i++)
             buf[pos + i * step] = f[i + n];
