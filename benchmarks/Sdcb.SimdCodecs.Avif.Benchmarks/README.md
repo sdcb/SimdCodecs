@@ -29,4 +29,5 @@ dotnet run --project benchmarks/Sdcb.SimdCodecs.Avif.Benchmarks -c Release -- me
 
 ## Results
 
+- [2026-11-28, Ryzen 7 5800X, M4 kernels round](results/2026-11-28-amd-ryzen-7-5800x-m4-kernels.md): deblocking, dequantization, 12-bit transform, loop restoration, warp, Paeth / CfL and colour kernels; cumulative and per-commit A/B, refreshed tables, ablation.
 - [2026-11-28, Ryzen 7 5800X, M4](results/2026-11-28-amd-ryzen-7-5800x-m4.md): single-core, multi-core (with Magick.NET), animations, peak memory, stage timers, ablation, and the A/B history of the M4 round.
