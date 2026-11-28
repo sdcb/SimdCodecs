@@ -1,10 +1,13 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+
 namespace Sdcb.SimdCodecs.Avif.Av1;
 
 /// <summary>
 /// AV1 deblocking loop filter (§7.14).
 /// Vertical edges first, then horizontal edges, across all planes.
 /// </summary>
-internal static class Av1LoopFilter
+internal static partial class Av1LoopFilter
 {
     internal static void Apply(Av1SequenceHeader seq, Av1FrameHeader fh, Av1Picture pic, Av1FrameState st)
     {
@@ -113,10 +116,7 @@ internal static class Av1LoopFilter
             int blimit = 2 * (lvl + 2) + limit;
             int thresh = lvl >> 4;
 
-            for (int i = 0; i < 4; i++)
-            {
-                FilterSample(planeBuf, stride, bitDepth, plane, xP, yP + i, limit, blimit, thresh, 1, 0, filterSize);
-            }
+            FilterEdge(planeBuf, stride, bitDepth, plane, xP, yP, limit, blimit, thresh, 1, 0, filterSize);
         }
     }
 
@@ -170,11 +170,32 @@ internal static class Av1LoopFilter
             int blimit = 2 * (lvl + 2) + limit;
             int thresh = lvl >> 4;
 
-            for (int i = 0; i < 4; i++)
-            {
-                FilterSample(planeBuf, stride, bitDepth, plane, xP + i, yP, limit, blimit, thresh, 0, 1, filterSize);
-            }
+            FilterEdge(planeBuf, stride, bitDepth, plane, xP, yP, limit, blimit, thresh, 0, 1, filterSize);
         }
+    }
+
+    /// <summary>
+    /// Filters the four samples of one edge segment: for a vertical edge (dx = 1) rows y .. y + 3 at column x, for a
+    /// horizontal edge (dy = 1) columns x .. x + 3 at row y.
+    /// </summary>
+    internal static void FilterEdge(
+        ushort[] buf, int stride, int bitDepth, int plane,
+        int x, int y, int limit, int blimit, int thresh, int dx, int dy, int filterSize)
+    {
+        if (Vector128.IsHardwareAccelerated)
+        {
+            FilterEdgeVector(buf, stride, bitDepth, plane, x, y, limit, blimit, thresh, dx, dy, filterSize);
+            return;
+        }
+        FilterEdgeScalar(buf, stride, bitDepth, plane, x, y, limit, blimit, thresh, dx, dy, filterSize);
+    }
+
+    internal static void FilterEdgeScalar(
+        ushort[] buf, int stride, int bitDepth, int plane,
+        int x, int y, int limit, int blimit, int thresh, int dx, int dy, int filterSize)
+    {
+        for (int i = 0; i < 4; i++)
+            FilterSample(buf, stride, bitDepth, plane, x + i * dy, y + i * dx, limit, blimit, thresh, dx, dy, filterSize);
     }
 
     private static int GetFilterLevel(Av1FrameHeader fh, Av1FrameState st, int row, int col, int plane, int pass)

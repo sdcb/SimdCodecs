@@ -466,15 +466,24 @@ internal static class BenchRunner
             foreach (string fixture in fixtures)
             {
                 byte[] data = AvifInputs.Load(fixture);
-                var times = new double[AblationCases.Length];
-                for (int i = 0; i < AblationCases.Length; i++)
+                // Cases run round-robin, one decode each per round, so drift hits every column alike.
+                Action decode = anim
+                    ? () => DecodeAllOurs(data)
+                    : () => { using var img = AvifDecoder.Decode(data); _ = img.Rgba[0]; };
+                var samples = AblationCases.Select(_ => new List<double>(reps)).ToArray();
+                for (int round = -1; round < reps; round++)
                 {
-                    AvifDiagnostics.Ablation = AblationCases[i].Flags;
-                    times[i] = anim
-                        ? Median(reps, () => DecodeAllOurs(data))
-                        : Median(reps, () => { using var img = AvifDecoder.Decode(data); return img.Rgba[0]; });
+                    for (int i = 0; i < AblationCases.Length; i++)
+                    {
+                        AvifDiagnostics.Ablation = AblationCases[i].Flags;
+                        var sw = Stopwatch.StartNew();
+                        decode();
+                        if (round >= 0)
+                            samples[i].Add(sw.Elapsed.TotalMilliseconds);
+                    }
                 }
                 AvifDiagnostics.Ablation = AvifAblation.None;
+                var times = samples.Select(l => { l.Sort(); return l[l.Count / 2]; }).ToArray();
                 lines.Add($"{fixture,-40}" + string.Concat(times.Select(t => $" {t,8:F1}")));
                 lines.Add($"{"  share (full - case)",-40}" + string.Concat(times.Select((t, i) => i == 0 ? $" {"100%",8}" : $" {times[0] - t,8:F1}")));
                 lines.Add($"{"  share %",-40}" + string.Concat(times.Select((t, i) => i == 0 ? $" {"",8}" : $" {(times[0] - t) / times[0] * 100,7:F1}%")));
