@@ -491,7 +491,7 @@ internal static class BenchRunner
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static int DecodeAllOurs(byte[] data, byte[]? buf = null, Action<int>? frame = null)
+    internal static int DecodeAllOurs(byte[] data, byte[]? buf = null, Action<int>? frame = null)
     {
         if (!AvifImageDecoder.TryOpenFrames(data, out var reader))
             throw new InvalidOperationException("TryOpenFrames failed.");

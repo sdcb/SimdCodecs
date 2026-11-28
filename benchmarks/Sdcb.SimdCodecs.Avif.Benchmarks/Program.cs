@@ -20,6 +20,7 @@ const string Usage = """
                                    single-core stage-by-stage ablation
       stages [--reps N] [--fixtures RE] [--multi] [--anim]
                                    stage timers inside tile decoding (AVIF_STAGE_TIMERS=1; 1T unless --multi)
+      memory [--fixtures RE]       peak memory of one decode, ours vs libavif[dav1d], 1T and MT (a fresh process per cell)
       baseline [git-ref]           build git-ref's (default HEAD) Avif package into .cache/baseline for 'ab'
       ab [--reps N] [--fixtures RE] [--multi] [--anim]
                                    same-process A/B: the baseline vs the working tree (1T unless --multi;
@@ -69,6 +70,11 @@ switch (command)
     }
     case "stages":
         return BenchRunner.Stages(Select(args.Contains("--anim") ? AvifInputs.AnimFixtures : AvifInputs.StillFixtures), Reps(), args.Contains("--multi"), args.Contains("--anim"));
+    case "memory":
+        Console.WriteLine(MemoryRunner.Run(Select(AvifInputs.StillFixtures), Select(AvifInputs.AnimFixtures)));
+        return 0;
+    case "memchild":
+        return MemoryRunner.ChildMain(args[1], args[2], int.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture), args[4] == "anim");
     case "baseline":
         Baseline.Build(args.Length > 1 && !args[1].StartsWith("--") ? args[1] : "HEAD");
         return 0;

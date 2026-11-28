@@ -21,6 +21,12 @@ dotnet run --project benchmarks/Sdcb.SimdCodecs.Avif.Benchmarks -c Release -- ba
 dotnet run --project benchmarks/Sdcb.SimdCodecs.Avif.Benchmarks -c Release -- ab [--multi] [--anim]
 ```
 
+Peak memory, ours vs libavif[dav1d] (a fresh child process per fixture, decoder and thread count; private commit above a warmed-up baseline, output buffer included on both sides):
+
+```bash
+dotnet run --project benchmarks/Sdcb.SimdCodecs.Avif.Benchmarks -c Release -- memory [--fixtures RE]
+```
+
 ## Results
 
-- [2026-11-28, Ryzen 7 5800X, M4](results/2026-11-28-amd-ryzen-7-5800x-m4.md): single-core, multi-core (with Magick.NET), animations, stage timers, ablation, and the A/B history of the M4 round.
+- [2026-11-28, Ryzen 7 5800X, M4](results/2026-11-28-amd-ryzen-7-5800x-m4.md): single-core, multi-core (with Magick.NET), animations, peak memory, stage timers, ablation, and the A/B history of the M4 round.
