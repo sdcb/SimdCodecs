@@ -43,6 +43,11 @@
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+    <!-- Repository rules checked at build time (tools/Sdcb.SimdCodecs.Analyzers), e.g. SDC0001: nint offsets for
+         Unsafe.Add / Unsafe.Subtract. Build-only: not referenced by, or packed with, the package. -->
+    <ProjectReference Include="$(MSBuildThisFileDirectory)tools/Sdcb.SimdCodecs.Analyzers/Sdcb.SimdCodecs.Analyzers.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all"
+                      GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 
   <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/linqpad-samples')">

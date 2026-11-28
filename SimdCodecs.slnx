@@ -31,6 +31,9 @@
     <Project Path="benchmarks/Sdcb.SimdCodecs.Quantize.Benchmarks/Sdcb.SimdCodecs.Quantize.Benchmarks.csproj" />
     <Project Path="benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks/Sdcb.SimdCodecs.Webp.Benchmarks.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Sdcb.SimdCodecs.Analyzers/Sdcb.SimdCodecs.Analyzers.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Sdcb.SimdCodecs.Tests/Sdcb.SimdCodecs.Tests.csproj" />
   </Folder>

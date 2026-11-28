@@ -18,9 +18,12 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="Magick.NET-Q16-HDRI-AnyCPU" />
+    <!-- UnsafeOffsetAnalyzerTests compile snippets with the repository analyzer. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\tools\Sdcb.SimdCodecs.Analyzers\Sdcb.SimdCodecs.Analyzers.csproj" />
     <ProjectReference Include="..\..\src\Sdcb.SimdCodecs.Abstractions\Sdcb.SimdCodecs.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Sdcb.SimdCodecs\Sdcb.SimdCodecs.csproj" />
     <!-- Tested directly, never through the facade: the HEIF/HEVC package is patent-isolated and not in the meta-package. -->
