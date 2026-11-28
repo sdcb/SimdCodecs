@@ -99,6 +99,7 @@ internal sealed class Av1InterPredict
 
         int numLists = isCompound ? 2 : 1;
         Span<int> gmSpan = stackalloc int[6];
+        bool written = false;
         for (int refList = 0; refList < numLists; refList++)
         {
             int[] predDst = refList == 0 ? _pred0 : _pred1;
@@ -145,7 +146,11 @@ internal sealed class Av1InterPredict
             else
             {
                 ScaleMv(plane, refIdx, x, y, mvY, mvX, out int startX, out int startY, out int stepX, out int stepY);
-                BlockInterPrediction(plane, refIdx, startX, startY, stepX, stepY, w, h, candIdx, interRound0, interRound1, predDst);
+                // One reference, nothing blended in: an integer motion vector's prediction is the reference samples.
+                if (numLists == 1 && !isInterIntra && refIdx >= 0 && TryCopyIntegerBlock(plane, refIdx, startX, startY, stepX, stepY, x, y, w, h))
+                    written = true;
+                else
+                    BlockInterPrediction(plane, refIdx, startX, startY, stepX, stepY, w, h, candIdx, interRound0, interRound1, predDst);
             }
         }
 
@@ -175,7 +180,10 @@ internal sealed class Av1InterPredict
             || w * h > _pred0.Length)
             throw new InvalidDataException("AV1 inter prediction block lies outside the frame.");
 
-        if (!isCompound && !isInterIntra)
+        if (written)
+        {
+        }
+        else if (!isCompound && !isInterIntra)
         {
             if (Avx2.IsSupported && w >= 8)
                 Av1InterPredictSimd.WriteSingleV256(_pred0, dstPlane, dstStride, x, y, w, h, maxSample);
@@ -306,6 +314,44 @@ internal sealed class Av1InterPredict
             throw new InvalidDataException("AV1 reference frame is smaller than the prediction requires.");
     }
 
+    /// <summary>
+    /// The single-reference, integer-motion case of <see cref="BlockInterPrediction"/> followed by the single write:
+    /// with both phases zero the filters are the identity, the rounding shifts of a single prediction cancel
+    /// (14 - InterRound0 - InterRound1 = 0 at every bit depth), and the clamp leaves a reference sample unchanged, so the
+    /// block is the reference block, rows clamped to the frame. Returns false, writing nothing, for any other case.
+    /// </summary>
+    private bool TryCopyIntegerBlock(int plane, int refIdx, int startX, int startY, int stepX, int stepY, int x, int y, int w, int h)
+    {
+        if (stepX != 1024 || stepY != 1024 || ((startX | startY) & 1023) != 0)
+            return false;
+        var slot = _session.RefFrames[refIdx];
+        if (!slot.Valid || slot.Picture is null)
+            throw new InvalidDataException($"AV1 inter prediction references invalid frame slot {refIdx}.");
+        CheckReferenceFormat(slot);
+        int subX = plane > 0 ? _seq.SubsamplingX : 0;
+        int subY = plane > 0 ? _seq.SubsamplingY : 0;
+        int lastX = ((slot.UpscaledWidth + subX) >> subX) - 1;
+        int lastY = ((slot.FrameHeight + subY) >> subY) - 1;
+        CheckReferenceBounds(slot.Picture, plane, lastX, lastY);
+        int xInt = startX >> 10;
+        int yInt = startY >> 10;
+        if (xInt < 0 || xInt + w - 1 > lastX)
+            return false;
+
+        ushort[] dstPlane = _pic.Planes[plane];
+        int dstStride = _pic.PlaneStrides[plane];
+        if (x < 0 || y < 0 || x + w > dstStride || (long)(y + h - 1) * dstStride + x + w > dstPlane.Length)
+            throw new InvalidDataException("AV1 inter prediction block lies outside the frame.");
+        ushort[] refBuf = slot.Picture.Planes[plane];
+        int refStride = slot.Picture.PlaneStrides[plane];
+        for (int r = 0; r < h; r++)
+        {
+            int sy = Av1Constants.Clip3(0, lastY, yInt + r);
+            refBuf.AsSpan(sy * refStride + xInt, w).CopyTo(dstPlane.AsSpan((y + r) * dstStride + x, w));
+        }
+        return true;
+    }
+
     // §7.11.3.4 Block inter prediction process
     private void BlockInterPrediction(
         int plane, int refIdx, int x, int y, int xStep, int yStep,
@@ -356,18 +402,7 @@ internal sealed class Av1InterPredict
                     for (int r = 0; r < h; r++)
                     {
                         int sy = Av1Constants.Clip3(0, lastY, yInt + r);
-                        int srcOff = sy * refStride + xInt;
-                        int dstOff = r * w;
-                        if (leftShift == 0)
-                        {
-                            for (int c = 0; c < w; c++)
-                                pred[dstOff + c] = refBuf[srcOff + c];
-                        }
-                        else
-                        {
-                            for (int c = 0; c < w; c++)
-                                pred[dstOff + c] = refBuf[srcOff + c] << leftShift;
-                        }
+                        WidenRow(refBuf.AsSpan(sy * refStride + xInt, w), pred.AsSpan(r * w, w), leftShift);
                     }
                 }
                 else
@@ -523,6 +558,32 @@ internal sealed class Av1InterPredict
                 pred[dstRow + c] = Av1Constants.Round2(s, interRound1);
             }
         }
+    }
+
+    /// <summary><c>dst[i] = src[i] &lt;&lt; shift</c>.</summary>
+    private static void WidenRow(ReadOnlySpan<ushort> src, Span<int> dst, int shift)
+    {
+        int done = Vector128.IsHardwareAccelerated ? WidenRowVector(src, dst, shift) : 0;
+        WidenRowScalar(src, dst, shift, done);
+    }
+
+    internal static void WidenRowScalar(ReadOnlySpan<ushort> src, Span<int> dst, int shift, int start)
+    {
+        for (int c = start; c < src.Length; c++)
+            dst[c] = src[c] << shift;
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining | System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
+    internal static int WidenRowVector(ReadOnlySpan<ushort> src, Span<int> dst, int shift)
+    {
+        int c = 0;
+        for (; c + 8 <= src.Length; c += 8)
+        {
+            var v = Vector128.Create(src.Slice(c, 8));
+            Vector128.ShiftLeft(Vector128.WidenLower(v).AsInt32(), shift).CopyTo(dst.Slice(c, 4));
+            Vector128.ShiftLeft(Vector128.WidenUpper(v).AsInt32(), shift).CopyTo(dst.Slice(c + 4, 4));
+        }
+        return c;
     }
 
     // §7.11.3.5 Block warp process
