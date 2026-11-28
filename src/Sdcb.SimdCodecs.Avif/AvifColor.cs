@@ -401,6 +401,100 @@ internal static class AvifColor
         }
     }
 
+    /// <summary>
+    /// <see cref="RowToRgba16"/> followed by keeping each sample's high byte (what converting RGBA16 to RGBA8 does),
+    /// in one pass: <c>clamp(s, 0, 65535) &gt;&gt; 8</c> of the same sums, written as opaque RGBA8.
+    /// </summary>
+    internal static void RowToRgba8Wide(ReadOnlySpan<ushort> y, ReadOnlySpan<ushort> cb, ReadOnlySpan<ushort> cr,
+        bool monochrome, int subX, in Coefficients16 k, Span<byte> dst)
+    {
+        int done = Vector128.IsHardwareAccelerated ? RowToRgba8WideVector(y, cb, cr, monochrome, subX, in k, dst) : 0;
+        RowToRgba8WideScalar(y, cb, cr, monochrome, subX, in k, dst, done);
+    }
+
+    /// <summary>The scalar twin of <see cref="RowToRgba8WideVector"/>, from pixel <paramref name="start"/>.</summary>
+    internal static void RowToRgba8WideScalar(ReadOnlySpan<ushort> y, ReadOnlySpan<ushort> cb, ReadOnlySpan<ushort> cr,
+        bool monochrome, int subX, in Coefficients16 k, Span<byte> dst, int start)
+    {
+        for (int x = start; x < y.Length; x++)
+        {
+            ushort cbs = monochrome ? (ushort)0 : cb[x >> subX];
+            ushort crs = monochrome ? (ushort)0 : cr[x >> subX];
+            PixelToRgba16(y[x], cbs, crs, monochrome, in k, 65535, false, out ushort r, out ushort g, out ushort b, out _);
+            dst[x * 4] = (byte)(r >> 8);
+            dst[x * 4 + 1] = (byte)(g >> 8);
+            dst[x * 4 + 2] = (byte)(b >> 8);
+            dst[x * 4 + 3] = 255;
+        }
+    }
+
+    /// <summary><see cref="RowToRgba8Wide"/> eight pixels at a time, with the sums of <see cref="RowToRgba16Vector"/>.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    internal static int RowToRgba8WideVector(ReadOnlySpan<ushort> y, ReadOnlySpan<ushort> cb, ReadOnlySpan<ushort> cr,
+        bool monochrome, int subX, in Coefficients16 k, Span<byte> dst)
+    {
+        var yOff = Vector128.Create(k.YOffset);
+        var cOff = Vector128.Create(k.COffset);
+        var yHi = Vector128.Create(k.Y >> 14);
+        var yLo = Vector128.Create(k.Y & 16383);
+        int crR = monochrome ? 0 : k.CrR, cbG = monochrome ? 0 : k.CbG, crG = monochrome ? 0 : k.CrG, cbB = monochrome ? 0 : k.CbB;
+        var crRHi = Vector128.Create(crR >> 14);
+        var crRLo = Vector128.Create(crR & 16383);
+        var cbGHi = Vector128.Create(cbG >> 14);
+        var cbGLo = Vector128.Create(cbG & 16383);
+        var crGHi = Vector128.Create(crG >> 14);
+        var crGLo = Vector128.Create(crG & 16383);
+        var cbBHi = Vector128.Create(cbB >> 14);
+        var cbBLo = Vector128.Create(cbB & 16383);
+        var round = Vector128.Create(8192);
+        var max = Vector128.Create(65535);
+        var opaque = Vector128.Create(unchecked((int)0xFF000000));
+        var dup = Vector128.Create((ushort)0, 0, 1, 1, 2, 2, 3, 3);
+
+        int width = y.Length;
+        int x = 0;
+        for (; x + 8 <= width; x += 8)
+        {
+            var yv = Vector128.Create(y.Slice(x, 8));
+            Vector128<ushort> cbv, crv;
+            if (monochrome)
+            {
+                cbv = crv = yv; // multiplied by zero coefficients
+            }
+            else if (subX == 0)
+            {
+                cbv = Vector128.Create(cb.Slice(x, 8));
+                crv = Vector128.Create(cr.Slice(x, 8));
+            }
+            else
+            {
+                int cx = x >> 1;
+                if (cx + 8 > cb.Length || cx + 8 > cr.Length)
+                    break; // the scalar tail finishes the row
+                cbv = Vector128.Shuffle(Vector128.Create(cb.Slice(cx, 8)), dup);
+                crv = Vector128.Shuffle(Vector128.Create(cr.Slice(cx, 8)), dup);
+            }
+            Pixels8(Vector128.WidenLower(yv), Vector128.WidenLower(cbv), Vector128.WidenLower(crv), dst.Slice(x * 4, 16));
+            Pixels8(Vector128.WidenUpper(yv), Vector128.WidenUpper(cbv), Vector128.WidenUpper(crv), dst.Slice(x * 4 + 16, 16));
+        }
+        return x;
+
+        void Pixels8(Vector128<uint> ys, Vector128<uint> cbs, Vector128<uint> crs, Span<byte> d)
+        {
+            var luma = ys.AsInt32() - yOff;
+            var u = cbs.AsInt32() - cOff;
+            var v = crs.AsInt32() - cOff;
+            var hiY = yHi * luma;
+            var loY = yLo * luma + round;
+            var r = Clamp(hiY + crRHi * v + Vector128.ShiftRightArithmetic(loY + crRLo * v, 14), max);
+            var g = Clamp(hiY - cbGHi * u - crGHi * v + Vector128.ShiftRightArithmetic(loY - cbGLo * u - crGLo * v, 14), max);
+            var b = Clamp(hiY + cbBHi * u + Vector128.ShiftRightArithmetic(loY + cbBLo * u, 14), max);
+            // r, g, b are in [0, 65535]: their high bytes land in bytes 0, 1, 2 of each pixel.
+            var px = Vector128.ShiftRightLogical(r, 8) | (g & Vector128.Create(0xFF00)) | Vector128.ShiftLeft(Vector128.ShiftRightLogical(b, 8), 16) | opaque;
+            px.AsByte().CopyTo(d);
+        }
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<int> Clamp(Vector128<int> value, Vector128<int> max) =>
         Vector128.Min(Vector128.Max(value, Vector128<int>.Zero), max);

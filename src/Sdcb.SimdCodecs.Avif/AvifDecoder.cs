@@ -898,7 +898,10 @@ public static class AvifDecoder
         int aBd = alphaPic?.BitDepth ?? 8;
         bool aFull = alphaPic?.FullRange ?? true;
         var source = wide ? PixelFormat.Rgba64 : PixelFormat.Rgba32;
-        bool direct = !wide && format == PixelFormat.Rgba32;
+        // Deeper samples into RGBA8 (opaque or straight alpha, not GBR): the fused kernel writes what RGBA16 then
+        // its high bytes would.
+        bool wideTo8 = wide && format == PixelFormat.Rgba32 && !coeff16.Identity;
+        bool direct = (!wide || wideTo8) && format == PixelFormat.Rgba32;
         int srcRow = w * source.BytesPerPixel;
         int dstRowBytes = w * format.BytesPerPixel;
 
@@ -912,7 +915,19 @@ public static class AvifDecoder
                 {
                     var dst = new Span<byte>((byte*)dstPtr, dstLen).Slice(y * rowStride, dstRowBytes);
                     Span<byte> rgba = direct ? dst : rowBuf;
-                    if (wide)
+                    if (wideTo8)
+                    {
+                        int yRow = y * yStride, cRow = (y >> subY) * cStride;
+                        AvifColor.RowToRgba8Wide(yBuf.AsSpan(yRow, w), mono ? default : cbBuf.AsSpan(cRow), mono ? default : crBuf.AsSpan(cRow),
+                            mono, subX, in coeff16, rgba);
+                        if (aBuf is not null)
+                        {
+                            int aRow = y * aStride;
+                            for (int x = 0; x < w; x++)
+                                rgba[x * 4 + 3] = (byte)(AvifColor.SampleAlphaTo16(aBuf[aRow + x], aBd, aFull) >> 8);
+                        }
+                    }
+                    else if (wide)
                     {
                         RenderRowRgba16(yBuf, yStride, cbBuf, crBuf, cStride, aBuf, aStride, aBd, aFull, mono, subX, subY,
                             in coeff16, prem: false, y, MemoryMarshal.Cast<byte, ushort>(rgba));
