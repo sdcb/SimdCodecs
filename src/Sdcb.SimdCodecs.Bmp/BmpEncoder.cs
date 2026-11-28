@@ -677,11 +677,11 @@ public static class BmpEncoder
         // 2x, 2x + 1, all inside the lengths checked above; table indices are bytes, the tables 256 long.
         for (var x = 0; x < width; x++)
         {
-            ref var p = ref Unsafe.Add(ref s, step * x);
-            var v = Unsafe.Add(ref five, Unsafe.Add(ref p, ri)) << redShift
-                | Unsafe.Add(ref green, Unsafe.Add(ref p, gi)) << 5
-                | Unsafe.Add(ref five, Unsafe.Add(ref p, bi));
-            Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 2 * x), (ushort)v);
+            ref var p = ref Unsafe.Add(ref s, (nint)(step * x));
+            var v = Unsafe.Add(ref five, (nint)Unsafe.Add(ref p, (nint)ri)) << redShift
+                | Unsafe.Add(ref green, (nint)Unsafe.Add(ref p, (nint)gi)) << 5
+                | Unsafe.Add(ref five, (nint)Unsafe.Add(ref p, (nint)bi));
+            Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, (nint)(2 * x)), (ushort)v);
         }
     }
 

@@ -153,7 +153,7 @@ internal static class JpegIdct
         var row = 0x0101010101010101UL * ToSample(DcValue(dc));
         ref var dst = ref MemoryMarshal.GetArrayDataReference(outPlane);
         for (var y = 0; y < 8; y++)
-            Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + y * outStride), row);
+            Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + y * outStride)), row);
     }
 
     /// <summary>
@@ -358,14 +358,14 @@ internal static class JpegIdct
         ref var dst = ref MemoryMarshal.GetArrayDataReference(outPlane);
         _ = outPlane[outOffset + 7 * outStride + 7];
         _ = outPlane[outOffset];
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset), b0123.GetElement(0));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + outStride), b0123.GetElement(1));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 2 * outStride), b0123.GetElement(2));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 3 * outStride), b0123.GetElement(3));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 4 * outStride), b4567.GetElement(0));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 5 * outStride), b4567.GetElement(1));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 6 * outStride), b4567.GetElement(2));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 7 * outStride), b4567.GetElement(3));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)outOffset), b0123.GetElement(0));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + outStride)), b0123.GetElement(1));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + 2 * outStride)), b0123.GetElement(2));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + 3 * outStride)), b0123.GetElement(3));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + 4 * outStride)), b4567.GetElement(0));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + 5 * outStride)), b4567.GetElement(1));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + 6 * outStride)), b4567.GetElement(2));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + 7 * outStride)), b4567.GetElement(3));
     }
 
     /// <summary>Both 1-D passes; outputs are rows, before level shift and rounding.</summary>
@@ -552,14 +552,14 @@ internal static class JpegIdct
         ref var dst = ref MemoryMarshal.GetArrayDataReference(outPlane);
         _ = outPlane[outOffset + 7 * outStride + 7];
         _ = outPlane[outOffset];
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset), b01.GetElement(0));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + outStride), b01.GetElement(1));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 2 * outStride), b23.GetElement(0));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 3 * outStride), b23.GetElement(1));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 4 * outStride), b45.GetElement(0));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 5 * outStride), b45.GetElement(1));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 6 * outStride), b67.GetElement(0));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, outOffset + 7 * outStride), b67.GetElement(1));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)outOffset), b01.GetElement(0));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + outStride)), b01.GetElement(1));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + 2 * outStride)), b23.GetElement(0));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + 3 * outStride)), b23.GetElement(1));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + 4 * outStride)), b45.GetElement(0));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + 5 * outStride)), b45.GetElement(1));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + 6 * outStride)), b67.GetElement(0));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(outOffset + 7 * outStride)), b67.GetElement(1));
     }
 
     /// <summary>

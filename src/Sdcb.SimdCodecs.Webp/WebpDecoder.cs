@@ -598,19 +598,19 @@ public static partial class WebpDecoder
                 }
             }
             ref byte uScratchBase = ref MemoryMarshal.GetArrayDataReference(chromaRows);
-            ref byte vScratchBase = ref Unsafe.Add(ref uScratchBase, width);
+            ref byte vScratchBase = ref Unsafe.Add(ref uScratchBase, (nint)width);
 
             for (int row = first; row < end; row++)
             {
                 int chromaRow = row >> 1;
-                ref byte uRow = ref Unsafe.Add(ref u, (chromaRow - uvRow0) * uvStride);
-                ref byte vRow = ref Unsafe.Add(ref v, (chromaRow - uvRow0) * uvStride);
-                ref byte yRow = ref Unsafe.Add(ref y, (row - yRow0) * yStride);
-                ref byte destinationRow = ref Unsafe.Add(ref outputBase, (row - outputRow0) * stride);
+                ref byte uRow = ref Unsafe.Add(ref u, (nint)((chromaRow - uvRow0) * uvStride));
+                ref byte vRow = ref Unsafe.Add(ref v, (nint)((chromaRow - uvRow0) * uvStride));
+                ref byte yRow = ref Unsafe.Add(ref y, (nint)((row - yRow0) * yStride));
+                ref byte destinationRow = ref Unsafe.Add(ref outputBase, (nint)((row - outputRow0) * stride));
                 ref byte alphaRow = ref Unsafe.NullRef<byte>();
                 if (hasAlpha)
                 {
-                    alphaRow = ref Unsafe.Add(ref alphaBase, row * width);
+                    alphaRow = ref Unsafe.Add(ref alphaBase, (nint)(row * width));
                 }
 
                 if (fancy)
@@ -618,8 +618,8 @@ public static partial class WebpDecoder
                     int adjacentRow = row % 2 == 0
                         ? (chromaRow == 0 ? 0 : chromaRow - 1)
                         : (chromaRow == chromaHeight - 1 ? chromaRow : chromaRow + 1);
-                    ref byte adjacentU = ref Unsafe.Add(ref u, (adjacentRow - uvRow0) * uvStride);
-                    ref byte adjacentV = ref Unsafe.Add(ref v, (adjacentRow - uvRow0) * uvStride);
+                    ref byte adjacentU = ref Unsafe.Add(ref u, (nint)((adjacentRow - uvRow0) * uvStride));
+                    ref byte adjacentV = ref Unsafe.Add(ref v, (nint)((adjacentRow - uvRow0) * uvStride));
                     Span<ushort> tU = tRows.AsSpan(0, chromaWidth);
                     Span<ushort> tV = tRows.AsSpan(chromaWidth, chromaWidth);
                     Span<byte> uUpsampled = chromaRows.AsSpan(0, width);
@@ -643,16 +643,16 @@ public static partial class WebpDecoder
                 {
                     for (int chromaColumn = 0; chromaColumn < chromaWidth; chromaColumn++)
                     {
-                        byte uValue = Unsafe.Add(ref uRow, chromaColumn);
-                        byte vValue = Unsafe.Add(ref vRow, chromaColumn);
+                        byte uValue = Unsafe.Add(ref uRow, (nint)chromaColumn);
+                        byte vValue = Unsafe.Add(ref vRow, (nint)chromaColumn);
                         int column = chromaColumn * 2;
-                        Unsafe.Add(ref uScratchBase, column) = uValue;
-                        Unsafe.Add(ref vScratchBase, column) = vValue;
+                        Unsafe.Add(ref uScratchBase, (nint)column) = uValue;
+                        Unsafe.Add(ref vScratchBase, (nint)column) = vValue;
                         int nextColumn = column + 1;
                         if (nextColumn < width)
                         {
-                            Unsafe.Add(ref uScratchBase, nextColumn) = uValue;
-                            Unsafe.Add(ref vScratchBase, nextColumn) = vValue;
+                            Unsafe.Add(ref uScratchBase, (nint)nextColumn) = uValue;
+                            Unsafe.Add(ref vScratchBase, (nint)nextColumn) = vValue;
                         }
                     }
                 }
@@ -722,8 +722,8 @@ public static partial class WebpDecoder
     {
         for (int column = 0; column < chromaWidth; column++)
         {
-            Unsafe.Add(ref tRow, column) = (ushort)(
-                3 * Unsafe.Add(ref current, column) + Unsafe.Add(ref adjacent, column));
+            Unsafe.Add(ref tRow, (nint)column) = (ushort)(
+                3 * Unsafe.Add(ref current, (nint)column) + Unsafe.Add(ref adjacent, (nint)column));
         }
 
         ushort first = tRow;
@@ -736,24 +736,24 @@ public static partial class WebpDecoder
 
         for (int column = 1; column < chromaWidth - 1; column++)
         {
-            int currentT = Unsafe.Add(ref tRow, column);
+            int currentT = Unsafe.Add(ref tRow, (nint)column);
             int outputColumn = column * 2;
-            Unsafe.Add(ref output, outputColumn) = (byte)(
-                (3 * currentT + Unsafe.Add(ref tRow, column - 1) + 8) >> 4);
-            Unsafe.Add(ref output, outputColumn + 1) = (byte)(
-                (3 * currentT + Unsafe.Add(ref tRow, column + 1) + 8) >> 4);
+            Unsafe.Add(ref output, (nint)outputColumn) = (byte)(
+                (3 * currentT + Unsafe.Add(ref tRow, (nint)(column - 1)) + 8) >> 4);
+            Unsafe.Add(ref output, (nint)(outputColumn + 1)) = (byte)(
+                (3 * currentT + Unsafe.Add(ref tRow, (nint)(column + 1)) + 8) >> 4);
         }
 
         if (chromaWidth > 1)
         {
             int lastColumn = chromaWidth - 1;
-            int last = Unsafe.Add(ref tRow, lastColumn);
+            int last = Unsafe.Add(ref tRow, (nint)lastColumn);
             int outputColumn = lastColumn * 2;
-            Unsafe.Add(ref output, outputColumn) = (byte)(
-                (3 * last + Unsafe.Add(ref tRow, lastColumn - 1) + 8) >> 4);
+            Unsafe.Add(ref output, (nint)outputColumn) = (byte)(
+                (3 * last + Unsafe.Add(ref tRow, (nint)(lastColumn - 1)) + 8) >> 4);
             if (outputColumn + 1 < width)
             {
-                Unsafe.Add(ref output, outputColumn + 1) = (byte)((4 * last + 8) >> 4);
+                Unsafe.Add(ref output, (nint)(outputColumn + 1)) = (byte)((4 * last + 8) >> 4);
             }
         }
     }
@@ -791,15 +791,15 @@ public static partial class WebpDecoder
             Vector128<ushort> adjacentHigh = Vector128.WidenUpper(adjacentBytes);
             Vector128<ushort> tLow = Vector128.Add(Vector128.Multiply(currentLow, three), adjacentLow);
             Vector128<ushort> tHigh = Vector128.Add(Vector128.Multiply(currentHigh, three), adjacentHigh);
-            ref ushort tChunk = ref Unsafe.Add(ref tRow, column);
+            ref ushort tChunk = ref Unsafe.Add(ref tRow, (nint)column);
             Vector128.StoreUnsafe(tLow, ref tChunk);
             Vector128.StoreUnsafe(tHigh, ref Unsafe.Add(ref tChunk, 8));
         }
 
         for (; column < chromaWidth; column++)
         {
-            Unsafe.Add(ref tRow, column) = (ushort)(
-                3 * Unsafe.Add(ref current, column) + Unsafe.Add(ref adjacent, column));
+            Unsafe.Add(ref tRow, (nint)column) = (ushort)(
+                3 * Unsafe.Add(ref current, (nint)column) + Unsafe.Add(ref adjacent, (nint)column));
         }
 
         ushort first = tRow;
@@ -842,30 +842,30 @@ public static partial class WebpDecoder
                 Vector128.Add(Vector128.Add(scaled, right), Vector128.Create((ushort)8)), 4);
             Vector128<byte> separated = Vector128.Narrow(even, odd);
             Vector128<byte> interleaved = Vector128.Shuffle(separated, ChromaPairShuffleIndices);
-            ref byte outputChunk = ref Unsafe.Add(ref output, pair * 2);
+            ref byte outputChunk = ref Unsafe.Add(ref output, (nint)(pair * 2));
             Vector128.StoreUnsafe(interleaved, ref outputChunk);
         }
 
         for (; pair < chromaWidth - 1; pair++)
         {
-            int currentT = Unsafe.Add(ref tRow, pair);
+            int currentT = Unsafe.Add(ref tRow, (nint)pair);
             int outputColumn = pair * 2;
-            Unsafe.Add(ref output, outputColumn) = (byte)(
-                (3 * currentT + Unsafe.Add(ref tRow, pair - 1) + 8) >> 4);
-            Unsafe.Add(ref output, outputColumn + 1) = (byte)(
-                (3 * currentT + Unsafe.Add(ref tRow, pair + 1) + 8) >> 4);
+            Unsafe.Add(ref output, (nint)outputColumn) = (byte)(
+                (3 * currentT + Unsafe.Add(ref tRow, (nint)(pair - 1)) + 8) >> 4);
+            Unsafe.Add(ref output, (nint)(outputColumn + 1)) = (byte)(
+                (3 * currentT + Unsafe.Add(ref tRow, (nint)(pair + 1)) + 8) >> 4);
         }
 
         if (chromaWidth > 1)
         {
             int lastColumn = chromaWidth - 1;
-            int last = Unsafe.Add(ref tRow, lastColumn);
+            int last = Unsafe.Add(ref tRow, (nint)lastColumn);
             int outputColumn = lastColumn * 2;
-            Unsafe.Add(ref output, outputColumn) = (byte)(
-                (3 * last + Unsafe.Add(ref tRow, lastColumn - 1) + 8) >> 4);
+            Unsafe.Add(ref output, (nint)outputColumn) = (byte)(
+                (3 * last + Unsafe.Add(ref tRow, (nint)(lastColumn - 1)) + 8) >> 4);
             if (outputColumn + 1 < width)
             {
-                Unsafe.Add(ref output, outputColumn + 1) = (byte)((4 * last + 8) >> 4);
+                Unsafe.Add(ref output, (nint)(outputColumn + 1)) = (byte)((4 * last + 8) >> 4);
             }
         }
     }
@@ -962,9 +962,9 @@ public static partial class WebpDecoder
 
         for (; column < width; column++)
         {
-            WritePixel(ref Unsafe.Add(ref output, column * 4),
-                Unsafe.Add(ref y, column), Unsafe.Add(ref u, column), Unsafe.Add(ref v, column),
-                hasAlpha ? Unsafe.Add(ref alpha, column) : (byte)255);
+            WritePixel(ref Unsafe.Add(ref output, (nint)(column * 4)),
+                Unsafe.Add(ref y, (nint)column), Unsafe.Add(ref u, (nint)column), Unsafe.Add(ref v, (nint)column),
+                hasAlpha ? Unsafe.Add(ref alpha, (nint)column) : (byte)255);
         }
     }
 
@@ -1013,7 +1013,7 @@ public static partial class WebpDecoder
             Vector256<byte> p1 = Avx2.UnpackHigh(rgLow.AsUInt16(), baLow.AsUInt16()).AsByte();  // 4-7 | 20-23
             Vector256<byte> p2 = Avx2.UnpackLow(rgHigh.AsUInt16(), baHigh.AsUInt16()).AsByte(); // 8-11 | 24-27
             Vector256<byte> p3 = Avx2.UnpackHigh(rgHigh.AsUInt16(), baHigh.AsUInt16()).AsByte(); // 12-15 | 28-31
-            ref byte destination = ref Unsafe.Add(ref output, column * 4);
+            ref byte destination = ref Unsafe.Add(ref output, (nint)(column * 4));
             Avx2.Permute2x128(p0, p1, 0x20).StoreUnsafe(ref destination);
             Avx2.Permute2x128(p2, p3, 0x20).StoreUnsafe(ref destination, 32);
             Avx2.Permute2x128(p0, p1, 0x31).StoreUnsafe(ref destination, 64);
@@ -1123,7 +1123,7 @@ public static partial class WebpDecoder
             Vector256.WidenUpper(redGreen),
             Vector256.ShiftLeft(Vector256.WidenUpper(blueAlpha), 16));
 
-        ref uint output32 = ref Unsafe.As<byte, uint>(ref Unsafe.Add(ref output, outputOffset));
+        ref uint output32 = ref Unsafe.As<byte, uint>(ref Unsafe.Add(ref output, (nint)outputOffset));
         Vector256.StoreUnsafe(rgbaLow, ref output32);
         Vector256.StoreUnsafe(rgbaHigh, ref Unsafe.Add(ref output32, 8));
     }
@@ -1139,9 +1139,9 @@ public static partial class WebpDecoder
     {
         for (int column = 0; column < width; column++)
         {
-            WritePixel(ref Unsafe.Add(ref output, column * 4),
-                Unsafe.Add(ref y, column), Unsafe.Add(ref u, column), Unsafe.Add(ref v, column),
-                hasAlpha ? Unsafe.Add(ref alpha, column) : (byte)255);
+            WritePixel(ref Unsafe.Add(ref output, (nint)(column * 4)),
+                Unsafe.Add(ref y, (nint)column), Unsafe.Add(ref u, (nint)column), Unsafe.Add(ref v, (nint)column),
+                hasAlpha ? Unsafe.Add(ref alpha, (nint)column) : (byte)255);
         }
     }
 
@@ -1172,9 +1172,9 @@ public static partial class WebpDecoder
 
         for (; column < width; column++)
         {
-            WritePixel(ref Unsafe.Add(ref output, column * 4),
-                Unsafe.Add(ref y, column), Unsafe.Add(ref u, column), Unsafe.Add(ref v, column),
-                hasAlpha ? Unsafe.Add(ref alpha, column) : (byte)255);
+            WritePixel(ref Unsafe.Add(ref output, (nint)(column * 4)),
+                Unsafe.Add(ref y, (nint)column), Unsafe.Add(ref u, (nint)column), Unsafe.Add(ref v, (nint)column),
+                hasAlpha ? Unsafe.Add(ref alpha, (nint)column) : (byte)255);
         }
     }
 
@@ -1251,7 +1251,7 @@ public static partial class WebpDecoder
             Vector128.WidenUpper(redGreen),
             Vector128.ShiftLeft(Vector128.WidenUpper(blueAlpha), 16));
 
-        ref uint output32 = ref Unsafe.As<byte, uint>(ref Unsafe.Add(ref output, outputOffset));
+        ref uint output32 = ref Unsafe.As<byte, uint>(ref Unsafe.Add(ref output, (nint)outputOffset));
         Vector128.StoreUnsafe(rgbaLow, ref output32);
         Vector128.StoreUnsafe(rgbaHigh, ref Unsafe.Add(ref output32, 4));
     }

@@ -157,19 +157,19 @@ public static partial class WebpDecoder
             // x0 + windowWidth ≤ width (the window lies inside the image), and the scratch rows hold width bytes per
             // plane, the alpha plane width per row and rgbaRow windowWidth × 4: every column the converter touches,
             // x0 + [0, windowWidth), is inside the luma cache row, both upsampled rows, the alpha row and rgbaRow.
-            ref byte uScratch = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_chromaRows), x0);
-            ref byte vScratch = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_chromaRows), width + x0);
+            ref byte uScratch = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_chromaRows), (nint)x0);
+            ref byte vScratch = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_chromaRows), (nint)(width + x0));
             ref byte rgba = ref MemoryMarshal.GetArrayDataReference(_rgbaRow);
             for (int row = from; row < to; row++)
             {
                 int chromaRow = row >> 1;
-                ref byte uRow = ref Unsafe.Add(ref u, (chromaRow - uvRow0) * uvStride);
-                ref byte vRow = ref Unsafe.Add(ref v, (chromaRow - uvRow0) * uvStride);
-                ref byte yRow = ref Unsafe.Add(ref y, (row - yRow0) * yStride + x0);
+                ref byte uRow = ref Unsafe.Add(ref u, (nint)((chromaRow - uvRow0) * uvStride));
+                ref byte vRow = ref Unsafe.Add(ref v, (nint)((chromaRow - uvRow0) * uvStride));
+                ref byte yRow = ref Unsafe.Add(ref y, (nint)((row - yRow0) * yStride + x0));
                 ref byte alphaRow = ref Unsafe.NullRef<byte>();
                 if (hasAlpha)
                 {
-                    alphaRow = ref Unsafe.Add(ref MemoryMarshal.GetReference(_alpha), row * width + x0);
+                    alphaRow = ref Unsafe.Add(ref MemoryMarshal.GetReference(_alpha), (nint)(row * width + x0));
                 }
 
                 if (_fancy)
@@ -177,8 +177,8 @@ public static partial class WebpDecoder
                     int adjacentRow = row % 2 == 0
                         ? (chromaRow == 0 ? 0 : chromaRow - 1)
                         : (chromaRow == chromaHeight - 1 ? chromaRow : chromaRow + 1);
-                    ref byte adjacentU = ref Unsafe.Add(ref u, (adjacentRow - uvRow0) * uvStride);
-                    ref byte adjacentV = ref Unsafe.Add(ref v, (adjacentRow - uvRow0) * uvStride);
+                    ref byte adjacentU = ref Unsafe.Add(ref u, (nint)((adjacentRow - uvRow0) * uvStride));
+                    ref byte adjacentV = ref Unsafe.Add(ref v, (nint)((adjacentRow - uvRow0) * uvStride));
                     Span<ushort> tU = _tRows.AsSpan(0, chromaWidth);
                     Span<ushort> tV = _tRows.AsSpan(chromaWidth, chromaWidth);
                     Span<byte> uUpsampled = _chromaRows.AsSpan(0, width);
@@ -202,11 +202,11 @@ public static partial class WebpDecoder
                 {
                     // Nearest: column c takes chroma column c >> 1; only the window's columns are needed.
                     ref byte uOut = ref MemoryMarshal.GetArrayDataReference(_chromaRows);
-                    ref byte vOut = ref Unsafe.Add(ref uOut, width);
+                    ref byte vOut = ref Unsafe.Add(ref uOut, (nint)width);
                     for (int column = x0; column < x0 + windowWidth; column++)
                     {
-                        Unsafe.Add(ref uOut, column) = Unsafe.Add(ref uRow, column >> 1);
-                        Unsafe.Add(ref vOut, column) = Unsafe.Add(ref vRow, column >> 1);
+                        Unsafe.Add(ref uOut, (nint)column) = Unsafe.Add(ref uRow, (nint)(column >> 1));
+                        Unsafe.Add(ref vOut, (nint)column) = Unsafe.Add(ref vRow, (nint)(column >> 1));
                     }
                 }
 

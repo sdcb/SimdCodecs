@@ -29,38 +29,38 @@ internal static class Vp8LoopFilter
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
     public static void LumaHorizontal(ref byte q0Row, int stride, Kind kind, int edge, int interior, int hev)
     {
-        ref byte p0Row = ref Unsafe.Subtract(ref q0Row, stride);
+        ref byte p0Row = ref Unsafe.Subtract(ref q0Row, (nint)stride);
         if (kind == Kind.Simple)
         {
-            Vector128<byte> sp1 = Vector128.LoadUnsafe(ref Unsafe.Subtract(ref p0Row, stride));
+            Vector128<byte> sp1 = Vector128.LoadUnsafe(ref Unsafe.Subtract(ref p0Row, (nint)stride));
             Vector128<byte> sp0 = Vector128.LoadUnsafe(ref p0Row);
             Vector128<byte> sq0 = Vector128.LoadUnsafe(ref q0Row);
-            Vector128<byte> sq1 = Vector128.LoadUnsafe(ref Unsafe.Add(ref q0Row, stride));
+            Vector128<byte> sq1 = Vector128.LoadUnsafe(ref Unsafe.Add(ref q0Row, (nint)stride));
             FilterSimple(sp1, ref sp0, ref sq0, sq1, edge);
             sp0.StoreUnsafe(ref p0Row);
             sq0.StoreUnsafe(ref q0Row);
             return;
         }
 
-        Vector128<byte> p3 = Vector128.LoadUnsafe(ref Unsafe.Subtract(ref q0Row, 4 * stride));
-        Vector128<byte> p2 = Vector128.LoadUnsafe(ref Unsafe.Subtract(ref q0Row, 3 * stride));
-        Vector128<byte> p1 = Vector128.LoadUnsafe(ref Unsafe.Subtract(ref q0Row, 2 * stride));
+        Vector128<byte> p3 = Vector128.LoadUnsafe(ref Unsafe.Subtract(ref q0Row, (nint)(4 * stride)));
+        Vector128<byte> p2 = Vector128.LoadUnsafe(ref Unsafe.Subtract(ref q0Row, (nint)(3 * stride)));
+        Vector128<byte> p1 = Vector128.LoadUnsafe(ref Unsafe.Subtract(ref q0Row, (nint)(2 * stride)));
         Vector128<byte> p0 = Vector128.LoadUnsafe(ref p0Row);
         Vector128<byte> q0 = Vector128.LoadUnsafe(ref q0Row);
-        Vector128<byte> q1 = Vector128.LoadUnsafe(ref Unsafe.Add(ref q0Row, stride));
-        Vector128<byte> q2 = Vector128.LoadUnsafe(ref Unsafe.Add(ref q0Row, 2 * stride));
-        Vector128<byte> q3 = Vector128.LoadUnsafe(ref Unsafe.Add(ref q0Row, 3 * stride));
+        Vector128<byte> q1 = Vector128.LoadUnsafe(ref Unsafe.Add(ref q0Row, (nint)stride));
+        Vector128<byte> q2 = Vector128.LoadUnsafe(ref Unsafe.Add(ref q0Row, (nint)(2 * stride)));
+        Vector128<byte> q3 = Vector128.LoadUnsafe(ref Unsafe.Add(ref q0Row, (nint)(3 * stride)));
         FilterNormal(p3, ref p2, ref p1, ref p0, ref q0, ref q1, ref q2, q3, kind == Kind.Macroblock, edge, interior, hev);
         if (kind == Kind.Macroblock)
         {
-            p2.StoreUnsafe(ref Unsafe.Subtract(ref q0Row, 3 * stride));
-            q2.StoreUnsafe(ref Unsafe.Add(ref q0Row, 2 * stride));
+            p2.StoreUnsafe(ref Unsafe.Subtract(ref q0Row, (nint)(3 * stride)));
+            q2.StoreUnsafe(ref Unsafe.Add(ref q0Row, (nint)(2 * stride)));
         }
 
-        p1.StoreUnsafe(ref Unsafe.Subtract(ref q0Row, 2 * stride));
+        p1.StoreUnsafe(ref Unsafe.Subtract(ref q0Row, (nint)(2 * stride)));
         p0.StoreUnsafe(ref p0Row);
         q0.StoreUnsafe(ref q0Row);
-        q1.StoreUnsafe(ref Unsafe.Add(ref q0Row, stride));
+        q1.StoreUnsafe(ref Unsafe.Add(ref q0Row, (nint)stride));
     }
 
     /// <summary>The vertical edge left of <paramref name="q0"/>, 16 rows down.</summary>
@@ -68,10 +68,10 @@ internal static class Vp8LoopFilter
     public static void LumaVertical(ref byte q0, int stride, Kind kind, int edge, int interior, int hev)
     {
         ref byte left = ref Unsafe.Subtract(ref q0, 4);
-        Load16x8(ref left, stride, ref Unsafe.Add(ref left, 8 * stride), stride,
+        Load16x8(ref left, stride, ref Unsafe.Add(ref left, (nint)(8 * stride)), stride,
             out var p3, out var p2, out var p1, out var p0, out var c0, out var c1, out var c2, out var c3);
         Filter(kind, p3, ref p2, ref p1, ref p0, ref c0, ref c1, ref c2, c3, edge, interior, hev);
-        Store16x8(ref left, stride, ref Unsafe.Add(ref left, 8 * stride), stride, p3, p2, p1, p0, c0, c1, c2, c3);
+        Store16x8(ref left, stride, ref Unsafe.Add(ref left, (nint)(8 * stride)), stride, p3, p2, p1, p0, c0, c1, c2, c3);
     }
 
     /// <summary>The horizontal edges above <paramref name="uQ0Row"/> and <paramref name="vQ0Row"/> (8 pixels each).</summary>
@@ -114,14 +114,14 @@ internal static class Vp8LoopFilter
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<byte> LoadPair(ref byte u, ref byte v, int offset) =>
         Vector128.Create(
-            Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref u, offset)),
-            Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref v, offset))).AsByte();
+            Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref u, (nint)offset)),
+            Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref v, (nint)offset))).AsByte();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void StorePair(ref byte u, ref byte v, int offset, Vector128<byte> value)
     {
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref u, offset), value.AsUInt64().GetElement(0));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref v, offset), value.AsUInt64().GetElement(1));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref u, (nint)offset), value.AsUInt64().GetElement(0));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref v, (nint)offset), value.AsUInt64().GetElement(1));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -339,14 +339,14 @@ internal static class Vp8LoopFilter
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<byte> Row2(ref byte a, ref byte b, int row, int aStride, int bStride) =>
         Vector128.Create(
-            Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref a, row * aStride)),
-            Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref b, row * bStride))).AsByte();
+            Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref a, (nint)(row * aStride))),
+            Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref b, (nint)(row * bStride)))).AsByte();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void StoreRows(ref byte destination, int stride, int row, Vector128<byte> rows)
     {
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, row * stride), rows.AsUInt64().GetElement(0));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, (row + 1) * stride), rows.AsUInt64().GetElement(1));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, (nint)(row * stride)), rows.AsUInt64().GetElement(0));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, (nint)((row + 1) * stride)), rows.AsUInt64().GetElement(1));
     }
 
     // Interleave the low / high halves of two vectors element by element (x86 punpckl/h, Arm zip1/2).

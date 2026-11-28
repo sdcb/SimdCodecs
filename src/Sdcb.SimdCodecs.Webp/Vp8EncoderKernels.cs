@@ -38,9 +38,9 @@ internal static class Vp8EncoderKernels
         ref int o = ref MemoryMarshal.GetReference(c);
         int t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15;
         Row(ref src, ref pred, out t0, out t1, out t2, out t3);
-        Row(ref Unsafe.Add(ref src, srcStride), ref Unsafe.Add(ref pred, predStride), out t4, out t5, out t6, out t7);
-        Row(ref Unsafe.Add(ref src, 2 * srcStride), ref Unsafe.Add(ref pred, 2 * predStride), out t8, out t9, out t10, out t11);
-        Row(ref Unsafe.Add(ref src, 3 * srcStride), ref Unsafe.Add(ref pred, 3 * predStride), out t12, out t13, out t14, out t15);
+        Row(ref Unsafe.Add(ref src, (nint)srcStride), ref Unsafe.Add(ref pred, (nint)predStride), out t4, out t5, out t6, out t7);
+        Row(ref Unsafe.Add(ref src, (nint)(2 * srcStride)), ref Unsafe.Add(ref pred, (nint)(2 * predStride)), out t8, out t9, out t10, out t11);
+        Row(ref Unsafe.Add(ref src, (nint)(3 * srcStride)), ref Unsafe.Add(ref pred, (nint)(3 * predStride)), out t12, out t13, out t14, out t15);
         Column(t0, t4, t8, t12, ref o, 0);
         Column(t1, t5, t9, t13, ref o, 1);
         Column(t2, t6, t10, t14, ref o, 2);
@@ -63,10 +63,10 @@ internal static class Vp8EncoderKernels
     private static void Column(int y0, int y1, int y2, int y3, ref int o, int k)
     {
         int a = y0 + y3, b = y1 + y2, c = y1 - y2, d = y0 - y3;
-        Unsafe.Add(ref o, k) = (a + b + 8) >> 4;
-        Unsafe.Add(ref o, 8 + k) = (a - b + 8) >> 4;
-        Unsafe.Add(ref o, 4 + k) = (d * 5352 + c * 2217 + 32768) >> 16;
-        Unsafe.Add(ref o, 12 + k) = (d * 2217 - c * 5352 + 32768) >> 16;
+        Unsafe.Add(ref o, (nint)k) = (a + b + 8) >> 4;
+        Unsafe.Add(ref o, (nint)(8 + k)) = (a - b + 8) >> 4;
+        Unsafe.Add(ref o, (nint)(4 + k)) = (d * 5352 + c * 2217 + 32768) >> 16;
+        Unsafe.Add(ref o, (nint)(12 + k)) = (d * 2217 - c * 5352 + 32768) >> 16;
     }
 
     /// <summary>
@@ -91,8 +91,8 @@ internal static class Vp8EncoderKernels
         int last = -1;
         for (int i = start; i < 16; i++)
         {
-            int pos = Unsafe.Add(ref zigzag, i);
-            int v = Unsafe.Add(ref c, pos);
+            int pos = Unsafe.Add(ref zigzag, (nint)i);
+            int v = Unsafe.Add(ref c, (nint)pos);
             int magnitude = Math.Abs(v);
             int level;
             int step;
@@ -114,8 +114,8 @@ internal static class Vp8EncoderKernels
                 level = v < 0 ? -level : level;
             }
 
-            Unsafe.Add(ref l, i) = (short)level;
-            Unsafe.Add(ref dq, pos) = (short)(level * step);
+            Unsafe.Add(ref l, (nint)i) = (short)level;
+            Unsafe.Add(ref dq, (nint)pos) = (short)(level * step);
         }
 
         return last;
@@ -129,15 +129,15 @@ internal static class Vp8EncoderKernels
             Vector128<int> sum = Vector128<int>.Zero;
             for (int y = 0; y < height; y++)
             {
-                ref byte ra = ref Unsafe.Add(ref a, y * aStride);
-                ref byte rb = ref Unsafe.Add(ref b, y * bStride);
+                ref byte ra = ref Unsafe.Add(ref a, (nint)(y * aStride));
+                ref byte rb = ref Unsafe.Add(ref b, (nint)(y * bStride));
                 for (int x = 0; x < width; x += 8)
                 {
                     // Eight bytes each: the rows are at least x + 8 long.
                     Vector128<short> va = Vector128.WidenLower(
-                        Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref ra, x))).AsByte()).AsInt16();
+                        Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref ra, (nint)x))).AsByte()).AsInt16();
                     Vector128<short> vb = Vector128.WidenLower(
-                        Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref rb, x))).AsByte()).AsInt16();
+                        Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref rb, (nint)x))).AsByte()).AsInt16();
                     Vector128<short> d = va - vb;
                     (Vector128<int> lo, Vector128<int> hi) = Vector128.Widen(d);
                     sum += lo * lo + hi * hi;
@@ -150,11 +150,11 @@ internal static class Vp8EncoderKernels
         int total = 0;
         for (int y = 0; y < height; y++)
         {
-            ref byte ra = ref Unsafe.Add(ref a, y * aStride);
-            ref byte rb = ref Unsafe.Add(ref b, y * bStride);
+            ref byte ra = ref Unsafe.Add(ref a, (nint)(y * aStride));
+            ref byte rb = ref Unsafe.Add(ref b, (nint)(y * bStride));
             for (int x = 0; x < width; x++)
             {
-                int d = Unsafe.Add(ref ra, x) - Unsafe.Add(ref rb, x);
+                int d = Unsafe.Add(ref ra, (nint)x) - Unsafe.Add(ref rb, (nint)x);
                 total += d * d;
             }
         }
@@ -170,9 +170,9 @@ internal static class Vp8EncoderKernels
     {
         int d0, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14, d15;
         HRow(ref a, ref b, out d0, out d1, out d2, out d3);
-        HRow(ref Unsafe.Add(ref a, aStride), ref Unsafe.Add(ref b, bStride), out d4, out d5, out d6, out d7);
-        HRow(ref Unsafe.Add(ref a, 2 * aStride), ref Unsafe.Add(ref b, 2 * bStride), out d8, out d9, out d10, out d11);
-        HRow(ref Unsafe.Add(ref a, 3 * aStride), ref Unsafe.Add(ref b, 3 * bStride), out d12, out d13, out d14, out d15);
+        HRow(ref Unsafe.Add(ref a, (nint)aStride), ref Unsafe.Add(ref b, (nint)bStride), out d4, out d5, out d6, out d7);
+        HRow(ref Unsafe.Add(ref a, (nint)(2 * aStride)), ref Unsafe.Add(ref b, (nint)(2 * bStride)), out d8, out d9, out d10, out d11);
+        HRow(ref Unsafe.Add(ref a, (nint)(3 * aStride)), ref Unsafe.Add(ref b, (nint)(3 * bStride)), out d12, out d13, out d14, out d15);
         return (HColumn(d0, d4, d8, d12) + HColumn(d1, d5, d9, d13) + HColumn(d2, d6, d10, d14) + HColumn(d3, d7, d11, d15)) >> 1;
     }
 
@@ -203,7 +203,7 @@ internal static class Vp8EncoderKernels
         {
             for (int x = 0; x < width; x += 4)
             {
-                sum += Satd4(ref Unsafe.Add(ref a, y * aStride + x), aStride, ref Unsafe.Add(ref b, y * bStride + x), bStride);
+                sum += Satd4(ref Unsafe.Add(ref a, (nint)(y * aStride + x)), aStride, ref Unsafe.Add(ref b, (nint)(y * bStride + x)), bStride);
             }
         }
 
@@ -221,9 +221,9 @@ internal static class Vp8EncoderKernels
     internal static void ResidualDctVector(ref byte src, int srcStride, ref byte pred, int predStride, Span<int> c)
     {
         Vector128<int> r0 = Widen4(ref src) - Widen4(ref pred);
-        Vector128<int> r1 = Widen4(ref Unsafe.Add(ref src, srcStride)) - Widen4(ref Unsafe.Add(ref pred, predStride));
-        Vector128<int> r2 = Widen4(ref Unsafe.Add(ref src, 2 * srcStride)) - Widen4(ref Unsafe.Add(ref pred, 2 * predStride));
-        Vector128<int> r3 = Widen4(ref Unsafe.Add(ref src, 3 * srcStride)) - Widen4(ref Unsafe.Add(ref pred, 3 * predStride));
+        Vector128<int> r1 = Widen4(ref Unsafe.Add(ref src, (nint)srcStride)) - Widen4(ref Unsafe.Add(ref pred, (nint)predStride));
+        Vector128<int> r2 = Widen4(ref Unsafe.Add(ref src, (nint)(2 * srcStride))) - Widen4(ref Unsafe.Add(ref pred, (nint)(2 * predStride)));
+        Vector128<int> r3 = Widen4(ref Unsafe.Add(ref src, (nint)(3 * srcStride))) - Widen4(ref Unsafe.Add(ref pred, (nint)(3 * predStride)));
         Vp8Decoder.Transpose4x4(r0, r1, r2, r3, out Vector128<int> x0, out Vector128<int> x1, out Vector128<int> x2, out Vector128<int> x3);
         Vector128<int> a = x0 + x3, b = x1 + x2, cc = x1 - x2, d = x0 - x3;
         Vector128<int> k5352 = Vector128.Create(5352), k2217 = Vector128.Create(2217);
@@ -270,9 +270,9 @@ internal static class Vp8EncoderKernels
             Vector128<int> negative = Vector128.LessThan(v, Vector128<int>.Zero);
             level = (level ^ negative) - negative;
             Vector128<int> scaled = level * step;
-            Unsafe.WriteUnaligned(ref Unsafe.As<short, byte>(ref Unsafe.Add(ref rl, k * 4)),
+            Unsafe.WriteUnaligned(ref Unsafe.As<short, byte>(ref Unsafe.Add(ref rl, (nint)(k * 4))),
                 Vector128.Narrow(level, level).AsUInt64().ToScalar());
-            Unsafe.WriteUnaligned(ref Unsafe.As<short, byte>(ref Unsafe.Add(ref dq, k * 4)),
+            Unsafe.WriteUnaligned(ref Unsafe.As<short, byte>(ref Unsafe.Add(ref dq, (nint)(k * 4))),
                 Vector128.Narrow(scaled, scaled).AsUInt64().ToScalar());
         }
 
@@ -287,7 +287,7 @@ internal static class Vp8EncoderKernels
         ref short l = ref MemoryMarshal.GetReference(levels);
         for (int i = start; i < 16; i++)
         {
-            Unsafe.Add(ref l, i) = Unsafe.Add(ref rl, Unsafe.Add(ref zigzag, i));
+            Unsafe.Add(ref l, (nint)i) = Unsafe.Add(ref rl, (nint)Unsafe.Add(ref zigzag, (nint)i));
         }
 
         // Zigzag index 0 is raster 0, so the levels' non-zero mask can be taken from the zigzag copy.
@@ -302,9 +302,9 @@ internal static class Vp8EncoderKernels
     internal static int Satd4Vector(ref byte a, int aStride, ref byte b, int bStride)
     {
         Vector128<int> r0 = Widen4(ref a) - Widen4(ref b);
-        Vector128<int> r1 = Widen4(ref Unsafe.Add(ref a, aStride)) - Widen4(ref Unsafe.Add(ref b, bStride));
-        Vector128<int> r2 = Widen4(ref Unsafe.Add(ref a, 2 * aStride)) - Widen4(ref Unsafe.Add(ref b, 2 * bStride));
-        Vector128<int> r3 = Widen4(ref Unsafe.Add(ref a, 3 * aStride)) - Widen4(ref Unsafe.Add(ref b, 3 * bStride));
+        Vector128<int> r1 = Widen4(ref Unsafe.Add(ref a, (nint)aStride)) - Widen4(ref Unsafe.Add(ref b, (nint)bStride));
+        Vector128<int> r2 = Widen4(ref Unsafe.Add(ref a, (nint)(2 * aStride))) - Widen4(ref Unsafe.Add(ref b, (nint)(2 * bStride)));
+        Vector128<int> r3 = Widen4(ref Unsafe.Add(ref a, (nint)(3 * aStride))) - Widen4(ref Unsafe.Add(ref b, (nint)(3 * bStride)));
         Vp8Decoder.Transpose4x4(r0, r1, r2, r3, out Vector128<int> x0, out Vector128<int> x1, out Vector128<int> x2, out Vector128<int> x3);
         Vector128<int> e0 = x0 + x3, e1 = x1 + x2, e2 = x1 - x2, e3 = x0 - x3;
         Vector128<int> d0 = e0 + e1, d1 = e3 + e2, d2 = e0 - e1, d3 = e3 - e2;

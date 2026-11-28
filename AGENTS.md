@@ -78,6 +78,7 @@ Gate thresholds and the oracle set: [`Oracle/README.md`](tests/Sdcb.SimdCodecs.T
 - When a test should catch a deliberate bug, break the code and confirm that it does.
 - Untrusted input fails with `InvalidDataException` (or `false` from `Try*`) — never a hang, unbounded allocation, `OverflowException` or `OutOfMemoryException`.
 - `Unsafe` / `MemoryMarshal` access in hot loops only where one up-front check proves every index in range, with the proof in a comment beside it. Fuzz tests are the safety net, not the proof.
+- The offset of `Unsafe.Add` / `Unsafe.Subtract` is `nint` / `nuint` (or a constant), never a computed `int`: write `Unsafe.Add(ref p, (nint)(x - 1))`, not `Unsafe.Add(ref p, x - 1)`. The Mono JIT (.NET for Android without AOT) zero-extends a computed negative `int` there, so the access lands gigabytes away (SIGSEGV). On CoreCLR the cast is free: the `int` overload sign-extends the same way.
 
 ## Performance work
 

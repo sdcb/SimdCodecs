@@ -238,7 +238,7 @@ internal struct JpegBitWriter
         var acc = (Acc << n) | value;
         var bits = Bits + n;
         var aligned = acc << (64 - bits);
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Buffer), Position),
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Buffer), (nint)Position),
             BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(aligned) : aligned);
         Position += bits >> 3;
         Bits = bits & 7;
@@ -272,7 +272,7 @@ internal struct JpegBitWriter
         if (!Vector128.IsHardwareAccelerated) return buffer.AsSpan(start, length).Contains((byte)0xFF);
         if (length <= 0) return false;
         _ = buffer[start + length + 15];
-        ref var p = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(buffer), start);
+        ref var p = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(buffer), (nint)start);
         var ff = Vector128.Create((byte)0xFF);
         uint found = 0;
         var i = 0;

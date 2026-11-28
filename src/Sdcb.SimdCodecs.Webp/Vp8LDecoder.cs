@@ -207,24 +207,24 @@ internal static class Vp8LDecoder
                 case 8:
                     for (; group < fullGroups; group++)
                     {
-                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, group * 8),
-                            Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref lutBase, ((source[group] >> 8) & 0xff) * 8)));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, (nint)(group * 8)),
+                            Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref lutBase, (nint)(((source[group] >> 8) & 0xff) * 8))));
                     }
 
                     break;
                 case 4:
                     for (; group < fullGroups; group++)
                     {
-                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, group * 4),
-                            Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref lutBase, ((source[group] >> 8) & 0xff) * 4)));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, (nint)(group * 4)),
+                            Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref lutBase, (nint)(((source[group] >> 8) & 0xff) * 4))));
                     }
 
                     break;
                 case 2:
                     for (; group < fullGroups; group++)
                     {
-                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, group * 2),
-                            Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref lutBase, ((source[group] >> 8) & 0xff) * 2)));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, (nint)(group * 2)),
+                            Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref lutBase, (nint)(((source[group] >> 8) & 0xff) * 2))));
                     }
 
                     break;
@@ -553,7 +553,7 @@ internal static class Vp8LDecoder
                 nextCancelPos = position + cancelInterval;
             }
             Refill(ref reader, ref buffer, ref bits);
-            int symbol = ReadSymbol(ref Unsafe.Add(ref tableBase, group.Green), group.GreenMask, ref buffer, ref bits);
+            int symbol = ReadSymbol(ref Unsafe.Add(ref tableBase, (nint)group.Green), group.GreenMask, ref buffer, ref bits);
             if (symbol < 256)
             {
                 int color;
@@ -564,15 +564,15 @@ internal static class Vp8LDecoder
                 else
                 {
                     // Green and red take at most 30 bits; refill before blue and alpha.
-                    int red = ReadSymbol(ref Unsafe.Add(ref tableBase, group.Red), group.RedMask, ref buffer, ref bits);
+                    int red = ReadSymbol(ref Unsafe.Add(ref tableBase, (nint)group.Red), group.RedMask, ref buffer, ref bits);
                     Refill(ref reader, ref buffer, ref bits);
-                    int blue = ReadSymbol(ref Unsafe.Add(ref tableBase, group.Blue), group.BlueMask, ref buffer, ref bits);
-                    int alpha = ReadSymbol(ref Unsafe.Add(ref tableBase, group.Alpha), group.AlphaMask, ref buffer, ref bits);
+                    int blue = ReadSymbol(ref Unsafe.Add(ref tableBase, (nint)group.Blue), group.BlueMask, ref buffer, ref bits);
+                    int alpha = ReadSymbol(ref Unsafe.Add(ref tableBase, (nint)group.Alpha), group.AlphaMask, ref buffer, ref bits);
                     color = (alpha << 24) | (red << 16) | (symbol << 8) | blue;
                 }
 
                 // position < pixelCount <= result.Length (loop condition; callers pass result of pixelCount).
-                Unsafe.Add(ref output, position++) = color;
+                Unsafe.Add(ref output, (nint)(position++)) = color;
                 if (++x == width)
                 {
                     x = 0;
@@ -600,7 +600,7 @@ internal static class Vp8LDecoder
                 int length = PrefixValue(symbol - 256, ref buffer, ref bits);
                 Refill(ref reader, ref buffer, ref bits);
                 // The distance alphabet has 40 symbols, so the code is always valid.
-                int distanceCode = ReadSymbol(ref Unsafe.Add(ref tableBase, group.Distance), group.DistanceMask,
+                int distanceCode = ReadSymbol(ref Unsafe.Add(ref tableBase, (nint)group.Distance), group.DistanceMask,
                     ref buffer, ref bits);
                 Refill(ref reader, ref buffer, ref bits);
                 int distance = Distance(PrefixValue(distanceCode, ref buffer, ref bits), width);
@@ -631,11 +631,11 @@ internal static class Vp8LDecoder
             int shift = 32 - cacheBits;
             for (; cached < position; cached++)
             {
-                int value = Unsafe.Add(ref output, cached);
-                Unsafe.Add(ref cacheBase, (int)((0x1e35a7bdu * (uint)value) >> shift)) = value;
+                int value = Unsafe.Add(ref output, (nint)cached);
+                Unsafe.Add(ref cacheBase, (nint)((int)((0x1e35a7bdu * (uint)value) >> shift))) = value;
             }
 
-            Unsafe.Add(ref output, position++) = Unsafe.Add(ref cacheBase, symbol - 280);
+            Unsafe.Add(ref output, (nint)(position++)) = Unsafe.Add(ref cacheBase, (nint)(symbol - 280));
             if (++x == width)
             {
                 x = 0;
@@ -681,11 +681,11 @@ internal static class Vp8LDecoder
         {
             // A forward element-by-element copy also repeats the period of an overlapping one.
             // Callers checked 0 <= source and position + length <= pixels.Length.
-            ref int from = ref Unsafe.Add(ref MemoryMarshal.GetReference(pixels), source);
-            ref int to = ref Unsafe.Add(ref MemoryMarshal.GetReference(pixels), position);
+            ref int from = ref Unsafe.Add(ref MemoryMarshal.GetReference(pixels), (nint)source);
+            ref int to = ref Unsafe.Add(ref MemoryMarshal.GetReference(pixels), (nint)position);
             for (int i = 0; i < length; i++)
             {
-                Unsafe.Add(ref to, i) = Unsafe.Add(ref from, i);
+                Unsafe.Add(ref to, (nint)i) = Unsafe.Add(ref from, (nint)i);
             }
 
             return;
@@ -1356,84 +1356,84 @@ internal static class Vp8LDecoder
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
     internal static void PredictFromLeftVector(Span<int> pixels, int index, int count, int width, int mode)
     {
-        ref int row = ref Unsafe.Add(ref MemoryMarshal.GetReference(pixels), index);
-        ref int above = ref Unsafe.Subtract(ref row, width);
+        ref int row = ref Unsafe.Add(ref MemoryMarshal.GetReference(pixels), (nint)index);
+        ref int above = ref Unsafe.Subtract(ref row, (nint)width);
         Vector128<byte> left = Pixel(ref Unsafe.Subtract(ref row, 1));
         switch (mode)
         {
             case 5:
                 for (int i = 0; i < count; i++)
                 {
-                    Vector128<byte> pred = AverageFloor(AverageFloor(left, Pixel(ref Unsafe.Add(ref above, i + 1))),
-                        Pixel(ref Unsafe.Add(ref above, i)));
-                    left = Pixel(ref Unsafe.Add(ref row, i)) + pred;
-                    Unsafe.Add(ref row, i) = left.AsInt32().ToScalar();
+                    Vector128<byte> pred = AverageFloor(AverageFloor(left, Pixel(ref Unsafe.Add(ref above, (nint)(i + 1)))),
+                        Pixel(ref Unsafe.Add(ref above, (nint)i)));
+                    left = Pixel(ref Unsafe.Add(ref row, (nint)i)) + pred;
+                    Unsafe.Add(ref row, (nint)i) = left.AsInt32().ToScalar();
                 }
 
                 break;
             case 6:
                 for (int i = 0; i < count; i++)
                 {
-                    Vector128<byte> pred = AverageFloor(left, Pixel(ref Unsafe.Add(ref above, i - 1)));
-                    left = Pixel(ref Unsafe.Add(ref row, i)) + pred;
-                    Unsafe.Add(ref row, i) = left.AsInt32().ToScalar();
+                    Vector128<byte> pred = AverageFloor(left, Pixel(ref Unsafe.Add(ref above, (nint)(i - 1))));
+                    left = Pixel(ref Unsafe.Add(ref row, (nint)i)) + pred;
+                    Unsafe.Add(ref row, (nint)i) = left.AsInt32().ToScalar();
                 }
 
                 break;
             case 7:
                 for (int i = 0; i < count; i++)
                 {
-                    Vector128<byte> pred = AverageFloor(left, Pixel(ref Unsafe.Add(ref above, i)));
-                    left = Pixel(ref Unsafe.Add(ref row, i)) + pred;
-                    Unsafe.Add(ref row, i) = left.AsInt32().ToScalar();
+                    Vector128<byte> pred = AverageFloor(left, Pixel(ref Unsafe.Add(ref above, (nint)i)));
+                    left = Pixel(ref Unsafe.Add(ref row, (nint)i)) + pred;
+                    Unsafe.Add(ref row, (nint)i) = left.AsInt32().ToScalar();
                 }
 
                 break;
             case 10:
                 for (int i = 0; i < count; i++)
                 {
-                    Vector128<byte> topPart = AverageFloor(Pixel(ref Unsafe.Add(ref above, i)),
-                        Pixel(ref Unsafe.Add(ref above, i + 1)));
-                    Vector128<byte> pred = AverageFloor(AverageFloor(left, Pixel(ref Unsafe.Add(ref above, i - 1))), topPart);
-                    left = Pixel(ref Unsafe.Add(ref row, i)) + pred;
-                    Unsafe.Add(ref row, i) = left.AsInt32().ToScalar();
+                    Vector128<byte> topPart = AverageFloor(Pixel(ref Unsafe.Add(ref above, (nint)i)),
+                        Pixel(ref Unsafe.Add(ref above, (nint)(i + 1))));
+                    Vector128<byte> pred = AverageFloor(AverageFloor(left, Pixel(ref Unsafe.Add(ref above, (nint)(i - 1)))), topPart);
+                    left = Pixel(ref Unsafe.Add(ref row, (nint)i)) + pred;
+                    Unsafe.Add(ref row, (nint)i) = left.AsInt32().ToScalar();
                 }
 
                 break;
             case 11:
                 for (int i = 0; i < count; i++)
                 {
-                    Vector128<byte> top = Pixel(ref Unsafe.Add(ref above, i));
-                    Vector128<byte> topLeft = Pixel(ref Unsafe.Add(ref above, i - 1));
+                    Vector128<byte> top = Pixel(ref Unsafe.Add(ref above, (nint)i));
+                    Vector128<byte> topLeft = Pixel(ref Unsafe.Add(ref above, (nint)(i - 1)));
                     // Lane 0 of each holds the 4-channel L1 distance (zero bytes elsewhere cancel).
                     Vector128<int> distanceToLeft = Sad4Vector(top, topLeft);
                     Vector128<int> distanceToTop = Sad4Vector(left, topLeft);
                     Vector128<byte> useLeft = Vector128.LessThan(distanceToLeft, distanceToTop).AsByte();
-                    left = Pixel(ref Unsafe.Add(ref row, i)) + Vector128.ConditionalSelect(useLeft, left, top);
-                    Unsafe.Add(ref row, i) = left.AsInt32().ToScalar();
+                    left = Pixel(ref Unsafe.Add(ref row, (nint)i)) + Vector128.ConditionalSelect(useLeft, left, top);
+                    Unsafe.Add(ref row, (nint)i) = left.AsInt32().ToScalar();
                 }
 
                 break;
             case 12:
                 for (int i = 0; i < count; i++)
                 {
-                    Vector128<short> delta = Vector128.WidenLower(Pixel(ref Unsafe.Add(ref above, i))).AsInt16()
-                        - Vector128.WidenLower(Pixel(ref Unsafe.Add(ref above, i - 1))).AsInt16();
+                    Vector128<short> delta = Vector128.WidenLower(Pixel(ref Unsafe.Add(ref above, (nint)i))).AsInt16()
+                        - Vector128.WidenLower(Pixel(ref Unsafe.Add(ref above, (nint)(i - 1)))).AsInt16();
                     Vector128<byte> pred = PackClamped(Vector128.WidenLower(left).AsInt16() + delta);
-                    left = Pixel(ref Unsafe.Add(ref row, i)) + pred;
-                    Unsafe.Add(ref row, i) = left.AsInt32().ToScalar();
+                    left = Pixel(ref Unsafe.Add(ref row, (nint)i)) + pred;
+                    Unsafe.Add(ref row, (nint)i) = left.AsInt32().ToScalar();
                 }
 
                 break;
             default:
                 for (int i = 0; i < count; i++)
                 {
-                    Vector128<short> average = Vector128.WidenLower(AverageFloor(left, Pixel(ref Unsafe.Add(ref above, i)))).AsInt16();
-                    Vector128<short> difference = average - Vector128.WidenLower(Pixel(ref Unsafe.Add(ref above, i - 1))).AsInt16();
+                    Vector128<short> average = Vector128.WidenLower(AverageFloor(left, Pixel(ref Unsafe.Add(ref above, (nint)i)))).AsInt16();
+                    Vector128<short> difference = average - Vector128.WidenLower(Pixel(ref Unsafe.Add(ref above, (nint)(i - 1)))).AsInt16();
                     // (a - b) / 2 truncating toward zero, as RFC 9649's C division does.
                     Vector128<short> half = Vector128.ShiftRightArithmetic(difference - Vector128.ShiftRightArithmetic(difference, 15), 1);
-                    left = Pixel(ref Unsafe.Add(ref row, i)) + PackClamped(average + half);
-                    Unsafe.Add(ref row, i) = left.AsInt32().ToScalar();
+                    left = Pixel(ref Unsafe.Add(ref row, (nint)i)) + PackClamped(average + half);
+                    Unsafe.Add(ref row, (nint)i) = left.AsInt32().ToScalar();
                 }
 
                 break;
@@ -1487,8 +1487,8 @@ internal static class Vp8LDecoder
         if (Vector.IsHardwareAccelerated && byteCount >= Vector<byte>.Count)
         {
             ref byte baseRef = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<int, byte>(pixels));
-            ref byte destination = ref Unsafe.Add(ref baseRef, index * 4);
-            ref byte source = ref Unsafe.Add(ref baseRef, (index + offset) * 4);
+            ref byte destination = ref Unsafe.Add(ref baseRef, (nint)(index * 4));
+            ref byte source = ref Unsafe.Add(ref baseRef, (nint)((index + offset) * 4));
             for (; i + Vector<byte>.Count <= byteCount; i += Vector<byte>.Count)
             {
                 Vector<byte> current = Vector.LoadUnsafe(ref destination, (nuint)i);
@@ -1510,9 +1510,9 @@ internal static class Vp8LDecoder
         if (Vector.IsHardwareAccelerated && byteCount >= Vector<byte>.Count)
         {
             ref byte baseRef = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<int, byte>(pixels));
-            ref byte destination = ref Unsafe.Add(ref baseRef, index * 4);
-            ref byte sourceA = ref Unsafe.Add(ref baseRef, (index + offsetA) * 4);
-            ref byte sourceB = ref Unsafe.Add(ref baseRef, (index + offsetB) * 4);
+            ref byte destination = ref Unsafe.Add(ref baseRef, (nint)(index * 4));
+            ref byte sourceA = ref Unsafe.Add(ref baseRef, (nint)((index + offsetA) * 4));
+            ref byte sourceB = ref Unsafe.Add(ref baseRef, (nint)((index + offsetB) * 4));
             for (; i + Vector<byte>.Count <= byteCount; i += Vector<byte>.Count)
             {
                 Vector<byte> a = Vector.LoadUnsafe(ref sourceA, (nuint)i);
@@ -1540,7 +1540,7 @@ internal static class Vp8LDecoder
             Vector<int> pattern = new(value);
             Vector<byte> constant = Unsafe.As<Vector<int>, Vector<byte>>(ref pattern);
             ref byte baseRef = ref MemoryMarshal.GetReference(MemoryMarshal.Cast<int, byte>(pixels));
-            ref byte destination = ref Unsafe.Add(ref baseRef, index * 4);
+            ref byte destination = ref Unsafe.Add(ref baseRef, (nint)(index * 4));
             for (; i + Vector<byte>.Count <= byteCount; i += Vector<byte>.Count)
             {
                 Vector<byte> current = Vector.LoadUnsafe(ref destination, (nuint)i);
@@ -1791,7 +1791,7 @@ internal static class Vp8LDecoder
             Vector<int> ff = new(0xff);
             Vector<int> keep = new(unchecked((int)0xff00ff00));
             ref int baseRef = ref MemoryMarshal.GetReference(pixels);
-            ref int at = ref Unsafe.Add(ref baseRef, index);
+            ref int at = ref Unsafe.Add(ref baseRef, (nint)index);
             for (; i + Vector<int>.Count <= count; i += Vector<int>.Count)
             {
                 Vector<int> v = Vector.LoadUnsafe(ref at, (nuint)i);
@@ -2051,8 +2051,8 @@ internal static class Vp8LDecoder
         ref byte outputBase = ref MemoryMarshal.GetReference(output);
         for (int row = 0; row < height; row++)
         {
-            ref byte source = ref Unsafe.Add(ref sourceBytes, row * width * 4);
-            ref byte target = ref Unsafe.Add(ref outputBase, row * stride);
+            ref byte source = ref Unsafe.Add(ref sourceBytes, (nint)(row * width * 4));
+            ref byte target = ref Unsafe.Add(ref outputBase, (nint)(row * stride));
             int x = 0;
             if (Vector256.IsHardwareAccelerated)
             {
@@ -2197,7 +2197,7 @@ internal static class Vp8LDecoder
                 // which brings bits to bits | 56.
                 buffer |= Unsafe.ReadUnaligned<ulong>(ref _next) << bits;
                 int take = (63 - bits) >> 3;
-                _next = ref Unsafe.Add(ref _next, take);
+                _next = ref Unsafe.Add(ref _next, (nint)take);
                 _remaining -= take;
                 bits |= 56;
             }

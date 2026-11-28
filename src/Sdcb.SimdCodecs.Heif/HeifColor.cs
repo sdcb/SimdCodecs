@@ -277,12 +277,12 @@ internal static class HeifColor
         var i = 0;
         for (; i + 4 <= width; i += 4)
         {
-            var yv = Vector128.Create((int)Unsafe.Add(ref py, i), Unsafe.Add(ref py, i + 1), Unsafe.Add(ref py, i + 2), Unsafe.Add(ref py, i + 3)) - vYOffset;
+            var yv = Vector128.Create((int)Unsafe.Add(ref py, (nint)i), Unsafe.Add(ref py, (nint)(i + 1)), Unsafe.Add(ref py, (nint)(i + 2)), Unsafe.Add(ref py, (nint)(i + 3))) - vYOffset;
             var ci = i >> 1;
-            var u0 = Unsafe.Add(ref pcb, ci) - k.COffset;
-            var u1 = Unsafe.Add(ref pcb, ci + 1) - k.COffset;
-            var v0 = Unsafe.Add(ref pcr, ci) - k.COffset;
-            var v1 = Unsafe.Add(ref pcr, ci + 1) - k.COffset;
+            var u0 = Unsafe.Add(ref pcb, (nint)ci) - k.COffset;
+            var u1 = Unsafe.Add(ref pcb, (nint)(ci + 1)) - k.COffset;
+            var v0 = Unsafe.Add(ref pcr, (nint)ci) - k.COffset;
+            var v1 = Unsafe.Add(ref pcr, (nint)(ci + 1)) - k.COffset;
             var uv = Vector128.Create(u0, u0, u1, u1);
             var vv = Vector128.Create(v0, v0, v1, v1);
             var yy = yv * vY + vHalf;
@@ -325,8 +325,8 @@ internal static class HeifColor
                                   Vector128.WidenUpper(Vector128.LoadUnsafe(ref py, (nuint)i)).AsInt32()) - vYOffset;
             var ci = i >> 1;
             // Four chroma samples, each duplicated for its two luma samples: c0 c0 c1 c1 c2 c2 c3 c3.
-            var cb4 = Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref pcb, ci)))).AsUInt16();
-            var cr4 = Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref pcr, ci)))).AsUInt16();
+            var cb4 = Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref pcb, (nint)ci)))).AsUInt16();
+            var cr4 = Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref pcr, (nint)ci)))).AsUInt16();
             var dup = Vector128.Create((ushort)0, 0, 1, 1, 2, 2, 3, 3);
             var uv = Vector256.Create(Vector128.WidenLower(Vector128.Shuffle(cb4, dup).AsInt16() - vCOffset).AsInt32(),
                                       Vector128.WidenUpper(Vector128.Shuffle(cb4, dup).AsInt16() - vCOffset).AsInt32());

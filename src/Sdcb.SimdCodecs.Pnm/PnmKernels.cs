@@ -60,7 +60,7 @@ internal static class PnmKernels
             }
         }
         for (; i < count; i++)
-            Unsafe.Add(ref d, i) = Unsafe.Add(ref s, 2 * i);
+            Unsafe.Add(ref d, (nint)i) = Unsafe.Add(ref s, (nint)(2 * i));
     }
 
     /// <summary>
@@ -83,13 +83,13 @@ internal static class PnmKernels
             // Reads source bytes i/8 and i/8 + 1, stores 16 at i: i + 16 <= count.
             for (; i + 16 <= count; i += 16)
             {
-                var pair = Vector128.Create(Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref s, i >> 3))).AsByte();
+                var pair = Vector128.Create(Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref s, (nint)(i >> 3)))).AsByte();
                 var v = Vector128.Shuffle(pair, spread);
                 Vector128.Equals(v & bits, Vector128<byte>.Zero).StoreUnsafe(ref d, (nuint)i);
             }
         }
         for (; i < count; i++)
-            Unsafe.Add(ref d, i) = (Unsafe.Add(ref s, i >> 3) & (0x80 >> (i & 7))) != 0 ? (byte)0 : (byte)255;
+            Unsafe.Add(ref d, (nint)i) = (Unsafe.Add(ref s, (nint)(i >> 3)) & (0x80 >> (i & 7))) != 0 ? (byte)0 : (byte)255;
     }
 
     /// <summary>
@@ -113,7 +113,7 @@ internal static class PnmKernels
             for (; i + 16 <= count; i += 16)
             {
                 var mask = Vector128.Shuffle(~Vector128.LoadUnsafe(ref s, (nuint)i), reverse).ExtractMostSignificantBits();
-                Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, i >> 3), (ushort)mask);
+                Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, (nint)(i >> 3)), (ushort)mask);
             }
         }
         for (; i < count; i += 8)
@@ -121,8 +121,8 @@ internal static class PnmKernels
             var n = Math.Min(8, count - i);
             var b = 0;
             for (var k = 0; k < n; k++)
-                if (Unsafe.Add(ref s, i + k) < 128) b |= 0x80 >> k;
-            Unsafe.Add(ref d, i >> 3) = (byte)b;
+                if (Unsafe.Add(ref s, (nint)(i + k)) < 128) b |= 0x80 >> k;
+            Unsafe.Add(ref d, (nint)(i >> 3)) = (byte)b;
         }
     }
 }

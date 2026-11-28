@@ -826,19 +826,19 @@ public static partial class PngReader
         {
             case 1:
                 for (var i = 0; i < count; i++)
-                    Unsafe.Add(ref t, i * stride) = Unsafe.Add(ref s, i);
+                    Unsafe.Add(ref t, (nint)(i * stride)) = Unsafe.Add(ref s, (nint)i);
                 break;
             case 2:
                 for (var i = 0; i < count; i++)
-                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref t, i * stride), Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref s, 2 * i)));
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref t, (nint)(i * stride)), Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref s, (nint)(2 * i))));
                 break;
             case 4:
                 for (var i = 0; i < count; i++)
-                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref t, i * stride), Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref s, 4 * i)));
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref t, (nint)(i * stride)), Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref s, (nint)(4 * i))));
                 break;
             case 8:
                 for (var i = 0; i < count; i++)
-                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref t, i * stride), Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref s, 8 * i)));
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref t, (nint)(i * stride)), Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref s, (nint)(8 * i))));
                 break;
             default: // 3 and 6
                 for (var i = 0; i < count; i++)

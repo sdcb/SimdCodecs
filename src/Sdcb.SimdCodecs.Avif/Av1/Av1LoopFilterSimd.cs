@@ -175,14 +175,14 @@ internal static partial class Av1LoopFilter
         if (contiguous != 0)
         {
             // Four adjacent samples: one 8-byte read, widened.
-            ulong raw = Unsafe.ReadUnaligned<ulong>(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref b, index)));
+            ulong raw = Unsafe.ReadUnaligned<ulong>(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref b, (nint)index)));
             return Vector128.WidenLower(Vector128.CreateScalarUnsafe(raw).AsUInt16()).AsInt32();
         }
         return Vector128.Create(
-            Unsafe.Add(ref b, index),
-            Unsafe.Add(ref b, index + lane),
-            Unsafe.Add(ref b, index + 2 * lane),
-            (int)Unsafe.Add(ref b, index + 3 * lane));
+            Unsafe.Add(ref b, (nint)index),
+            Unsafe.Add(ref b, (nint)(index + lane)),
+            Unsafe.Add(ref b, (nint)(index + 2 * lane)),
+            (int)Unsafe.Add(ref b, (nint)(index + 3 * lane)));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -191,12 +191,12 @@ internal static partial class Av1LoopFilter
         if (contiguous != 0)
         {
             var packed = Vector128.Narrow(v.AsUInt32(), v.AsUInt32());
-            Unsafe.WriteUnaligned(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref b, index)), packed.AsUInt64().ToScalar());
+            Unsafe.WriteUnaligned(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref b, (nint)index)), packed.AsUInt64().ToScalar());
             return;
         }
-        Unsafe.Add(ref b, index) = (ushort)v.GetElement(0);
-        Unsafe.Add(ref b, index + lane) = (ushort)v.GetElement(1);
-        Unsafe.Add(ref b, index + 2 * lane) = (ushort)v.GetElement(2);
-        Unsafe.Add(ref b, index + 3 * lane) = (ushort)v.GetElement(3);
+        Unsafe.Add(ref b, (nint)index) = (ushort)v.GetElement(0);
+        Unsafe.Add(ref b, (nint)(index + lane)) = (ushort)v.GetElement(1);
+        Unsafe.Add(ref b, (nint)(index + 2 * lane)) = (ushort)v.GetElement(2);
+        Unsafe.Add(ref b, (nint)(index + 3 * lane)) = (ushort)v.GetElement(3);
     }
 }

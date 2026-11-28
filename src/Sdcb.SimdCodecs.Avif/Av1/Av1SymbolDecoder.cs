@@ -206,7 +206,7 @@ internal ref struct Av1SymbolDecoder
         {
             symbol++;
             prev = cur;
-            int f = 32768 - Unsafe.Add(ref r0, symbol);
+            int f = 32768 - Unsafe.Add(ref r0, (nint)symbol);
             cur = (rangeShift * (f >> Av1Constants.EcProbShift)) >> (7 - Av1Constants.EcProbShift);
             cur += Av1Constants.EcMinProb * (n - symbol - 1);
         } while (val < cur && symbol < n - 1);
@@ -217,21 +217,21 @@ internal ref struct Av1SymbolDecoder
 
         if (!_disableCdfUpdate)
         {
-            int count = Unsafe.Add(ref r0, n);
+            int count = Unsafe.Add(ref r0, (nint)n);
             int rate = 3 + (count >> 4) + Math.Min(BitOperations.Log2((uint)n), 2);
             int end = Math.Min(symbol, n - 1);
             for (int i = 0; i < end; i++)
             {
-                int c = Unsafe.Add(ref r0, i);
-                Unsafe.Add(ref r0, i) = (ushort)(c - (c >> rate));
+                int c = Unsafe.Add(ref r0, (nint)i);
+                Unsafe.Add(ref r0, (nint)i) = (ushort)(c - (c >> rate));
             }
             for (int i = symbol; i < n - 1; i++)
             {
-                int c = Unsafe.Add(ref r0, i);
-                Unsafe.Add(ref r0, i) = (ushort)(c + ((32768 - c) >> rate));
+                int c = Unsafe.Add(ref r0, (nint)i);
+                Unsafe.Add(ref r0, (nint)i) = (ushort)(c + ((32768 - c) >> rate));
             }
             if (count < 32)
-                Unsafe.Add(ref r0, n) = (ushort)(count + 1);
+                Unsafe.Add(ref r0, (nint)n) = (ushort)(count + 1);
         }
 
         return symbol;
@@ -255,7 +255,7 @@ internal ref struct Av1SymbolDecoder
         {
             symbol++;
             prev = cur;
-            int f = 32768 - Unsafe.Add(ref r0, symbol);
+            int f = 32768 - Unsafe.Add(ref r0, (nint)symbol);
             cur = (rangeShift * (f >> Av1Constants.EcProbShift)) >> (7 - Av1Constants.EcProbShift);
             cur += Av1Constants.EcMinProb * (n - symbol - 1);
         } while (val < cur && symbol < n - 1);

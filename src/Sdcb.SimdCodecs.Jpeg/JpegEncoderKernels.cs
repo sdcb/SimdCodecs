@@ -116,7 +116,7 @@ internal static class JpegEncoderKernels
         // every load and store in range.
         for (; x + 8 <= width; x += 8)
         {
-            Gather8(ref Unsafe.Add(ref s, x * channels), channels, out var rb, out var gb, out var bb);
+            Gather8(ref Unsafe.Add(ref s, (nint)(x * channels)), channels, out var rb, out var gb, out var bb);
             var r = Avx.ConvertToVector256Single(Avx2.ConvertToVector256Int32(rb));
             if (channels <= 2)
             {
@@ -154,7 +154,7 @@ internal static class JpegEncoderKernels
         // Same bounds as the Vector256 form.
         for (; x + 8 <= width; x += 8)
         {
-            Gather8(ref Unsafe.Add(ref s, x * channels), channels, out var rb, out var gb, out var bb);
+            Gather8(ref Unsafe.Add(ref s, (nint)(x * channels)), channels, out var rb, out var gb, out var bb);
             Widen8(rb, out var r0, out var r1);
             if (channels <= 2)
             {
@@ -232,10 +232,10 @@ internal static class JpegEncoderKernels
         // x + 16 <= width keeps every gather (inside its 8 pixels) and store in range.
         for (; x + 16 <= width; x += 16)
         {
-            Load8(ref Unsafe.Add(ref s0, x * channels), channels, out var r0a, out var g0a, out var b0a);
-            Load8(ref Unsafe.Add(ref s0, (x + 8) * channels), channels, out var r0b, out var g0b, out var b0b);
-            Load8(ref Unsafe.Add(ref s1, x * channels), channels, out var r1a, out var g1a, out var b1a);
-            Load8(ref Unsafe.Add(ref s1, (x + 8) * channels), channels, out var r1b, out var g1b, out var b1b);
+            Load8(ref Unsafe.Add(ref s0, (nint)(x * channels)), channels, out var r0a, out var g0a, out var b0a);
+            Load8(ref Unsafe.Add(ref s0, (nint)((x + 8) * channels)), channels, out var r0b, out var g0b, out var b0b);
+            Load8(ref Unsafe.Add(ref s1, (nint)(x * channels)), channels, out var r1a, out var g1a, out var b1a);
+            Load8(ref Unsafe.Add(ref s1, (nint)((x + 8) * channels)), channels, out var r1b, out var g1b, out var b1b);
             Luma(r0a, g0a, b0a).StoreUnsafe(ref y0o, (nuint)x);
             Luma(r0b, g0b, b0b).StoreUnsafe(ref y0o, (nuint)x + 8);
             Luma(r1a, g1a, b1a).StoreUnsafe(ref y1o, (nuint)x);
@@ -283,8 +283,8 @@ internal static class JpegEncoderKernels
         // Same bounds as the Vector256 form, 8 pixels at a time.
         for (; x + 8 <= width; x += 8)
         {
-            Gather8(ref Unsafe.Add(ref s0, x * channels), channels, out var rb0, out var gb0, out var bb0);
-            Gather8(ref Unsafe.Add(ref s1, x * channels), channels, out var rb1, out var gb1, out var bb1);
+            Gather8(ref Unsafe.Add(ref s0, (nint)(x * channels)), channels, out var rb0, out var gb0, out var bb0);
+            Gather8(ref Unsafe.Add(ref s1, (nint)(x * channels)), channels, out var rb1, out var gb1, out var bb1);
             Widen8(rb0, out var r0a, out var r0b);
             Widen8(gb0, out var g0a, out var g0b);
             Widen8(bb0, out var b0a, out var b0b);
@@ -349,7 +349,7 @@ internal static class JpegEncoderKernels
         // t has 64 entries, zz at least 64 (checked by the callers' slices), and ZigZagToKernel is a permutation of 0..63.
         _ = zz[63];
         for (var i = 0; i < 64; i++)
-            Unsafe.Add(ref zr, i) = (short)Unsafe.Add(ref tr, Unsafe.Add(ref tz, i));
+            Unsafe.Add(ref zr, (nint)i) = (short)Unsafe.Add(ref tr, (nint)Unsafe.Add(ref tz, (nint)i));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]

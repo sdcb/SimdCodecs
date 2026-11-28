@@ -108,13 +108,13 @@ public static class PngPredictor
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<byte> LoadPixel(ref byte source, int offset, bool wide) => wide
-        ? Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref source, offset))).AsByte()
-        : Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref source, offset))).AsByte();
+        ? Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref source, (nint)offset))).AsByte()
+        : Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref source, (nint)offset))).AsByte();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void StorePixel(ref byte destination, int offset, Vector128<byte> value, int bpp)
     {
-        ref var d = ref Unsafe.Add(ref destination, offset);
+        ref var d = ref Unsafe.Add(ref destination, (nint)offset);
         switch (bpp)
         {
             case 2:

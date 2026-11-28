@@ -133,9 +133,9 @@ internal static class JpegColor
 
         for (; i < n; ++i)
         {
-            Unsafe.Add(ref d, i * 3) = Unsafe.Add(ref s, i * 4);
-            Unsafe.Add(ref d, i * 3 + 1) = Unsafe.Add(ref s, i * 4 + 1);
-            Unsafe.Add(ref d, i * 3 + 2) = Unsafe.Add(ref s, i * 4 + 2);
+            Unsafe.Add(ref d, (nint)(i * 3)) = Unsafe.Add(ref s, (nint)(i * 4));
+            Unsafe.Add(ref d, (nint)(i * 3 + 1)) = Unsafe.Add(ref s, (nint)(i * 4 + 1));
+            Unsafe.Add(ref d, (nint)(i * 3 + 2)) = Unsafe.Add(ref s, (nint)(i * 4 + 2));
         }
     }
 
@@ -291,7 +291,7 @@ internal static class JpegColor
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void Load8(ref byte p, int i, out Vector128<int> lo, out Vector128<int> hi)
     {
-        var w = Vector128.WidenLower(Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref p, i))).AsByte());
+        var w = Vector128.WidenLower(Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref p, (nint)i))).AsByte());
         lo = Vector128.WidenLower(w).AsInt32();
         hi = Vector128.WidenUpper(w).AsInt32();
     }
@@ -306,7 +306,7 @@ internal static class JpegColor
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector256<int> Load8(ref byte p, int i) =>
-        Avx2.ConvertToVector256Int32(Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref p, i))).AsByte());
+        Avx2.ConvertToVector256Int32(Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref p, (nint)i))).AsByte());
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector256<int> Load8(ref ushort p, int i) =>

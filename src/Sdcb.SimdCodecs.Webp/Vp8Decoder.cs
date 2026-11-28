@@ -87,7 +87,7 @@ internal static class Vp8Decoder
         {
             for (int row = first; row < end; row++)
             {
-                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref yCache, (row - yRow0) * yStride), width)
+                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref yCache, (nint)((row - yRow0) * yStride)), width)
                     .CopyTo(y.AsSpan(row * width, width));
             }
 
@@ -95,9 +95,9 @@ internal static class Vp8Decoder
             int chromaEnd = end == height ? (height + 1) >> 1 : end >> 1;
             for (int row = first >> 1; row < chromaEnd; row++)
             {
-                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref uCache, (row - uvRow0) * uvStride), chromaWidth)
+                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref uCache, (nint)((row - uvRow0) * uvStride)), chromaWidth)
                     .CopyTo(u.AsSpan(row * chromaWidth, chromaWidth));
-                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref vCache, (row - uvRow0) * uvStride), chromaWidth)
+                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref vCache, (nint)((row - uvRow0) * uvStride)), chromaWidth)
                     .CopyTo(v.AsSpan(row * chromaWidth, chromaWidth));
             }
         }
@@ -379,20 +379,20 @@ internal static class Vp8Decoder
             ref byte aboveU = ref Unsafe.Add(ref MemoryMarshal.GetReference(aboveRows), AboveU);
             ref byte aboveV = ref Unsafe.Add(ref MemoryMarshal.GetReference(aboveRows), AboveV);
             ref byte topY = ref MemoryMarshal.GetArrayDataReference(_topRows);
-            ref byte topU = ref Unsafe.Add(ref topY, paddedWidth);
-            ref byte topV = ref Unsafe.Add(ref topU, paddedWidth / 2);
-            ref byte yRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_yCache), LumaCacheExtra * yStride + CacheLeft);
-            ref byte uRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_uCache), ChromaCacheExtra * uvStride + CacheLeft);
-            ref byte vRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_vCache), ChromaCacheExtra * uvStride + CacheLeft);
+            ref byte topU = ref Unsafe.Add(ref topY, (nint)paddedWidth);
+            ref byte topV = ref Unsafe.Add(ref topU, (nint)(paddedWidth / 2));
+            ref byte yRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_yCache), (nint)(LumaCacheExtra * yStride + CacheLeft));
+            ref byte uRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_uCache), (nint)(ChromaCacheExtra * uvStride + CacheLeft));
+            ref byte vRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_vCache), (nint)(ChromaCacheExtra * uvStride + CacheLeft));
             for (int row = 0; row < 16; row++)
             {
-                Unsafe.Add(ref yRow0, row * yStride - 1) = 129;
+                Unsafe.Add(ref yRow0, (nint)(row * yStride - 1)) = 129;
             }
 
             for (int row = 0; row < 8; row++)
             {
-                Unsafe.Add(ref uRow0, row * uvStride - 1) = 129;
-                Unsafe.Add(ref vRow0, row * uvStride - 1) = 129;
+                Unsafe.Add(ref uRow0, (nint)(row * uvStride - 1)) = 129;
+                Unsafe.Add(ref vRow0, (nint)(row * uvStride - 1)) = 129;
             }
 
             for (int mbX = 0; mbX < mbWidth; mbX++)
@@ -432,9 +432,9 @@ internal static class Vp8Decoder
                     PrepareAbove(ref aboveY, ref aboveU, ref aboveV, ref topY, ref topU, ref topV, mbX, mbY, width);
                 }
 
-                ref byte dy = ref Unsafe.Add(ref yRow0, mbX * 16);
-                ref byte du = ref Unsafe.Add(ref uRow0, mbX * 8);
-                ref byte dv = ref Unsafe.Add(ref vRow0, mbX * 8);
+                ref byte dy = ref Unsafe.Add(ref yRow0, (nint)(mbX * 16));
+                ref byte du = ref Unsafe.Add(ref uRow0, (nint)(mbX * 8));
+                ref byte dv = ref Unsafe.Add(ref vRow0, (nint)(mbX * 8));
                 if (!skipPrediction)
                 {
                     if (i16)
@@ -457,7 +457,7 @@ internal static class Vp8Decoder
                 {
                     int blockX = block & 3;
                     int blockY = block >> 2;
-                    ref byte destination = ref Unsafe.Add(ref dy, blockY * 4 * yStride + blockX * 4);
+                    ref byte destination = ref Unsafe.Add(ref dy, (nint)(blockY * 4 * yStride + blockX * 4));
                     if (!i16 && !skipPrediction)
                     {
                         PredictSubblock(ref destination, yStride, blockModes[block],
@@ -465,7 +465,7 @@ internal static class Vp8Decoder
                     }
 
                     // An i16 block can be all zero except for the DC its Y2 block supplied.
-                    ref short coefficients = ref Unsafe.Add(ref coefficientBase, block * 16);
+                    ref short coefficients = ref Unsafe.Add(ref coefficientBase, (nint)(block * 16));
                     if (((nonzeroMask >> block) & 1) != 0 || coefficients != 0)
                     {
                         if (!skipResidual)
@@ -486,11 +486,11 @@ internal static class Vp8Decoder
                             continue;
                         }
 
-                        ref short coefficients = ref Unsafe.Add(ref coefficientBase, block * 16);
+                        ref short coefficients = ref Unsafe.Add(ref coefficientBase, (nint)(block * 16));
                         if (!skipResidual)
                         {
                             ref byte plane = ref block < 20 ? ref du : ref dv;
-                            InverseDctAdd(ref coefficients, ref Unsafe.Add(ref plane, ((block >> 1) & 1) * 4 * uvStride + (block & 1) * 4),
+                            InverseDctAdd(ref coefficients, ref Unsafe.Add(ref plane, (nint)(((block >> 1) & 1) * 4 * uvStride + (block & 1) * 4)),
                                 uvStride, residual, ((acMask >> block) & 1) != 0);
                         }
 
@@ -518,16 +518,16 @@ internal static class Vp8Decoder
             {
                 // The next row predicts from this one's bottom row before the loop filter.
                 ref byte topY = ref MemoryMarshal.GetArrayDataReference(_topRows);
-                ref byte topU = ref Unsafe.Add(ref topY, paddedWidth);
-                ref byte topV = ref Unsafe.Add(ref topU, paddedWidth / 2);
-                ref byte yRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_yCache), LumaCacheExtra * yStride + CacheLeft);
-                ref byte uRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_uCache), ChromaCacheExtra * uvStride + CacheLeft);
-                ref byte vRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_vCache), ChromaCacheExtra * uvStride + CacheLeft);
-                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref yRow0, 15 * yStride), paddedWidth)
+                ref byte topU = ref Unsafe.Add(ref topY, (nint)paddedWidth);
+                ref byte topV = ref Unsafe.Add(ref topU, (nint)(paddedWidth / 2));
+                ref byte yRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_yCache), (nint)(LumaCacheExtra * yStride + CacheLeft));
+                ref byte uRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_uCache), (nint)(ChromaCacheExtra * uvStride + CacheLeft));
+                ref byte vRow0 = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_vCache), (nint)(ChromaCacheExtra * uvStride + CacheLeft));
+                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref yRow0, (nint)(15 * yStride)), paddedWidth)
                     .CopyTo(MemoryMarshal.CreateSpan(ref topY, paddedWidth));
-                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref uRow0, 7 * uvStride), paddedWidth / 2)
+                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref uRow0, (nint)(7 * uvStride)), paddedWidth / 2)
                     .CopyTo(MemoryMarshal.CreateSpan(ref topU, paddedWidth / 2));
-                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref vRow0, 7 * uvStride), paddedWidth / 2)
+                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref vRow0, (nint)(7 * uvStride)), paddedWidth / 2)
                     .CopyTo(MemoryMarshal.CreateSpan(ref topV, paddedWidth / 2));
             }
 
@@ -614,22 +614,22 @@ internal static class Vp8Decoder
             return;
         }
 
-        Unsafe.Subtract(ref aboveY, 1) = mbX == 0 ? (byte)129 : Unsafe.Add(ref topY, mbX * 16 - 1);
-        Unsafe.Subtract(ref aboveU, 1) = mbX == 0 ? (byte)129 : Unsafe.Add(ref topU, mbX * 8 - 1);
-        Unsafe.Subtract(ref aboveV, 1) = mbX == 0 ? (byte)129 : Unsafe.Add(ref topV, mbX * 8 - 1);
-        Unsafe.CopyBlockUnaligned(ref aboveY, ref Unsafe.Add(ref topY, mbX * 16), 16);
-        Unsafe.CopyBlockUnaligned(ref aboveU, ref Unsafe.Add(ref topU, mbX * 8), 8);
-        Unsafe.CopyBlockUnaligned(ref aboveV, ref Unsafe.Add(ref topV, mbX * 8), 8);
+        Unsafe.Subtract(ref aboveY, 1) = mbX == 0 ? (byte)129 : Unsafe.Add(ref topY, (nint)(mbX * 16 - 1));
+        Unsafe.Subtract(ref aboveU, 1) = mbX == 0 ? (byte)129 : Unsafe.Add(ref topU, (nint)(mbX * 8 - 1));
+        Unsafe.Subtract(ref aboveV, 1) = mbX == 0 ? (byte)129 : Unsafe.Add(ref topV, (nint)(mbX * 8 - 1));
+        Unsafe.CopyBlockUnaligned(ref aboveY, ref Unsafe.Add(ref topY, (nint)(mbX * 16)), 16);
+        Unsafe.CopyBlockUnaligned(ref aboveU, ref Unsafe.Add(ref topU, (nint)(mbX * 8)), 8);
+        Unsafe.CopyBlockUnaligned(ref aboveV, ref Unsafe.Add(ref topV, (nint)(mbX * 8)), 8);
         int right = mbX * 16 + 16;
         if (right + 4 <= ((width + 15) & ~15))
         {
-            Unsafe.CopyBlockUnaligned(ref Unsafe.Add(ref aboveY, 16), ref Unsafe.Add(ref topY, right), 4);
+            Unsafe.CopyBlockUnaligned(ref Unsafe.Add(ref aboveY, 16), ref Unsafe.Add(ref topY, (nint)right), 4);
         }
         else
         {
             for (int i = 0; i < 4; i++)
             {
-                Unsafe.Add(ref aboveY, 16 + i) = Unsafe.Add(ref topY, Math.Min(right + i, ((width + 15) & ~15) - 1));
+                Unsafe.Add(ref aboveY, (nint)(16 + i)) = Unsafe.Add(ref topY, (nint)Math.Min(right + i, ((width + 15) & ~15) - 1));
             }
         }
     }
@@ -647,10 +647,10 @@ internal static class Vp8Decoder
     {
         if (blockY == 0)
         {
-            return ref Unsafe.Add(ref aboveY, blockX * 4);
+            return ref Unsafe.Add(ref aboveY, (nint)(blockX * 4));
         }
 
-        ref byte rowAbove = ref Unsafe.Subtract(ref destination, stride);
+        ref byte rowAbove = ref Unsafe.Subtract(ref destination, (nint)stride);
         if (blockX < 3)
         {
             return ref rowAbove;
@@ -767,11 +767,11 @@ internal static class Vp8Decoder
                 ac = sp.Y2Ac;
             }
 
-            int aboveBit = Unsafe.Add(ref aboveBits, block);
-            int leftBit = Unsafe.Add(ref leftBits, block);
+            int aboveBit = Unsafe.Add(ref aboveBits, (nint)block);
+            int leftBit = Unsafe.Add(ref leftBits, (nint)block);
             int context = (int)(((above >> aboveBit) & 1) + ((left >> leftBit) & 1));
-            int last = Tokens(ref decoder, ref v, ref b, ref r, ref Unsafe.Add(ref probabilities, type * 8 * 33), context,
-                start, ref Unsafe.Add(ref coefficients, block * 16), dc, ac);
+            int last = Tokens(ref decoder, ref v, ref b, ref r, ref Unsafe.Add(ref probabilities, (nint)(type * 8 * 33)), context,
+                start, ref Unsafe.Add(ref coefficients, (nint)(block * 16)), dc, ac);
             uint nonzero = last > 0 ? 1u : 0u;
             above = (above & ~(1u << aboveBit)) | (nonzero << aboveBit);
             left = (left & ~(1u << leftBit)) | (nonzero << leftBit);
@@ -813,7 +813,7 @@ internal static class Vp8Decoder
     {
         ref byte bandRows = ref MemoryMarshal.GetReference(BandRowOffsets);
         ref byte zigzag = ref MemoryMarshal.GetArrayDataReference(Vp8Tables.Zigzag);
-        ref byte p = ref Unsafe.Add(ref typeRows, Unsafe.Add(ref bandRows, position) + context * 11);
+        ref byte p = ref Unsafe.Add(ref typeRows, (nint)(Unsafe.Add(ref bandRows, (nint)position) + context * 11));
         int last = 0;
         if (Vp8BoolDecoder.ReadBit(ref decoder, ref v, ref b, ref r, p) != 0)
         {
@@ -827,7 +827,7 @@ internal static class Vp8Decoder
                         break;
                     }
 
-                    p = ref Unsafe.Add(ref typeRows, Unsafe.Add(ref bandRows, position));
+                    p = ref Unsafe.Add(ref typeRows, (nint)Unsafe.Add(ref bandRows, (nint)position));
                     continue;
                 }
 
@@ -871,14 +871,14 @@ internal static class Vp8Decoder
 
                 int factor = position == 0 ? dcFactor : acFactor;
                 int signed = Vp8BoolDecoder.ReadSigned(ref decoder, ref v, ref b, ref r, value);
-                Unsafe.Add(ref output, Unsafe.Add(ref zigzag, position)) = unchecked((short)(signed * factor));
+                Unsafe.Add(ref output, (nint)Unsafe.Add(ref zigzag, (nint)position)) = unchecked((short)(signed * factor));
                 last = ++position;
                 if (position == 16)
                 {
                     break;
                 }
 
-                p = ref Unsafe.Add(ref typeRows, Unsafe.Add(ref bandRows, position) + nextContext);
+                p = ref Unsafe.Add(ref typeRows, (nint)(Unsafe.Add(ref bandRows, (nint)position) + nextContext));
                 if (Vp8BoolDecoder.ReadBit(ref decoder, ref v, ref b, ref r, p) == 0)
                 {
                     break;
@@ -939,7 +939,7 @@ internal static class Vp8Decoder
             short dc = (short)((input + 3) >> 3);
             for (int i = 0; i < 16; i++)
             {
-                Unsafe.Add(ref blocks, i * 16) = dc;
+                Unsafe.Add(ref blocks, (nint)(i * 16)) = dc;
             }
 
             return;
@@ -948,10 +948,10 @@ internal static class Vp8Decoder
         Span<short> horizontal = stackalloc short[16];
         for (int column = 0; column < 4; column++)
         {
-            int a = Unsafe.Add(ref input, column) + Unsafe.Add(ref input, 12 + column);
-            int b = Unsafe.Add(ref input, 4 + column) + Unsafe.Add(ref input, 8 + column);
-            int c = Unsafe.Add(ref input, 4 + column) - Unsafe.Add(ref input, 8 + column);
-            int d = Unsafe.Add(ref input, column) - Unsafe.Add(ref input, 12 + column);
+            int a = Unsafe.Add(ref input, (nint)column) + Unsafe.Add(ref input, (nint)(12 + column));
+            int b = Unsafe.Add(ref input, (nint)(4 + column)) + Unsafe.Add(ref input, (nint)(8 + column));
+            int c = Unsafe.Add(ref input, (nint)(4 + column)) - Unsafe.Add(ref input, (nint)(8 + column));
+            int d = Unsafe.Add(ref input, (nint)column) - Unsafe.Add(ref input, (nint)(12 + column));
             horizontal[column] = unchecked((short)(a + b));
             horizontal[4 + column] = unchecked((short)(c + d));
             horizontal[8 + column] = unchecked((short)(a - b));
@@ -965,10 +965,10 @@ internal static class Vp8Decoder
             int b = horizontal[i + 1] + horizontal[i + 2];
             int c = horizontal[i + 1] - horizontal[i + 2];
             int d = horizontal[i] - horizontal[i + 3];
-            Unsafe.Add(ref blocks, i * 16) = (short)((a + b + 3) >> 3);
-            Unsafe.Add(ref blocks, (i + 1) * 16) = (short)((c + d + 3) >> 3);
-            Unsafe.Add(ref blocks, (i + 2) * 16) = (short)((a - b + 3) >> 3);
-            Unsafe.Add(ref blocks, (i + 3) * 16) = (short)((d - c + 3) >> 3);
+            Unsafe.Add(ref blocks, (nint)(i * 16)) = (short)((a + b + 3) >> 3);
+            Unsafe.Add(ref blocks, (nint)((i + 1) * 16)) = (short)((c + d + 3) >> 3);
+            Unsafe.Add(ref blocks, (nint)((i + 2) * 16)) = (short)((a - b + 3) >> 3);
+            Unsafe.Add(ref blocks, (nint)((i + 3) * 16)) = (short)((d - c + 3) >> 3);
         }
     }
 
@@ -988,8 +988,8 @@ internal static class Vp8Decoder
         Span<short> horizontal = stackalloc short[16];
         for (int column = 0; column < 4; column++)
         {
-            Transform1D(Unsafe.Add(ref input, column), Unsafe.Add(ref input, 8 + column),
-                Unsafe.Add(ref input, 4 + column), Unsafe.Add(ref input, 12 + column),
+            Transform1D(Unsafe.Add(ref input, (nint)column), Unsafe.Add(ref input, (nint)(8 + column)),
+                Unsafe.Add(ref input, (nint)(4 + column)), Unsafe.Add(ref input, (nint)(12 + column)),
                 out int a, out int b, out int c, out int d);
             horizontal[column] = unchecked((short)a);
             horizontal[4 + column] = unchecked((short)b);
@@ -1210,24 +1210,24 @@ internal static class Vp8Decoder
             {
                 // Modes are 0-9 (tree leaves, or the 0-3 derived from a luma mode), so the
                 // context row index is below 100.
-                int aboveMode = i < 4 ? Unsafe.Add(ref above, i) : Unsafe.Add(ref modes, i - 4);
-                int leftMode = (i & 3) == 0 ? Unsafe.Add(ref left, i >> 2) : Unsafe.Add(ref modes, i - 1);
-                ref byte p = ref Unsafe.Add(ref probabilities, (aboveMode * 10 + leftMode) * 9);
+                int aboveMode = i < 4 ? Unsafe.Add(ref above, (nint)i) : Unsafe.Add(ref modes, (nint)(i - 4));
+                int leftMode = (i & 3) == 0 ? Unsafe.Add(ref left, (nint)(i >> 2)) : Unsafe.Add(ref modes, (nint)(i - 1));
+                ref byte p = ref Unsafe.Add(ref probabilities, (nint)((aboveMode * 10 + leftMode) * 9));
                 int node = 0;
                 int child;
-                while ((child = Unsafe.Add(ref tree, node + Vp8BoolDecoder.ReadBit(ref header, ref v, ref b, ref r,
-                    Unsafe.Add(ref p, node >> 1)))) > 0)
+                while ((child = Unsafe.Add(ref tree, (nint)(node + Vp8BoolDecoder.ReadBit(ref header, ref v, ref b, ref r,
+                    Unsafe.Add(ref p, (nint)(node >> 1)))))) > 0)
                 {
                     node = child;
                 }
 
-                Unsafe.Add(ref modes, i) = (byte)-child;
+                Unsafe.Add(ref modes, (nint)i) = (byte)-child;
             }
 
             for (int i = 0; i < 4; i++)
             {
-                Unsafe.Add(ref above, i) = Unsafe.Add(ref modes, 12 + i);
-                Unsafe.Add(ref left, i) = Unsafe.Add(ref modes, i * 4 + 3);
+                Unsafe.Add(ref above, (nint)i) = Unsafe.Add(ref modes, (nint)(12 + i));
+                Unsafe.Add(ref left, (nint)i) = Unsafe.Add(ref modes, (nint)(i * 4 + 3));
             }
         }
         else
@@ -1412,15 +1412,15 @@ internal static class Vp8Decoder
         Transpose4x4(Wrap16((o0 + four) >> 3), Wrap16((o1 + four) >> 3), Wrap16((o2 + four) >> 3), Wrap16((o3 + four) >> 3),
             out Vector128<int> row0, out Vector128<int> row1, out Vector128<int> row2, out Vector128<int> row3);
         AddRow(ref destination, row0);
-        AddRow(ref Unsafe.Add(ref destination, stride), row1);
-        AddRow(ref Unsafe.Add(ref destination, 2 * stride), row2);
-        AddRow(ref Unsafe.Add(ref destination, 3 * stride), row3);
+        AddRow(ref Unsafe.Add(ref destination, (nint)stride), row1);
+        AddRow(ref Unsafe.Add(ref destination, (nint)(2 * stride)), row2);
+        AddRow(ref Unsafe.Add(ref destination, (nint)(3 * stride)), row3);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<int> LoadRow(ref short coefficients, int offset) =>
         Vector128.WidenLower(Vector128.CreateScalar(
-            Unsafe.ReadUnaligned<ulong>(ref Unsafe.As<short, byte>(ref Unsafe.Add(ref coefficients, offset)))).AsInt16());
+            Unsafe.ReadUnaligned<ulong>(ref Unsafe.As<short, byte>(ref Unsafe.Add(ref coefficients, (nint)offset)))).AsInt16());
 
     // RFC 6386 §14.4's 1-D transform on (p0, p1, p2, p3) = rows / columns 0..3.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1506,7 +1506,7 @@ internal static class Vp8Decoder
             Vector128<short> s = Vector128.Min(Vector128.Max(Vector128.Add(p, r), zero), max);
             Unsafe.WriteUnaligned(ref dst,
                 Vector128.Narrow(s.AsUInt16(), s.AsUInt16()).AsUInt32().ToScalar());
-            dst = ref Unsafe.Add(ref dst, stride);
+            dst = ref Unsafe.Add(ref dst, (nint)stride);
             res = ref Unsafe.Add(ref res, 4);
         }
     }
@@ -1515,10 +1515,10 @@ internal static class Vp8Decoder
     {
         for (int row = 0; row < 4; row++)
         {
-            ref byte line = ref Unsafe.Add(ref destination, row * stride);
+            ref byte line = ref Unsafe.Add(ref destination, (nint)(row * stride));
             for (int column = 0; column < 4; column++)
             {
-                ref byte pixel = ref Unsafe.Add(ref line, column);
+                ref byte pixel = ref Unsafe.Add(ref line, (nint)column);
                 pixel = (byte)Math.Clamp(pixel + residual[row * 4 + column], 0, 255);
             }
         }
@@ -1562,7 +1562,7 @@ internal static class Vp8Decoder
             for (int i = 0; i < 16; i++)
             {
                 aboveRow.StoreUnsafe(ref row);
-                row = ref Unsafe.Add(ref row, stride);
+                row = ref Unsafe.Add(ref row, (nint)stride);
             }
         }
         else
@@ -1571,7 +1571,7 @@ internal static class Vp8Decoder
             for (int i = 0; i < 8; i++)
             {
                 Unsafe.WriteUnaligned(ref row, aboveRow);
-                row = ref Unsafe.Add(ref row, stride);
+                row = ref Unsafe.Add(ref row, (nint)stride);
             }
         }
     }
@@ -1590,7 +1590,7 @@ internal static class Vp8Decoder
             Vector128<short> aboveHi = Vector128.WidenUpper(above).AsInt16();
             for (int row = 0; row < 16; row++)
             {
-                ref byte line = ref Unsafe.Add(ref destination, row * stride);
+                ref byte line = ref Unsafe.Add(ref destination, (nint)(row * stride));
                 Vector128<short> delta = Vector128.Create((short)(Unsafe.Subtract(ref line, 1) - topLeft));
                 Vector128<short> lo = Vector128.Min(Vector128.Max(Vector128.Add(aboveLo, delta), zero), max);
                 Vector128<short> hi = Vector128.Min(Vector128.Max(Vector128.Add(aboveHi, delta), zero), max);
@@ -1603,7 +1603,7 @@ internal static class Vp8Decoder
                 Vector128.CreateScalar(Unsafe.ReadUnaligned<ulong>(ref aboveRow)).AsByte()).AsInt16();
             for (int row = 0; row < 8; row++)
             {
-                ref byte line = ref Unsafe.Add(ref destination, row * stride);
+                ref byte line = ref Unsafe.Add(ref destination, (nint)(row * stride));
                 Vector128<short> delta = Vector128.Create((short)(Unsafe.Subtract(ref line, 1) - topLeft));
                 Vector128<short> value = Vector128.Min(Vector128.Max(Vector128.Add(above, delta), zero), max);
                 Unsafe.WriteUnaligned(ref line, Vector128.Narrow(value.AsUInt16(), value.AsUInt16()).AsUInt64().ToScalar());
@@ -1634,7 +1634,7 @@ internal static class Vp8Decoder
         {
             for (int i = 0; i < size; i++)
             {
-                sum += Unsafe.Add(ref destination, i * stride - 1);
+                sum += Unsafe.Add(ref destination, (nint)(i * stride - 1));
             }
         }
 
@@ -1647,7 +1647,7 @@ internal static class Vp8Decoder
             for (int i = 0; i < 16; i++)
             {
                 fill.StoreUnsafe(ref row);
-                row = ref Unsafe.Add(ref row, stride);
+                row = ref Unsafe.Add(ref row, (nint)stride);
             }
         }
         else
@@ -1656,7 +1656,7 @@ internal static class Vp8Decoder
             for (int i = 0; i < 8; i++)
             {
                 Unsafe.WriteUnaligned(ref row, fill64);
-                row = ref Unsafe.Add(ref row, stride);
+                row = ref Unsafe.Add(ref row, (nint)stride);
             }
         }
     }
@@ -1670,7 +1670,7 @@ internal static class Vp8Decoder
             {
                 for (int column = 0; column < size; column++)
                 {
-                    Unsafe.Add(ref destination, row * stride + column) = Unsafe.Add(ref aboveRow, column);
+                    Unsafe.Add(ref destination, (nint)(row * stride + column)) = Unsafe.Add(ref aboveRow, (nint)column);
                 }
             }
 
@@ -1681,7 +1681,7 @@ internal static class Vp8Decoder
         {
             for (int row = 0; row < size; row++)
             {
-                ref byte line = ref Unsafe.Add(ref destination, row * stride);
+                ref byte line = ref Unsafe.Add(ref destination, (nint)(row * stride));
                 MemoryMarshal.CreateSpan(ref line, size).Fill(Unsafe.Subtract(ref line, 1));
             }
 
@@ -1693,11 +1693,11 @@ internal static class Vp8Decoder
             int topLeft = Unsafe.Subtract(ref aboveRow, 1);
             for (int row = 0; row < size; row++)
             {
-                ref byte line = ref Unsafe.Add(ref destination, row * stride);
+                ref byte line = ref Unsafe.Add(ref destination, (nint)(row * stride));
                 int left = Unsafe.Subtract(ref line, 1);
                 for (int column = 0; column < size; column++)
                 {
-                    Unsafe.Add(ref line, column) = (byte)Math.Clamp(left + Unsafe.Add(ref aboveRow, column) - topLeft, 0, 255);
+                    Unsafe.Add(ref line, (nint)column) = (byte)Math.Clamp(left + Unsafe.Add(ref aboveRow, (nint)column) - topLeft, 0, 255);
                 }
             }
 
@@ -1707,15 +1707,15 @@ internal static class Vp8Decoder
         int sum = 0;
         for (int i = 0; i < size; i++)
         {
-            if (hasTop) sum += Unsafe.Add(ref aboveRow, i);
-            if (hasLeft) sum += Unsafe.Add(ref destination, i * stride - 1);
+            if (hasTop) sum += Unsafe.Add(ref aboveRow, (nint)i);
+            if (hasLeft) sum += Unsafe.Add(ref destination, (nint)(i * stride - 1));
         }
 
         int value = hasTop && hasLeft ? (sum + size) / (size * 2) :
             hasTop || hasLeft ? (sum + size / 2) / size : 128;
         for (int row = 0; row < size; row++)
         {
-            MemoryMarshal.CreateSpan(ref Unsafe.Add(ref destination, row * stride), size).Fill((byte)value);
+            MemoryMarshal.CreateSpan(ref Unsafe.Add(ref destination, (nint)(row * stride)), size).Fill((byte)value);
         }
     }
 
@@ -1746,9 +1746,9 @@ internal static class Vp8Decoder
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
     internal static void PredictSubblockVector(ref byte destination, int stride, int mode, ref byte aboveRow)
     {
-        ulong left3 = Unsafe.Add(ref destination, 3 * stride - 1);
-        ulong left2 = Unsafe.Add(ref destination, 2 * stride - 1);
-        ulong left1 = Unsafe.Add(ref destination, stride - 1);
+        ulong left3 = Unsafe.Add(ref destination, (nint)(3 * stride - 1));
+        ulong left2 = Unsafe.Add(ref destination, (nint)(2 * stride - 1));
+        ulong left1 = Unsafe.Add(ref destination, (nint)(stride - 1));
         ulong left0 = Unsafe.Subtract(ref destination, 1);
         // aboveRow[-1..6] = P A0..A6; aboveRow[7] = A7.
         ulong above8 = Unsafe.ReadUnaligned<ulong>(ref Unsafe.Subtract(ref aboveRow, 1));
@@ -1760,9 +1760,9 @@ internal static class Vp8Decoder
             sum += (top & 0xFF) + ((top >> 8) & 0xFF) + ((top >> 16) & 0xFF) + (top >> 24);
             uint fill = (sum >> 3) * 0x01010101u;
             Unsafe.WriteUnaligned(ref destination, fill);
-            Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, stride), fill);
-            Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, 2 * stride), fill);
-            Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, 3 * stride), fill);
+            Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, (nint)stride), fill);
+            Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, (nint)(2 * stride)), fill);
+            Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, (nint)(3 * stride)), fill);
             return;
         }
 
@@ -1793,16 +1793,16 @@ internal static class Vp8Decoder
             // is even and adding 1 more cannot reach a multiple of 4.
             Vector128<byte> outer = RoundingAverage(edge, next2) - ((edge ^ next2) & Vector128.Create((byte)1));
             Vector128<byte> avg3 = RoundingAverage(next, outer);
-            ref byte table = ref Unsafe.Add(ref MemoryMarshal.GetReference(SubblockShuffles), (mode - 2) * 32);
+            ref byte table = ref Unsafe.Add(ref MemoryMarshal.GetReference(SubblockShuffles), (nint)((mode - 2) * 32));
             result = TableLookup(avg3, Vector128.LoadUnsafe(ref table))
                    | TableLookup(avg2, Vector128.LoadUnsafe(ref Unsafe.Add(ref table, 16)));
         }
 
         Vector128<uint> rows = result.AsUInt32();
         Unsafe.WriteUnaligned(ref destination, rows.GetElement(0));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, stride), rows.GetElement(1));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, 2 * stride), rows.GetElement(2));
-        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, 3 * stride), rows.GetElement(3));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, (nint)stride), rows.GetElement(1));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, (nint)(2 * stride)), rows.GetElement(2));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref destination, (nint)(3 * stride)), rows.GetElement(3));
     }
 
     /// <summary>
@@ -1820,7 +1820,7 @@ internal static class Vp8Decoder
             Span<byte> saved = stackalloc byte[16];
             for (int r = 0; r < 4; r++)
             {
-                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref destination, r * stride), 4).CopyTo(saved[(r * 4)..]);
+                MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref destination, (nint)(r * stride)), 4).CopyTo(saved[(r * 4)..]);
             }
 
             for (int m = 0; m < 10; m++)
@@ -1828,22 +1828,22 @@ internal static class Vp8Decoder
                 PredictSubblockScalar(ref destination, stride, m, ref aboveRow);
                 for (int r = 0; r < 4; r++)
                 {
-                    MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref destination, r * stride), 4).CopyTo(output[(m * 16 + r * 4)..]);
+                    MemoryMarshal.CreateReadOnlySpan(ref Unsafe.Add(ref destination, (nint)(r * stride)), 4).CopyTo(output[(m * 16 + r * 4)..]);
                 }
             }
 
             for (int r = 0; r < 4; r++)
             {
-                saved.Slice(r * 4, 4).CopyTo(MemoryMarshal.CreateSpan(ref Unsafe.Add(ref destination, r * stride), 4));
+                saved.Slice(r * 4, 4).CopyTo(MemoryMarshal.CreateSpan(ref Unsafe.Add(ref destination, (nint)(r * stride)), 4));
             }
 
             return;
         }
 
         ref byte o = ref MemoryMarshal.GetReference(output);
-        ulong left3 = Unsafe.Add(ref destination, 3 * stride - 1);
-        ulong left2 = Unsafe.Add(ref destination, 2 * stride - 1);
-        ulong left1 = Unsafe.Add(ref destination, stride - 1);
+        ulong left3 = Unsafe.Add(ref destination, (nint)(3 * stride - 1));
+        ulong left2 = Unsafe.Add(ref destination, (nint)(2 * stride - 1));
+        ulong left1 = Unsafe.Add(ref destination, (nint)(stride - 1));
         ulong left0 = Unsafe.Subtract(ref destination, 1);
         ulong above8 = Unsafe.ReadUnaligned<ulong>(ref Unsafe.Subtract(ref aboveRow, 1));
         ulong a7 = Unsafe.Add(ref aboveRow, 7);
@@ -1876,7 +1876,7 @@ internal static class Vp8Decoder
         ref byte table = ref MemoryMarshal.GetReference(SubblockShuffles);
         for (int m = 2; m < 10; m++)
         {
-            ref byte t = ref Unsafe.Add(ref table, (m - 2) * 32);
+            ref byte t = ref Unsafe.Add(ref table, (nint)((m - 2) * 32));
             (TableLookup(avg3, Vector128.LoadUnsafe(ref t)) | TableLookup(avg2, Vector128.LoadUnsafe(ref Unsafe.Add(ref t, 16))))
                 .StoreUnsafe(ref o, (nuint)(m * 16));
         }
@@ -1942,12 +1942,12 @@ internal static class Vp8Decoder
         Span<byte> edge = stackalloc byte[9];
         for (int i = 0; i < 8; i++)
         {
-            above[i] = Unsafe.Add(ref aboveRow, i);
+            above[i] = Unsafe.Add(ref aboveRow, (nint)i);
         }
 
         for (int i = 0; i < 4; i++)
         {
-            left[i] = Unsafe.Add(ref destination, i * stride - 1);
+            left[i] = Unsafe.Add(ref destination, (nint)(i * stride - 1));
         }
 
         byte p = Unsafe.Subtract(ref aboveRow, 1);
@@ -1969,7 +1969,7 @@ internal static class Vp8Decoder
                 byte value = (byte)SubblockDc(above, left);
                 for (int row = 0; row < 4; row++)
                 {
-                    MemoryMarshal.CreateSpan(ref Unsafe.Add(ref destination, row * stride), 4).Fill(value);
+                    MemoryMarshal.CreateSpan(ref Unsafe.Add(ref destination, (nint)(row * stride)), 4).Fill(value);
                 }
 
                 break;
@@ -1981,7 +1981,7 @@ internal static class Vp8Decoder
                     int leftValue = left[row];
                     for (int column = 0; column < 4; column++)
                     {
-                        Unsafe.Add(ref destination, row * stride + column) = (byte)Clamp(leftValue + above[column] - p);
+                        Unsafe.Add(ref destination, (nint)(row * stride + column)) = (byte)Clamp(leftValue + above[column] - p);
                     }
                 }
 
@@ -1993,7 +1993,7 @@ internal static class Vp8Decoder
                 {
                     for (int column = 0; column < 4; column++)
                     {
-                        Unsafe.Add(ref destination, row * stride + column) = (byte)Avg3(
+                        Unsafe.Add(ref destination, (nint)(row * stride + column)) = (byte)Avg3(
                             column == 0 ? p : above[column - 1], above[column], above[column + 1]);
                     }
                 }
@@ -2008,7 +2008,7 @@ internal static class Vp8Decoder
                     int next = left[Math.Min(row + 1, 3)];
                     int current = left[row];
                     byte value = (byte)Avg3(previous, current, next);
-                    MemoryMarshal.CreateSpan(ref Unsafe.Add(ref destination, row * stride), 4).Fill(value);
+                    MemoryMarshal.CreateSpan(ref Unsafe.Add(ref destination, (nint)(row * stride)), 4).Fill(value);
                 }
 
                 break;
@@ -2019,7 +2019,7 @@ internal static class Vp8Decoder
                 {
                     for (int column = 0; column < 4; column++)
                     {
-                        Unsafe.Add(ref destination, row * stride + column) = (byte)LeftDown(above, row + column + 1);
+                        Unsafe.Add(ref destination, (nint)(row * stride + column)) = (byte)LeftDown(above, row + column + 1);
                     }
                 }
 
@@ -2031,7 +2031,7 @@ internal static class Vp8Decoder
                 {
                     for (int column = 0; column < 4; column++)
                     {
-                        Unsafe.Add(ref destination, row * stride + column) = (byte)Avg3(
+                        Unsafe.Add(ref destination, (nint)(row * stride + column)) = (byte)Avg3(
                             edge[4 + column - row - 1], edge[4 + column - row], edge[4 + column - row + 1]);
                     }
                 }
@@ -2044,7 +2044,7 @@ internal static class Vp8Decoder
                 {
                     for (int column = 0; column < 4; column++)
                     {
-                        Unsafe.Add(ref destination, row * stride + column) = (byte)VerticalRight(edge, row, column);
+                        Unsafe.Add(ref destination, (nint)(row * stride + column)) = (byte)VerticalRight(edge, row, column);
                     }
                 }
 
@@ -2056,7 +2056,7 @@ internal static class Vp8Decoder
                 {
                     for (int column = 0; column < 4; column++)
                     {
-                        Unsafe.Add(ref destination, row * stride + column) = (byte)VerticalLeft(above, row, column);
+                        Unsafe.Add(ref destination, (nint)(row * stride + column)) = (byte)VerticalLeft(above, row, column);
                     }
                 }
 
@@ -2068,7 +2068,7 @@ internal static class Vp8Decoder
                 {
                     for (int column = 0; column < 4; column++)
                     {
-                        Unsafe.Add(ref destination, row * stride + column) = (byte)HorizontalDown(edge, row, column);
+                        Unsafe.Add(ref destination, (nint)(row * stride + column)) = (byte)HorizontalDown(edge, row, column);
                     }
                 }
 
@@ -2080,7 +2080,7 @@ internal static class Vp8Decoder
                 {
                     for (int column = 0; column < 4; column++)
                     {
-                        Unsafe.Add(ref destination, row * stride + column) = (byte)HorizontalUp(left, row, column);
+                        Unsafe.Add(ref destination, (nint)(row * stride + column)) = (byte)HorizontalUp(left, row, column);
                     }
                 }
 
@@ -2279,12 +2279,12 @@ internal static class Vp8Decoder
 
         if (inner)
         {
-            Vp8LoopFilter.LumaHorizontal(ref Unsafe.Add(ref y, 4 * yStride), yStride, innerKind, subLimit, interior, hev);
-            Vp8LoopFilter.LumaHorizontal(ref Unsafe.Add(ref y, 8 * yStride), yStride, innerKind, subLimit, interior, hev);
-            Vp8LoopFilter.LumaHorizontal(ref Unsafe.Add(ref y, 12 * yStride), yStride, innerKind, subLimit, interior, hev);
+            Vp8LoopFilter.LumaHorizontal(ref Unsafe.Add(ref y, (nint)(4 * yStride)), yStride, innerKind, subLimit, interior, hev);
+            Vp8LoopFilter.LumaHorizontal(ref Unsafe.Add(ref y, (nint)(8 * yStride)), yStride, innerKind, subLimit, interior, hev);
+            Vp8LoopFilter.LumaHorizontal(ref Unsafe.Add(ref y, (nint)(12 * yStride)), yStride, innerKind, subLimit, interior, hev);
             if (!simple)
             {
-                Vp8LoopFilter.ChromaHorizontal(ref Unsafe.Add(ref u, 4 * uvStride), ref Unsafe.Add(ref v, 4 * uvStride), uvStride,
+                Vp8LoopFilter.ChromaHorizontal(ref Unsafe.Add(ref u, (nint)(4 * uvStride)), ref Unsafe.Add(ref v, (nint)(4 * uvStride)), uvStride,
                     innerKind, subLimit, interior, hev);
             }
         }
@@ -2294,7 +2294,7 @@ internal static class Vp8Decoder
         bool vertical, bool macroblockEdge, bool simple, int interior, int edge, int hev)
     {
         ref byte center = ref Unsafe.Add(
-            ref MemoryMarshal.GetArrayDataReference(plane), y * stride + x);
+            ref MemoryMarshal.GetArrayDataReference(plane), (nint)(y * stride + x));
         // Scalar reference path (no 16-lane kernels on this machine).
         int sampleStep = vertical ? 1 : stride;
         int pixelAdvance = vertical ? stride : 1;
@@ -2317,7 +2317,7 @@ internal static class Vp8Decoder
         bool macroblockEdge, int interior, int edge, int hev)
     {
         ref byte center = ref Unsafe.Add(
-            ref MemoryMarshal.GetArrayDataReference(plane), y * stride + x);
+            ref MemoryMarshal.GetArrayDataReference(plane), (nint)(y * stride + x));
         FilterVerticalScalar(ref center, stride, length, simple, macroblockEdge, interior, edge, hev);
     }
 
@@ -2344,7 +2344,7 @@ internal static class Vp8Decoder
         bool macroblockEdge, int interior, int edge, int hev)
     {
         ref byte center = ref Unsafe.Add(
-            ref MemoryMarshal.GetArrayDataReference(plane), y * stride + x);
+            ref MemoryMarshal.GetArrayDataReference(plane), (nint)(y * stride + x));
         if (simple)
         {
             FilterSimpleScalar(ref center, stride, 1, length, edge);
@@ -2364,11 +2364,11 @@ internal static class Vp8Decoder
     {
         for (int i = 0; i < length; i++)
         {
-            ref byte sample = ref Unsafe.Add(ref center, i * pixelAdvance);
-            int p1 = Unsafe.Add(ref sample, -2 * sampleStep);
-            int p0 = Unsafe.Add(ref sample, -sampleStep);
+            ref byte sample = ref Unsafe.Add(ref center, (nint)(i * pixelAdvance));
+            int p1 = Unsafe.Add(ref sample, (nint)(-2 * sampleStep));
+            int p0 = Unsafe.Add(ref sample, (nint)(-sampleStep));
             int q0 = sample;
-            int q1 = Unsafe.Add(ref sample, sampleStep);
+            int q1 = Unsafe.Add(ref sample, (nint)sampleStep);
             if (Math.Abs(p0 - q0) * 2 + Math.Abs(p1 - q1) / 2 > edge)
             {
                 continue;
@@ -2377,7 +2377,7 @@ internal static class Vp8Decoder
             int adjustment = ClampSigned(ClampSigned(p1 - q1) + 3 * (q0 - p0));
             int qAdjustment = FilterTap(adjustment, 4);
             int pAdjustment = FilterTap(adjustment, 3);
-            Unsafe.Add(ref sample, -sampleStep) = (byte)Math.Clamp(p0 + pAdjustment, 0, 255);
+            Unsafe.Add(ref sample, (nint)(-sampleStep)) = (byte)Math.Clamp(p0 + pAdjustment, 0, 255);
             sample = (byte)Math.Clamp(q0 - qAdjustment, 0, 255);
         }
     }
@@ -2388,15 +2388,15 @@ internal static class Vp8Decoder
     {
         for (int i = 0; i < length; i++)
         {
-            ref byte sample = ref Unsafe.Add(ref center, i * pixelAdvance);
-            int p3 = Unsafe.Add(ref sample, -4 * sampleStep);
-            int p2 = Unsafe.Add(ref sample, -3 * sampleStep);
-            int p1 = Unsafe.Add(ref sample, -2 * sampleStep);
-            int p0 = Unsafe.Add(ref sample, -sampleStep);
+            ref byte sample = ref Unsafe.Add(ref center, (nint)(i * pixelAdvance));
+            int p3 = Unsafe.Add(ref sample, (nint)(-4 * sampleStep));
+            int p2 = Unsafe.Add(ref sample, (nint)(-3 * sampleStep));
+            int p1 = Unsafe.Add(ref sample, (nint)(-2 * sampleStep));
+            int p0 = Unsafe.Add(ref sample, (nint)(-sampleStep));
             int q0 = sample;
-            int q1 = Unsafe.Add(ref sample, sampleStep);
-            int q2 = Unsafe.Add(ref sample, 2 * sampleStep);
-            int q3 = Unsafe.Add(ref sample, 3 * sampleStep);
+            int q1 = Unsafe.Add(ref sample, (nint)sampleStep);
+            int q2 = Unsafe.Add(ref sample, (nint)(2 * sampleStep));
+            int q3 = Unsafe.Add(ref sample, (nint)(3 * sampleStep));
             if (Math.Abs(p0 - q0) * 2 + Math.Abs(p1 - q1) / 2 > edge ||
                 Math.Abs(p3 - p2) > interior || Math.Abs(p2 - p1) > interior ||
                 Math.Abs(p1 - p0) > interior || Math.Abs(q1 - q0) > interior ||
@@ -2411,7 +2411,7 @@ internal static class Vp8Decoder
             {
                 int qAdjustment = FilterTap(adjustment, 4);
                 int pAdjustment = FilterTap(adjustment, 3);
-                Unsafe.Add(ref sample, -sampleStep) = (byte)Math.Clamp(p0 + pAdjustment, 0, 255);
+                Unsafe.Add(ref sample, (nint)(-sampleStep)) = (byte)Math.Clamp(p0 + pAdjustment, 0, 255);
                 sample = (byte)Math.Clamp(q0 - qAdjustment, 0, 255);
                 continue;
             }
@@ -2419,12 +2419,12 @@ internal static class Vp8Decoder
             int outer = (27 * adjustment + 63) >> 7;
             int middle = (18 * adjustment + 63) >> 7;
             int inner = (9 * adjustment + 63) >> 7;
-            Unsafe.Add(ref sample, -sampleStep) = (byte)Math.Clamp(p0 + outer, 0, 255);
+            Unsafe.Add(ref sample, (nint)(-sampleStep)) = (byte)Math.Clamp(p0 + outer, 0, 255);
             sample = (byte)Math.Clamp(q0 - outer, 0, 255);
-            Unsafe.Add(ref sample, -2 * sampleStep) = (byte)Math.Clamp(p1 + middle, 0, 255);
-            Unsafe.Add(ref sample, sampleStep) = (byte)Math.Clamp(q1 - middle, 0, 255);
-            Unsafe.Add(ref sample, -3 * sampleStep) = (byte)Math.Clamp(p2 + inner, 0, 255);
-            Unsafe.Add(ref sample, 2 * sampleStep) = (byte)Math.Clamp(q2 - inner, 0, 255);
+            Unsafe.Add(ref sample, (nint)(-2 * sampleStep)) = (byte)Math.Clamp(p1 + middle, 0, 255);
+            Unsafe.Add(ref sample, (nint)sampleStep) = (byte)Math.Clamp(q1 - middle, 0, 255);
+            Unsafe.Add(ref sample, (nint)(-3 * sampleStep)) = (byte)Math.Clamp(p2 + inner, 0, 255);
+            Unsafe.Add(ref sample, (nint)(2 * sampleStep)) = (byte)Math.Clamp(q2 - inner, 0, 255);
         }
     }
 
@@ -2434,15 +2434,15 @@ internal static class Vp8Decoder
     {
         for (int i = 0; i < length; i++)
         {
-            ref byte sample = ref Unsafe.Add(ref center, i * pixelAdvance);
-            int p3 = Unsafe.Add(ref sample, -4 * sampleStep);
-            int p2 = Unsafe.Add(ref sample, -3 * sampleStep);
-            int p1 = Unsafe.Add(ref sample, -2 * sampleStep);
-            int p0 = Unsafe.Add(ref sample, -sampleStep);
+            ref byte sample = ref Unsafe.Add(ref center, (nint)(i * pixelAdvance));
+            int p3 = Unsafe.Add(ref sample, (nint)(-4 * sampleStep));
+            int p2 = Unsafe.Add(ref sample, (nint)(-3 * sampleStep));
+            int p1 = Unsafe.Add(ref sample, (nint)(-2 * sampleStep));
+            int p0 = Unsafe.Add(ref sample, (nint)(-sampleStep));
             int q0 = sample;
-            int q1 = Unsafe.Add(ref sample, sampleStep);
-            int q2 = Unsafe.Add(ref sample, 2 * sampleStep);
-            int q3 = Unsafe.Add(ref sample, 3 * sampleStep);
+            int q1 = Unsafe.Add(ref sample, (nint)sampleStep);
+            int q2 = Unsafe.Add(ref sample, (nint)(2 * sampleStep));
+            int q3 = Unsafe.Add(ref sample, (nint)(3 * sampleStep));
             if (Math.Abs(p0 - q0) * 2 + Math.Abs(p1 - q1) / 2 > edge ||
                 Math.Abs(p3 - p2) > interior || Math.Abs(p2 - p1) > interior ||
                 Math.Abs(p1 - p0) > interior || Math.Abs(q1 - q0) > interior ||
@@ -2457,7 +2457,7 @@ internal static class Vp8Decoder
                 : ClampSigned(3 * (q0 - p0));
             int qAdjustment = FilterTap(adjustment, 4);
             int pAdjustment = FilterTap(adjustment, 3);
-            Unsafe.Add(ref sample, -sampleStep) = (byte)Math.Clamp(p0 + pAdjustment, 0, 255);
+            Unsafe.Add(ref sample, (nint)(-sampleStep)) = (byte)Math.Clamp(p0 + pAdjustment, 0, 255);
             sample = (byte)Math.Clamp(q0 - qAdjustment, 0, 255);
             if (highVariance)
             {
@@ -2465,8 +2465,8 @@ internal static class Vp8Decoder
             }
 
             int inner = (qAdjustment + 1) >> 1;
-            Unsafe.Add(ref sample, -2 * sampleStep) = (byte)Math.Clamp(p1 + inner, 0, 255);
-            Unsafe.Add(ref sample, sampleStep) = (byte)Math.Clamp(q1 - inner, 0, 255);
+            Unsafe.Add(ref sample, (nint)(-2 * sampleStep)) = (byte)Math.Clamp(p1 + inner, 0, 255);
+            Unsafe.Add(ref sample, (nint)sampleStep) = (byte)Math.Clamp(q1 - inner, 0, 255);
         }
     }
 

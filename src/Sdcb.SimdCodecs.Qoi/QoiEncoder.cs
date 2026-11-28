@@ -197,22 +197,22 @@ public static class QoiEncoder
                 {
                     if (++run == 62)
                     {
-                        Unsafe.Add(ref dst, o++) = QoiCodec.OpRun | 61;
+                        Unsafe.Add(ref dst, (nint)(o++)) = QoiCodec.OpRun | 61;
                         run = 0;
                     }
                     continue;
                 }
                 if (run > 0)
                 {
-                    Unsafe.Add(ref dst, o++) = (byte)(QoiCodec.OpRun | (run - 1));
+                    Unsafe.Add(ref dst, (nint)(o++)) = (byte)(QoiCodec.OpRun | (run - 1));
                     run = 0;
                 }
 
                 var h = QoiCodec.Hash(px);
-                ref var slot = ref Unsafe.Add(ref index, h);
+                ref var slot = ref Unsafe.Add(ref index, (nint)h);
                 if (slot == px)
                 {
-                    Unsafe.Add(ref dst, o++) = (byte)h;
+                    Unsafe.Add(ref dst, (nint)(o++)) = (byte)h;
                 }
                 else
                 {
@@ -224,29 +224,29 @@ public static class QoiEncoder
                         var db = (sbyte)(byte)((px >> 16) - (prev >> 16));
                         if ((uint)(dr + 2) < 4 && (uint)(dg + 2) < 4 && (uint)(db + 2) < 4)
                         {
-                            Unsafe.Add(ref dst, o++) = (byte)(QoiCodec.OpDiff | (dr + 2) << 4 | (dg + 2) << 2 | (db + 2));
+                            Unsafe.Add(ref dst, (nint)(o++)) = (byte)(QoiCodec.OpDiff | (dr + 2) << 4 | (dg + 2) << 2 | (db + 2));
                         }
                         else
                         {
                             int dgr = dr - dg, dgb = db - dg;
                             if ((uint)(dg + 32) < 64 && (uint)(dgr + 8) < 16 && (uint)(dgb + 8) < 16)
                             {
-                                Unsafe.Add(ref dst, o) = (byte)(QoiCodec.OpLuma | (dg + 32));
-                                Unsafe.Add(ref dst, o + 1) = (byte)((dgr + 8) << 4 | (dgb + 8));
+                                Unsafe.Add(ref dst, (nint)o) = (byte)(QoiCodec.OpLuma | (dg + 32));
+                                Unsafe.Add(ref dst, (nint)(o + 1)) = (byte)((dgr + 8) << 4 | (dgb + 8));
                                 o += 2;
                             }
                             else
                             {
                                 // The opcode, then R, G, B: the pixel's low three bytes.
-                                Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, o), QoiCodec.OpRgb | (BitConverter.IsLittleEndian ? px << 8 : BinaryPrimitives.ReverseEndianness(px << 8)));
+                                Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)o), QoiCodec.OpRgb | (BitConverter.IsLittleEndian ? px << 8 : BinaryPrimitives.ReverseEndianness(px << 8)));
                                 o += 4;
                             }
                         }
                     }
                     else
                     {
-                        Unsafe.Add(ref dst, o) = QoiCodec.OpRgba;
-                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, o + 1), BitConverter.IsLittleEndian ? px : BinaryPrimitives.ReverseEndianness(px));
+                        Unsafe.Add(ref dst, (nint)o) = QoiCodec.OpRgba;
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref dst, (nint)(o + 1)), BitConverter.IsLittleEndian ? px : BinaryPrimitives.ReverseEndianness(px));
                         o += 5;
                     }
                 }

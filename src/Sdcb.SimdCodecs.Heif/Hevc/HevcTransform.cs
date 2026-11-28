@@ -208,7 +208,7 @@ internal static class HevcTransform
             for (var y = 0; y < 4; y++)
             {
                 var sum = Vector128<int>.Zero;
-                for (var j = 0; j <= maxY; j++) sum += Vector128.Create(Unsafe.Add(ref m, j * 4 + y)) * Vector128.LoadUnsafe(ref d, (nuint)(j * 4));
+                for (var j = 0; j <= maxY; j++) sum += Vector128.Create(Unsafe.Add(ref m, (nint)(j * 4 + y))) * Vector128.LoadUnsafe(ref d, (nuint)(j * 4));
                 Vector128.Min(Vector128.Max((sum + r64) >> 7, lo16), hi16).StoreUnsafe(ref g, (nuint)(y * 4));
             }
         }
@@ -223,8 +223,8 @@ internal static class HevcTransform
                     var odd = Vector128<int>.Zero;
                     for (var j = 0; j <= lastRow; j += 2)
                     {
-                        even += Vector128.Create(Unsafe.Add(ref m, j * n + y)) * Vector128.LoadUnsafe(ref d, (nuint)(j * n + c * 4));
-                        odd += Vector128.Create(Unsafe.Add(ref m, (j + 1) * n + y)) * Vector128.LoadUnsafe(ref d, (nuint)((j + 1) * n + c * 4));
+                        even += Vector128.Create(Unsafe.Add(ref m, (nint)(j * n + y))) * Vector128.LoadUnsafe(ref d, (nuint)(j * n + c * 4));
+                        odd += Vector128.Create(Unsafe.Add(ref m, (nint)((j + 1) * n + y))) * Vector128.LoadUnsafe(ref d, (nuint)((j + 1) * n + c * 4));
                     }
                     Vector128.Min(Vector128.Max((even + odd + r64) >> 7, lo16), hi16).StoreUnsafe(ref g, (nuint)(y * n + c * 4));
                     Vector128.Min(Vector128.Max((even - odd + r64) >> 7, lo16), hi16).StoreUnsafe(ref g, (nuint)((n - 1 - y) * n + c * 4));
@@ -241,8 +241,8 @@ internal static class HevcTransform
             for (var c = 0; c < n >> 2; c++)
             {
                 var sum = Vector128<int>.Zero;
-                for (var j = 0; j <= maxX; j++) sum += Vector128.Create(Unsafe.Add(ref g, y * n + j)) * Vector128.LoadUnsafe(ref m, (nuint)(j * n + c * 4));
-                ref var target = ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref p, y * stride + c * 4));
+                for (var j = 0; j <= maxX; j++) sum += Vector128.Create(Unsafe.Add(ref g, (nint)(y * n + j))) * Vector128.LoadUnsafe(ref m, (nuint)(j * n + c * 4));
+                ref var target = ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref p, (nint)(y * stride + c * 4)));
                 var pred = Vector128.WidenLower(Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref target)).AsUInt16()).AsInt32();
                 var value = Vector128.Min(Vector128.Max(pred + ((sum + round) >> bdShift), Vector128<int>.Zero), max).AsUInt32();
                 Unsafe.WriteUnaligned(ref target, Vector128.Narrow(value, value).AsUInt64().ToScalar());
@@ -277,8 +277,8 @@ internal static class HevcTransform
                 var odd = Vector256<int>.Zero;
                 for (var j = 0; j <= lastRow; j += 2)
                 {
-                    even += Vector256.Create(Unsafe.Add(ref m, j * n + y)) * Vector256.LoadUnsafe(ref d, (nuint)(j * n + c * 8));
-                    odd += Vector256.Create(Unsafe.Add(ref m, (j + 1) * n + y)) * Vector256.LoadUnsafe(ref d, (nuint)((j + 1) * n + c * 8));
+                    even += Vector256.Create(Unsafe.Add(ref m, (nint)(j * n + y))) * Vector256.LoadUnsafe(ref d, (nuint)(j * n + c * 8));
+                    odd += Vector256.Create(Unsafe.Add(ref m, (nint)((j + 1) * n + y))) * Vector256.LoadUnsafe(ref d, (nuint)((j + 1) * n + c * 8));
                 }
                 Vector256.Min(Vector256.Max((even + odd + r64) >> 7, lo16), hi16).StoreUnsafe(ref g, (nuint)(y * n + c * 8));
                 Vector256.Min(Vector256.Max((even - odd + r64) >> 7, lo16), hi16).StoreUnsafe(ref g, (nuint)((n - 1 - y) * n + c * 8));
@@ -294,8 +294,8 @@ internal static class HevcTransform
             for (var c = 0; c < n >> 3; c++)
             {
                 var sum = Vector256<int>.Zero;
-                for (var j = 0; j <= maxX; j++) sum += Vector256.Create(Unsafe.Add(ref g, y * n + j)) * Vector256.LoadUnsafe(ref m, (nuint)(j * n + c * 8));
-                ref var target = ref Unsafe.Add(ref p, y * stride + c * 8);
+                for (var j = 0; j <= maxX; j++) sum += Vector256.Create(Unsafe.Add(ref g, (nint)(y * n + j))) * Vector256.LoadUnsafe(ref m, (nuint)(j * n + c * 8));
+                ref var target = ref Unsafe.Add(ref p, (nint)(y * stride + c * 8));
                 var (predLo, predHi) = Vector128.Widen(Vector128.LoadUnsafe(ref target));
                 var pred = Vector256.Create(predLo, predHi).AsInt32();
                 var value = Vector256.Min(Vector256.Max(pred + ((sum + round) >> bdShift), Vector256<int>.Zero), max).AsUInt32();

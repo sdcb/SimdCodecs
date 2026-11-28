@@ -178,7 +178,7 @@ internal sealed class PngRgba8Expander
         }
         for (; x < width; x++)
         {
-            ref var p = ref Unsafe.Add(ref d, x);
+            ref var p = ref Unsafe.Add(ref d, (nint)x);
             if (p == key)
                 p &= ~alpha;
         }
@@ -298,7 +298,7 @@ internal sealed class PngRgba8Expander
             for (; x + 16 <= width; x += 16)
             {
                 var v = Vector128.LoadUnsafe(ref s, (nuint)x);
-                ref var o = ref Unsafe.Add(ref d, 4 * x);
+                ref var o = ref Unsafe.Add(ref d, (nint)(4 * x));
                 (Shuffle(v, m0) | alpha).StoreUnsafe(ref o);
                 (Shuffle(v, m1) | alpha).StoreUnsafe(ref o, 16);
                 (Shuffle(v, m2) | alpha).StoreUnsafe(ref o, 32);
@@ -329,7 +329,7 @@ internal sealed class PngRgba8Expander
             for (; x + 8 <= width; x += 8)
             {
                 var v = Vector128.LoadUnsafe(ref s, (nuint)(2 * x));
-                ref var o = ref Unsafe.Add(ref d, 4 * x);
+                ref var o = ref Unsafe.Add(ref d, (nint)(4 * x));
                 (Shuffle(v, m0) | alpha).StoreUnsafe(ref o);
                 (Shuffle(v, m1) | alpha).StoreUnsafe(ref o, 16);
             }
@@ -410,7 +410,7 @@ internal sealed class PngRgba8Expander
             for (; x + 8 <= width; x += 8)
             {
                 var v = Vector128.LoadUnsafe(ref s, (nuint)(2 * x));
-                ref var o = ref Unsafe.Add(ref d, 4 * x);
+                ref var o = ref Unsafe.Add(ref d, (nint)(4 * x));
                 Shuffle(v, m0).StoreUnsafe(ref o);
                 Shuffle(v, m1).StoreUnsafe(ref o, 16);
             }
@@ -485,7 +485,7 @@ internal sealed class PngRgba8Expander
         ref var table = ref MemoryMarshal.GetArrayDataReference(_table!);
         ref var d = ref MemoryMarshal.GetReference(rgba);
         for (var x = 0; x < row.Length; x++)
-            Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * x), Unsafe.Add(ref table, row[x]));
+            Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, (nint)(4 * x)), Unsafe.Add(ref table, (nint)row[x]));
     }
 
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
@@ -510,9 +510,9 @@ internal sealed class PngRgba8Expander
                 for (var i = 0; i < whole; i++, x += 8)
                 {
                     int b = row[i];
-                    ref var o = ref Unsafe.Add(ref d, 4 * x);
+                    ref var o = ref Unsafe.Add(ref d, (nint)(4 * x));
                     for (var k = 0; k < 8; k++)
-                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 4 * k), Unsafe.Add(ref table, (b >> (7 - k)) & 1));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, (nint)(4 * k)), Unsafe.Add(ref table, (nint)((b >> (7 - k)) & 1)));
                     bad |= check ? b : 0; // with one palette entry, any 1 bit is out of range
                 }
                 break;
@@ -520,12 +520,12 @@ internal sealed class PngRgba8Expander
                 for (var i = 0; i < whole; i++, x += 4)
                 {
                     int b = row[i];
-                    ref var o = ref Unsafe.Add(ref d, 4 * x);
+                    ref var o = ref Unsafe.Add(ref d, (nint)(4 * x));
                     int s0 = b >> 6, s1 = (b >> 4) & 3, s2 = (b >> 2) & 3, s3 = b & 3;
-                    Unsafe.WriteUnaligned(ref o, Unsafe.Add(ref table, s0));
-                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 4), Unsafe.Add(ref table, s1));
-                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 8), Unsafe.Add(ref table, s2));
-                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 12), Unsafe.Add(ref table, s3));
+                    Unsafe.WriteUnaligned(ref o, Unsafe.Add(ref table, (nint)s0));
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 4), Unsafe.Add(ref table, (nint)s1));
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 8), Unsafe.Add(ref table, (nint)s2));
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 12), Unsafe.Add(ref table, (nint)s3));
                     bad |= check ? Math.Max(Math.Max(s0, s1), Math.Max(s2, s3)) >= _entries ? 1 : 0 : 0;
                 }
                 break;
@@ -533,10 +533,10 @@ internal sealed class PngRgba8Expander
                 for (var i = 0; i < whole; i++, x += 2)
                 {
                     int b = row[i];
-                    ref var o = ref Unsafe.Add(ref d, 4 * x);
+                    ref var o = ref Unsafe.Add(ref d, (nint)(4 * x));
                     int s0 = b >> 4, s1 = b & 15;
-                    Unsafe.WriteUnaligned(ref o, Unsafe.Add(ref table, s0));
-                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 4), Unsafe.Add(ref table, s1));
+                    Unsafe.WriteUnaligned(ref o, Unsafe.Add(ref table, (nint)s0));
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 4), Unsafe.Add(ref table, (nint)s1));
                     bad |= check ? Math.Max(s0, s1) >= _entries ? 1 : 0 : 0;
                 }
                 break;

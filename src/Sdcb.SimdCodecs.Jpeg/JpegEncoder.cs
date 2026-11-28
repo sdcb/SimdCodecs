@@ -552,7 +552,7 @@ public static class JpegEncoder
 
         // Each symbol and its extra bits go out in one Put (see JpegHuffmanEncodeTable.Packed).
         int dcValue = z;
-        var bits = Unsafe.Add(ref vb, dcValue - pred);
+        var bits = Unsafe.Add(ref vb, (nint)(dcValue - pred));
         var e = Unsafe.Add(ref dc, (nint)(bits >> 16));
         s.Put((e >> 5) | (bits & 0xFFFF), e & 31);
 

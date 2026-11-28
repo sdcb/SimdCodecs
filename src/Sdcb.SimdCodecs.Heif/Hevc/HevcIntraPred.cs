@@ -196,8 +196,8 @@ internal static class HevcIntraPred
         var corner = 2 * n;
         ref var r = ref MemoryMarshal.GetReference(refs);
         ref var d = ref MemoryMarshal.GetReference(dst);
-        var topRight = Unsafe.Add(ref r, corner + 1 + n);
-        var bottomLeft = Unsafe.Add(ref r, corner - 1 - n);
+        var topRight = Unsafe.Add(ref r, (nint)(corner + 1 + n));
+        var bottomLeft = Unsafe.Add(ref r, (nint)(corner - 1 - n));
         var lane = Vector128.Create(0, 1, 2, 3);
         for (var c = 0; c < n; c += 4)
         {
@@ -208,10 +208,10 @@ internal static class HevcIntraPred
             var leftWeight = Vector128.Create(n - 1) - x;
             for (var y = 0; y < n; y++)
             {
-                var left = Unsafe.Add(ref r, corner - 1 - y);
+                var left = Unsafe.Add(ref r, (nint)(corner - 1 - y));
                 var v = (leftWeight * left + fixedPart + top * (n - 1 - y) + Vector128.Create((y + 1) * bottomLeft)) >> (log2Size + 1);
                 var packed = Vector128.Narrow(v.AsUInt32(), v.AsUInt32()).AsUInt64().ToScalar();
-                Unsafe.WriteUnaligned(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref d, y * stride + c)), packed);
+                Unsafe.WriteUnaligned(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref d, (nint)(y * stride + c))), packed);
             }
         }
     }
@@ -223,8 +223,8 @@ internal static class HevcIntraPred
         var corner = 2 * n;
         ref var r = ref MemoryMarshal.GetReference(refs);
         ref var d = ref MemoryMarshal.GetReference(dst);
-        var topRight = Unsafe.Add(ref r, corner + 1 + n);
-        var bottomLeft = Unsafe.Add(ref r, corner - 1 - n);
+        var topRight = Unsafe.Add(ref r, (nint)(corner + 1 + n));
+        var bottomLeft = Unsafe.Add(ref r, (nint)(corner - 1 - n));
         var lane = Vector256.Create(0, 1, 2, 3, 4, 5, 6, 7);
         for (var c = 0; c < n; c += 8)
         {
@@ -234,7 +234,7 @@ internal static class HevcIntraPred
             var leftWeight = Vector256.Create(n - 1) - x;
             for (var y = 0; y < n; y++)
             {
-                var left = Unsafe.Add(ref r, corner - 1 - y);
+                var left = Unsafe.Add(ref r, (nint)(corner - 1 - y));
                 var v = (leftWeight * left + fixedPart + top * (n - 1 - y) + Vector256.Create((y + 1) * bottomLeft)) >> (log2Size + 1);
                 Vector128.Narrow(v.GetLower().AsUInt32(), v.GetUpper().AsUInt32()).StoreUnsafe(ref d, (nuint)(y * stride + c));
             }
@@ -286,7 +286,7 @@ internal static class HevcIntraPred
                 var a = Vector128.LoadUnsafe(ref r, (nuint)(at + c));
                 var v = iFact == 0 ? a : (a * (32 - iFact) + Vector128.LoadUnsafe(ref r, (nuint)(at + c + 1)) * iFact + r16) >> 5;
                 var packed = Vector128.Narrow(v.AsUInt32(), v.AsUInt32()).AsUInt64().ToScalar();
-                Unsafe.WriteUnaligned(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref d, j * rowStride + c)), packed);
+                Unsafe.WriteUnaligned(ref Unsafe.As<ushort, byte>(ref Unsafe.Add(ref d, (nint)(j * rowStride + c))), packed);
             }
         }
         if (!vertical) Transpose(scratch, n, dst, stride);

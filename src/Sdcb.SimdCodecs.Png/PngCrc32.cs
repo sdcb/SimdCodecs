@@ -41,19 +41,19 @@ internal static class PngCrc32
             ref var d = ref MemoryMarshal.GetReference(data);
             for (; i + 8 <= data.Length; i += 8)
             {
-                var word = Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref d, i));
+                var word = Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref d, (nint)i));
                 if (!BitConverter.IsLittleEndian)
                     word = BinaryPrimitives.ReverseEndianness(word);
                 var lo = crc ^ (uint)word;
                 var hi = (uint)(word >> 32);
-                crc = Unsafe.Add(ref t, 7 * 256 + (int)(lo & 0xFF))
-                    ^ Unsafe.Add(ref t, 6 * 256 + (int)((lo >> 8) & 0xFF))
-                    ^ Unsafe.Add(ref t, 5 * 256 + (int)((lo >> 16) & 0xFF))
-                    ^ Unsafe.Add(ref t, 4 * 256 + (int)(lo >> 24))
-                    ^ Unsafe.Add(ref t, 3 * 256 + (int)(hi & 0xFF))
-                    ^ Unsafe.Add(ref t, 2 * 256 + (int)((hi >> 8) & 0xFF))
-                    ^ Unsafe.Add(ref t, 256 + (int)((hi >> 16) & 0xFF))
-                    ^ Unsafe.Add(ref t, (int)(hi >> 24));
+                crc = Unsafe.Add(ref t, (nint)(7 * 256 + (int)(lo & 0xFF)))
+                    ^ Unsafe.Add(ref t, (nint)(6 * 256 + (int)((lo >> 8) & 0xFF)))
+                    ^ Unsafe.Add(ref t, (nint)(5 * 256 + (int)((lo >> 16) & 0xFF)))
+                    ^ Unsafe.Add(ref t, (nint)(4 * 256 + (int)(lo >> 24)))
+                    ^ Unsafe.Add(ref t, (nint)(3 * 256 + (int)(hi & 0xFF)))
+                    ^ Unsafe.Add(ref t, (nint)(2 * 256 + (int)((hi >> 8) & 0xFF)))
+                    ^ Unsafe.Add(ref t, (nint)(256 + (int)((hi >> 16) & 0xFF)))
+                    ^ Unsafe.Add(ref t, (nint)((int)(hi >> 24)));
             }
         }
 

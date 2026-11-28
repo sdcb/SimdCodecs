@@ -339,13 +339,13 @@ internal static class BmpPixels
             {
                 case 8:
                     for (; x < width; x++)
-                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * x), Unsafe.Add(ref t, Unsafe.Add(ref s, x)));
+                        Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, (nint)(4 * x)), Unsafe.Add(ref t, (nint)Unsafe.Add(ref s, (nint)x)));
                     return;
                 case 4:
                     for (var i = 0; i < width >> 1; i++, x += 2)
                     {
-                        uint b = Unsafe.Add(ref s, i);
-                        ref var o = ref Unsafe.Add(ref d, 4 * x);
+                        uint b = Unsafe.Add(ref s, (nint)i);
+                        ref var o = ref Unsafe.Add(ref d, (nint)(4 * x));
                         Unsafe.WriteUnaligned(ref o, Unsafe.Add(ref t, b >> 4));
                         Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 4), Unsafe.Add(ref t, b & 15));
                     }
@@ -353,8 +353,8 @@ internal static class BmpPixels
                 case 2:
                     for (var i = 0; i < width >> 2; i++, x += 4)
                     {
-                        uint b = Unsafe.Add(ref s, i);
-                        ref var o = ref Unsafe.Add(ref d, 4 * x);
+                        uint b = Unsafe.Add(ref s, (nint)i);
+                        ref var o = ref Unsafe.Add(ref d, (nint)(4 * x));
                         Unsafe.WriteUnaligned(ref o, Unsafe.Add(ref t, b >> 6));
                         Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 4), Unsafe.Add(ref t, (b >> 4) & 3));
                         Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 8), Unsafe.Add(ref t, (b >> 2) & 3));
@@ -364,8 +364,8 @@ internal static class BmpPixels
                 default:
                     for (var i = 0; i < width >> 3; i++, x += 8)
                     {
-                        uint b = Unsafe.Add(ref s, i);
-                        ref var o = ref Unsafe.Add(ref d, 4 * x);
+                        uint b = Unsafe.Add(ref s, (nint)i);
+                        ref var o = ref Unsafe.Add(ref d, (nint)(4 * x));
                         Unsafe.WriteUnaligned(ref o, Unsafe.Add(ref t, b >> 7));
                         Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 4), Unsafe.Add(ref t, (b >> 6) & 1));
                         Unsafe.WriteUnaligned(ref Unsafe.Add(ref o, 8), Unsafe.Add(ref t, (b >> 5) & 1));
@@ -379,8 +379,8 @@ internal static class BmpPixels
             }
             for (; x < width; x++)
             {
-                var index = (Unsafe.Add(ref s, x >> shift) >> (8 - bpp - bpp * (x & last))) & mask;
-                Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * x), Unsafe.Add(ref t, index));
+                var index = (Unsafe.Add(ref s, (nint)(x >> shift)) >> (8 - bpp - bpp * (x & last))) & mask;
+                Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, (nint)(4 * x)), Unsafe.Add(ref t, (nint)index));
             }
             return;
         }
@@ -390,22 +390,22 @@ internal static class BmpPixels
             // x <= width - 2 the store ends at 3x + 4 <= 3 * width - 2.
             for (; x < width; x++)
             {
-                var v = Unsafe.Add(ref t, (Unsafe.Add(ref s, x >> shift) >> (8 - bpp - bpp * (x & last))) & mask);
+                var v = Unsafe.Add(ref t, (nint)((Unsafe.Add(ref s, (nint)(x >> shift)) >> (8 - bpp - bpp * (x & last))) & mask));
                 if (x + 1 < width)
                 {
-                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 3 * x), v);
+                    Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, (nint)(3 * x)), v);
                 }
                 else
                 {
-                    Unsafe.Add(ref d, 3 * x) = (byte)v;
-                    Unsafe.Add(ref d, 3 * x + 1) = (byte)(v >> 8);
-                    Unsafe.Add(ref d, 3 * x + 2) = (byte)(v >> 16);
+                    Unsafe.Add(ref d, (nint)(3 * x)) = (byte)v;
+                    Unsafe.Add(ref d, (nint)(3 * x + 1)) = (byte)(v >> 8);
+                    Unsafe.Add(ref d, (nint)(3 * x + 2)) = (byte)(v >> 16);
                 }
             }
             return;
         }
         for (; x < width; x++)
-            Unsafe.Add(ref d, x) = (byte)Unsafe.Add(ref t, (Unsafe.Add(ref s, x >> shift) >> (8 - bpp - bpp * (x & last))) & mask);
+            Unsafe.Add(ref d, (nint)x) = (byte)Unsafe.Add(ref t, (nint)((Unsafe.Add(ref s, (nint)(x >> shift)) >> (8 - bpp - bpp * (x & last))) & mask));
     }
 
     // ---- Alpha -------------------------------------------------------------------------------------------------
@@ -529,8 +529,8 @@ internal static class BmpPixels
                 if (n > 0)
                 {
                     // Bounds: x + n <= width, and the row is width * 4 bytes; indices are bytes or nibbles (< 256).
-                    ref var d = ref Unsafe.Add(ref MemoryMarshal.GetReference(row), 4 * x);
-                    uint hi = Unsafe.Add(ref t, four ? code >> 4 : code), lo = Unsafe.Add(ref t, four ? code & 15 : code);
+                    ref var d = ref Unsafe.Add(ref MemoryMarshal.GetReference(row), (nint)(4 * x));
+                    uint hi = Unsafe.Add(ref t, (nint)(four ? code >> 4 : code)), lo = Unsafe.Add(ref t, (nint)(four ? code & 15 : code));
                     if (n >= 16)
                     {
                         // A long run: the vectorised fill, of one pixel or of the two-pixel pattern.
@@ -547,17 +547,17 @@ internal static class BmpPixels
                     }
                     else if (hi == lo)
                     {
-                        for (var i = 0; i < n; i++) Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * i), hi);
+                        for (var i = 0; i < n; i++) Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, (nint)(4 * i)), hi);
                     }
                     else
                     {
                         var i = 0;
                         for (; i + 1 < n; i += 2)
                         {
-                            Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * i), hi);
-                            Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * i + 4), lo);
+                            Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, (nint)(4 * i)), hi);
+                            Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, (nint)(4 * i + 4)), lo);
                         }
-                        if (i < n) Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * i), hi);
+                        if (i < n) Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, (nint)(4 * i)), hi);
                     }
                 }
                 x += count;
@@ -584,18 +584,18 @@ internal static class BmpPixels
                     if (n > 0)
                     {
                         // Bounds: as for a run; literal index i >> 1 (RLE4) or i (RLE8) < literal.Length.
-                        ref var d = ref Unsafe.Add(ref MemoryMarshal.GetReference(row), 4 * x);
+                        ref var d = ref Unsafe.Add(ref MemoryMarshal.GetReference(row), (nint)(4 * x));
                         ref var l = ref MemoryMarshal.GetReference(literal);
                         if (!four)
                         {
-                            for (var i = 0; i < n; i++) Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * i), Unsafe.Add(ref t, Unsafe.Add(ref l, i)));
+                            for (var i = 0; i < n; i++) Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, (nint)(4 * i)), Unsafe.Add(ref t, (nint)Unsafe.Add(ref l, (nint)i)));
                         }
                         else
                         {
                             for (var i = 0; i < n; i++)
                             {
-                                var b = Unsafe.Add(ref l, i >> 1);
-                                Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, 4 * i), Unsafe.Add(ref t, (i & 1) == 0 ? b >> 4 : b & 15));
+                                var b = Unsafe.Add(ref l, (nint)(i >> 1));
+                                Unsafe.WriteUnaligned(ref Unsafe.Add(ref d, (nint)(4 * i)), Unsafe.Add(ref t, (nint)((i & 1) == 0 ? b >> 4 : b & 15)));
                             }
                         }
                     }

@@ -845,7 +845,7 @@ internal ref partial struct JpegCore
     {
         if (!_nomore && pos <= _data.Length - 8)
         {
-            var x = BinaryPrimitives.ReverseEndianness(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref MemoryMarshal.GetReference(_data), pos)));
+            var x = BinaryPrimitives.ReverseEndianness(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref MemoryMarshal.GetReference(_data), (nint)pos)));
             if (((~x - Ones) & x & Highs) == 0) // no 0xFF byte in x
             {
                 buf |= x >> cnt;
@@ -1216,8 +1216,8 @@ internal ref partial struct JpegCore
             if ((rs & 15) != 0)
             {
                 k += rs >> 4;
-                var zigQ = Unsafe.Add(ref zq0, k++);
-                Unsafe.Add(ref d0, zigQ >> 16) = (short)(v * (zigQ & 0xffff));
+                var zigQ = Unsafe.Add(ref zq0, (nint)(k++));
+                Unsafe.Add(ref d0, (nint)(zigQ >> 16)) = (short)(v * (zigQ & 0xffff));
                 continue;
             }
 
@@ -1311,7 +1311,7 @@ internal ref partial struct JpegCore
         ulong s = 0;
         for (var i = 0; i < 64; ++i)
         {
-            if (Unsafe.Add(ref z, i) != 0)
+            if (Unsafe.Add(ref z, (nint)i) != 0)
                 s |= 1UL << i;
         }
 
@@ -1362,7 +1362,7 @@ internal ref partial struct JpegCore
                     buf <<= e; // count mod 64 = the entry's bits to consume (bit 5 is 0)
                     cnt -= e & 31;
                     k += (e >> 15) & 15;
-                    Unsafe.Add(ref z0, Math.Min(k, 63)) = (short)((e >> JpegHuffman.ValueShift) * (1 << shift));
+                    Unsafe.Add(ref z0, (nint)Math.Min(k, 63)) = (short)((e >> JpegHuffman.ValueShift) * (1 << shift));
                     ++k;
                     continue;
                 }
@@ -1409,7 +1409,7 @@ internal ref partial struct JpegCore
                     var v = Extend((int)(buf >> (64 - s)), s);
                     buf <<= s;
                     cnt -= s;
-                    Unsafe.Add(ref z0, Math.Min(k, 63)) = (short)(v * (1 << shift));
+                    Unsafe.Add(ref z0, (nint)Math.Min(k, 63)) = (short)(v * (1 << shift));
                     ++k;
                 }
             } while (k <= _specEnd);
@@ -1495,7 +1495,7 @@ internal ref partial struct JpegCore
                     Correct(ref z0, nz & passed, bit, ref buf, ref cnt, ref pos);
                     if (target == 64)
                         break;
-                    Unsafe.Add(ref z0, target) = (short)newCoeff; // behind k from now on: nz needs no update
+                    Unsafe.Add(ref z0, (nint)target) = (short)newCoeff; // behind k from now on: nz needs no update
                     k = target + 1;
                 } while (k <= _specEnd);
             }
@@ -1524,7 +1524,7 @@ internal ref partial struct JpegCore
             var set = (int)(buf >> 63);
             buf <<= 1;
             --cnt;
-            ref var p = ref Unsafe.Add(ref z0, i);
+            ref var p = ref Unsafe.Add(ref z0, (nint)i);
             int v = p;
             var need = set & (((v & bit) - 1) >> 31); // 1 when the bit is read and not yet in v
             p = (short)(v + need * ((v >> 31) | 1) * bit);

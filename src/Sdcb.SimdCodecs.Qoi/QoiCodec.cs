@@ -163,14 +163,14 @@ internal static class QoiCodec
                     src = ref MemoryMarshal.GetReference(tail);
                 }
 
-                uint b1 = Unsafe.Add(ref src, p);
+                uint b1 = Unsafe.Add(ref src, (nint)p);
                 if (b1 < OpLuma)
                 {
                     if (b1 < OpDiff)
                     {
                         // Index slots fill only with pixels already decoded, all opaque in a 3-channel image but
                         // for the zeroed initial slots a malformed stream may name.
-                        px = Unsafe.Add(ref index, (int)b1) | alpha;
+                        px = Unsafe.Add(ref index, (nint)((int)b1)) | alpha;
                         p++;
                     }
                     else
@@ -184,7 +184,7 @@ internal static class QoiCodec
                 else if (b1 < OpRun)
                 {
                     // Green changes by −32..31; red and blue by green's change plus −8..7.
-                    uint b2 = Unsafe.Add(ref src, p + 1);
+                    uint b2 = Unsafe.Add(ref src, (nint)(p + 1));
                     var dg = (b1 & 63) - 32;
                     var dr = dg - 8 + (b2 >> 4);
                     var db = dg - 8 + (b2 & 15);
@@ -204,18 +204,18 @@ internal static class QoiCodec
                 }
                 else if (b1 == OpRgb)
                 {
-                    px = (px & 0xFF000000u) | (ReadUInt32(ref Unsafe.Add(ref src, p + 1)) & 0x00FFFFFFu);
+                    px = (px & 0xFF000000u) | (ReadUInt32(ref Unsafe.Add(ref src, (nint)(p + 1))) & 0x00FFFFFFu);
                     p += 4;
                 }
                 else
                 {
-                    px = ReadUInt32(ref Unsafe.Add(ref src, p + 1)) | alpha;
+                    px = ReadUInt32(ref Unsafe.Add(ref src, (nint)(p + 1))) | alpha;
                     p += 5;
                 }
 
-                Unsafe.Add(ref index, Hash(px)) = px;
+                Unsafe.Add(ref index, (nint)Hash(px)) = px;
                 // i < n = pixels.Length.
-                Unsafe.Add(ref dst, i++) = px;
+                Unsafe.Add(ref dst, (nint)(i++)) = px;
             }
 
             if (tailBase >= 0)

@@ -73,7 +73,7 @@ internal static class JpegResample
         }
 
         for (; i < n; ++i)
-            Unsafe.Add(ref d, i) = (byte)((Unsafe.Add(ref s, i) + 8) >> 4);
+            Unsafe.Add(ref d, (nint)i) = (byte)((Unsafe.Add(ref s, (nint)i) + 8) >> 4);
     }
 
     /// <summary>
@@ -86,8 +86,8 @@ internal static class JpegResample
             (uint)OutputCount(kind, w, hs) > (uint)dst.Length)
             ThrowRange();
 
-        ref var near = ref Unsafe.Add(ref MemoryMarshal.GetReference(plane), inNear);
-        ref var far = ref Unsafe.Add(ref MemoryMarshal.GetReference(plane), inFar);
+        ref var near = ref Unsafe.Add(ref MemoryMarshal.GetReference(plane), (nint)inNear);
+        ref var far = ref Unsafe.Add(ref MemoryMarshal.GetReference(plane), (nint)inFar);
         ref var d = ref MemoryMarshal.GetReference(dst);
 
         switch (kind)
@@ -96,7 +96,7 @@ internal static class JpegResample
             {
                 var i = UseV256 ? OneToOneV256(ref d, ref near, w) : UseV128 ? OneToOneV128(ref d, ref near, w) : 0;
                 for (; i < w; ++i)
-                    Unsafe.Add(ref d, i) = (ushort)(Unsafe.Add(ref near, i) << 4);
+                    Unsafe.Add(ref d, (nint)i) = (ushort)(Unsafe.Add(ref near, (nint)i) << 4);
                 break;
             }
 
@@ -104,7 +104,7 @@ internal static class JpegResample
             {
                 var i = UseV256 ? V2V256(ref d, ref near, ref far, w) : UseV128 ? V2V128(ref d, ref near, ref far, w) : 0;
                 for (; i < w; ++i)
-                    Unsafe.Add(ref d, i) = (ushort)((3 * Unsafe.Add(ref near, i) + Unsafe.Add(ref far, i)) << 2);
+                    Unsafe.Add(ref d, (nint)i) = (ushort)((3 * Unsafe.Add(ref near, (nint)i) + Unsafe.Add(ref far, (nint)i)) << 2);
                 break;
             }
 
@@ -119,7 +119,7 @@ internal static class JpegResample
             default:
                 for (var i = 0; i < w; ++i)
                     for (var j = 0; j < hs; ++j)
-                        Unsafe.Add(ref d, i * hs + j) = (ushort)(Unsafe.Add(ref near, i) << 4);
+                        Unsafe.Add(ref d, (nint)(i * hs + j)) = (ushort)(Unsafe.Add(ref near, (nint)i) << 4);
                 break;
         }
     }
@@ -127,7 +127,7 @@ internal static class JpegResample
     private static void ThrowRange() => throw new ArgumentOutOfRangeException("w", "resample: row exceeds a buffer");
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int T(ref byte near, ref byte far, int i) => 3 * Unsafe.Add(ref near, i) + Unsafe.Add(ref far, i);
+    private static int T(ref byte near, ref byte far, int i) => 3 * Unsafe.Add(ref near, (nint)i) + Unsafe.Add(ref far, (nint)i);
 
     private static void Hv2Row(ref ushort d, ref byte near, ref byte far, int w)
     {
@@ -144,18 +144,18 @@ internal static class JpegResample
         {
             var t0 = T(ref near, ref far, i - 1);
             t1 = T(ref near, ref far, i);
-            Unsafe.Add(ref d, i * 2 - 1) = (ushort)(3 * t0 + t1);
-            Unsafe.Add(ref d, i * 2) = (ushort)(3 * t1 + t0);
+            Unsafe.Add(ref d, (nint)(i * 2 - 1)) = (ushort)(3 * t0 + t1);
+            Unsafe.Add(ref d, (nint)(i * 2)) = (ushort)(3 * t1 + t0);
         }
 
-        Unsafe.Add(ref d, w * 2 - 1) = (ushort)(T(ref near, ref far, w - 1) << 2);
+        Unsafe.Add(ref d, (nint)(w * 2 - 1)) = (ushort)(T(ref near, ref far, w - 1) << 2);
     }
 
     // ------------------------------------------------------------------ Vector128
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Vector128<ushort> Load8(ref byte p, int i) =>
-        Vector128.WidenLower(Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref p, i))).AsByte());
+        Vector128.WidenLower(Vector128.CreateScalarUnsafe(Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref p, (nint)i))).AsByte());
 
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
     private static int OneToOneV128(ref ushort d, ref byte near, int w)
