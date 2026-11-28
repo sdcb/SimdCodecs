@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 
@@ -135,6 +137,21 @@ internal static class Av1Transform
         }
         else
         {
+            activeRows = Vector128.IsHardwareAccelerated
+                ? DequantVector(quant, dequantBuf, tw, th, dcQ, acQ, qm, useQm, dqDenom >> 1, dqMin, dqMax)
+                : DequantScalar(quant, dequantBuf, tw, th, dcQ, acQ, qm, useQm, dqDenom, dqMin, dqMax);
+            if (activeRows == 0) return;
+        }
+
+        RunTransform(fh, bitDepth, txSz, txType, lossless, log2W, log2H, w, h, tw, rowShift, colShift, rowClampRange,
+            colClampRange, colMin, colMax, rectScale, activeRows, planeBuf, stride, x, y, dequantBuf, residualBuf);
+    }
+
+    /// <summary>Dequantizes rows 0 .. th - 1 (§7.12.3) into <paramref name="dequantBuf"/>; returns 1 + the last row with a nonzero coefficient.</summary>
+    internal static int DequantScalar(ReadOnlySpan<int> quant, int[] dequantBuf, int tw, int th, int dcQ, int acQ,
+        ReadOnlySpan<byte> qm, bool useQm, int dqDenom, int dqMin, int dqMax)
+    {
+        int activeRows = 0;
             for (int r = 0; r < th; r++)
             {
                 int rowOff = r * tw;
@@ -158,9 +175,62 @@ internal static class Av1Transform
                 }
                 if (any) activeRows = r + 1;
             }
-            if (activeRows == 0) return;
-        }
+        return activeRows;
+    }
 
+    /// <summary>
+    /// Vector twin of <see cref="DequantScalar"/>, four coefficients per step. Only the low 24 bits of |c| * q survive
+    /// the spec's mask, and the low 24 bits of a product depend only on the low bits of its factors, so the wrapping
+    /// 32-bit product gives exactly the scalar 64-bit result. <paramref name="dqShift"/> is log2 of the denominator.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
+    internal static int DequantVector(ReadOnlySpan<int> quant, int[] dequantBuf, int tw, int th, int dcQ, int acQ,
+        ReadOnlySpan<byte> qm, bool useQm, int dqShift, int dqMin, int dqMax)
+    {
+        var vAc = Vector128.Create(acQ);
+        var vDc = vAc.WithElement(0, dcQ);
+        var vMin = Vector128.Create(dqMin);
+        var vMax = Vector128.Create(dqMax);
+        var mask24 = Vector128.Create(0xFFFFFF);
+        var round = Vector128.Create(16);
+        int activeRows = 0;
+        Span<int> dst = dequantBuf.AsSpan(0, tw * th);
+        for (int r = 0; r < th; r++)
+        {
+            int rowOff = r * tw;
+            var any = Vector128<int>.Zero;
+            for (int j = 0; j < tw; j += 4)
+            {
+                int idx = rowOff + j;
+                var c = Vector128.Create(quant.Slice(idx, 4));
+                if (c == Vector128<int>.Zero)
+                {
+                    Vector128<int>.Zero.CopyTo(dst.Slice(idx, 4));
+                    continue;
+                }
+                any |= c;
+                var q = idx == 0 ? vDc : vAc;
+                if (useQm)
+                {
+                    uint raw = MemoryMarshal.Read<uint>(qm.Slice(idx, 4));
+                    var m = Vector128.WidenLower(Vector128.WidenLower(Vector128.CreateScalarUnsafe(raw).AsByte())).AsInt32();
+                    q = Vector128.ShiftRightArithmetic(q * m + round, 5);
+                }
+                var p = Vector128.ShiftRightLogical((Vector128.Abs(c) * q) & mask24, dqShift);
+                var v = Vector128.ConditionalSelect(Vector128.LessThan(c, Vector128<int>.Zero), -p, p);
+                Vector128.Clamp(v, vMin, vMax).CopyTo(dst.Slice(idx, 4));
+            }
+            if (any != Vector128<int>.Zero)
+                activeRows = r + 1;
+        }
+        return activeRows;
+    }
+
+    private static void RunTransform(Av1FrameHeader fh, int bitDepth, int txSz, int txType, bool lossless, int log2W,
+        int log2H, int w, int h, int tw, int rowShift, int colShift, int rowClampRange, int colClampRange, int colMin,
+        int colMax, bool rectScale, int activeRows, ushort[] planeBuf, int stride, int x, int y, int[] dequantBuf,
+        int[] residualBuf)
+    {
         int rowKind = GetRowTransformKind(txType, lossless);
         int colKind = GetColTransformKind(txType, lossless);
 
