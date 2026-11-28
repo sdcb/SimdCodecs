@@ -8,7 +8,7 @@ namespace Sdcb.SimdCodecs.Avif.Av1;
 /// global &amp; local warped motion (§7.11.3.5–8), OBMC (§7.11.3.9–10), compound average,
 /// distance-weighted (JNT), wedge mask, difference-weighted mask, and InterIntra blending.
 /// </summary>
-internal sealed class Av1InterPredict
+internal sealed partial class Av1InterPredict
 {
     private readonly Av1SequenceHeader _seq;
     private readonly Av1FrameHeader _fh;
@@ -618,6 +618,12 @@ internal sealed class Av1InterPredict
         int sx4 = (int)(x4 & ((1 << Av1Constants.WarpedModelPrecBits) - 1));
         int iy4 = (int)(y4 >> Av1Constants.WarpedModelPrecBits);
         int sy4 = (int)(y4 & ((1 << Av1Constants.WarpedModelPrecBits) - 1));
+
+        if (Ssse3.IsSupported && ix4 - 7 >= 0 && ix4 + 7 <= lastX && WarpFitsInt16(_seq.BitDepth, interRound0))
+        {
+            BlockWarpSsse3(refBuf, refStride, lastY, ix4, sx4, iy4, sy4, alpha, beta, gamma, delta, i8, j8, w, h, interRound0, interRound1, pred);
+            return;
+        }
 
         for (int i1 = -7; i1 < 8; i1++)
         {
