@@ -3,7 +3,7 @@ namespace Sdcb.SimdCodecs.Avif.Av1;
 /// <summary>
 /// AV1 intra prediction (§7.11.2), palette prediction (§7.11.4), and chroma-from-luma (§7.11.5).
 /// </summary>
-internal static class Av1IntraPred
+internal static partial class Av1IntraPred
 {
     private static readonly int[,] IntraEdgeKernel =
     {
@@ -58,10 +58,21 @@ internal static class Av1IntraPred
         }
         else
         {
+            // Samples x .. aboveLimit of the row above, then the last one repeated. Plain loops: most edges are short.
             int aboveLimit = Math.Min(maxX, x + (haveAboveRight ? 2 * w : w) - 1);
             int rowOff = (y - 1) * stride;
-            for (int i = 0; i < wh; i++)
-                aboveBuf[Off + i] = planeBuf[rowOff + Math.Min(aboveLimit, x + i)];
+            int direct = Math.Min(aboveLimit - x + 1, wh);
+            int i = 0;
+            if (direct >= 16)
+            {
+                WidenEdge(planeBuf.AsSpan(rowOff + x, direct), aboveBuf.Slice(Off, direct));
+                i = direct;
+            }
+            for (; i < direct; i++)
+                aboveBuf[Off + i] = planeBuf[rowOff + x + i];
+            int last = planeBuf[rowOff + aboveLimit];
+            for (; i < wh; i++)
+                aboveBuf[Off + i] = last;
         }
 
         if (!haveLeft && haveAbove)
@@ -77,8 +88,14 @@ internal static class Av1IntraPred
         else
         {
             int leftLimit = Math.Min(maxY, y + (haveBelowLeft ? 2 * h : h) - 1);
-            for (int i = 0; i < wh; i++)
-                leftBuf[Off + i] = planeBuf[Math.Min(leftLimit, y + i) * stride + (x - 1)];
+            int direct = Math.Min(leftLimit - y + 1, wh);
+            int col = y * stride + (x - 1);
+            int i = 0;
+            for (; i < direct; i++)
+                leftBuf[Off + i] = planeBuf[col + i * stride];
+            int last = planeBuf[leftLimit * stride + (x - 1)];
+            for (; i < wh; i++)
+                leftBuf[Off + i] = last;
         }
 
         int corner;
@@ -126,6 +143,16 @@ internal static class Av1IntraPred
     }
 
     private static void PredictPaeth(ushort[] dst, int stride, int x, int y, int w, int h, Span<int> above, Span<int> left, int off)
+    {
+        if (System.Runtime.Intrinsics.Vector128.IsHardwareAccelerated && w >= 4)
+        {
+            PredictPaethVector(dst, stride, x, y, w, h, above, left, off);
+            return;
+        }
+        PredictPaethScalar(dst, stride, x, y, w, h, above, left, off);
+    }
+
+    internal static void PredictPaethScalar(ushort[] dst, int stride, int x, int y, int w, int h, Span<int> above, Span<int> left, int off)
     {
         int tl = above[off - 1];
         for (int i = 0; i < h; i++)
@@ -544,6 +571,21 @@ internal static class Av1IntraPred
 
     /// <summary>Chroma from Luma prediction (§7.11.5).</summary>
     internal static void PredictChromaFromLuma(
+        ushort[] yBuf, int yStride,
+        ushort[] cBuf, int cStride,
+        int bitDepth, int subX, int subY,
+        int startX, int startY, int txSz, int alpha,
+        int maxLumaW, int maxLumaH)
+    {
+        if (System.Runtime.Intrinsics.Vector128.IsHardwareAccelerated)
+        {
+            PredictChromaFromLumaVector(yBuf, yStride, cBuf, cStride, bitDepth, subX, subY, startX, startY, txSz, alpha, maxLumaW, maxLumaH);
+            return;
+        }
+        PredictChromaFromLumaScalar(yBuf, yStride, cBuf, cStride, bitDepth, subX, subY, startX, startY, txSz, alpha, maxLumaW, maxLumaH);
+    }
+
+    internal static void PredictChromaFromLumaScalar(
         ushort[] yBuf, int yStride,
         ushort[] cBuf, int cStride,
         int bitDepth, int subX, int subY,
