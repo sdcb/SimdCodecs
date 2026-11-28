@@ -261,7 +261,10 @@ internal static class Av1TransformSimd
                         v[j] = Vector256.ShiftRightArithmetic(v[j] * vRect + v2048, 12);
                 }
 
-                Run1DV256(v, tmp, rowKind, log2W, vRowMin, vRowMax, whtShift: 2);
+                if (rowClampRange > 18)
+                    Run1DV256<TxWide>(v, tmp, rowKind, log2W, vRowMin, vRowMax, whtShift: 2);
+                else
+                    Run1DV256<TxNarrow>(v, tmp, rowKind, log2W, vRowMin, vRowMax, whtShift: 2);
 
                 if (rowShift > 0)
                 {
@@ -394,7 +397,10 @@ internal static class Av1TransformSimd
                     v[j] = Vector128.ShiftRightArithmetic(v[j] * vRect + v2048, 12);
             }
 
-            Run1DV128(v, tmp, rowKind, log2W, vRowMin, vRowMax, whtShift: 2);
+            if (rowClampRange > 18)
+                Run1DV128<TxWide>(v, tmp, rowKind, log2W, vRowMin, vRowMax, whtShift: 2);
+            else
+                Run1DV128<TxNarrow>(v, tmp, rowKind, log2W, vRowMin, vRowMax, whtShift: 2);
 
             if (rowShift > 0)
             {
@@ -463,7 +469,7 @@ internal static class Av1TransformSimd
                 for (int i = 0; i < h; i++)
                     v[i] = Vector256.Load(resBase + i * w + j);
 
-                Run1DV256(v, tmp, colKind, log2H, vColMin, vColMax, whtShift: 0);
+                Run1DV256<TxNarrow>(v, tmp, colKind, log2H, vColMin, vColMax, whtShift: 0);
 
                 if (!flipLr)
                 {
@@ -529,7 +535,7 @@ internal static class Av1TransformSimd
                 for (int i = 0; i < h; i++)
                     v[i] = Vector128.Load(resBase + i * w + j);
 
-                Run1DV128(v, tmp, colKind, log2H, vColMin, vColMax, whtShift: 0);
+                Run1DV128<TxNarrow>(v, tmp, colKind, log2H, vColMin, vColMax, whtShift: 0);
 
                 if (!flipLr)
                 {
@@ -566,15 +572,33 @@ internal static class Av1TransformSimd
     // ==================== 1D Vectorized Butterflies (V256) ====================
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void BV256(ref Vector256<int> a, ref Vector256<int> b, int angle, bool flip, Vector256<int> vMin, Vector256<int> vMax)
+    private static void BV256<TM>(ref Vector256<int> a, ref Vector256<int> b, int angle, bool flip, Vector256<int> vMin, Vector256<int> vMax) where TM : struct, ITxRange
     {
         Vector256<int> ta = a;
         Vector256<int> tb = b;
         Vector256<int> vc = Vector256.Create(Cos128Table[angle & 255]);
         Vector256<int> vs = Vector256.Create(Cos128Table[(angle - 64) & 255]);
         Vector256<int> v2048 = Vector256.Create(2048);
-        Vector256<int> x = Vector256.Min(vMax, Vector256.Max(vMin, Vector256.ShiftRightArithmetic(ta * vc - tb * vs + v2048, 12)));
-        Vector256<int> y = Vector256.Min(vMax, Vector256.Max(vMin, Vector256.ShiftRightArithmetic(ta * vs + tb * vc + v2048, 12)));
+        Vector256<int> x, y;
+        if (TM.Wide)
+        {
+            // a = ah * 4096 + al with 0 <= al < 4096: Round2(a * c - b * s, 12) = ah * c - bh * s + Round2(al * c - bl * s, 12)
+            // exactly, and every term fits int32 for 20-bit inputs (ITxRange).
+            var mask = Vector256.Create(4095);
+            var ah = Vector256.ShiftRightArithmetic(ta, 12);
+            var bh = Vector256.ShiftRightArithmetic(tb, 12);
+            var al = ta & mask;
+            var bl = tb & mask;
+            x = ah * vc - bh * vs + Vector256.ShiftRightArithmetic(al * vc - bl * vs + v2048, 12);
+            y = ah * vs + bh * vc + Vector256.ShiftRightArithmetic(al * vs + bl * vc + v2048, 12);
+        }
+        else
+        {
+            x = Vector256.ShiftRightArithmetic(ta * vc - tb * vs + v2048, 12);
+            y = Vector256.ShiftRightArithmetic(ta * vs + tb * vc + v2048, 12);
+        }
+        x = Vector256.Min(vMax, Vector256.Max(vMin, x));
+        y = Vector256.Min(vMax, Vector256.Max(vMin, y));
         if (flip) { a = y; b = x; }
         else { a = x; b = y; }
     }
@@ -590,26 +614,26 @@ internal static class Av1TransformSimd
         else { a = add; b = sub; }
     }
 
-    private static unsafe void Run1DV256(Vector256<int>* t, Vector256<int>* copyT, int kind, int n, Vector256<int> vMin, Vector256<int> vMax, int whtShift)
+    private static unsafe void Run1DV256<TM>(Vector256<int>* t, Vector256<int>* copyT, int kind, int n, Vector256<int> vMin, Vector256<int> vMax, int whtShift) where TM : struct, ITxRange
     {
         switch (kind)
         {
             case KindDct:
-                InverseDctV256(t, copyT, n, vMin, vMax);
+                InverseDctV256<TM>(t, copyT, n, vMin, vMax);
                 break;
             case KindAdst:
-                InverseAdstV256(t, copyT, n, vMin, vMax);
+                InverseAdstV256<TM>(t, copyT, n, vMin, vMax);
                 break;
             case KindWht:
                 InverseWht4V256(t, whtShift);
                 break;
             default:
-                InverseIdtxV256(t, n);
+                InverseIdtxV256<TM>(t, n);
                 break;
         }
     }
 
-    private static unsafe void InverseDctV256(Vector256<int>* t, Vector256<int>* copyT, int n, Vector256<int> vMin, Vector256<int> vMax)
+    private static unsafe void InverseDctV256<TM>(Vector256<int>* t, Vector256<int>* copyT, int n, Vector256<int> vMin, Vector256<int> vMax) where TM : struct, ITxRange
     {
         int len = 1 << n;
         byte[] brev = BrevTables[n];
@@ -621,34 +645,34 @@ internal static class Av1TransformSimd
         byte[] brev2 = BrevTables[2];
 
         if (n == 6)
-            for (int i = 0; i < 16; i++) BV256(ref t[32 + i], ref t[63 - i], 63 - 4 * brev4[i], false, vMin, vMax);
+            for (int i = 0; i < 16; i++) BV256<TM>(ref t[32 + i], ref t[63 - i], 63 - 4 * brev4[i], false, vMin, vMax);
         if (n >= 5)
-            for (int i = 0; i < 8; i++) BV256(ref t[16 + i], ref t[31 - i], 6 + (brev3[7 - i] << 3), false, vMin, vMax);
+            for (int i = 0; i < 8; i++) BV256<TM>(ref t[16 + i], ref t[31 - i], 6 + (brev3[7 - i] << 3), false, vMin, vMax);
         if (n == 6)
             for (int i = 0; i < 16; i++) HV256(ref t[32 + i * 2], ref t[33 + i * 2], (i & 1) != 0, vMin, vMax);
         if (n >= 4)
-            for (int i = 0; i < 4; i++) BV256(ref t[8 + i], ref t[15 - i], 12 + (brev2[3 - i] << 4), false, vMin, vMax);
+            for (int i = 0; i < 4; i++) BV256<TM>(ref t[8 + i], ref t[15 - i], 12 + (brev2[3 - i] << 4), false, vMin, vMax);
         if (n >= 5)
             for (int i = 0; i < 8; i++) HV256(ref t[16 + 2 * i], ref t[17 + 2 * i], (i & 1) != 0, vMin, vMax);
         if (n == 6)
             for (int i = 0; i < 4; i++)
                 for (int j = 0; j < 2; j++)
-                    BV256(ref t[62 - i * 4 - j], ref t[33 + i * 4 + j], 60 - 16 * brev2[i] + 64 * j, true, vMin, vMax);
+                    BV256<TM>(ref t[62 - i * 4 - j], ref t[33 + i * 4 + j], 60 - 16 * brev2[i] + 64 * j, true, vMin, vMax);
         if (n >= 3)
-            for (int i = 0; i < 2; i++) BV256(ref t[4 + i], ref t[7 - i], 56 - 32 * i, false, vMin, vMax);
+            for (int i = 0; i < 2; i++) BV256<TM>(ref t[4 + i], ref t[7 - i], 56 - 32 * i, false, vMin, vMax);
         if (n >= 4)
             for (int i = 0; i < 4; i++) HV256(ref t[8 + 2 * i], ref t[9 + 2 * i], (i & 1) != 0, vMin, vMax);
         if (n >= 5)
             for (int i = 0; i < 2; i++)
                 for (int j = 0; j < 2; j++)
-                    BV256(ref t[30 - 4 * i - j], ref t[17 + 4 * i + j], 24 + (j << 6) + ((1 - i) << 5), true, vMin, vMax);
+                    BV256<TM>(ref t[30 - 4 * i - j], ref t[17 + 4 * i + j], 24 + (j << 6) + ((1 - i) << 5), true, vMin, vMax);
         if (n == 6)
             for (int i = 0; i < 8; i++)
                 for (int j = 0; j < 2; j++)
                     HV256(ref t[32 + i * 4 + j], ref t[35 + i * 4 - j], (i & 1) != 0, vMin, vMax);
 
-        BV256(ref t[0], ref t[1], 32, true, vMin, vMax);
-        BV256(ref t[2], ref t[3], 48, false, vMin, vMax);
+        BV256<TM>(ref t[0], ref t[1], 32, true, vMin, vMax);
+        BV256<TM>(ref t[2], ref t[3], 48, false, vMin, vMax);
 
         if (n >= 3)
         {
@@ -656,7 +680,7 @@ internal static class Av1TransformSimd
             HV256(ref t[6], ref t[7], true, vMin, vMax);
         }
         if (n >= 4)
-            for (int i = 0; i < 2; i++) BV256(ref t[14 - i], ref t[9 + i], 48 + 64 * i, true, vMin, vMax);
+            for (int i = 0; i < 2; i++) BV256<TM>(ref t[14 - i], ref t[9 + i], 48 + 64 * i, true, vMin, vMax);
         if (n >= 5)
             for (int i = 0; i < 4; i++)
                 for (int j = 0; j < 2; j++)
@@ -664,19 +688,19 @@ internal static class Av1TransformSimd
         if (n == 6)
             for (int i = 0; i < 2; i++)
                 for (int j = 0; j < 4; j++)
-                    BV256(ref t[61 - i * 8 - j], ref t[34 + i * 8 + j], 56 - i * 32 + (j >> 1) * 64, true, vMin, vMax);
+                    BV256<TM>(ref t[61 - i * 8 - j], ref t[34 + i * 8 + j], 56 - i * 32 + (j >> 1) * 64, true, vMin, vMax);
 
         HV256(ref t[0], ref t[3], false, vMin, vMax);
         HV256(ref t[1], ref t[2], false, vMin, vMax);
 
         if (n >= 3)
-            BV256(ref t[6], ref t[5], 32, true, vMin, vMax);
+            BV256<TM>(ref t[6], ref t[5], 32, true, vMin, vMax);
         if (n >= 4)
             for (int i = 0; i < 2; i++)
                 for (int j = 0; j < 2; j++)
                     HV256(ref t[8 + 4 * i + j], ref t[11 + 4 * i - j], i != 0, vMin, vMax);
         if (n >= 5)
-            for (int i = 0; i < 4; i++) BV256(ref t[29 - i], ref t[18 + i], 48 + (i >> 1) * 64, true, vMin, vMax);
+            for (int i = 0; i < 4; i++) BV256<TM>(ref t[29 - i], ref t[18 + i], 48 + (i >> 1) * 64, true, vMin, vMax);
         if (n == 6)
             for (int i = 0; i < 4; i++)
                 for (int j = 0; j < 4; j++)
@@ -685,18 +709,18 @@ internal static class Av1TransformSimd
         if (n >= 3)
             for (int i = 0; i < 4; i++) HV256(ref t[i], ref t[7 - i], false, vMin, vMax);
         if (n >= 4)
-            for (int i = 0; i < 2; i++) BV256(ref t[13 - i], ref t[10 + i], 32, true, vMin, vMax);
+            for (int i = 0; i < 2; i++) BV256<TM>(ref t[13 - i], ref t[10 + i], 32, true, vMin, vMax);
         if (n >= 5)
             for (int i = 0; i < 2; i++)
                 for (int j = 0; j < 4; j++)
                     HV256(ref t[16 + i * 8 + j], ref t[23 + i * 8 - j], i != 0, vMin, vMax);
         if (n == 6)
-            for (int i = 0; i < 8; i++) BV256(ref t[59 - i], ref t[36 + i], i < 4 ? 48 : 112, true, vMin, vMax);
+            for (int i = 0; i < 8; i++) BV256<TM>(ref t[59 - i], ref t[36 + i], i < 4 ? 48 : 112, true, vMin, vMax);
 
         if (n >= 4)
             for (int i = 0; i < 8; i++) HV256(ref t[i], ref t[15 - i], false, vMin, vMax);
         if (n >= 5)
-            for (int i = 0; i < 4; i++) BV256(ref t[27 - i], ref t[20 + i], 32, true, vMin, vMax);
+            for (int i = 0; i < 4; i++) BV256<TM>(ref t[27 - i], ref t[20 + i], 32, true, vMin, vMax);
         if (n == 6)
         {
             for (int i = 0; i < 8; i++)
@@ -710,13 +734,41 @@ internal static class Av1TransformSimd
             for (int i = 0; i < 16; i++) HV256(ref t[i], ref t[31 - i], false, vMin, vMax);
         if (n == 6)
         {
-            for (int i = 0; i < 8; i++) BV256(ref t[55 - i], ref t[40 + i], 32, true, vMin, vMax);
+            for (int i = 0; i < 8; i++) BV256<TM>(ref t[55 - i], ref t[40 + i], 32, true, vMin, vMax);
             for (int i = 0; i < 32; i++) HV256(ref t[i], ref t[63 - i], false, vMin, vMax);
         }
     }
 
-    private static unsafe void InverseAdstV256(Vector256<int>* t, Vector256<int>* copyT, int n, Vector256<int> vMin, Vector256<int> vMax)
+    private static unsafe void InverseAdstV256<TM>(Vector256<int>* t, Vector256<int>* copyT, int n, Vector256<int> vMin, Vector256<int> vMax) where TM : struct, ITxRange
     {
+        if (n == 2 && TM.Wide)
+        {
+            // The products need 33 bits at 20-bit inputs: each input split as hi * 4096 + lo, the sums of hi
+            // products are exact multiples of 4096 and only the lo sums are rounded (see BV256).
+            var mask = Vector256.Create(4095);
+            Vector256<int> h0 = Vector256.ShiftRightArithmetic(t[0], 12), h1 = Vector256.ShiftRightArithmetic(t[1], 12);
+            Vector256<int> h2 = Vector256.ShiftRightArithmetic(t[2], 12), h3 = Vector256.ShiftRightArithmetic(t[3], 12);
+            Vector256<int> l0 = t[0] & mask, l1 = t[1] & mask, l2 = t[2] & mask, l3 = t[3] & mask;
+            var k1 = Vector256.Create(Sinpi1_9);
+            var k2 = Vector256.Create(Sinpi2_9);
+            var k3 = Vector256.Create(Sinpi3_9);
+            var k4 = Vector256.Create(Sinpi4_9);
+            var hs0 = k1 * h0 + k4 * h2 + k2 * h3;
+            var hs1 = k2 * h0 - k1 * h2 - k4 * h3;
+            var hs3 = k3 * h1;
+            var hs2 = k3 * (h0 - h2 + h3);
+            var ls0 = k1 * l0 + k4 * l2 + k2 * l3;
+            var ls1 = k2 * l0 - k1 * l2 - k4 * l3;
+            var ls3 = k3 * l1;
+            var ls2 = k3 * (l0 - l2 + l3);
+            var r = Vector256.Create(2048);
+            t[0] = hs0 + hs3 + Vector256.ShiftRightArithmetic(ls0 + ls3 + r, 12);
+            t[1] = hs1 + hs3 + Vector256.ShiftRightArithmetic(ls1 + ls3 + r, 12);
+            t[2] = hs2 + Vector256.ShiftRightArithmetic(ls2 + r, 12);
+            t[3] = hs0 + hs1 - hs3 + Vector256.ShiftRightArithmetic(ls0 + ls1 - ls3 + r, 12);
+            return;
+        }
+
         if (n == 2)
         {
             Vector256<int> t0 = t[0], t1 = t[1], t2 = t[2], t3 = t[3];
@@ -736,13 +788,13 @@ internal static class Av1TransformSimd
         {
             for (int i = 0; i < 8; i++) copyT[i] = t[i];
             for (int i = 0; i < 8; i++) t[i] = copyT[AdstIn3[i]];
-            for (int i = 0; i < 4; i++) BV256(ref t[2 * i], ref t[2 * i + 1], 60 - 16 * i, true, vMin, vMax);
+            for (int i = 0; i < 4; i++) BV256<TM>(ref t[2 * i], ref t[2 * i + 1], 60 - 16 * i, true, vMin, vMax);
             for (int i = 0; i < 4; i++) HV256(ref t[i], ref t[4 + i], false, vMin, vMax);
-            for (int i = 0; i < 2; i++) BV256(ref t[4 + 3 * i], ref t[5 + i], 48 - 32 * i, true, vMin, vMax);
+            for (int i = 0; i < 2; i++) BV256<TM>(ref t[4 + 3 * i], ref t[5 + i], 48 - 32 * i, true, vMin, vMax);
             for (int j = 0; j < 2; j++)
                 for (int i = 0; i < 2; i++)
                     HV256(ref t[4 * j + i], ref t[2 + 4 * j + i], false, vMin, vMax);
-            for (int i = 0; i < 2; i++) BV256(ref t[2 + 4 * i], ref t[3 + 4 * i], 32, true, vMin, vMax);
+            for (int i = 0; i < 2; i++) BV256<TM>(ref t[2 + 4 * i], ref t[3 + 4 * i], 32, true, vMin, vMax);
             for (int i = 0; i < 8; i++) copyT[i] = t[i];
             for (int i = 0; i < 8; i++) t[i] = (i & 1) != 0 ? -copyT[AdstOut3[i]] : copyT[AdstOut3[i]];
             return;
@@ -751,23 +803,23 @@ internal static class Av1TransformSimd
         // n == 4
         for (int i = 0; i < 16; i++) copyT[i] = t[i];
         for (int i = 0; i < 16; i++) t[i] = copyT[AdstIn4[i]];
-        for (int i = 0; i < 8; i++) BV256(ref t[2 * i], ref t[2 * i + 1], 62 - 8 * i, true, vMin, vMax);
+        for (int i = 0; i < 8; i++) BV256<TM>(ref t[2 * i], ref t[2 * i + 1], 62 - 8 * i, true, vMin, vMax);
         for (int i = 0; i < 8; i++) HV256(ref t[i], ref t[8 + i], false, vMin, vMax);
         for (int i = 0; i < 2; i++)
         {
-            BV256(ref t[8 + 2 * i], ref t[9 + 2 * i], 56 - 32 * i, true, vMin, vMax);
-            BV256(ref t[13 + 2 * i], ref t[12 + 2 * i], 8 + 32 * i, true, vMin, vMax);
+            BV256<TM>(ref t[8 + 2 * i], ref t[9 + 2 * i], 56 - 32 * i, true, vMin, vMax);
+            BV256<TM>(ref t[13 + 2 * i], ref t[12 + 2 * i], 8 + 32 * i, true, vMin, vMax);
         }
         for (int j = 0; j < 2; j++)
             for (int i = 0; i < 4; i++)
                 HV256(ref t[8 * j + i], ref t[4 + 8 * j + i], false, vMin, vMax);
         for (int j = 0; j < 2; j++)
             for (int i = 0; i < 2; i++)
-                BV256(ref t[4 + 8 * j + 3 * i], ref t[5 + 8 * j + i], 48 - 32 * i, true, vMin, vMax);
+                BV256<TM>(ref t[4 + 8 * j + 3 * i], ref t[5 + 8 * j + i], 48 - 32 * i, true, vMin, vMax);
         for (int j = 0; j < 4; j++)
             for (int i = 0; i < 2; i++)
                 HV256(ref t[4 * j + i], ref t[2 + 4 * j + i], false, vMin, vMax);
-        for (int i = 0; i < 4; i++) BV256(ref t[2 + 4 * i], ref t[3 + 4 * i], 32, true, vMin, vMax);
+        for (int i = 0; i < 4; i++) BV256<TM>(ref t[2 + 4 * i], ref t[3 + 4 * i], 32, true, vMin, vMax);
         for (int i = 0; i < 16; i++) copyT[i] = t[i];
         for (int i = 0; i < 16; i++) t[i] = (i & 1) != 0 ? -copyT[AdstOut4[i]] : copyT[AdstOut4[i]];
     }
@@ -788,13 +840,22 @@ internal static class Av1TransformSimd
         t[0] = a; t[1] = b; t[2] = c; t[3] = d;
     }
 
-    private static unsafe void InverseIdtxV256(Vector256<int>* t, int n)
+    private static unsafe void InverseIdtxV256<TM>(Vector256<int>* t, int n) where TM : struct, ITxRange
     {
         if (n == 2)
         {
             Vector256<int> k = Vector256.Create(5793);
             Vector256<int> r = Vector256.Create(2048);
-            for (int i = 0; i < 4; i++) t[i] = Vector256.ShiftRightArithmetic(t[i] * k + r, 12);
+            if (TM.Wide)
+            {
+                var mask = Vector256.Create(4095);
+                for (int i = 0; i < 4; i++)
+                    t[i] = Vector256.ShiftRightArithmetic(t[i], 12) * k + Vector256.ShiftRightArithmetic((t[i] & mask) * k + r, 12);
+            }
+            else
+            {
+                for (int i = 0; i < 4; i++) t[i] = Vector256.ShiftRightArithmetic(t[i] * k + r, 12);
+            }
         }
         else if (n == 3)
         {
@@ -804,7 +865,16 @@ internal static class Av1TransformSimd
         {
             Vector256<int> k = Vector256.Create(11586);
             Vector256<int> r = Vector256.Create(2048);
-            for (int i = 0; i < 16; i++) t[i] = Vector256.ShiftRightArithmetic(t[i] * k + r, 12);
+            if (TM.Wide)
+            {
+                var mask = Vector256.Create(4095);
+                for (int i = 0; i < 16; i++)
+                    t[i] = Vector256.ShiftRightArithmetic(t[i], 12) * k + Vector256.ShiftRightArithmetic((t[i] & mask) * k + r, 12);
+            }
+            else
+            {
+                for (int i = 0; i < 16; i++) t[i] = Vector256.ShiftRightArithmetic(t[i] * k + r, 12);
+            }
         }
         else
         {
@@ -815,15 +885,33 @@ internal static class Av1TransformSimd
     // ==================== 1D Vectorized Butterflies (V128) ====================
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void BV128(ref Vector128<int> a, ref Vector128<int> b, int angle, bool flip, Vector128<int> vMin, Vector128<int> vMax)
+    private static void BV128<TM>(ref Vector128<int> a, ref Vector128<int> b, int angle, bool flip, Vector128<int> vMin, Vector128<int> vMax) where TM : struct, ITxRange
     {
         Vector128<int> ta = a;
         Vector128<int> tb = b;
         Vector128<int> vc = Vector128.Create(Cos128Table[angle & 255]);
         Vector128<int> vs = Vector128.Create(Cos128Table[(angle - 64) & 255]);
         Vector128<int> v2048 = Vector128.Create(2048);
-        Vector128<int> x = Vector128.Min(vMax, Vector128.Max(vMin, Vector128.ShiftRightArithmetic(ta * vc - tb * vs + v2048, 12)));
-        Vector128<int> y = Vector128.Min(vMax, Vector128.Max(vMin, Vector128.ShiftRightArithmetic(ta * vs + tb * vc + v2048, 12)));
+        Vector128<int> x, y;
+        if (TM.Wide)
+        {
+            // a = ah * 4096 + al with 0 <= al < 4096: Round2(a * c - b * s, 12) = ah * c - bh * s + Round2(al * c - bl * s, 12)
+            // exactly, and every term fits int32 for 20-bit inputs (ITxRange).
+            var mask = Vector128.Create(4095);
+            var ah = Vector128.ShiftRightArithmetic(ta, 12);
+            var bh = Vector128.ShiftRightArithmetic(tb, 12);
+            var al = ta & mask;
+            var bl = tb & mask;
+            x = ah * vc - bh * vs + Vector128.ShiftRightArithmetic(al * vc - bl * vs + v2048, 12);
+            y = ah * vs + bh * vc + Vector128.ShiftRightArithmetic(al * vs + bl * vc + v2048, 12);
+        }
+        else
+        {
+            x = Vector128.ShiftRightArithmetic(ta * vc - tb * vs + v2048, 12);
+            y = Vector128.ShiftRightArithmetic(ta * vs + tb * vc + v2048, 12);
+        }
+        x = Vector128.Min(vMax, Vector128.Max(vMin, x));
+        y = Vector128.Min(vMax, Vector128.Max(vMin, y));
         if (flip) { a = y; b = x; }
         else { a = x; b = y; }
     }
@@ -839,26 +927,26 @@ internal static class Av1TransformSimd
         else { a = add; b = sub; }
     }
 
-    private static unsafe void Run1DV128(Vector128<int>* t, Vector128<int>* copyT, int kind, int n, Vector128<int> vMin, Vector128<int> vMax, int whtShift)
+    private static unsafe void Run1DV128<TM>(Vector128<int>* t, Vector128<int>* copyT, int kind, int n, Vector128<int> vMin, Vector128<int> vMax, int whtShift) where TM : struct, ITxRange
     {
         switch (kind)
         {
             case KindDct:
-                InverseDctV128(t, copyT, n, vMin, vMax);
+                InverseDctV128<TM>(t, copyT, n, vMin, vMax);
                 break;
             case KindAdst:
-                InverseAdstV128(t, copyT, n, vMin, vMax);
+                InverseAdstV128<TM>(t, copyT, n, vMin, vMax);
                 break;
             case KindWht:
                 InverseWht4V128(t, whtShift);
                 break;
             default:
-                InverseIdtxV128(t, n);
+                InverseIdtxV128<TM>(t, n);
                 break;
         }
     }
 
-    private static unsafe void InverseDctV128(Vector128<int>* t, Vector128<int>* copyT, int n, Vector128<int> vMin, Vector128<int> vMax)
+    private static unsafe void InverseDctV128<TM>(Vector128<int>* t, Vector128<int>* copyT, int n, Vector128<int> vMin, Vector128<int> vMax) where TM : struct, ITxRange
     {
         int len = 1 << n;
         byte[] brev = BrevTables[n];
@@ -870,34 +958,34 @@ internal static class Av1TransformSimd
         byte[] brev2 = BrevTables[2];
 
         if (n == 6)
-            for (int i = 0; i < 16; i++) BV128(ref t[32 + i], ref t[63 - i], 63 - 4 * brev4[i], false, vMin, vMax);
+            for (int i = 0; i < 16; i++) BV128<TM>(ref t[32 + i], ref t[63 - i], 63 - 4 * brev4[i], false, vMin, vMax);
         if (n >= 5)
-            for (int i = 0; i < 8; i++) BV128(ref t[16 + i], ref t[31 - i], 6 + (brev3[7 - i] << 3), false, vMin, vMax);
+            for (int i = 0; i < 8; i++) BV128<TM>(ref t[16 + i], ref t[31 - i], 6 + (brev3[7 - i] << 3), false, vMin, vMax);
         if (n == 6)
             for (int i = 0; i < 16; i++) HV128(ref t[32 + i * 2], ref t[33 + i * 2], (i & 1) != 0, vMin, vMax);
         if (n >= 4)
-            for (int i = 0; i < 4; i++) BV128(ref t[8 + i], ref t[15 - i], 12 + (brev2[3 - i] << 4), false, vMin, vMax);
+            for (int i = 0; i < 4; i++) BV128<TM>(ref t[8 + i], ref t[15 - i], 12 + (brev2[3 - i] << 4), false, vMin, vMax);
         if (n >= 5)
             for (int i = 0; i < 8; i++) HV128(ref t[16 + 2 * i], ref t[17 + 2 * i], (i & 1) != 0, vMin, vMax);
         if (n == 6)
             for (int i = 0; i < 4; i++)
                 for (int j = 0; j < 2; j++)
-                    BV128(ref t[62 - i * 4 - j], ref t[33 + i * 4 + j], 60 - 16 * brev2[i] + 64 * j, true, vMin, vMax);
+                    BV128<TM>(ref t[62 - i * 4 - j], ref t[33 + i * 4 + j], 60 - 16 * brev2[i] + 64 * j, true, vMin, vMax);
         if (n >= 3)
-            for (int i = 0; i < 2; i++) BV128(ref t[4 + i], ref t[7 - i], 56 - 32 * i, false, vMin, vMax);
+            for (int i = 0; i < 2; i++) BV128<TM>(ref t[4 + i], ref t[7 - i], 56 - 32 * i, false, vMin, vMax);
         if (n >= 4)
             for (int i = 0; i < 4; i++) HV128(ref t[8 + 2 * i], ref t[9 + 2 * i], (i & 1) != 0, vMin, vMax);
         if (n >= 5)
             for (int i = 0; i < 2; i++)
                 for (int j = 0; j < 2; j++)
-                    BV128(ref t[30 - 4 * i - j], ref t[17 + 4 * i + j], 24 + (j << 6) + ((1 - i) << 5), true, vMin, vMax);
+                    BV128<TM>(ref t[30 - 4 * i - j], ref t[17 + 4 * i + j], 24 + (j << 6) + ((1 - i) << 5), true, vMin, vMax);
         if (n == 6)
             for (int i = 0; i < 8; i++)
                 for (int j = 0; j < 2; j++)
                     HV128(ref t[32 + i * 4 + j], ref t[35 + i * 4 - j], (i & 1) != 0, vMin, vMax);
 
-        BV128(ref t[0], ref t[1], 32, true, vMin, vMax);
-        BV128(ref t[2], ref t[3], 48, false, vMin, vMax);
+        BV128<TM>(ref t[0], ref t[1], 32, true, vMin, vMax);
+        BV128<TM>(ref t[2], ref t[3], 48, false, vMin, vMax);
 
         if (n >= 3)
         {
@@ -905,7 +993,7 @@ internal static class Av1TransformSimd
             HV128(ref t[6], ref t[7], true, vMin, vMax);
         }
         if (n >= 4)
-            for (int i = 0; i < 2; i++) BV128(ref t[14 - i], ref t[9 + i], 48 + 64 * i, true, vMin, vMax);
+            for (int i = 0; i < 2; i++) BV128<TM>(ref t[14 - i], ref t[9 + i], 48 + 64 * i, true, vMin, vMax);
         if (n >= 5)
             for (int i = 0; i < 4; i++)
                 for (int j = 0; j < 2; j++)
@@ -913,19 +1001,19 @@ internal static class Av1TransformSimd
         if (n == 6)
             for (int i = 0; i < 2; i++)
                 for (int j = 0; j < 4; j++)
-                    BV128(ref t[61 - i * 8 - j], ref t[34 + i * 8 + j], 56 - i * 32 + (j >> 1) * 64, true, vMin, vMax);
+                    BV128<TM>(ref t[61 - i * 8 - j], ref t[34 + i * 8 + j], 56 - i * 32 + (j >> 1) * 64, true, vMin, vMax);
 
         HV128(ref t[0], ref t[3], false, vMin, vMax);
         HV128(ref t[1], ref t[2], false, vMin, vMax);
 
         if (n >= 3)
-            BV128(ref t[6], ref t[5], 32, true, vMin, vMax);
+            BV128<TM>(ref t[6], ref t[5], 32, true, vMin, vMax);
         if (n >= 4)
             for (int i = 0; i < 2; i++)
                 for (int j = 0; j < 2; j++)
                     HV128(ref t[8 + 4 * i + j], ref t[11 + 4 * i - j], i != 0, vMin, vMax);
         if (n >= 5)
-            for (int i = 0; i < 4; i++) BV128(ref t[29 - i], ref t[18 + i], 48 + (i >> 1) * 64, true, vMin, vMax);
+            for (int i = 0; i < 4; i++) BV128<TM>(ref t[29 - i], ref t[18 + i], 48 + (i >> 1) * 64, true, vMin, vMax);
         if (n == 6)
             for (int i = 0; i < 4; i++)
                 for (int j = 0; j < 4; j++)
@@ -934,18 +1022,18 @@ internal static class Av1TransformSimd
         if (n >= 3)
             for (int i = 0; i < 4; i++) HV128(ref t[i], ref t[7 - i], false, vMin, vMax);
         if (n >= 4)
-            for (int i = 0; i < 2; i++) BV128(ref t[13 - i], ref t[10 + i], 32, true, vMin, vMax);
+            for (int i = 0; i < 2; i++) BV128<TM>(ref t[13 - i], ref t[10 + i], 32, true, vMin, vMax);
         if (n >= 5)
             for (int i = 0; i < 2; i++)
                 for (int j = 0; j < 4; j++)
                     HV128(ref t[16 + i * 8 + j], ref t[23 + i * 8 - j], i != 0, vMin, vMax);
         if (n == 6)
-            for (int i = 0; i < 8; i++) BV128(ref t[59 - i], ref t[36 + i], i < 4 ? 48 : 112, true, vMin, vMax);
+            for (int i = 0; i < 8; i++) BV128<TM>(ref t[59 - i], ref t[36 + i], i < 4 ? 48 : 112, true, vMin, vMax);
 
         if (n >= 4)
             for (int i = 0; i < 8; i++) HV128(ref t[i], ref t[15 - i], false, vMin, vMax);
         if (n >= 5)
-            for (int i = 0; i < 4; i++) BV128(ref t[27 - i], ref t[20 + i], 32, true, vMin, vMax);
+            for (int i = 0; i < 4; i++) BV128<TM>(ref t[27 - i], ref t[20 + i], 32, true, vMin, vMax);
         if (n == 6)
         {
             for (int i = 0; i < 8; i++)
@@ -959,13 +1047,41 @@ internal static class Av1TransformSimd
             for (int i = 0; i < 16; i++) HV128(ref t[i], ref t[31 - i], false, vMin, vMax);
         if (n == 6)
         {
-            for (int i = 0; i < 8; i++) BV128(ref t[55 - i], ref t[40 + i], 32, true, vMin, vMax);
+            for (int i = 0; i < 8; i++) BV128<TM>(ref t[55 - i], ref t[40 + i], 32, true, vMin, vMax);
             for (int i = 0; i < 32; i++) HV128(ref t[i], ref t[63 - i], false, vMin, vMax);
         }
     }
 
-    private static unsafe void InverseAdstV128(Vector128<int>* t, Vector128<int>* copyT, int n, Vector128<int> vMin, Vector128<int> vMax)
+    private static unsafe void InverseAdstV128<TM>(Vector128<int>* t, Vector128<int>* copyT, int n, Vector128<int> vMin, Vector128<int> vMax) where TM : struct, ITxRange
     {
+        if (n == 2 && TM.Wide)
+        {
+            // The products need 33 bits at 20-bit inputs: each input split as hi * 4096 + lo, the sums of hi
+            // products are exact multiples of 4096 and only the lo sums are rounded (see BV128).
+            var mask = Vector128.Create(4095);
+            Vector128<int> h0 = Vector128.ShiftRightArithmetic(t[0], 12), h1 = Vector128.ShiftRightArithmetic(t[1], 12);
+            Vector128<int> h2 = Vector128.ShiftRightArithmetic(t[2], 12), h3 = Vector128.ShiftRightArithmetic(t[3], 12);
+            Vector128<int> l0 = t[0] & mask, l1 = t[1] & mask, l2 = t[2] & mask, l3 = t[3] & mask;
+            var k1 = Vector128.Create(Sinpi1_9);
+            var k2 = Vector128.Create(Sinpi2_9);
+            var k3 = Vector128.Create(Sinpi3_9);
+            var k4 = Vector128.Create(Sinpi4_9);
+            var hs0 = k1 * h0 + k4 * h2 + k2 * h3;
+            var hs1 = k2 * h0 - k1 * h2 - k4 * h3;
+            var hs3 = k3 * h1;
+            var hs2 = k3 * (h0 - h2 + h3);
+            var ls0 = k1 * l0 + k4 * l2 + k2 * l3;
+            var ls1 = k2 * l0 - k1 * l2 - k4 * l3;
+            var ls3 = k3 * l1;
+            var ls2 = k3 * (l0 - l2 + l3);
+            var r = Vector128.Create(2048);
+            t[0] = hs0 + hs3 + Vector128.ShiftRightArithmetic(ls0 + ls3 + r, 12);
+            t[1] = hs1 + hs3 + Vector128.ShiftRightArithmetic(ls1 + ls3 + r, 12);
+            t[2] = hs2 + Vector128.ShiftRightArithmetic(ls2 + r, 12);
+            t[3] = hs0 + hs1 - hs3 + Vector128.ShiftRightArithmetic(ls0 + ls1 - ls3 + r, 12);
+            return;
+        }
+
         if (n == 2)
         {
             Vector128<int> t0 = t[0], t1 = t[1], t2 = t[2], t3 = t[3];
@@ -985,13 +1101,13 @@ internal static class Av1TransformSimd
         {
             for (int i = 0; i < 8; i++) copyT[i] = t[i];
             for (int i = 0; i < 8; i++) t[i] = copyT[AdstIn3[i]];
-            for (int i = 0; i < 4; i++) BV128(ref t[2 * i], ref t[2 * i + 1], 60 - 16 * i, true, vMin, vMax);
+            for (int i = 0; i < 4; i++) BV128<TM>(ref t[2 * i], ref t[2 * i + 1], 60 - 16 * i, true, vMin, vMax);
             for (int i = 0; i < 4; i++) HV128(ref t[i], ref t[4 + i], false, vMin, vMax);
-            for (int i = 0; i < 2; i++) BV128(ref t[4 + 3 * i], ref t[5 + i], 48 - 32 * i, true, vMin, vMax);
+            for (int i = 0; i < 2; i++) BV128<TM>(ref t[4 + 3 * i], ref t[5 + i], 48 - 32 * i, true, vMin, vMax);
             for (int j = 0; j < 2; j++)
                 for (int i = 0; i < 2; i++)
                     HV128(ref t[4 * j + i], ref t[2 + 4 * j + i], false, vMin, vMax);
-            for (int i = 0; i < 2; i++) BV128(ref t[2 + 4 * i], ref t[3 + 4 * i], 32, true, vMin, vMax);
+            for (int i = 0; i < 2; i++) BV128<TM>(ref t[2 + 4 * i], ref t[3 + 4 * i], 32, true, vMin, vMax);
             for (int i = 0; i < 8; i++) copyT[i] = t[i];
             for (int i = 0; i < 8; i++) t[i] = (i & 1) != 0 ? -copyT[AdstOut3[i]] : copyT[AdstOut3[i]];
             return;
@@ -999,23 +1115,23 @@ internal static class Av1TransformSimd
 
         for (int i = 0; i < 16; i++) copyT[i] = t[i];
         for (int i = 0; i < 16; i++) t[i] = copyT[AdstIn4[i]];
-        for (int i = 0; i < 8; i++) BV128(ref t[2 * i], ref t[2 * i + 1], 62 - 8 * i, true, vMin, vMax);
+        for (int i = 0; i < 8; i++) BV128<TM>(ref t[2 * i], ref t[2 * i + 1], 62 - 8 * i, true, vMin, vMax);
         for (int i = 0; i < 8; i++) HV128(ref t[i], ref t[8 + i], false, vMin, vMax);
         for (int i = 0; i < 2; i++)
         {
-            BV128(ref t[8 + 2 * i], ref t[9 + 2 * i], 56 - 32 * i, true, vMin, vMax);
-            BV128(ref t[13 + 2 * i], ref t[12 + 2 * i], 8 + 32 * i, true, vMin, vMax);
+            BV128<TM>(ref t[8 + 2 * i], ref t[9 + 2 * i], 56 - 32 * i, true, vMin, vMax);
+            BV128<TM>(ref t[13 + 2 * i], ref t[12 + 2 * i], 8 + 32 * i, true, vMin, vMax);
         }
         for (int j = 0; j < 2; j++)
             for (int i = 0; i < 4; i++)
                 HV128(ref t[8 * j + i], ref t[4 + 8 * j + i], false, vMin, vMax);
         for (int j = 0; j < 2; j++)
             for (int i = 0; i < 2; i++)
-                BV128(ref t[4 + 8 * j + 3 * i], ref t[5 + 8 * j + i], 48 - 32 * i, true, vMin, vMax);
+                BV128<TM>(ref t[4 + 8 * j + 3 * i], ref t[5 + 8 * j + i], 48 - 32 * i, true, vMin, vMax);
         for (int j = 0; j < 4; j++)
             for (int i = 0; i < 2; i++)
                 HV128(ref t[4 * j + i], ref t[2 + 4 * j + i], false, vMin, vMax);
-        for (int i = 0; i < 4; i++) BV128(ref t[2 + 4 * i], ref t[3 + 4 * i], 32, true, vMin, vMax);
+        for (int i = 0; i < 4; i++) BV128<TM>(ref t[2 + 4 * i], ref t[3 + 4 * i], 32, true, vMin, vMax);
         for (int i = 0; i < 16; i++) copyT[i] = t[i];
         for (int i = 0; i < 16; i++) t[i] = (i & 1) != 0 ? -copyT[AdstOut4[i]] : copyT[AdstOut4[i]];
     }
@@ -1036,13 +1152,22 @@ internal static class Av1TransformSimd
         t[0] = a; t[1] = b; t[2] = c; t[3] = d;
     }
 
-    private static unsafe void InverseIdtxV128(Vector128<int>* t, int n)
+    private static unsafe void InverseIdtxV128<TM>(Vector128<int>* t, int n) where TM : struct, ITxRange
     {
         if (n == 2)
         {
             Vector128<int> k = Vector128.Create(5793);
             Vector128<int> r = Vector128.Create(2048);
-            for (int i = 0; i < 4; i++) t[i] = Vector128.ShiftRightArithmetic(t[i] * k + r, 12);
+            if (TM.Wide)
+            {
+                var mask = Vector128.Create(4095);
+                for (int i = 0; i < 4; i++)
+                    t[i] = Vector128.ShiftRightArithmetic(t[i], 12) * k + Vector128.ShiftRightArithmetic((t[i] & mask) * k + r, 12);
+            }
+            else
+            {
+                for (int i = 0; i < 4; i++) t[i] = Vector128.ShiftRightArithmetic(t[i] * k + r, 12);
+            }
         }
         else if (n == 3)
         {
@@ -1052,7 +1177,16 @@ internal static class Av1TransformSimd
         {
             Vector128<int> k = Vector128.Create(11586);
             Vector128<int> r = Vector128.Create(2048);
-            for (int i = 0; i < 16; i++) t[i] = Vector128.ShiftRightArithmetic(t[i] * k + r, 12);
+            if (TM.Wide)
+            {
+                var mask = Vector128.Create(4095);
+                for (int i = 0; i < 16; i++)
+                    t[i] = Vector128.ShiftRightArithmetic(t[i], 12) * k + Vector128.ShiftRightArithmetic((t[i] & mask) * k + r, 12);
+            }
+            else
+            {
+                for (int i = 0; i < 16; i++) t[i] = Vector128.ShiftRightArithmetic(t[i] * k + r, 12);
+            }
         }
         else
         {
@@ -1121,4 +1255,25 @@ internal static class Av1TransformSimd
         c6 = Avx2.Permute2x128(u2, u6, 0x31);
         c7 = Avx2.Permute2x128(u3, u7, 0x31);
     }
+}
+
+/// <summary>
+/// Selects the multiply of the vector butterflies. <see cref="TxNarrow"/>: products in int32, exact while inputs stay within
+/// 18 bits (the column pass at every depth, the row pass at 8 and 10 bits). <see cref="TxWide"/>: each input split as
+/// hi * 4096 + lo so that 20-bit inputs (the 12-bit row pass) stay exact in int32. A struct type argument, so the JIT
+/// compiles each variant separately and the test folds away.
+/// </summary>
+internal interface ITxRange
+{
+    static abstract bool Wide { get; }
+}
+
+internal readonly struct TxNarrow : ITxRange
+{
+    public static bool Wide => false;
+}
+
+internal readonly struct TxWide : ITxRange
+{
+    public static bool Wide => true;
 }

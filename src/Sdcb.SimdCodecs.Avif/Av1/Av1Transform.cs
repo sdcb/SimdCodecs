@@ -234,14 +234,15 @@ internal static class Av1Transform
         int rowKind = GetRowTransformKind(txType, lossless);
         int colKind = GetColTransformKind(txType, lossless);
 
-        // Row pass: 32-bit SIMD is mathematically overflow-free for rowClampRange <= 18 (8-bit and 10-bit).
-        if (rowClampRange <= 18 && activeRows >= 4 && Avx2.IsSupported && activeRows >= 8)
+        // Row pass: the vector butterflies multiply in int32 directly up to rowClampRange 18 (8 and 10 bits) and with
+        // split inputs at 20 (12 bits), see ITxRange.
+        if (rowClampRange <= 20 && Avx2.IsSupported && activeRows >= 8)
         {
             Av1TransformSimd.RowPassV256(
                 dequantBuf, residualBuf, tw, w, activeRows, h,
                 rowKind, log2W, rectScale, rowShift, rowClampRange, colMin, colMax);
         }
-        else if (rowClampRange <= 18 && activeRows >= 2 && Vector128.IsHardwareAccelerated)
+        else if (rowClampRange <= 20 && activeRows >= 2 && Vector128.IsHardwareAccelerated)
         {
             Av1TransformSimd.RowPassV128(
                 dequantBuf, residualBuf, tw, w, activeRows, h,
@@ -249,30 +250,7 @@ internal static class Av1Transform
         }
         else
         {
-            Span<int> t = stackalloc int[64];
-            Span<int> copyT = stackalloc int[64];
-            for (int i = 0; i < activeRows; i++)
-            {
-                int rowOff = i * w;
-                int srcOff = i * tw;
-                for (int j = 0; j < tw; j++)
-                    t[j] = dequantBuf[srcOff + j];
-                for (int j = tw; j < w; j++)
-                    t[j] = 0;
-
-                if (rectScale)
-                {
-                    for (int j = 0; j < tw; j++)
-                        t[j] = Av1Constants.Round2(t[j] * 2896, 12);
-                }
-
-                Run1D(t, copyT, rowKind, log2W, rowClampRange, whtShift: 2);
-
-                for (int j = 0; j < w; j++)
-                    residualBuf[rowOff + j] = Av1Constants.Clip3(colMin, colMax, Av1Constants.Round2(t[j], rowShift));
-            }
-            if (activeRows < h)
-                residualBuf.AsSpan(activeRows * w, (h - activeRows) * w).Clear();
+            RowPassScalar(dequantBuf, residualBuf, tw, w, activeRows, h, rowKind, log2W, rectScale, rowShift, rowClampRange, colMin, colMax);
         }
 
         // Column pass + add residual to planeBuf: colClampRange <= 18 for ALL bit depths (8, 10, 12)!
@@ -333,6 +311,39 @@ internal static class Av1Transform
         }
     }
 
+    /// <summary>The scalar row pass: the twin of <see cref="Av1TransformSimd.RowPassV128"/> and <see cref="Av1TransformSimd.RowPassV256"/>.</summary>
+    internal static void RowPassScalar(
+        int[] dequantBuf, int[] residualBuf,
+        int tw, int w, int activeRows, int h,
+        int rowKind, int log2W, bool rectScale,
+        int rowShift, int rowClampRange, int colMin, int colMax)
+    {
+        Span<int> t = stackalloc int[64];
+        Span<int> copyT = stackalloc int[64];
+        for (int i = 0; i < activeRows; i++)
+        {
+            int rowOff = i * w;
+            int srcOff = i * tw;
+            for (int j = 0; j < tw; j++)
+                t[j] = dequantBuf[srcOff + j];
+            for (int j = tw; j < w; j++)
+                t[j] = 0;
+
+            if (rectScale)
+            {
+                for (int j = 0; j < tw; j++)
+                    t[j] = Av1Constants.Round2(t[j] * 2896, 12);
+            }
+
+            Run1D(t, copyT, rowKind, log2W, rowClampRange, whtShift: 2);
+
+            for (int j = 0; j < w; j++)
+                residualBuf[rowOff + j] = Av1Constants.Clip3(colMin, colMax, Av1Constants.Round2(t[j], rowShift));
+        }
+        if (activeRows < h)
+            residualBuf.AsSpan(activeRows * w, (h - activeRows) * w).Clear();
+    }
+
     private static void AddConstantResidual(ushort[] planeBuf, int stride, int x, int y, int w, int h, int res, int maxSample)
     {
         if (Vector256.IsHardwareAccelerated)
@@ -356,10 +367,10 @@ internal static class Av1Transform
         }
     }
 
-    private const int KindDct = 0;
-    private const int KindAdst = 1;
-    private const int KindIdtx = 2;
-    private const int KindWht = 3;
+    internal const int KindDct = 0;
+    internal const int KindAdst = 1;
+    internal const int KindIdtx = 2;
+    internal const int KindWht = 3;
 
     private static int GetRowTransformKind(int txType, bool lossless)
     {
@@ -672,13 +683,13 @@ internal static class Av1Transform
         switch (n)
         {
             case 2:
-                for (int i = 0; i < 4; i++) t[i] = Av1Constants.Round2(t[i] * 5793, 12);
+                for (int i = 0; i < 4; i++) t[i] = (int)Av1Constants.Round2((long)t[i] * 5793, 12); // 33 bits at 12-bit depth
                 break;
             case 3:
                 for (int i = 0; i < 8; i++) t[i] *= 2;
                 break;
             case 4:
-                for (int i = 0; i < 16; i++) t[i] = Av1Constants.Round2(t[i] * 11586, 12);
+                for (int i = 0; i < 16; i++) t[i] = (int)Av1Constants.Round2((long)t[i] * 11586, 12);
                 break;
             default: // 5
                 for (int i = 0; i < 32; i++) t[i] *= 4;

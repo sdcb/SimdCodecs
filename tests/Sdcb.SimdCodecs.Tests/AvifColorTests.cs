@@ -4,7 +4,7 @@ using Shouldly;
 namespace Sdcb.SimdCodecs.Tests;
 
 /// <summary>
-/// The YCbCr → RGBA row kernels: the vector form gives exactly what the scalar twin gives, and the scalar twin
+/// The YCbCr → RGBA row kernels (RGBA8, RGBA16, and deep samples to RGBA8): the vector form gives exactly what the scalar twin gives, and the scalar twin
 /// what the per-pixel formula gives, for every bit depth, range, matrix and subsampling, over random samples that
 /// include the extremes, and over widths that leave a scalar tail.
 /// </summary>
@@ -71,10 +71,23 @@ public sealed class AvifColorTests
                     AvifColor.RowToRgba16Scalar(y, cb, cr, mono, subX, in k16, vector16, done16);
                     vector16.ShouldBe(expected16, what);
 
+                    // Deep samples straight to RGBA8: the high bytes of the RGBA16 result.
+                    var expectedWide8 = new byte[width * 4];
+                    for (int i = 0; i < expectedWide8.Length; i++)
+                        expectedWide8[i] = (byte)(expected16[i] >> 8);
+                    var scalarWide8 = new byte[width * 4];
+                    AvifColor.RowToRgba8WideScalar(y, cb, cr, mono, subX, in k16, scalarWide8, 0);
+                    scalarWide8.ShouldBe(expectedWide8, what);
+                    var vectorWide8 = new byte[width * 4];
+                    int doneWide8 = AvifColor.RowToRgba8WideVector(y, cb, cr, mono, subX, in k16, vectorWide8);
+                    AvifColor.RowToRgba8WideScalar(y, cb, cr, mono, subX, in k16, vectorWide8, doneWide8);
+                    vectorWide8.ShouldBe(expectedWide8, what);
+
                     if (width >= 16)
                     {
                         done8.ShouldBeGreaterThan(0, what); // the vector loop ran
                         done16.ShouldBeGreaterThan(0, what);
+                        doneWide8.ShouldBeGreaterThan(0, what);
                     }
                 }
             }
