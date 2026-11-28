@@ -68,6 +68,7 @@ internal static partial class Av1IntraPred
     /// lie before the clamp (maxLumaW) is summed in pairs four at a time, and the final blend is done four at a time;
     /// clamped rows take the scalar formula sample by sample. Same integers, same order of rounding.
     /// </summary>
+    [System.Runtime.CompilerServices.SkipLocalsInit] // every stackalloc element read is written first (audited)
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
     internal static void PredictChromaFromLumaVector(
         ushort[] yBuf, int yStride,

@@ -15,6 +15,7 @@ internal static partial class Av1IntraPred
     /// <summary>
     /// Intra prediction into <paramref name="planeBuf"/> at (<paramref name="x"/>, <paramref name="y"/>) (§7.11.2).
     /// </summary>
+    [System.Runtime.CompilerServices.SkipLocalsInit] // every stackalloc element read is written first (audited)
     internal static void PredictIntra(
         ushort[] planeBuf,
         int stride,

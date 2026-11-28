@@ -12,6 +12,7 @@ namespace Sdcb.SimdCodecs.Avif.Av1;
 /// </summary>
 internal static partial class Av1LoopFilter
 {
+    [System.Runtime.CompilerServices.SkipLocalsInit] // every stackalloc element read is written first (audited)
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
     internal static void FilterEdgeVector(
         ushort[] buf, int stride, int bitDepth, int plane,
@@ -144,6 +145,7 @@ internal static partial class Av1LoopFilter
     }
 
     /// <summary>The scalar <c>WideFilter</c>'s sliding window, on lanes; writes outputs -n .. n - 1 where <paramref name="m"/> is set.</summary>
+    [System.Runtime.CompilerServices.SkipLocalsInit] // every stackalloc element read is written first (audited)
     private static void Wide(ReadOnlySpan<Vector128<int>> s, Span<Vector128<int>> o, Vector128<int> m, int plane, int log2Size)
     {
         int n = log2Size == 4 ? 6 : plane == 0 ? 3 : 2;

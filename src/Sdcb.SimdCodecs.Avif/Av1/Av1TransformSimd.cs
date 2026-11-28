@@ -194,6 +194,7 @@ internal static class Av1TransformSimd
 
     // ==================== Row Transform Passes (V256 / V128) ====================
 
+    [System.Runtime.CompilerServices.SkipLocalsInit] // every stackalloc element read is written first (audited)
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
     internal static unsafe void RowPassV256(
         int[] dequantBuf, int[] residualBuf,
@@ -348,6 +349,7 @@ internal static class Av1TransformSimd
             residualBuf.AsSpan(activeRows * w, (h - activeRows) * w).Clear();
     }
 
+    [System.Runtime.CompilerServices.SkipLocalsInit] // every stackalloc element read is written first (audited)
     private static unsafe void RowPassV128Range(
         int* dqBase, int* resBase, int startRow, int activeRows,
         int tw, int w, int rowKind, int log2W, bool rectScale,
@@ -441,6 +443,7 @@ internal static class Av1TransformSimd
 
     // ==================== Column Transform + Direct Plane Add Passes (V256 / V128) ====================
 
+    [System.Runtime.CompilerServices.SkipLocalsInit] // every stackalloc element read is written first (audited)
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
     internal static unsafe void ColPassAndAddV256(
         int[] residualBuf, ushort[] planeBuf, int stride,
@@ -507,6 +510,7 @@ internal static class Av1TransformSimd
         }
     }
 
+    [System.Runtime.CompilerServices.SkipLocalsInit] // every stackalloc element read is written first (audited)
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
     internal static unsafe void ColPassAndAddV128(
         int[] residualBuf, ushort[] planeBuf, int stride,
